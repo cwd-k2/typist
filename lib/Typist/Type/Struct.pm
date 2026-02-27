@@ -4,51 +4,102 @@ use parent 'Typist::Type';
 use Scalar::Util 'reftype';
 use List::Util   'all';
 
-# Structural record type: { key => Type, ... }
+# Structural record type: { key => Type, key? => Type, ... }
+# Optional fields are denoted by trailing '?' on the key name.
 
-sub new ($class, %fields) {
-    bless +{ fields => \%fields }, $class;
+sub new ($class, %all_fields) {
+    my (%required, %optional);
+    for my $key (keys %all_fields) {
+        if ($key =~ /\A(.+)\?\z/) {
+            $optional{$1} = $all_fields{$key};
+        } else {
+            $required{$key} = $all_fields{$key};
+        }
+    }
+    bless +{ required => \%required, optional => \%optional }, $class;
 }
 
-sub fields    ($self) { %{$self->{fields}} }
-sub field_ref ($self) { $self->{fields} }
-sub is_struct ($self) { 1 }
+sub fields ($self) {
+    # Backward compat: return all fields (required + optional with '?' suffix)
+    my %all;
+    %all = %{$self->{required}};
+    for my $key (keys %{$self->{optional}}) {
+        $all{"${key}?"} = $self->{optional}{$key};
+    }
+    %all;
+}
+
+sub required_fields ($self) { %{$self->{required}} }
+sub optional_fields ($self) { %{$self->{optional}} }
+sub required_ref    ($self) { $self->{required} }
+sub optional_ref    ($self) { $self->{optional} }
+sub field_ref       ($self) { +{ $self->fields } }
+sub is_struct       ($self) { 1 }
 
 sub name ($self) { $self->to_string }
 
 sub to_string ($self) {
-    my $f = $self->{fields};
-    my $inner = join ', ', map { "$_ => " . $f->{$_}->to_string } sort keys %$f;
-    "{ $inner }";
+    my @parts;
+    for my $key (sort keys %{$self->{required}}) {
+        push @parts, "$key => " . $self->{required}{$key}->to_string;
+    }
+    for my $key (sort keys %{$self->{optional}}) {
+        push @parts, "${key}? => " . $self->{optional}{$key}->to_string;
+    }
+    "{ " . join(', ', @parts) . " }";
 }
 
 sub equals ($self, $other) {
     return 0 unless $other->is_struct;
 
-    my %sf = %{$self->{fields}};
-    my %of = $other->fields;
+    my %sr = %{$self->{required}};
+    my %so = %{$self->{optional}};
+    my %or = $other->required_fields;
+    my %oo = $other->optional_fields;
 
-    my @sk = sort keys %sf;
-    my @ok = sort keys %of;
-    return 0 unless @sk == @ok;
-    return 0 unless all { $sk[$_] eq $ok[$_] } 0 .. $#sk;
+    # Same required keys
+    my @srk = sort keys %sr;
+    my @ork = sort keys %or;
+    return 0 unless @srk == @ork;
+    return 0 unless all { $srk[$_] eq $ork[$_] } 0 .. $#srk;
+    return 0 unless all { $sr{$_}->equals($or{$_}) } @srk;
 
-    all { $sf{$_}->equals($of{$_}) } @sk;
+    # Same optional keys
+    my @sok = sort keys %so;
+    my @ook = sort keys %oo;
+    return 0 unless @sok == @ook;
+    return 0 unless all { $sok[$_] eq $ook[$_] } 0 .. $#sok;
+    return 0 unless all { $so{$_}->equals($oo{$_}) } @sok;
+
+    1;
 }
 
 sub contains ($self, $value) {
     return 0 unless defined $value && ref $value && reftype($value) eq 'HASH';
-    my %f = %{$self->{fields}};
-    all { exists $value->{$_} && $f{$_}->contains($value->{$_}) } keys %f;
+    # All required fields must be present and match
+    return 0 unless all {
+        exists $value->{$_} && $self->{required}{$_}->contains($value->{$_})
+    } keys %{$self->{required}};
+    # Optional fields: check type only if present
+    return 0 unless all {
+        !exists $value->{$_} || $self->{optional}{$_}->contains($value->{$_})
+    } keys %{$self->{optional}};
+    1;
 }
 
 sub free_vars ($self) {
-    map { $_->free_vars } values %{$self->{fields}};
+    (map { $_->free_vars } values %{$self->{required}}),
+    (map { $_->free_vars } values %{$self->{optional}});
 }
 
 sub substitute ($self, $bindings) {
-    my %new = map { $_ => $self->{fields}{$_}->substitute($bindings) }
-              keys %{$self->{fields}};
+    my %new;
+    for my $key (keys %{$self->{required}}) {
+        $new{$key} = $self->{required}{$key}->substitute($bindings);
+    }
+    for my $key (keys %{$self->{optional}}) {
+        $new{"${key}?"} = $self->{optional}{$key}->substitute($bindings);
+    }
     __PACKAGE__->new(%new);
 }
 

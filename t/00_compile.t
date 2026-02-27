@@ -12,7 +12,13 @@ my @modules = qw(
     Typist::Type::Struct
     Typist::Type::Var
     Typist::Type::Alias
+    Typist::Type::Literal
+    Typist::Type::Newtype
     Typist::Parser
+    Typist::Transform
+    Typist::TypeClass
+    Typist::Kind
+    Typist::KindChecker
     Typist::Registry
     Typist::Subtype
     Typist::Inference

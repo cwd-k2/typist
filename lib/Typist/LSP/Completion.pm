@@ -3,7 +3,7 @@ use v5.40;
 
 # ── Primitive and Parametric Types ───────────────
 
-my @PRIMITIVES   = qw(Any Void Undef Bool Int Num Str);
+my @PRIMITIVES   = qw(Any Void Never Undef Bool Int Num Str);
 my @PARAMETRICS  = qw(ArrayRef HashRef Tuple Ref Maybe CodeRef);
 my @TYPE_VARS    = qw(T U V K);
 

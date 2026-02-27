@@ -9,8 +9,9 @@ use Typist::Type::Func;
 use Typist::Type::Struct;
 use Typist::Type::Var;
 use Typist::Type::Alias;
+use Typist::Type::Literal;
 
-my %PRIMITIVES = map { $_ => 1 } qw(Any Void Undef Bool Int Num Str);
+my %PRIMITIVES = map { $_ => 1 } qw(Any Void Never Undef Bool Int Num Str);
 
 # ── Public API ────────────────────────────────────
 
@@ -34,8 +35,11 @@ sub _tokenize ($input) {
 
         if    ($input =~ /\G(->)/gc)              { push @tokens, $1 }
         elsif ($input =~ /\G(=>)/gc)              { push @tokens, $1 }
+        elsif ($input =~ /\G("(?:[^"\\]|\\.)*")/gc) { push @tokens, $1 }
+        elsif ($input =~ /\G('(?:[^'\\]|\\.)*')/gc) { push @tokens, $1 }
+        elsif ($input =~ /\G(-?\d+(?:\.\d+)?)/gc)   { push @tokens, $1 }
         elsif ($input =~ /\G([A-Za-z_]\w*)/gc)    { push @tokens, $1 }
-        elsif ($input =~ /\G([\[\]{}(),|&])/gc)   { push @tokens, $1 }
+        elsif ($input =~ /\G([\[\]{}(),|&?])/gc)  { push @tokens, $1 }
         else {
             my $ch = substr($input, pos($input), 1);
             die "Typist::Parser: unexpected character '$ch' in '$input'";
@@ -79,6 +83,7 @@ sub _parse_primary ($tokens, $pos) {
 
     return _parse_struct($tokens, $pos)  if $tok eq '{';
     return _parse_grouped($tokens, $pos) if $tok eq '(';
+    return _parse_literal($tokens, $pos) if $tok =~ /\A["\d'-]/;
     return _parse_named($tokens, $pos);
 }
 
@@ -132,13 +137,18 @@ sub _parse_named ($tokens, $pos) {
     Typist::Type::Param->new($name, @params);
 }
 
-# struct ::= '{' (IDENT '=>' type_expr (',' IDENT '=>' type_expr)*)? '}'
+# struct ::= '{' (IDENT '?'? '=>' type_expr (',' IDENT '?'? '=>' type_expr)*)? '}'
 sub _parse_struct ($tokens, $pos) {
     $$pos++; # consume '{'
 
     my %fields;
     unless ($$pos < @$tokens && $tokens->[$$pos] eq '}') {
         my $key = $tokens->[$$pos++];
+        # Optional marker: key followed by '?'
+        if ($$pos < @$tokens && $tokens->[$$pos] eq '?') {
+            $key .= '?';
+            $$pos++;
+        }
         die "Typist::Parser: expected '=>' after struct key"
             unless $$pos < @$tokens && $tokens->[$$pos] eq '=>';
         $$pos++;
@@ -148,6 +158,10 @@ sub _parse_struct ($tokens, $pos) {
             $$pos++;
             last if $$pos < @$tokens && $tokens->[$$pos] eq '}';
             $key = $tokens->[$$pos++];
+            if ($$pos < @$tokens && $tokens->[$$pos] eq '?') {
+                $key .= '?';
+                $$pos++;
+            }
             die "Typist::Parser: expected '=>' after struct key"
                 unless $$pos < @$tokens && $tokens->[$$pos] eq '=>';
             $$pos++;
@@ -172,6 +186,22 @@ sub _parse_grouped ($tokens, $pos) {
     $$pos++;
 
     $inner;
+}
+
+# ── Literal Types ────────────────────────────────
+
+sub _parse_literal ($tokens, $pos) {
+    my $tok = $tokens->[$$pos++];
+
+    if ($tok =~ /\A"(.*)"\z/s) {
+        return Typist::Type::Literal->new($1, 'Str');
+    }
+    if ($tok =~ /\A'(.*)'\z/s) {
+        return Typist::Type::Literal->new($1, 'Str');
+    }
+    # Numeric literal
+    my $base = $tok =~ /\./ ? 'Num' : 'Int';
+    return Typist::Type::Literal->new($tok + 0, $base);
 }
 
 # ── Name Resolution ───────────────────────────────

@@ -17,7 +17,10 @@ sub new ($class, %args) {
         variables => +{},
         functions => +{},
         packages  => +{},
-        resolving => +{},
+        resolving  => +{},
+        newtypes   => +{},
+        typeclasses => +{},
+        instances   => +{},
     }, $class;
 }
 
@@ -39,10 +42,16 @@ sub lookup_type ($invocant, $name) {
     my $self = _self($invocant);
     return $self->{resolved}{$name} if exists $self->{resolved}{$name};
 
+    # Newtypes take precedence over aliases
+    return $self->{newtypes}{$name} if exists $self->{newtypes}{$name};
+
     my $expr = $self->{aliases}{$name} // return undef;
 
     if ($self->{resolving}{$name}) {
-        die "Typist: alias cycle detected involving '$name'";
+        # Self-reference encountered — return a lazy Alias that will
+        # resolve later, enabling productive recursion (through type
+        # constructors like ArrayRef, Union, etc.)
+        return Typist::Type::Alias->new($name);
     }
 
     $self->{resolving}{$name} = 1;
@@ -52,7 +61,13 @@ sub lookup_type ($invocant, $name) {
         # Eagerly resolve if the parsed result is itself an alias
         if ($parsed->is_alias) {
             my $inner = $self->lookup_type($parsed->alias_name);
-            $parsed = $inner if $inner;
+            if ($inner) {
+                # Bare alias cycle (A -> B -> A): no type constructor intervenes
+                if ($inner->is_alias && $inner->alias_name eq $name) {
+                    die "Typist: alias cycle detected involving '$name'";
+                }
+                $parsed = $inner;
+            }
         }
 
         $parsed;
@@ -67,7 +82,24 @@ sub lookup_type ($invocant, $name) {
 
 sub has_alias ($invocant, $name) {
     my $self = _self($invocant);
-    exists $self->{aliases}{$name};
+    exists $self->{aliases}{$name} || exists $self->{newtypes}{$name};
+}
+
+# ── Newtype Management ─────────────────────────
+
+sub register_newtype ($invocant, $name, $type_obj) {
+    my $self = _self($invocant);
+    $self->{newtypes}{$name} = $type_obj;
+}
+
+sub lookup_newtype ($invocant, $name) {
+    my $self = _self($invocant);
+    $self->{newtypes}{$name};
+}
+
+sub all_newtypes ($invocant) {
+    my $self = _self($invocant);
+    $self->{newtypes}->%*;
 }
 
 sub all_aliases ($invocant) {
@@ -117,6 +149,53 @@ sub all_packages ($invocant) {
     keys $self->{packages}->%*;
 }
 
+# ── TypeClass Management ──────────────────────────
+
+sub register_typeclass ($invocant, $name, $def) {
+    my $self = _self($invocant);
+    $self->{typeclasses}{$name} = $def;
+}
+
+sub lookup_typeclass ($invocant, $name) {
+    my $self = _self($invocant);
+    $self->{typeclasses}{$name};
+}
+
+sub all_typeclasses ($invocant) {
+    my $self = _self($invocant);
+    $self->{typeclasses}->%*;
+}
+
+sub register_instance ($invocant, $class_name, $type_expr, $inst) {
+    my $self = _self($invocant);
+    $self->{instances}{$class_name} //= [];
+    push $self->{instances}{$class_name}->@*, $inst;
+}
+
+sub resolve_instance ($invocant, $class_name, $type) {
+    my $self = _self($invocant);
+    my $insts = $self->{instances}{$class_name} // return undef;
+
+    require Typist::Subtype;
+
+    for my $inst (@$insts) {
+        my $type_expr = $inst->type_expr;
+
+        # HKT: match by constructor name (e.g., "ArrayRef" matches ArrayRef[T])
+        if ($type->is_param && $type_expr eq $type->base) {
+            return $inst;
+        }
+
+        my $inst_type = Typist::Parser->parse($type_expr);
+        # Exact match or subtype match
+        if ($type->equals($inst_type)
+            || Typist::Subtype->is_subtype($type, $inst_type)) {
+            return $inst;
+        }
+    }
+    undef;
+}
+
 # ── Merge ────────────────────────────────────────
 
 sub merge ($self, $other) {
@@ -141,6 +220,9 @@ sub reset ($invocant) {
         $invocant->{functions} = +{};
         $invocant->{packages}  = +{};
         $invocant->{resolving} = +{};
+        $invocant->{newtypes}   = +{};
+        $invocant->{typeclasses} = +{};
+        $invocant->{instances}   = +{};
     } else {
         $DEFAULT = undef;
     }

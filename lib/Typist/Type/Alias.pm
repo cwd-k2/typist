@@ -33,10 +33,25 @@ sub equals ($self, $other) {
     0;
 }
 
+my $MAX_DEPTH = 50;
+my %_contains_depth;
+
 sub contains ($self, $value) {
     my $r = $self->_resolve
         // die "Typist: unresolved alias '$self->{name}'";
-    $r->contains($value);
+
+    my $name = $self->{name};
+    $_contains_depth{$name} //= 0;
+    if ($_contains_depth{$name} >= $MAX_DEPTH) {
+        return 0;
+    }
+
+    $_contains_depth{$name}++;
+    my $ok = eval { $r->contains($value) };
+    my $err = $@;
+    $_contains_depth{$name}--;
+    die $err if $err;
+    $ok;
 }
 
 sub free_vars ($self) {

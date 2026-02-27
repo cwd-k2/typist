@@ -6,7 +6,7 @@ use Typist::Parser;
 # ── Primitive atoms ───────────────────────────────
 
 subtest 'primitive atoms' => sub {
-    for my $name (qw(Int Str Num Bool Any Void Undef)) {
+    for my $name (qw(Int Str Num Bool Any Void Never Undef)) {
         my $t = Typist::Parser->parse($name);
         ok $t->is_atom, "$name is atom";
         is $t->to_string, $name, "$name to_string";
@@ -93,6 +93,24 @@ subtest 'struct types' => sub {
     my %f = $t->fields;
     is $f{name}->to_string, 'Str', 'name field is Str';
     is $f{age}->to_string,  'Int', 'age field is Int';
+};
+
+# ── Optional struct fields ───────────────────────
+
+subtest 'optional struct fields' => sub {
+    my $t = Typist::Parser->parse('{ name => Str, age? => Int }');
+    ok $t->is_struct, 'optional struct is struct';
+    my %req = $t->required_fields;
+    my %opt = $t->optional_fields;
+    is $req{name}->to_string, 'Str', 'name is required Str';
+    ok !exists $req{age}, 'age is not required';
+    is $opt{age}->to_string, 'Int', 'age is optional Int';
+
+    my $t2 = Typist::Parser->parse('{ x? => Num, y? => Num }');
+    my %r2 = $t2->required_fields;
+    my %o2 = $t2->optional_fields;
+    is scalar keys %r2, 0, 'no required fields';
+    is scalar keys %o2, 2, 'two optional fields';
 };
 
 # ── Grouping with parens ─────────────────────────

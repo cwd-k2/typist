@@ -30,6 +30,9 @@ sub _check ($sub, $super) {
     # Everything <: Any
     return 1 if $super->is_atom && $super->name eq 'Any';
 
+    # Never <: T for all T (bottom type)
+    return 1 if $sub->is_atom && $sub->name eq 'Never';
+
     # Void <: nothing (except Any, handled above)
     return 0 if $sub->is_atom && $sub->name eq 'Void';
 
@@ -63,6 +66,22 @@ sub _check ($sub, $super) {
         return all { _check($sub, $_) } $super->members;
     }
 
+    # ── Newtype (nominal identity) ────────────────
+    # Newtype only subtypes itself (same name) — no structural compatibility
+    if ($sub->is_newtype || $super->is_newtype) {
+        return $sub->is_newtype && $super->is_newtype
+            && $sub->name eq $super->name;
+    }
+
+    # ── Literal types ─────────────────────────────
+    # Literal <: Literal  only when same value (identity, already handled above)
+    # Literal(v) <: BaseType  when base_type hierarchy holds
+    if ($sub->is_literal && $super->is_atom) {
+        return _atom_subtype($sub->base_type, $super->name);
+    }
+    # T </: Literal(v)  unless T is also Literal(v) (already handled by equals)
+    return 0 if $super->is_literal && !$sub->is_literal;
+
     # ── Atom primitives ──────────────────────────
     if ($sub->is_atom && $super->is_atom) {
         return _atom_subtype($sub->name, $super->name);
@@ -92,12 +111,30 @@ sub _check ($sub, $super) {
 
     # ── Struct width subtyping ───────────────────
     # { a: T, b: U } <: { a: T }  (more fields <: fewer fields)
+    # Optional field rules:
+    #   super required → sub must have (required or optional)
+    #   super optional → sub may have or omit; if present, must be type-compatible
     if ($sub->is_struct && $super->is_struct) {
-        my %sf = $sub->fields;
-        my %pf = $super->fields;
-        return all {
-            exists $sf{$_} && _check($sf{$_}, $pf{$_})
-        } keys %pf;
+        my %sub_req = $sub->required_fields;
+        my %sub_opt = $sub->optional_fields;
+        my %sup_req = $super->required_fields;
+        my %sup_opt = $super->optional_fields;
+
+        # Every required field in super must be required in sub and type-compatible
+        for my $key (keys %sup_req) {
+            return 0 unless exists $sub_req{$key};
+            return 0 unless _check($sub_req{$key}, $sup_req{$key});
+        }
+        # Optional fields in super: if present in sub, must be type-compatible
+        for my $key (keys %sup_opt) {
+            if (exists $sub_req{$key}) {
+                return 0 unless _check($sub_req{$key}, $sup_opt{$key});
+            } elsif (exists $sub_opt{$key}) {
+                return 0 unless _check($sub_opt{$key}, $sup_opt{$key});
+            }
+            # Not present in sub at all — that's fine for optional
+        }
+        return 1;
     }
 
     0;

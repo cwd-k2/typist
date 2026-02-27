@@ -100,6 +100,58 @@ subtest 'struct width subtyping' => sub {
     ), 'narrower struct </: wider struct';
 };
 
+# ── Optional struct fields ──────────────────────
+
+subtest 'optional struct subtyping' => sub {
+    # { name: Str, age: Int } <: { name: Str, age?: Int }
+    ok is_sub(
+        parse('{ name => Str, age => Int }'),
+        parse('{ name => Str, age? => Int }'),
+    ), 'required field satisfies optional';
+
+    # { name: Str } <: { name: Str, age?: Int }
+    ok is_sub(
+        parse('{ name => Str }'),
+        parse('{ name => Str, age? => Int }'),
+    ), 'missing optional field is ok';
+
+    # { name: Str, age?: Int } </: { name: Str, age: Int }
+    ok !is_sub(
+        parse('{ name => Str, age? => Int }'),
+        parse('{ name => Str, age => Int }'),
+    ), 'optional cannot satisfy required';
+
+    # { name: Str, age?: Num } <: { name: Str, age?: Int }  iff Num <: Int? No.
+    ok !is_sub(
+        parse('{ name => Str, age? => Num }'),
+        parse('{ name => Str, age? => Int }'),
+    ), 'optional field type must be compatible';
+
+    # { name: Str, age?: Int } <: { name: Str, age?: Num }
+    ok is_sub(
+        parse('{ name => Str, age? => Int }'),
+        parse('{ name => Str, age? => Num }'),
+    ), 'optional field covariance';
+};
+
+# ── Never (bottom type) ─────────────────────────
+
+subtest 'Never is bottom type' => sub {
+    ok  is_sub(parse('Never'), parse('Int')),           'Never <: Int';
+    ok  is_sub(parse('Never'), parse('Str')),           'Never <: Str';
+    ok  is_sub(parse('Never'), parse('Num')),           'Never <: Num';
+    ok  is_sub(parse('Never'), parse('Bool')),          'Never <: Bool';
+    ok  is_sub(parse('Never'), parse('Any')),           'Never <: Any';
+    ok  is_sub(parse('Never'), parse('Undef')),         'Never <: Undef';
+    ok  is_sub(parse('Never'), parse('ArrayRef[Int]')), 'Never <: ArrayRef[Int]';
+    ok  is_sub(parse('Never'), parse('Int | Str')),     'Never <: Int|Str';
+    ok  is_sub(parse('Never'), parse('Never')),         'Never <: Never (identity)';
+
+    ok !is_sub(parse('Int'),   parse('Never')),         'Int </: Never';
+    ok !is_sub(parse('Str'),   parse('Never')),         'Str </: Never';
+    ok !is_sub(parse('Any'),   parse('Never')),         'Any </: Never';
+};
+
 # ── Alias resolution ─────────────────────────────
 
 subtest 'alias subtype' => sub {

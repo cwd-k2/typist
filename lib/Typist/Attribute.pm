@@ -7,6 +7,7 @@ use Typist::Registry;
 use Typist::Inference;
 use Typist::Subtype;
 use Typist::Tie::Scalar;
+use Typist::Transform;
 
 # ── Public API ────────────────────────────────────
 
@@ -63,7 +64,34 @@ sub _handle_code_attrs ($pkg, $coderef, @attrs) {
             $returns_expr = $1;
         }
         elsif ($attr =~ /\AGeneric\((.+)\)\z/) {
-            @generics = split /\s*,\s*/, $1;
+            for my $decl (split /\s*,\s*/, $1) {
+                if ($decl =~ /\A(\w+)\s*:\s*(.+)\z/) {
+                    my ($vname, $constraint) = ($1, $2);
+                    # Check if constraints are type class names (possibly '+' separated)
+                    my @parts = split /\s*\+\s*/, $constraint;
+                    my @tc_constraints;
+                    my $is_typeclass = 1;
+                    for my $part (@parts) {
+                        if (Typist::Registry->lookup_typeclass($part)) {
+                            push @tc_constraints, $part;
+                        } else {
+                            $is_typeclass = 0;
+                            last;
+                        }
+                    }
+                    if ($is_typeclass && @tc_constraints) {
+                        push @generics, +{
+                            name          => $vname,
+                            bound_expr    => undef,
+                            tc_constraints => \@tc_constraints,
+                        };
+                    } else {
+                        push @generics, +{ name => $vname, bound_expr => $constraint };
+                    }
+                } else {
+                    push @generics, +{ name => $decl, bound_expr => undef };
+                }
+            }
         }
         else {
             push @unhandled, $attr;
@@ -74,6 +102,14 @@ sub _handle_code_attrs ($pkg, $coderef, @attrs) {
     if (@params_expr || $returns_expr) {
         my @param_types  = map { Typist::Parser->parse($_) } @params_expr;
         my $return_type  = $returns_expr ? Typist::Parser->parse($returns_expr) : undef;
+
+        # Multi-char type variable support: transform aliases → vars
+        if (@generics) {
+            my %var_names = map { $_->{name} => 1 } @generics;
+            @param_types = map { Typist::Transform->aliases_to_vars($_, \%var_names) } @param_types;
+            $return_type = Typist::Transform->aliases_to_vars($return_type, \%var_names)
+                if $return_type;
+        }
 
         my $sig = +{
             params   => \@param_types,
@@ -106,11 +142,42 @@ sub _wrap_sub ($coderef, $sig, $pkg, $name) {
         if ($sig->{params}) {
             my @ptypes = $sig->{params}->@*;
 
-            # If generic, attempt instantiation
-            if ($sig->{generics} && $sig->{generics}->@*) {
+            # If generic, attempt instantiation + bound checking
+            if ($sig->{generics} && @{$sig->{generics}}) {
                 my @arg_types = map { Typist::Inference->infer_value($_) } @args;
                 my $b = Typist::Inference->instantiate($sig, \@arg_types);
                 %bindings = %$b;
+
+                # Verify bounds and type class constraints
+                for my $g ($sig->{generics}->@*) {
+                    my $var_name = $g->{name};
+                    next unless exists $bindings{$var_name};
+                    my $actual = $bindings{$var_name};
+
+                    # Structural bound check
+                    if ($g->{bound_expr}) {
+                        my $bound = Typist::Parser->parse($g->{bound_expr});
+                        unless (Typist::Subtype->is_subtype($actual, $bound)) {
+                            die sprintf(
+                                "Typist: %s::%s — type variable '%s' bound to %s, but requires <: %s\n",
+                                $pkg, $name, $var_name, $actual->to_string, $bound->to_string,
+                            );
+                        }
+                    }
+
+                    # Type class constraint check
+                    if ($g->{tc_constraints}) {
+                        for my $tc_name ($g->{tc_constraints}->@*) {
+                            my $inst = Typist::Registry->resolve_instance($tc_name, $actual);
+                            unless ($inst) {
+                                die sprintf(
+                                    "Typist: %s::%s — no instance of %s for %s\n",
+                                    $pkg, $name, $tc_name, $actual->to_string,
+                                );
+                            }
+                        }
+                    }
+                }
             }
 
             for my $i (0 .. $#ptypes) {

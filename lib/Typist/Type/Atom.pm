@@ -9,6 +9,7 @@ my %POOL;
 my %VALIDATORS = (
     Any   => sub { 1 },
     Void  => sub { 0 },
+    Never => sub { 0 },
     Undef => sub { !defined $_[0] },
     Bool  => sub { defined $_[0] && !ref $_[0] && ($_[0] eq '1' || $_[0] eq '0' || $_[0] eq '' ) },
     Int   => sub { defined $_[0] && !ref $_[0] && looks_like_number($_[0]) && $_[0] == int($_[0]) },

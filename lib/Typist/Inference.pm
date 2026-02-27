@@ -132,12 +132,25 @@ sub _unify ($formal, $actual, $bindings) {
         return;
     }
 
-    # Struct types
+    # Struct types — unify required and optional fields separately
     if ($formal->is_struct && $actual->is_struct) {
-        my %ff = $formal->fields;
-        my %af = $actual->fields;
-        for my $key (keys %ff) {
-            _unify($ff{$key}, $af{$key}, $bindings) if exists $af{$key};
+        my %freq = $formal->required_fields;
+        my %fopt = $formal->optional_fields;
+        my %areq = $actual->required_fields;
+        my %aopt = $actual->optional_fields;
+        for my $key (keys %freq) {
+            if (exists $areq{$key}) {
+                _unify($freq{$key}, $areq{$key}, $bindings);
+            } elsif (exists $aopt{$key}) {
+                _unify($freq{$key}, $aopt{$key}, $bindings);
+            }
+        }
+        for my $key (keys %fopt) {
+            if (exists $areq{$key}) {
+                _unify($fopt{$key}, $areq{$key}, $bindings);
+            } elsif (exists $aopt{$key}) {
+                _unify($fopt{$key}, $aopt{$key}, $bindings);
+            }
         }
         return;
     }

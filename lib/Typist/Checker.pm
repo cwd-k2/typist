@@ -34,7 +34,7 @@ sub _check_aliases ($self) {
     my %aliases = $self->{registry}->all_aliases;
 
     for my $name (sort keys %aliases) {
-        eval { $self->{registry}->lookup_type($name) };
+        my $type = eval { $self->{registry}->lookup_type($name) };
         if ($@) {
             if ($@ =~ /cycle/) {
                 $self->{errors}->collect(
@@ -63,7 +63,8 @@ sub _check_functions ($self) {
 
     for my $fqn (sort keys %functions) {
         my $sig = $functions{$fqn};
-        my %declared = map { $_ => 1 } ($sig->{generics} // [])->@*;
+        my %declared = map { ref $_ eq 'HASH' ? ($_->{name} => 1) : ($_ => 1) }
+                       ($sig->{generics} // [])->@*;
 
         # Collect all free type variables from params and returns
         my @free;
@@ -83,6 +84,22 @@ sub _check_functions ($self) {
                     file    => '(function signature)',
                     line    => 0,
                 );
+            }
+        }
+
+        # Validate bound expressions are well-formed
+        for my $g (($sig->{generics} // [])->@*) {
+            next unless ref $g eq 'HASH' && $g->{bound_expr};
+            my $bound_type = eval { Typist::Parser->parse($g->{bound_expr}) };
+            if ($@) {
+                $self->{errors}->collect(
+                    kind    => 'InvalidBound',
+                    message => "Invalid bound expression '$g->{bound_expr}' for $g->{name} in $fqn: $@",
+                    file    => '(function signature)',
+                    line    => 0,
+                );
+            } elsif ($bound_type) {
+                $self->_check_type_wellformed($bound_type, $fqn);
             }
         }
 
@@ -122,8 +139,9 @@ sub _check_type_wellformed ($self, $type, $context) {
         $self->_check_type_wellformed($type->returns, $context);
     }
     if ($type->is_struct) {
-        my %f = $type->fields;
-        $self->_check_type_wellformed($_, $context) for values %f;
+        my %r = $type->required_fields;
+        my %o = $type->optional_fields;
+        $self->_check_type_wellformed($_, $context) for values %r, values %o;
     }
 }
 
