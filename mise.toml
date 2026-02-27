@@ -24,7 +24,7 @@ run = "carton exec -- prove -l t/critic/"
 
 [tasks.example]
 description = "Run all examples"
-depends = ["example:basics", "example:generics", "example:effects", "example:haskell", "example:errors_basic", "example:errors_advanced"]
+depends = ["example:basics", "example:generics", "example:effects", "example:haskell", "example:errors_basic", "example:errors_advanced", "example:realworld"]
 
 [tasks."example:basics"]
 description = "Run basics example"
@@ -49,3 +49,7 @@ run = "carton exec -- perl example/errors_basic.pl"
 [tasks."example:errors_advanced"]
 description = "Run advanced type error examples"
 run = "carton exec -- perl example/errors_advanced.pl"
+
+[tasks."example:realworld"]
+description = "Run realworld multi-file shop example"
+run = "carton exec -- perl -Iexample/realworld/lib example/realworld/main.pl"
