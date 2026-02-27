@@ -93,4 +93,67 @@ PERL
     is scalar @{$diags[1]->{params}{diagnostics}}, 0, 'second is clean after fix';
 };
 
+# ── Effect mismatch diagnostics via LSP ────────
+
+subtest 'didOpen publishes effect mismatch diagnostics' => sub {
+    my $source = <<'PERL';
+package EffDemo;
+use v5.40;
+
+effect Console => +{};
+effect State   => +{};
+
+sub write_msg :Params(Str) :Returns(Str) :Eff(Console) ($s) { $s }
+
+sub stateful :Params(Str) :Returns(Str) :Eff(Console | State) ($x) { $x }
+
+sub caller_fn :Returns(Str) :Eff(Console) () {
+    stateful("hello");
+}
+
+sub pure_fn :Params(Str) :Returns(Str) ($x) {
+    write_msg($x);
+}
+
+sub helper ($x) { $x }
+
+sub safe_fn :Params(Str) :Returns(Str) :Eff(Console) ($s) {
+    helper($s);
+}
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{
+                uri     => 'file:///test/effects.pm',
+                text    => $source,
+                version => 1,
+            },
+        }),
+    ));
+
+    my ($diag_notif) = grep { ($_->{method} // '') eq 'textDocument/publishDiagnostics' } @results;
+    ok $diag_notif, 'got publishDiagnostics';
+
+    my @eff_diags = grep { $_->{message} =~ /[Ee]ff|unannotated/ }
+                    @{$diag_notif->{params}{diagnostics}};
+
+    ok @eff_diags >= 3, 'at least 3 effect diagnostics';
+
+    # Case 1: caller missing callee's effect (State)
+    my ($missing) = grep { $_->{message} =~ /State/ } @eff_diags;
+    ok $missing, 'missing State effect reported';
+    like $missing->{message}, qr/caller_fn.*stateful/, 'identifies caller and callee';
+
+    # Case 2: pure caller calls effectful
+    my ($pure) = grep { $_->{message} =~ /no :Eff/ } @eff_diags;
+    ok $pure, 'pure-calls-effectful reported';
+    like $pure->{message}, qr/pure_fn.*write_msg/, 'identifies pure caller';
+
+    # Case 3: annotated caller calls unannotated
+    my ($unann) = grep { $_->{message} =~ /unannotated/ } @eff_diags;
+    ok $unann, 'unannotated callee reported';
+    like $unann->{message}, qr/safe_fn.*helper/, 'identifies annotated caller and unannotated callee';
+};
+
 done_testing;
