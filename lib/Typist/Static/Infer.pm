@@ -65,10 +65,13 @@ sub infer_expr ($class, $element, $env = undef) {
 sub _infer_call ($name, $env) {
     return undef unless $env;
 
-    # Local function in the same file
+    # Local function with known return type
     if (my $ret = $env->{functions}{$name}) {
         return $ret;
     }
+
+    # Partially annotated (has annotations but no :Returns) → unknown
+    return undef if $env->{known} && $env->{known}{$name};
 
     # Cross-package: Pkg::func → registry lookup
     if ($name =~ /\A(.+)::(\w+)\z/) {
@@ -77,10 +80,13 @@ sub _infer_call ($name, $env) {
         if ($registry) {
             my $sig = $registry->lookup_function($pkg, $fname);
             return $sig->{returns} if $sig && $sig->{returns};
+            # Registered but no return type → partially annotated
+            return undef if $sig;
         }
     }
 
-    undef;
+    # Completely unannotated → Any (gradual typing)
+    Typist::Type::Atom->new('Any');
 }
 
 # ── Number Inference ─────────────────────────────

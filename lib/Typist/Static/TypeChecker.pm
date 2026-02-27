@@ -163,7 +163,7 @@ sub _check_return_types ($self) {
 # ── Helpers ──────────────────────────────────────
 
 sub _build_env ($self) {
-    my (%variables, %functions);
+    my (%variables, %functions, %known);
 
     for my $var ($self->{extracted}{variables}->@*) {
         my $type = $self->_resolve_type($var->{type_expr});
@@ -171,6 +171,7 @@ sub _build_env ($self) {
     }
 
     for my $name (keys $self->{extracted}{functions}->%*) {
+        $known{$name} = 1;
         my $fn = $self->{extracted}{functions}{$name};
         if (my $ret_expr = $fn->{returns_expr}) {
             my $type = $self->_resolve_type($ret_expr);
@@ -181,6 +182,7 @@ sub _build_env ($self) {
     +{
         variables => \%variables,
         functions => \%functions,
+        known     => \%known,
         registry  => $self->{registry},
     };
 }

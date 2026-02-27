@@ -21,6 +21,16 @@ sub new ($class, %args) {
 sub analyze ($self) {
     my $pkg = $self->{extracted}{package};
 
+    # Collect all local sub names from PPI to detect unannotated functions
+    my %local_subs;
+    if (my $ppi_doc = $self->{ppi_doc}) {
+        my $subs = $ppi_doc->find('PPI::Statement::Sub') || [];
+        for my $sub_stmt (@$subs) {
+            my $n = $sub_stmt->name // next;
+            $local_subs{$n} = 1;
+        }
+    }
+
     for my $name (sort keys $self->{extracted}{functions}->%*) {
         my $fn    = $self->{extracted}{functions}{$name};
         my $block = $fn->{block} // next;
@@ -32,9 +42,21 @@ sub analyze ($self) {
         my $caller_eff = $caller_sig->{effects};
 
         # Collect called functions and their effects
-        my @called = $self->_collect_called_effects($block, $pkg);
+        my @called = $self->_collect_called_effects($block, $pkg, \%local_subs);
 
         for my $call (@called) {
+            # Unannotated local function → may perform any effect
+            if ($call->{unannotated}) {
+                $self->{errors}->collect(
+                    kind    => 'EffectMismatch',
+                    message => "Function $name() calls unannotated $call->{name}()"
+                             . " which may perform any effect",
+                    file    => $self->{file},
+                    line    => $call->{line},
+                );
+                next;
+            }
+
             my $callee_eff = $call->{effects};
             next unless $callee_eff;
 
@@ -60,7 +82,7 @@ sub analyze ($self) {
     }
 }
 
-sub _collect_called_effects ($self, $block, $pkg) {
+sub _collect_called_effects ($self, $block, $pkg, $local_subs = undef) {
     my @calls;
     my $words = $block->find('PPI::Token::Word') || [];
 
@@ -85,7 +107,18 @@ sub _collect_called_effects ($self, $block, $pkg) {
                 $callee_sig = $self->{registry}->lookup_function($1, $2);
             }
         }
-        next unless $callee_sig;
+
+        unless ($callee_sig) {
+            # Local sub with no annotations → unannotated (any effect)
+            if ($local_subs && $local_subs->{$callee_name}) {
+                push @calls, +{
+                    name        => $callee_name,
+                    unannotated => 1,
+                    line        => $word->line_number,
+                };
+            }
+            next;
+        }
         next unless $callee_sig->{effects};
 
         push @calls, +{

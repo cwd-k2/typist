@@ -31,7 +31,9 @@ DSL (Type constructors: Int, Str, ArrayRef(...), Struct(...), Func(...), etc.)
 - `Typist::Type` — Abstract base with `|` (union), `&` (intersection), `""` (stringify) overloads. `coerce($expr)` accepts both Type objects and strings.
 - `Typist::Error` — Value class + Collector (instance-based). `Typist::Error::Global` provides the global singleton buffer.
 - `Typist::Static::Checker` — CHECK-phase validation (alias cycles, undeclared vars, bound/kind/effect well-formedness).
-- `Typist::Static::EffectChecker` — PPI-based static effect checker (call graph + label inclusion, cross-package support).
+- `Typist::Static::Infer` — Static type inference from PPI elements (literals, variable symbols, function calls). Accepts optional `$env` for gradual typing.
+- `Typist::Static::TypeChecker` — Static type mismatch detection (variable initializers, call site args, return types). Builds type environment for function return type propagation and variable symbol resolution.
+- `Typist::Static::EffectChecker` — PPI-based static effect checker (call graph + label inclusion, cross-package support, unannotated function detection).
 - `Typist::Subtype` — Structural subtype relation + `common_super` (LUB for atom types).
 - `Typist::Attribute` — Attribute handlers + `parse_generic_decl` (shared between runtime and static paths).
 - `Typist::TypeClass` — Type class Def (with `install_dispatch`, `check_instance_completeness`, `resolve`) and Inst structures.
@@ -45,6 +47,7 @@ DSL (Type constructors: Int, Str, ArrayRef(...), Struct(...), Func(...), etc.)
 - Sub wrapping uses direct glob assignment to replace the original.
 - Hashref literals always use `+{}` to disambiguate from blocks.
 - No source filters or external preprocessors.
+- Gradual typing: fully annotated → all checks enforced; partially annotated (some attrs, no `:Eff`) → pure, return type unknown if no `:Returns`; completely unannotated → `(Any...) -> Any ! Eff(*)`, type checks skip, effect checks flag.
 
 ## Commands
 
@@ -60,6 +63,7 @@ mise run test:workspace    # Verify LSP workspace on realworld example
 mise run example           # Run all examples
 mise run example:basics    # Run basics example
 mise run example:generics  # Run generics example
+mise run example:gradual   # Run gradual typing example
 ```
 
 ## Test Structure

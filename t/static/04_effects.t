@@ -179,4 +179,68 @@ PERL
     like $undecl[0]{message}, qr/\br\b/, 'reports the undeclared row variable';
 };
 
+# ── Unannotated function → any effect ───────────
+
+subtest 'Analyzer: annotated caller calls unannotated local function' => sub {
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Effect;
+    $ws_reg->register_effect('Console', Typist::Effect->new(
+        name => 'Console', operations => +{},
+    ));
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws_reg);
+package UnannotatedCallee;
+use v5.40;
+
+sub helper ($x) {
+    return $x;
+}
+
+sub main_fn :Params(Str) :Returns(Str) :Eff(Console) ($s) {
+    helper($s);
+}
+PERL
+
+    my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
+    ok @eff_diags > 0, 'calling unannotated function flagged';
+    like $eff_diags[0]{message}, qr/unannotated.*helper/, 'reports unannotated callee';
+};
+
+subtest 'Analyzer: pure caller calls unannotated local function' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package PureCallsUnannotated;
+use v5.40;
+
+sub helper ($x) {
+    return $x;
+}
+
+sub pure_fn :Params(Str) :Returns(Str) ($s) {
+    helper($s);
+}
+PERL
+
+    my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
+    ok @eff_diags > 0, 'pure fn calling unannotated function flagged';
+    like $eff_diags[0]{message}, qr/unannotated.*helper/, 'reports unannotated callee';
+};
+
+subtest 'Analyzer: annotated callee with Params but no Eff is pure' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package PartiallyAnnotated;
+use v5.40;
+
+sub helper :Params(Str) :Returns(Str) ($x) {
+    return $x;
+}
+
+sub caller_fn :Params(Str) :Returns(Str) ($s) {
+    helper($s);
+}
+PERL
+
+    my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
+    is scalar @eff_diags, 0, 'partially annotated function (no Eff) is pure — no error';
+};
+
 done_testing;
