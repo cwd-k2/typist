@@ -1,0 +1,217 @@
+# carton snapshot format: version 1.0
+DISTRIBUTIONS
+  Clone-0.47
+    pathname: A/AT/ATOOMIC/Clone-0.47.tar.gz
+    provides:
+      Clone 0.47
+    requirements:
+      ExtUtils::MakeMaker 0
+  PPI-1.284
+    pathname: O/OA/OALDERS/PPI-1.284.tar.gz
+    provides:
+      PPI 1.284
+      PPI::Cache 1.284
+      PPI::Document 1.284
+      PPI::Document::File 1.284
+      PPI::Document::Fragment 1.284
+      PPI::Document::Normalized 1.284
+      PPI::Dumper 1.284
+      PPI::Element 1.284
+      PPI::Exception 1.284
+      PPI::Exception::ParserRejection 1.284
+      PPI::Find 1.284
+      PPI::Lexer 1.284
+      PPI::Node 1.284
+      PPI::Normal 1.284
+      PPI::Normal::Standard 1.284
+      PPI::Singletons 1.284
+      PPI::Statement 1.284
+      PPI::Statement::Break 1.284
+      PPI::Statement::Compound 1.284
+      PPI::Statement::Data 1.284
+      PPI::Statement::End 1.284
+      PPI::Statement::Expression 1.284
+      PPI::Statement::Given 1.284
+      PPI::Statement::Include 1.284
+      PPI::Statement::Include::Perl6 1.284
+      PPI::Statement::Null 1.284
+      PPI::Statement::Package 1.284
+      PPI::Statement::Scheduled 1.284
+      PPI::Statement::Sub 1.284
+      PPI::Statement::Unknown 1.284
+      PPI::Statement::UnmatchedBrace 1.284
+      PPI::Statement::Variable 1.284
+      PPI::Statement::When 1.284
+      PPI::Structure 1.284
+      PPI::Structure::Block 1.284
+      PPI::Structure::Condition 1.284
+      PPI::Structure::Constructor 1.284
+      PPI::Structure::For 1.284
+      PPI::Structure::Given 1.284
+      PPI::Structure::List 1.284
+      PPI::Structure::Signature 1.284
+      PPI::Structure::Subscript 1.284
+      PPI::Structure::Unknown 1.284
+      PPI::Structure::When 1.284
+      PPI::Token 1.284
+      PPI::Token::ArrayIndex 1.284
+      PPI::Token::Attribute 1.284
+      PPI::Token::BOM 1.284
+      PPI::Token::Cast 1.284
+      PPI::Token::Comment 1.284
+      PPI::Token::DashedWord 1.284
+      PPI::Token::Data 1.284
+      PPI::Token::End 1.284
+      PPI::Token::HereDoc 1.284
+      PPI::Token::Label 1.284
+      PPI::Token::Magic 1.284
+      PPI::Token::Number 1.284
+      PPI::Token::Number::Binary 1.284
+      PPI::Token::Number::Exp 1.284
+      PPI::Token::Number::Float 1.284
+      PPI::Token::Number::Hex 1.284
+      PPI::Token::Number::Octal 1.284
+      PPI::Token::Number::Version 1.284
+      PPI::Token::Operator 1.284
+      PPI::Token::Pod 1.284
+      PPI::Token::Prototype 1.284
+      PPI::Token::Quote 1.284
+      PPI::Token::Quote::Double 1.284
+      PPI::Token::Quote::Interpolate 1.284
+      PPI::Token::Quote::Literal 1.284
+      PPI::Token::Quote::Single 1.284
+      PPI::Token::QuoteLike 1.284
+      PPI::Token::QuoteLike::Backtick 1.284
+      PPI::Token::QuoteLike::Command 1.284
+      PPI::Token::QuoteLike::Readline 1.284
+      PPI::Token::QuoteLike::Regexp 1.284
+      PPI::Token::QuoteLike::Words 1.284
+      PPI::Token::Regexp 1.284
+      PPI::Token::Regexp::Match 1.284
+      PPI::Token::Regexp::Substitute 1.284
+      PPI::Token::Regexp::Transliterate 1.284
+      PPI::Token::Separator 1.284
+      PPI::Token::Structure 1.284
+      PPI::Token::Symbol 1.284
+      PPI::Token::Unknown 1.284
+      PPI::Token::Whitespace 1.284
+      PPI::Token::Word 1.284
+      PPI::Tokenizer 1.284
+      PPI::Transform 1.284
+      PPI::Transform::UpdateCopyright 1.284
+      PPI::Util 1.284
+      PPI::XSAccessor 1.284
+    requirements:
+      Carp 0
+      Clone 0.30
+      Digest::MD5 2.35
+      Exporter 0
+      ExtUtils::MakeMaker 0
+      File::Path 0
+      File::Spec 0.84
+      List::Util 1.33
+      Params::Util 1.00
+      Safe::Isa 0
+      Scalar::Util 0
+      Storable 2.17
+      Task::Weaken 0
+      YAML::PP 0
+      constant 0
+      if 0
+      overload 0
+      perl 5.006
+      strict 0
+      version 0.77
+  Params-Util-1.102
+    pathname: R/RE/REHSACK/Params-Util-1.102.tar.gz
+    provides:
+      Params::Util 1.102
+      Params::Util::PP 1.102
+    requirements:
+      Carp 0
+      ExtUtils::MakeMaker 0
+      File::Basename 0
+      File::Copy 0
+      File::Path 0
+      File::Spec 0
+      IPC::Cmd 0
+      Scalar::Util 1.18
+      XSLoader 0.22
+      parent 0
+  Safe-Isa-1.000010
+    pathname: E/ET/ETHER/Safe-Isa-1.000010.tar.gz
+    provides:
+      Safe::Isa 1.000010
+    requirements:
+      Exporter 5.57
+      ExtUtils::MakeMaker 0
+      Scalar::Util 0
+      perl 5.006
+  Task-Weaken-1.06
+    pathname: E/ET/ETHER/Task-Weaken-1.06.tar.gz
+    provides:
+      Task::Weaken 1.06
+    requirements:
+      Config 0
+      ExtUtils::MakeMaker 0
+      File::Spec 0
+      Scalar::Util 1.14
+      perl 5.006
+      strict 0
+  YAML-PP-v0.39.0
+    pathname: T/TI/TINITA/YAML-PP-v0.39.0.tar.gz
+    provides:
+      YAML::PP v0.39.0
+      YAML::PP::Common v0.39.0
+      YAML::PP::Constructor v0.39.0
+      YAML::PP::Dumper v0.39.0
+      YAML::PP::Emitter v0.39.0
+      YAML::PP::Exception v0.39.0
+      YAML::PP::Grammar v0.39.0
+      YAML::PP::Highlight v0.39.0
+      YAML::PP::Lexer v0.39.0
+      YAML::PP::Loader v0.39.0
+      YAML::PP::Parser v0.39.0
+      YAML::PP::Perl v0.39.0
+      YAML::PP::Preserve::Array v0.39.0
+      YAML::PP::Preserve::Hash v0.39.0
+      YAML::PP::Preserve::Scalar v0.39.0
+      YAML::PP::Reader v0.39.0
+      YAML::PP::Reader::File v0.39.0
+      YAML::PP::Render v0.39.0
+      YAML::PP::Representer v0.39.0
+      YAML::PP::Schema v0.39.0
+      YAML::PP::Schema::Binary v0.39.0
+      YAML::PP::Schema::Catchall v0.39.0
+      YAML::PP::Schema::Core v0.39.0
+      YAML::PP::Schema::Failsafe v0.39.0
+      YAML::PP::Schema::Include v0.39.0
+      YAML::PP::Schema::JSON v0.39.0
+      YAML::PP::Schema::Merge v0.39.0
+      YAML::PP::Schema::Perl v0.39.0
+      YAML::PP::Schema::Tie::IxHash v0.39.0
+      YAML::PP::Schema::YAML1_1 v0.39.0
+      YAML::PP::Type::MergeKey v0.39.0
+      YAML::PP::Writer v0.39.0
+      YAML::PP::Writer::File v0.39.0
+    requirements:
+      B 0
+      B::Deparse 0
+      Carp 0
+      Data::Dumper 0
+      Encode 0
+      Exporter 0
+      ExtUtils::MakeMaker 0
+      File::Basename 0
+      Getopt::Long 0
+      MIME::Base64 0
+      Module::Load 0
+      Scalar::Util 1.07
+      Tie::Array 0
+      Tie::Hash 0
+      base 0
+      constant 0
+      overload 0
+      perl 5.008000
+      strict 0
+      warnings 0

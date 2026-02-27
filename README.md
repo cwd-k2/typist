@@ -46,8 +46,19 @@ sub first :Generic(T) :Params(ArrayRef[T]) :Returns(T) ($arr) {
 ## Requirements
 
 - Perl 5.40+
-- `PPI` (CPAN) — for static analysis and LSP
-- `Perl::Critic` (CPAN, optional) — for Perl::Critic integration
+- [Carton](https://metacpan.org/pod/Carton)
+
+## Setup
+
+```sh
+carton install
+```
+
+This installs runtime dependencies (`PPI`, `JSON::PP`) into `local/`. For optional Perl::Critic integration:
+
+```sh
+carton install --with-recommends
+```
 
 ## Editor Integration
 
@@ -76,7 +87,7 @@ severity = 2
 The standalone LSP server provides hover, completion, and diagnostics:
 
 ```sh
-perl -Ilib bin/typist-lsp
+carton exec -- perl bin/typist-lsp
 ```
 
 **Capabilities:**
@@ -92,7 +103,7 @@ local configs = require('lspconfig.configs')
 
 configs.typist = {
   default_config = {
-    cmd = { 'perl', '-Ilib', 'bin/typist-lsp' },
+    cmd = { 'carton', 'exec', '--', 'perl', 'bin/typist-lsp' },
     filetypes = { 'perl' },
     root_dir = function(fname)
       return vim.fs.dirname(
@@ -105,7 +116,7 @@ configs.typist = {
 require('lspconfig').typist.setup {}
 ```
 
-If Typist is installed globally or via `@INC`, replace `-Ilib` with the appropriate path.
+Carton automatically adds `lib/` and `local/lib/perl5` to `@INC`.
 
 #### VS Code
 
@@ -113,8 +124,8 @@ Use the `vscode-languageclient` extension with this server configuration:
 
 ```json
 {
-  "typist-lsp.command": "perl",
-  "typist-lsp.args": ["-Ilib", "bin/typist-lsp"]
+  "typist-lsp.command": "carton",
+  "typist-lsp.args": ["exec", "--", "perl", "bin/typist-lsp"]
 }
 ```
 
@@ -127,28 +138,27 @@ See `example/` for runnable demonstrations:
 - `example/lsp_demo.pm` — module showcasing LSP hover/completion/diagnostic targets
 
 ```sh
-cd example
-perl basics.pl
-perl generics.pl
+carton exec -- perl example/basics.pl
+carton exec -- perl example/generics.pl
 ```
 
 ## Testing
 
 ```sh
 # All tests
-prove -l t/ t/static/ t/lsp/ t/critic/
+carton exec -- prove -l t/ t/static/ t/lsp/ t/critic/
 
 # Core type system
-prove -l t/
+carton exec -- prove -l t/
 
 # Static analysis engine
-prove -l t/static/
+carton exec -- prove -l t/static/
 
 # LSP server
-prove -l t/lsp/
+carton exec -- prove -l t/lsp/
 
 # Perl::Critic policy (requires Perl::Critic)
-prove -l t/critic/
+carton exec -- prove -l t/critic/
 ```
 
 ## License
