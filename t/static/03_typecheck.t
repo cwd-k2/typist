@@ -404,4 +404,115 @@ PERL
     is scalar @$errs, 0, 'Params-only function → return type unknown, skip';
 };
 
+# ── Flow Typing (unannotated variable inference) ─
+
+subtest 'flow: inferred variable from function call' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub greet :Params(Str) :Returns(Str) ($name) {
+    return "hello $name";
+}
+sub loud :Params(Str) :Returns(Str) ($s) {
+    return uc($s);
+}
+my $result = greet("Alice");
+loud($result);
+PERL
+
+    is scalar @$errs, 0, '$result inferred as Str from greet(), loud(Str) OK';
+};
+
+subtest 'flow: inferred variable type mismatch' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub greet :Params(Str) :Returns(Str) ($name) {
+    return "hello $name";
+}
+sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+    return $a + $b;
+}
+my $result = greet("Alice");
+add($result, 42);
+PERL
+
+    is scalar @$errs, 1, 'one error';
+    like $errs->[0]{message}, qr/Argument 1.*add.*Int.*Str/, '$result inferred as Str, add expects Int';
+};
+
+subtest 'flow: inferred variable from literal' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+    return $a + $b;
+}
+my $x = 42;
+add($x, 1);
+PERL
+
+    is scalar @$errs, 0, '$x inferred as Int from literal, add(Int, Int) OK';
+};
+
+subtest 'flow: inferred variable literal mismatch' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+    return $a + $b;
+}
+my $name = "hello";
+add($name, 1);
+PERL
+
+    is scalar @$errs, 1, 'one error';
+    like $errs->[0]{message}, qr/Argument 1.*add.*Int/, '$name inferred from literal, type mismatch with Int';
+};
+
+subtest 'flow: inferred variable used in typed init' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub greet :Params(Str) :Returns(Str) ($name) {
+    return "hello $name";
+}
+my $result = greet("Alice");
+my $x :Type(Int) = $result;
+PERL
+
+    # $result is inferred as Str, assigned to :Type(Int) → mismatch
+    # Note: this depends on variable-to-variable propagation working
+    # Currently _check_variable_initializers infers $result from env
+    # which sees it as Str, so Int vs Str is flagged
+    is scalar @$errs, 1, '$result inferred Str assigned to Int → error';
+};
+
+# ── Symbol Index: inferred types ────────────────
+
+subtest 'symbols: inferred variable type appears in symbol index' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+sub greet :Params(Str) :Returns(Str) ($name) {
+    return "hello $name";
+}
+my $result = greet("Alice");
+PERL
+
+    my @vars = grep { $_->{kind} eq 'variable' } $result->{symbols}->@*;
+    ok scalar @vars >= 1, 'at least one variable in symbols';
+    my ($inferred) = grep { $_->{name} eq '$result' } @vars;
+    ok $inferred, '$result appears in symbol index';
+    like $inferred->{type}, qr/Str/, '$result type is Str (inferred)';
+};
+
+subtest 'symbols: unannotated function shows Eff(*)' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+sub helper ($x) {
+    return $x;
+}
+PERL
+
+    my @fns = grep { $_->{kind} eq 'function' } $result->{symbols}->@*;
+    my ($fn) = grep { $_->{name} eq 'helper' } @fns;
+    ok $fn, 'helper in symbols';
+    is $fn->{eff_expr}, '*', 'unannotated function shows eff_expr = *';
+};
+
 done_testing;

@@ -26,6 +26,8 @@ sub analyze ($self) {
     $self->_check_return_types;
 }
 
+sub env ($self) { $self->{env} }
+
 # ── Variable Initializer Check ───────────────────
 
 sub _check_variable_initializers ($self) {
@@ -165,29 +167,47 @@ sub _check_return_types ($self) {
 sub _build_env ($self) {
     my (%variables, %functions, %known);
 
+    # Phase 1: annotated variables + all function return types
     for my $var ($self->{extracted}{variables}->@*) {
+        next unless $var->{type_expr};
         my $type = $self->_resolve_type($var->{type_expr});
         $variables{$var->{name}} = $type if $type;
     }
 
     for my $name (keys $self->{extracted}{functions}->%*) {
-        $known{$name} = 1;
         my $fn = $self->{extracted}{functions}{$name};
+        $known{$name} = 1 unless $fn->{unannotated};
         if (my $ret_expr = $fn->{returns_expr}) {
             my $type = $self->_resolve_type($ret_expr);
             $functions{$name} = $type if $type;
         }
     }
 
-    +{
+    # Phase 2: unannotated variables — infer from init expression
+    my $partial_env = +{
         variables => \%variables,
         functions => \%functions,
         known     => \%known,
         registry  => $self->{registry},
     };
+
+    for my $var ($self->{extracted}{variables}->@*) {
+        next if $var->{type_expr};
+        next if exists $variables{$var->{name}};
+        my $init_node = $var->{init_node} // next;
+
+        my $inferred = Typist::Static::Infer->infer_expr($init_node, $partial_env);
+        next unless defined $inferred;
+        next if $inferred->is_atom && $inferred->name eq 'Any';
+
+        $variables{$var->{name}} = $inferred;
+    }
+
+    $partial_env;
 }
 
 sub _resolve_type ($self, $expr) {
+    return undef unless defined $expr;
     my $parsed = eval { Typist::Parser->parse($expr) };
     return undef if $@;
 

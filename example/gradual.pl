@@ -70,7 +70,30 @@ sub helper ($x) {
 my $val :Type(Int) = helper(42);
 say "helper: $val";
 
-# ── 6. Effect Interaction with Gradual Typing ───
+# ── 6. Flow Typing: Inferred Variable Types ────
+
+# When f :: Str -> Str, my $result = f("str") infers $result as Str
+# without any explicit type annotation.
+
+sub format_name :Params(Str) :Returns(Str) ($name) {
+    "[$name]";
+}
+
+# $formatted has no :Type annotation, but Typist infers it as Str
+# from format_name's return type.
+my $formatted = format_name("Alice");
+
+# This works: loud() accepts Str, and $formatted is inferred as Str
+say loud($formatted);
+
+# Similarly, literal initializers infer types:
+my $count = 42;        # inferred as Int
+my $label = "hello";   # inferred as Str
+
+# $count can be passed to functions expecting Int
+say "doubled: ", add(double($count), $count);
+
+# ── 7. Effect Interaction with Gradual Typing ───
 
 BEGIN {
     effect Console => +{
@@ -99,3 +122,11 @@ print_msg("effectful function");
 # | Fully annotated        | All checks enforced  | Effects verified       |
 # | Params only (no Ret)   | Params checked       | Pure (no effects)      |
 # | Completely unannotated | Any (skip)           | Eff(*) (any effect)    |
+#
+# Flow Typing:
+#   my $result = f("str")  →  $result is inferred as Str (if f :: Str -> Str)
+#   my $x = 42             →  $x is inferred as Int from literal
+#
+# LSP Hover:
+#   Unannotated function  →  sub helper(Any) -> Any !Eff(*)
+#   Inferred variable     →  $result: Str (inferred)

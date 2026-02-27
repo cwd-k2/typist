@@ -21,19 +21,12 @@ sub new ($class, %args) {
 sub analyze ($self) {
     my $pkg = $self->{extracted}{package};
 
-    # Collect all local sub names from PPI to detect unannotated functions
-    my %local_subs;
-    if (my $ppi_doc = $self->{ppi_doc}) {
-        my $subs = $ppi_doc->find('PPI::Statement::Sub') || [];
-        for my $sub_stmt (@$subs) {
-            my $n = $sub_stmt->name // next;
-            $local_subs{$n} = 1;
-        }
-    }
-
     for my $name (sort keys $self->{extracted}{functions}->%*) {
         my $fn    = $self->{extracted}{functions}{$name};
         my $block = $fn->{block} // next;
+
+        # Skip unannotated callers — they are Eff(*) themselves
+        next if $fn->{unannotated};
 
         # Lookup the caller's registered sig
         my $caller_sig = $self->{registry}->lookup_function($pkg, $name);
@@ -42,10 +35,13 @@ sub analyze ($self) {
         my $caller_eff = $caller_sig->{effects};
 
         # Collect called functions and their effects
-        my @called = $self->_collect_called_effects($block, $pkg, \%local_subs);
+        my @called = $self->_collect_called_effects($block, $pkg);
 
         for my $call (@called) {
-            # Unannotated local function → may perform any effect
+            my $callee_eff = $call->{effects};
+            next unless $callee_eff;
+
+            # Callee is unannotated (open row with *) → any effect
             if ($call->{unannotated}) {
                 $self->{errors}->collect(
                     kind    => 'EffectMismatch',
@@ -56,9 +52,6 @@ sub analyze ($self) {
                 );
                 next;
             }
-
-            my $callee_eff = $call->{effects};
-            next unless $callee_eff;
 
             # Caller has no effects declared but callee does
             unless ($caller_eff) {
@@ -82,7 +75,7 @@ sub analyze ($self) {
     }
 }
 
-sub _collect_called_effects ($self, $block, $pkg, $local_subs = undef) {
+sub _collect_called_effects ($self, $block, $pkg) {
     my @calls;
     my $words = $block->find('PPI::Token::Word') || [];
 
@@ -107,24 +100,19 @@ sub _collect_called_effects ($self, $block, $pkg, $local_subs = undef) {
                 $callee_sig = $self->{registry}->lookup_function($1, $2);
             }
         }
-
-        unless ($callee_sig) {
-            # Local sub with no annotations → unannotated (any effect)
-            if ($local_subs && $local_subs->{$callee_name}) {
-                push @calls, +{
-                    name        => $callee_name,
-                    unannotated => 1,
-                    line        => $word->line_number,
-                };
-            }
-            next;
-        }
+        next unless $callee_sig;
         next unless $callee_sig->{effects};
 
+        # Detect unannotated function: open row with row_var '*'
+        my $eff = $callee_sig->{effects};
+        my $row = $eff->is_eff ? $eff->row : $eff;
+        my $is_unannotated = $row->is_row && ($row->row_var // '') eq '*';
+
         push @calls, +{
-            name    => $callee_name,
-            effects => $callee_sig->{effects},
-            line    => $word->line_number,
+            name        => $callee_name,
+            effects     => $eff,
+            unannotated => $is_unannotated,
+            line        => $word->line_number,
         };
     }
 

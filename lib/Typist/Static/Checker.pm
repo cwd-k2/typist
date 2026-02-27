@@ -202,7 +202,8 @@ sub _check_effect_wellformed ($self, $eff, $context, $declared_vars) {
     }
 
     # Check row variable is declared in :Generic
-    if (defined $row->row_var) {
+    # '*' is an internal marker for unannotated functions (any effect)
+    if (defined $row->row_var && $row->row_var ne '*') {
         unless ($declared_vars->{$row->row_var}) {
             $self->{errors}->collect(
                 kind    => 'UndeclaredRowVar',

@@ -44,13 +44,19 @@ my $result :Type(Email) = find_email(1001);
 # (This intentionally shows a type mismatch for LSP demonstration)
 # find_email($email);
 
-# ── Unannotated helper — treated as (Any...) -> Any ──
+# ── Flow typing: inferred variable from function return ──
+
+# find_email returns Email (= Str), so $found_email is inferred as Str
+# without any :Type annotation. Hover shows: $found_email: Str (inferred)
+my $found_email = find_email(1001);
+
+# ── Unannotated helper — hover shows: sub format_output(Any) -> Any !Eff(*) ──
 
 sub format_output ($s) {
     ">> $s <<";
 }
 
 # Return type is Any → assignment check skipped (no false positive)
-my $formatted :Type(Str) = format_output($result);
+my $formatted :Type(Str) = format_output($found_email);
 
 1;

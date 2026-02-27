@@ -149,7 +149,9 @@ sub _extract_typeclasses ($class, $doc, $result) {
 # We detect this pattern by scanning PPI::Statement::Variable children.
 sub _extract_variables ($class, $doc, $result) {
     my $stmts = $doc->find('PPI::Statement::Variable') || [];
+    my %typed_vars;
 
+    # First pass: annotated variables (:Type(...))
     for my $stmt (@$stmts) {
         my @children = $stmt->schildren;
 
@@ -188,6 +190,7 @@ sub _extract_variables ($class, $doc, $result) {
                 }
             }
 
+            $typed_vars{$var_name} = 1;
             push $result->{variables}->@*, +{
                 name      => $var_name,
                 type_expr => $type_expr,
@@ -196,6 +199,34 @@ sub _extract_variables ($class, $doc, $result) {
                 init_node => $init_node,
             };
         }
+    }
+
+    # Second pass: unannotated variables with initializer (for flow typing)
+    for my $stmt (@$stmts) {
+        my @children = $stmt->schildren;
+        my ($var_name, $var_sym, $init_node);
+
+        for my $i (0 .. $#children) {
+            if ($children[$i]->isa('PPI::Token::Symbol') && !$var_name) {
+                $var_name = $children[$i]->content;
+                $var_sym  = $children[$i];
+            }
+            if ($children[$i]->isa('PPI::Token::Operator') && $children[$i]->content eq '=') {
+                $init_node = $children[$i + 1] if $i + 1 <= $#children;
+                last;
+            }
+        }
+
+        next unless $var_name && $init_node;
+        next if $typed_vars{$var_name};
+
+        push $result->{variables}->@*, +{
+            name      => $var_name,
+            type_expr => undef,
+            line      => $var_sym->line_number,
+            col       => $var_sym->column_number,
+            init_node => $init_node,
+        };
     }
 }
 
@@ -208,38 +239,55 @@ sub _extract_functions ($class, $doc, $result) {
         my $name = $sub_stmt->name // next;
 
         my $attrs = $sub_stmt->find('PPI::Token::Attribute') || [];
-        next unless @$attrs;
 
-        my (@params_expr, $returns_expr, @generics, $eff_expr);
+        if (@$attrs) {
+            # Annotated function: extract type metadata from attributes
+            my (@params_expr, $returns_expr, @generics, $eff_expr);
 
-        for my $attr (@$attrs) {
-            my $content = $attr->content;
+            for my $attr (@$attrs) {
+                my $content = $attr->content;
 
-            if ($content =~ /\AParams\((.+)\)\z/) {
-                @params_expr = split /\s*,\s*/, $1;
+                if ($content =~ /\AParams\((.+)\)\z/) {
+                    @params_expr = split /\s*,\s*/, $1;
+                }
+                elsif ($content =~ /\AReturns\((.+)\)\z/) {
+                    $returns_expr = $1;
+                }
+                elsif ($content =~ /\AEff\((.+)\)\z/) {
+                    $eff_expr = $1;
+                }
+                elsif ($content =~ /\AGeneric\((.+)\)\z/) {
+                    @generics = split /\s*,\s*/, $1;
+                }
             }
-            elsif ($content =~ /\AReturns\((.+)\)\z/) {
-                $returns_expr = $1;
-            }
-            elsif ($content =~ /\AEff\((.+)\)\z/) {
-                $eff_expr = $1;
-            }
-            elsif ($content =~ /\AGeneric\((.+)\)\z/) {
-                @generics = split /\s*,\s*/, $1;
-            }
+
+            next unless @params_expr || $returns_expr || $eff_expr;
+
+            $result->{functions}{$name} = +{
+                params_expr  => \@params_expr,
+                returns_expr => $returns_expr,
+                generics     => \@generics,
+                eff_expr     => $eff_expr,
+                line         => $sub_stmt->line_number,
+                col          => $sub_stmt->column_number,
+                block        => $sub_stmt->block,
+            };
         }
+        else {
+            # Unannotated function: count signature params for Any... -> Any !Eff(*)
+            my $arity = $class->_count_sig_params($sub_stmt);
 
-        next unless @params_expr || $returns_expr || $eff_expr;
-
-        $result->{functions}{$name} = +{
-            params_expr  => \@params_expr,
-            returns_expr => $returns_expr,
-            generics     => \@generics,
-            eff_expr     => $eff_expr,
-            line         => $sub_stmt->line_number,
-            col          => $sub_stmt->column_number,
-            block        => $sub_stmt->block,
-        };
+            $result->{functions}{$name} = +{
+                params_expr  => [('Any') x $arity],
+                returns_expr => 'Any',
+                generics     => [],
+                eff_expr     => undef,
+                unannotated  => 1,
+                line         => $sub_stmt->line_number,
+                col          => $sub_stmt->column_number,
+                block        => $sub_stmt->block,
+            };
+        }
     }
 }
 
@@ -265,6 +313,17 @@ sub _collect_rhs_expr ($class, @children) {
     $raw =~ s/\A\s+//;
     $raw =~ s/\s+\z//;
     length($raw) ? $raw : undef;
+}
+
+# Count the number of parameters in a subroutine signature.
+sub _count_sig_params ($class, $sub_stmt) {
+    my $params = $sub_stmt->find('PPI::Structure::List');
+    return 0 unless $params && @$params;
+
+    # The last List in a sub declaration is the signature
+    my $sig_list = $params->[-1];
+    my $inner = $sig_list->find('PPI::Token::Symbol') || [];
+    scalar @$inner;
 }
 
 # Extract the textual content of a PPI::Structure::List, stripping parens.

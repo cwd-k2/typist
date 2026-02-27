@@ -7,6 +7,7 @@ use Typist::Static::EffectChecker;
 use Typist::Registry;
 use Typist::Parser;
 use Typist::Type::Eff;
+use Typist::Type::Row;
 use Typist::Static::Checker;
 use Typist::Error;
 use Typist::Attribute;
@@ -121,7 +122,13 @@ sub analyze ($class, $source, %opts) {
 
         # Parse effect annotation
         my $effects;
-        if ($fn->{eff_expr}) {
+        if ($fn->{unannotated}) {
+            # Unannotated function → Eff(*): open row, any effect possible
+            $effects = Typist::Type::Eff->new(
+                Typist::Type::Row->new(labels => [], row_var => '*'),
+            );
+        }
+        elsif ($fn->{eff_expr}) {
             $effects = eval {
                 my $row = Typist::Parser->parse_row($fn->{eff_expr});
                 Typist::Type::Eff->new($row);
@@ -178,7 +185,7 @@ sub analyze ($class, $source, %opts) {
     # 5. Build results
     return +{
         diagnostics => _to_diagnostics($errors, $file, $extracted),
-        symbols     => _build_symbol_index($extracted),
+        symbols     => _build_symbol_index($extracted, $type_checker->env),
         extracted   => $extracted,
         registry    => $registry,
     };
@@ -239,7 +246,7 @@ sub _to_diagnostics ($errors, $default_file, $extracted) {
 
 # ── Symbol Index ─────────────────────────────────
 
-sub _build_symbol_index ($extracted) {
+sub _build_symbol_index ($extracted, $env = undef) {
     my @symbols;
 
     # Aliases
@@ -256,10 +263,19 @@ sub _build_symbol_index ($extracted) {
 
     # Variables
     for my $var ($extracted->{variables}->@*) {
+        my $type = $var->{type_expr};
+
+        # For unannotated variables, show inferred type from env
+        if (!$type && $env && $env->{variables}{$var->{name}}) {
+            $type = $env->{variables}{$var->{name}}->to_string . ' (inferred)';
+        }
+
+        next unless $type;
+
         push @symbols, +{
             name => $var->{name},
             kind => 'variable',
-            type => $var->{type_expr},
+            type => $type,
             line => $var->{line},
             col  => $var->{col},
         };
@@ -271,12 +287,16 @@ sub _build_symbol_index ($extracted) {
         my $sig = join(', ', $fn->{params_expr}->@*);
         $sig .= ' -> ' . $fn->{returns_expr} if $fn->{returns_expr};
 
+        # Unannotated functions: show !Eff(*) to indicate any-effect
+        my $eff = $fn->{eff_expr};
+        $eff = '*' if $fn->{unannotated};
+
         push @symbols, +{
             name     => $name,
             kind     => 'function',
             type     => $sig,
             generics => $fn->{generics},
-            eff_expr => $fn->{eff_expr},
+            eff_expr => $eff,
             line     => $fn->{line},
             col      => $fn->{col},
         };

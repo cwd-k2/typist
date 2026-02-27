@@ -103,13 +103,18 @@ PERL
     is $fn->{returns_expr}, 'T', 'returns type var';
 };
 
-subtest 'ignores subs without type annotations' => sub {
+subtest 'extracts unannotated subs as Any' => sub {
     my $result = Typist::Static::Extractor->extract(<<'PERL');
 use v5.40;
 sub helper ($x) { $x + 1 }
 PERL
 
-    is scalar keys $result->{functions}->%*, 0, 'no functions extracted';
+    is scalar keys $result->{functions}->%*, 1, 'one function extracted';
+    my $fn = $result->{functions}{helper};
+    ok $fn, 'helper found';
+    ok $fn->{unannotated}, 'marked as unannotated';
+    is_deeply $fn->{params_expr}, ['Any'], 'params inferred as Any';
+    is $fn->{returns_expr}, 'Any', 'returns inferred as Any';
 };
 
 # ── Combined extraction ──────────────────────────
