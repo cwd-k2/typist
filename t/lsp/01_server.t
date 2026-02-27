@@ -42,10 +42,10 @@ sub run_session (@messages) {
 
 subtest 'initialize and shutdown' => sub {
     my @results = run_session(
-        { jsonrpc => '2.0', id => 1, method => 'initialize', params => {} },
-        { jsonrpc => '2.0', method => 'initialized', params => {} },
-        { jsonrpc => '2.0', id => 2, method => 'shutdown', params => {} },
-        { jsonrpc => '2.0', method => 'exit' },
+        +{ jsonrpc => '2.0', id => 1, method => 'initialize', params => +{} },
+        +{ jsonrpc => '2.0', method => 'initialized', params => +{} },
+        +{ jsonrpc => '2.0', id => 2, method => 'shutdown', params => +{} },
+        +{ jsonrpc => '2.0', method => 'exit' },
     );
 
     # First response: initialize result
@@ -64,10 +64,10 @@ subtest 'initialize and shutdown' => sub {
 
 subtest 'unknown method returns error' => sub {
     my @results = run_session(
-        { jsonrpc => '2.0', id => 1, method => 'initialize', params => {} },
-        { jsonrpc => '2.0', id => 2, method => 'unknown/method', params => {} },
-        { jsonrpc => '2.0', id => 3, method => 'shutdown' },
-        { jsonrpc => '2.0', method => 'exit' },
+        +{ jsonrpc => '2.0', id => 1, method => 'initialize', params => +{} },
+        +{ jsonrpc => '2.0', id => 2, method => 'unknown/method', params => +{} },
+        +{ jsonrpc => '2.0', id => 3, method => 'shutdown' },
+        +{ jsonrpc => '2.0', method => 'exit' },
     );
 
     # Find the error response

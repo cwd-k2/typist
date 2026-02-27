@@ -10,8 +10,8 @@ sub hover ($class, $symbol) {
     my $md = $class->_format($symbol);
     return undef unless $md;
 
-    {
-        contents => {
+    +{
+        contents => +{
             kind  => 'markdown',
             value => $md,
         },

@@ -40,7 +40,7 @@ sub complete ($class, $context, $typedefs) {
 # ── Item Builders ────────────────────────────────
 
 sub _item ($label, $kind, $detail) {
-    {
+    +{
         label  => $label,
         kind   => _kind_number($kind),
         detail => $detail,
@@ -48,7 +48,7 @@ sub _item ($label, $kind, $detail) {
 }
 
 sub _item_snippet ($name, $kind) {
-    {
+    +{
         label            => $name,
         kind             => _kind_number($kind),
         detail           => "Parametric type $name\[...]",

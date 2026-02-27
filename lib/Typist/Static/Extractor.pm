@@ -11,10 +11,10 @@ sub extract ($class, $source) {
     my $doc = PPI::Document->new(\$source)
         or die "Typist::Static::Extractor: failed to parse source";
 
-    my $result = {
-        aliases   => {},
+    my $result = +{
+        aliases   => +{},
         variables => [],
-        functions => {},
+        functions => +{},
         package   => 'main',
     };
 
@@ -53,7 +53,7 @@ sub _extract_typedefs ($class, $doc, $result) {
             ? $expr_tok->string
             : $expr_tok->content;
 
-        $result->{aliases}{$name} = {
+        $result->{aliases}{$name} = +{
             expr => $expr,
             line => $stmt->line_number,
             col  => $stmt->column_number,
@@ -99,7 +99,7 @@ sub _extract_variables ($class, $doc, $result) {
             my $type_expr = $class->_list_content($list);
             next unless $type_expr;
 
-            push $result->{variables}->@*, {
+            push $result->{variables}->@*, +{
                 name      => $var_name,
                 type_expr => $type_expr,
                 line      => $next->line_number,
@@ -138,7 +138,7 @@ sub _extract_functions ($class, $doc, $result) {
 
         next unless @params_expr || $returns_expr;
 
-        $result->{functions}{$name} = {
+        $result->{functions}{$name} = +{
             params_expr  => \@params_expr,
             returns_expr => $returns_expr,
             generics     => \@generics,

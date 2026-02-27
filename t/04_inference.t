@@ -29,8 +29,8 @@ subtest 'array inference' => sub {
 };
 
 subtest 'hash inference' => sub {
-    is infer({})->to_string, 'HashRef[Any]', 'empty hash -> HashRef[Any]';
-    is infer({a => 1, b => 2})->to_string, 'HashRef[Int]', '{a=>1,b=>2} -> HashRef[Int]';
+    is infer(+{})->to_string, 'HashRef[Any]', 'empty hash -> HashRef[Any]';
+    is infer(+{a => 1, b => 2})->to_string, 'HashRef[Int]', '{a=>1,b=>2} -> HashRef[Int]';
 };
 
 subtest 'code inference' => sub {
@@ -41,7 +41,7 @@ subtest 'code inference' => sub {
 
 subtest 'generic instantiation' => sub {
     # Simulate :Generic(T) :Params(ArrayRef[T]) :Returns(T)
-    my $sig = {
+    my $sig = +{
         params   => [parse('ArrayRef[T]')],
         returns  => parse('T'),
         generics => ['T'],
@@ -59,7 +59,7 @@ subtest 'generic instantiation' => sub {
 };
 
 subtest 'generic with strings' => sub {
-    my $sig = {
+    my $sig = +{
         params   => [parse('ArrayRef[T]')],
         returns  => parse('T'),
         generics => ['T'],
@@ -74,13 +74,13 @@ subtest 'generic with strings' => sub {
 
 subtest 'multi-param generic' => sub {
     # :Generic(K, V) :Params(HashRef[K, V]) :Returns(ArrayRef[V])
-    my $sig = {
+    my $sig = +{
         params   => [parse('HashRef[T]')],
         returns  => parse('ArrayRef[T]'),
         generics => ['T'],
     };
 
-    my @args = ({x => 1, y => 2});
+    my @args = (+{x => 1, y => 2});
     my @arg_types = map { Typist::Inference->infer_value($_) } @args;
     my $bindings = Typist::Inference->instantiate($sig, \@arg_types);
 

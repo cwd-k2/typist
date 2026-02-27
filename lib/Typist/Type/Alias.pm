@@ -5,7 +5,7 @@ use parent 'Typist::Type';
 # Named alias — resolves lazily against Registry on first access.
 
 sub new ($class, $name) {
-    bless { name => $name, resolved => undef }, $class;
+    bless +{ name => $name, resolved => undef }, $class;
 }
 
 sub alias_name ($self) { $self->{name} }

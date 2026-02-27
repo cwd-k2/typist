@@ -44,25 +44,25 @@ sub add :Params(Int, Int) :Returns(Int) ($a, $b) { $a + $b }
 PERL
 
     my @results = run_session(
-        { jsonrpc => '2.0', id => 1, method => 'initialize', params => {} },
-        { jsonrpc => '2.0', method => 'initialized', params => {} },
-        {
+        +{ jsonrpc => '2.0', id => 1, method => 'initialize', params => +{} },
+        +{ jsonrpc => '2.0', method => 'initialized', params => +{} },
+        +{
             jsonrpc => '2.0',
             method  => 'textDocument/didOpen',
-            params  => {
-                textDocument => { uri => 'file:///test.pm', text => $source, version => 1 },
+            params  => +{
+                textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
             },
         },
-        {
+        +{
             jsonrpc => '2.0', id => 2,
             method  => 'textDocument/hover',
-            params  => {
-                textDocument => { uri => 'file:///test.pm' },
-                position => { line => 1, character => 5 },  # on 'add'
+            params  => +{
+                textDocument => +{ uri => 'file:///test.pm' },
+                position => +{ line => 1, character => 5 },  # on 'add'
             },
         },
-        { jsonrpc => '2.0', id => 3, method => 'shutdown' },
-        { jsonrpc => '2.0', method => 'exit' },
+        +{ jsonrpc => '2.0', id => 3, method => 'shutdown' },
+        +{ jsonrpc => '2.0', method => 'exit' },
     );
 
     my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
@@ -81,25 +81,25 @@ typedef Age => 'Int';
 PERL
 
     my @results = run_session(
-        { jsonrpc => '2.0', id => 1, method => 'initialize', params => {} },
-        { jsonrpc => '2.0', method => 'initialized', params => {} },
-        {
+        +{ jsonrpc => '2.0', id => 1, method => 'initialize', params => +{} },
+        +{ jsonrpc => '2.0', method => 'initialized', params => +{} },
+        +{
             jsonrpc => '2.0',
             method  => 'textDocument/didOpen',
-            params  => {
-                textDocument => { uri => 'file:///test.pm', text => $source, version => 1 },
+            params  => +{
+                textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
             },
         },
-        {
+        +{
             jsonrpc => '2.0', id => 2,
             method  => 'textDocument/hover',
-            params  => {
-                textDocument => { uri => 'file:///test.pm' },
-                position => { line => 1, character => 10 },  # on typedef line
+            params  => +{
+                textDocument => +{ uri => 'file:///test.pm' },
+                position => +{ line => 1, character => 10 },  # on typedef line
             },
         },
-        { jsonrpc => '2.0', id => 3, method => 'shutdown' },
-        { jsonrpc => '2.0', method => 'exit' },
+        +{ jsonrpc => '2.0', id => 3, method => 'shutdown' },
+        +{ jsonrpc => '2.0', method => 'exit' },
     );
 
     my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;

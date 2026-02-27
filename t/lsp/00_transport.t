@@ -17,7 +17,7 @@ sub frame ($msg) {
 # ── Read message ─────────────────────────────────
 
 subtest 'read_message parses framed JSON-RPC' => sub {
-    my $msg = { jsonrpc => '2.0', method => 'initialize', id => 1, params => {} };
+    my $msg = +{ jsonrpc => '2.0', method => 'initialize', id => 1, params => +{} };
     my $input = frame($msg);
 
     open my $in, '<', \$input or die;
@@ -41,7 +41,7 @@ subtest 'send_response writes framed JSON-RPC' => sub {
     open my $out_fh, '>', \$out or die;
 
     my $transport = Typist::LSP::Transport->new(in => $in, out => $out_fh);
-    $transport->send_response(1, { capabilities => {} });
+    $transport->send_response(1, +{ capabilities => +{} });
 
     like $out, qr/Content-Length: \d+\r\n\r\n/, 'has framing';
     my ($body) = $out =~ /\r\n\r\n(.+)/s;
@@ -60,7 +60,7 @@ subtest 'send_notification writes method without id' => sub {
     open my $out_fh, '>', \$out or die;
 
     my $transport = Typist::LSP::Transport->new(in => $in, out => $out_fh);
-    $transport->send_notification('textDocument/publishDiagnostics', { uri => 'file:///test.pm' });
+    $transport->send_notification('textDocument/publishDiagnostics', +{ uri => 'file:///test.pm' });
 
     my ($body) = $out =~ /\r\n\r\n(.+)/s;
     my $parsed = $JSON->decode($body);
@@ -89,8 +89,8 @@ subtest 'send_error writes error response' => sub {
 # ── Multiple messages ────────────────────────────
 
 subtest 'reads multiple sequential messages' => sub {
-    my $msg1 = frame({ jsonrpc => '2.0', method => 'a', id => 1 });
-    my $msg2 = frame({ jsonrpc => '2.0', method => 'b', id => 2 });
+    my $msg1 = frame(+{ jsonrpc => '2.0', method => 'a', id => 1 });
+    my $msg2 = frame(+{ jsonrpc => '2.0', method => 'b', id => 2 });
     my $input = $msg1 . $msg2;
 
     open my $in, '<', \$input or die;

@@ -31,7 +31,7 @@ sub _handle_scalar_attrs ($pkg, $ref, @attrs) {
         if ($attr =~ /\AType\((.+)\)\z/) {
             my $type = Typist::Parser->parse($1);
 
-            Typist::Registry->register_variable({
+            Typist::Registry->register_variable(+{
                 ref  => $ref,
                 type => $type,
                 pkg  => $pkg,
@@ -75,7 +75,7 @@ sub _handle_code_attrs ($pkg, $coderef, @attrs) {
         my @param_types  = map { Typist::Parser->parse($_) } @params_expr;
         my $return_type  = $returns_expr ? Typist::Parser->parse($returns_expr) : undef;
 
-        my $sig = {
+        my $sig = +{
             params   => \@param_types,
             returns  => $return_type,
             generics => \@generics,

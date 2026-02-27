@@ -10,10 +10,10 @@ use Typist::LSP::Completion;
 # ── Constructor ──────────────────────────────────
 
 sub new ($class, %args) {
-    bless {
+    bless +{
         transport => $args{transport} // Typist::LSP::Transport->new,
         workspace => undef,
-        documents => {},
+        documents => +{},
         shutdown  => 0,
         exit      => 0,
     }, $class;
@@ -77,15 +77,15 @@ sub _handle_initialize ($self, $params) {
         $self->{workspace} = Typist::LSP::Workspace->new;
     }
 
-    {
-        capabilities => {
-            textDocumentSync => {
+    +{
+        capabilities => +{
+            textDocumentSync => +{
                 openClose => \1,
                 change    => 1,  # Full content sync
-                save      => { includeText => \1 },
+                save      => +{ includeText => \1 },
             },
             hoverProvider      => \1,
-            completionProvider => {
+            completionProvider => +{
                 triggerCharacters => ['(', '[', ',', '|', '&'],
             },
         },
@@ -180,16 +180,16 @@ sub _handle_hover ($self, $params) {
 
 sub _handle_completion ($self, $params) {
     my $uri = $params->{textDocument}{uri};
-    my $doc = $self->{documents}{$uri} // return { items => [] };
+    my $doc = $self->{documents}{$uri} // return +{ items => [] };
     my $pos = $params->{position};
 
     my $ctx = $doc->completion_context($pos->{line}, $pos->{character});
-    return { items => [] } unless $ctx;
+    return +{ items => [] } unless $ctx;
 
     my @typedefs = $self->{workspace} ? $self->{workspace}->all_typedef_names : ();
     my $items = Typist::LSP::Completion->complete($ctx, \@typedefs);
 
-    { items => $items };
+    +{ items => $items };
 }
 
 # ── Diagnostics Publishing ──────────────────────
@@ -204,10 +204,10 @@ sub _publish_diagnostics ($self, $doc) {
         my $line = ($d->{line} // 1) - 1;  # Convert to 0-indexed
         $line = 0 if $line < 0;
 
-        push @lsp_diags, {
-            range => {
-                start => { line => $line, character => 0 },
-                end   => { line => $line, character => 999 },
+        push @lsp_diags, +{
+            range => +{
+                start => +{ line => $line, character => 0 },
+                end   => +{ line => $line, character => 999 },
             },
             severity => _lsp_severity($d->{severity}),
             source   => 'typist',
@@ -215,7 +215,7 @@ sub _publish_diagnostics ($self, $doc) {
         };
     }
 
-    $self->{transport}->send_notification('textDocument/publishDiagnostics', {
+    $self->{transport}->send_notification('textDocument/publishDiagnostics', +{
         uri         => $doc->uri,
         diagnostics => \@lsp_diags,
     });

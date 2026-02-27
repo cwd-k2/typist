@@ -6,7 +6,7 @@ use Typist::Static::Analyzer;
 # ── Constructor ──────────────────────────────────
 
 sub new ($class, %args) {
-    bless {
+    bless +{
         uri     => $args{uri},
         content => $args{content} // '',
         version => $args{version} // 0,

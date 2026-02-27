@@ -8,7 +8,7 @@ use Typist::Error;
 # ── Constructor ──────────────────────────────────
 
 sub new ($class, %args) {
-    bless {
+    bless +{
         registry => $args{registry} // 'Typist::Registry',
         errors   => $args{errors}   // 'Typist::Error',
     }, $class;

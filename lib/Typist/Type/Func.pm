@@ -6,7 +6,7 @@ use List::Util 'all';
 # Function type: CodeRef[Arg1, Arg2, ... -> Return]
 
 sub new ($class, $params, $returns) {
-    bless { params => $params, returns => $returns }, $class;
+    bless +{ params => $params, returns => $returns }, $class;
 }
 
 sub params  ($self) { $self->{params}->@* }

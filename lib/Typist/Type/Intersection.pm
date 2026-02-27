@@ -26,7 +26,7 @@ sub new ($class, @members) {
 
     return $unique[0] if @unique == 1;
 
-    bless { members => \@unique }, $class;
+    bless +{ members => \@unique }, $class;
 }
 
 sub members         ($self) { $self->{members}->@* }

@@ -4,7 +4,7 @@ use v5.40;
 # ── Error Object ─────────────────────────────────
 
 sub new ($class, %args) {
-    bless {
+    bless +{
         kind    => $args{kind}    // 'TypeError',
         message => $args{message} // 'unknown error',
         file    => $args{file}    // '(unknown)',
@@ -74,7 +74,7 @@ sub reset ($invocant) {
 # ── Collector Factory ────────────────────────────
 
 sub collector ($class) {
-    bless { errors => [] }, 'Typist::Error::Collector';
+    bless +{ errors => [] }, 'Typist::Error::Collector';
 }
 
 # ── Collector Class ──────────────────────────────

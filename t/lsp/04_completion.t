@@ -41,25 +41,25 @@ subtest 'completion inside :Params(' => sub {
     my $source = "use v5.40;\nsub foo :Params(";
 
     my @results = run_session(
-        { jsonrpc => '2.0', id => 1, method => 'initialize', params => {} },
-        { jsonrpc => '2.0', method => 'initialized', params => {} },
-        {
+        +{ jsonrpc => '2.0', id => 1, method => 'initialize', params => +{} },
+        +{ jsonrpc => '2.0', method => 'initialized', params => +{} },
+        +{
             jsonrpc => '2.0',
             method  => 'textDocument/didOpen',
-            params  => {
-                textDocument => { uri => 'file:///test.pm', text => $source, version => 1 },
+            params  => +{
+                textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
             },
         },
-        {
+        +{
             jsonrpc => '2.0', id => 2,
             method  => 'textDocument/completion',
-            params  => {
-                textDocument => { uri => 'file:///test.pm' },
-                position => { line => 1, character => length('sub foo :Params(') },
+            params  => +{
+                textDocument => +{ uri => 'file:///test.pm' },
+                position => +{ line => 1, character => length('sub foo :Params(') },
             },
         },
-        { jsonrpc => '2.0', id => 3, method => 'shutdown' },
-        { jsonrpc => '2.0', method => 'exit' },
+        +{ jsonrpc => '2.0', id => 3, method => 'shutdown' },
+        +{ jsonrpc => '2.0', method => 'exit' },
     );
 
     my ($comp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
@@ -78,25 +78,25 @@ subtest 'completion inside :Generic(' => sub {
     my $source = "use v5.40;\nsub foo :Generic(";
 
     my @results = run_session(
-        { jsonrpc => '2.0', id => 1, method => 'initialize', params => {} },
-        { jsonrpc => '2.0', method => 'initialized', params => {} },
-        {
+        +{ jsonrpc => '2.0', id => 1, method => 'initialize', params => +{} },
+        +{ jsonrpc => '2.0', method => 'initialized', params => +{} },
+        +{
             jsonrpc => '2.0',
             method  => 'textDocument/didOpen',
-            params  => {
-                textDocument => { uri => 'file:///test.pm', text => $source, version => 1 },
+            params  => +{
+                textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
             },
         },
-        {
+        +{
             jsonrpc => '2.0', id => 2,
             method  => 'textDocument/completion',
-            params  => {
-                textDocument => { uri => 'file:///test.pm' },
-                position => { line => 1, character => length('sub foo :Generic(') },
+            params  => +{
+                textDocument => +{ uri => 'file:///test.pm' },
+                position => +{ line => 1, character => length('sub foo :Generic(') },
             },
         },
-        { jsonrpc => '2.0', id => 3, method => 'shutdown' },
-        { jsonrpc => '2.0', method => 'exit' },
+        +{ jsonrpc => '2.0', id => 3, method => 'shutdown' },
+        +{ jsonrpc => '2.0', method => 'exit' },
     );
 
     my ($comp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
@@ -116,25 +116,25 @@ subtest 'no completion outside type context' => sub {
     my $source = "use v5.40;\nmy \$x = ";
 
     my @results = run_session(
-        { jsonrpc => '2.0', id => 1, method => 'initialize', params => {} },
-        { jsonrpc => '2.0', method => 'initialized', params => {} },
-        {
+        +{ jsonrpc => '2.0', id => 1, method => 'initialize', params => +{} },
+        +{ jsonrpc => '2.0', method => 'initialized', params => +{} },
+        +{
             jsonrpc => '2.0',
             method  => 'textDocument/didOpen',
-            params  => {
-                textDocument => { uri => 'file:///test.pm', text => $source, version => 1 },
+            params  => +{
+                textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
             },
         },
-        {
+        +{
             jsonrpc => '2.0', id => 2,
             method  => 'textDocument/completion',
-            params  => {
-                textDocument => { uri => 'file:///test.pm' },
-                position => { line => 1, character => length('my $x = ') },
+            params  => +{
+                textDocument => +{ uri => 'file:///test.pm' },
+                position => +{ line => 1, character => length('my $x = ') },
             },
         },
-        { jsonrpc => '2.0', id => 3, method => 'shutdown' },
-        { jsonrpc => '2.0', method => 'exit' },
+        +{ jsonrpc => '2.0', id => 3, method => 'shutdown' },
+        +{ jsonrpc => '2.0', method => 'exit' },
     );
 
     my ($comp) = grep { defined $_->{id} && $_->{id} == 2 } @results;

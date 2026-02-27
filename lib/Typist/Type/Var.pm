@@ -5,7 +5,7 @@ use parent 'Typist::Type';
 # Generic type variable: T, U, etc.
 
 sub new ($class, $name) {
-    bless { name => $name }, $class;
+    bless +{ name => $name }, $class;
 }
 
 sub name     ($self) { $self->{name} }

@@ -11,13 +11,13 @@ sub _default ($class) { $DEFAULT //= $class->new }
 # ── Constructor ──────────────────────────────────
 
 sub new ($class, %args) {
-    bless {
-        aliases   => {},
-        resolved  => {},
-        variables => {},
-        functions => {},
-        packages  => {},
-        resolving => {},
+    bless +{
+        aliases   => +{},
+        resolved  => +{},
+        variables => +{},
+        functions => +{},
+        packages  => +{},
+        resolving => +{},
     }, $class;
 }
 
@@ -127,7 +127,7 @@ sub merge ($self, $other) {
         $self->{functions}{$fqn} //= $other->{functions}{$fqn};
     }
     # Clear resolved cache since new aliases may change resolution
-    $self->{resolved} = {};
+    $self->{resolved} = +{};
     $self;
 }
 
@@ -135,12 +135,12 @@ sub merge ($self, $other) {
 
 sub reset ($invocant) {
     if (ref $invocant) {
-        $invocant->{aliases}   = {};
-        $invocant->{resolved}  = {};
-        $invocant->{variables} = {};
-        $invocant->{functions} = {};
-        $invocant->{packages}  = {};
-        $invocant->{resolving} = {};
+        $invocant->{aliases}   = +{};
+        $invocant->{resolved}  = +{};
+        $invocant->{variables} = +{};
+        $invocant->{functions} = +{};
+        $invocant->{packages}  = +{};
+        $invocant->{resolving} = +{};
     } else {
         $DEFAULT = undef;
     }

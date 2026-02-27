@@ -8,10 +8,10 @@ use Typist::Static::Extractor;
 # ── Constructor ──────────────────────────────────
 
 sub new ($class, %args) {
-    my $self = bless {
+    my $self = bless +{
         root     => $args{root},
         registry => Typist::Registry->new,
-        files    => {},  # path -> { aliases => {...} }
+        files    => +{},  # path -> +{ aliases => +{...} }
     }, $class;
 
     $self->scan if $self->{root};
@@ -50,7 +50,7 @@ sub _index_file ($self, $path) {
     return if $@;
 
     # Store file's contribution
-    $self->{files}{$path} = {
+    $self->{files}{$path} = +{
         aliases   => $extracted->{aliases},
         functions => $extracted->{functions},
         package   => $extracted->{package},
@@ -76,7 +76,7 @@ sub update_file ($self, $path, $source) {
     my $extracted = eval { Typist::Static::Extractor->extract($source) };
     return if $@;
 
-    $self->{files}{$path} = {
+    $self->{files}{$path} = +{
         aliases   => $extracted->{aliases},
         functions => $extracted->{functions},
         package   => $extracted->{package},

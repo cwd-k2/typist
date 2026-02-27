@@ -5,7 +5,7 @@ use v5.40;
 # STORE validates the new value against the declared type.
 
 sub TIESCALAR ($class, %args) {
-    bless {
+    bless +{
         type  => $args{type},
         value => undef,
         name  => $args{name} // '(anonymous)',

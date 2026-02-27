@@ -7,7 +7,7 @@ use List::Util   'all';
 # Structural record type: { key => Type, ... }
 
 sub new ($class, %fields) {
-    bless { fields => \%fields }, $class;
+    bless +{ fields => \%fields }, $class;
 }
 
 sub fields    ($self) { %{$self->{fields}} }

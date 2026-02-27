@@ -45,21 +45,21 @@ sub add :Params(Int, Int) :Returns(Int) ($a, $b) { $a + $b }
 PERL
 
     my @results = run_session(
-        { jsonrpc => '2.0', id => 1, method => 'initialize', params => {} },
-        { jsonrpc => '2.0', method => 'initialized', params => {} },
-        {
+        +{ jsonrpc => '2.0', id => 1, method => 'initialize', params => +{} },
+        +{ jsonrpc => '2.0', method => 'initialized', params => +{} },
+        +{
             jsonrpc => '2.0',
             method  => 'textDocument/didOpen',
-            params  => {
-                textDocument => {
+            params  => +{
+                textDocument => +{
                     uri     => 'file:///test/clean.pm',
                     text    => $source,
                     version => 1,
                 },
             },
         },
-        { jsonrpc => '2.0', id => 2, method => 'shutdown' },
-        { jsonrpc => '2.0', method => 'exit' },
+        +{ jsonrpc => '2.0', id => 2, method => 'shutdown' },
+        +{ jsonrpc => '2.0', method => 'exit' },
     );
 
     # Find publishDiagnostics notification
@@ -79,21 +79,21 @@ typedef CycleB => 'CycleA';
 PERL
 
     my @results = run_session(
-        { jsonrpc => '2.0', id => 1, method => 'initialize', params => {} },
-        { jsonrpc => '2.0', method => 'initialized', params => {} },
-        {
+        +{ jsonrpc => '2.0', id => 1, method => 'initialize', params => +{} },
+        +{ jsonrpc => '2.0', method => 'initialized', params => +{} },
+        +{
             jsonrpc => '2.0',
             method  => 'textDocument/didOpen',
-            params  => {
-                textDocument => {
+            params  => +{
+                textDocument => +{
                     uri     => 'file:///test/bad.pm',
                     text    => $source,
                     version => 1,
                 },
             },
         },
-        { jsonrpc => '2.0', id => 2, method => 'shutdown' },
-        { jsonrpc => '2.0', method => 'exit' },
+        +{ jsonrpc => '2.0', id => 2, method => 'shutdown' },
+        +{ jsonrpc => '2.0', method => 'exit' },
     );
 
     my ($diag_notif) = grep { ($_->{method} // '') eq 'textDocument/publishDiagnostics' } @results;
@@ -120,25 +120,25 @@ sub good :Generic(T) :Params(T) :Returns(T) ($x) { $x }
 PERL
 
     my @results = run_session(
-        { jsonrpc => '2.0', id => 1, method => 'initialize', params => {} },
-        { jsonrpc => '2.0', method => 'initialized', params => {} },
-        {
+        +{ jsonrpc => '2.0', id => 1, method => 'initialize', params => +{} },
+        +{ jsonrpc => '2.0', method => 'initialized', params => +{} },
+        +{
             jsonrpc => '2.0',
             method  => 'textDocument/didOpen',
-            params  => {
-                textDocument => { uri => 'file:///test/edit.pm', text => $bad_source, version => 1 },
+            params  => +{
+                textDocument => +{ uri => 'file:///test/edit.pm', text => $bad_source, version => 1 },
             },
         },
-        {
+        +{
             jsonrpc => '2.0',
             method  => 'textDocument/didChange',
-            params  => {
-                textDocument => { uri => 'file:///test/edit.pm', version => 2 },
-                contentChanges => [{ text => $good_source }],
+            params  => +{
+                textDocument => +{ uri => 'file:///test/edit.pm', version => 2 },
+                contentChanges => [+{ text => $good_source }],
             },
         },
-        { jsonrpc => '2.0', id => 2, method => 'shutdown' },
-        { jsonrpc => '2.0', method => 'exit' },
+        +{ jsonrpc => '2.0', id => 2, method => 'shutdown' },
+        +{ jsonrpc => '2.0', method => 'exit' },
     );
 
     # Should have two publishDiagnostics: one with errors, one clean

@@ -83,7 +83,7 @@ sub analyze ($class, $source, %opts) {
             }
         }
 
-        $registry->register_function($pkg, $name, {
+        $registry->register_function($pkg, $name, +{
             params   => \@param_types,
             returns  => $return_type,
             generics => $fn->{generics},
@@ -95,7 +95,7 @@ sub analyze ($class, $source, %opts) {
     $checker->analyze;
 
     # 5. Build results
-    return {
+    return +{
         diagnostics => _to_diagnostics($errors, $file, $extracted),
         symbols     => _build_symbol_index($extracted),
         extracted   => $extracted,
@@ -132,7 +132,7 @@ sub _to_diagnostics ($errors, $default_file, $extracted) {
             }
         }
 
-        push @diags, {
+        push @diags, +{
             line     => $line,
             col      => 1,
             message  => $err->message,
@@ -153,7 +153,7 @@ sub _build_symbol_index ($extracted) {
     # Aliases
     for my $name (sort keys $extracted->{aliases}->%*) {
         my $info = $extracted->{aliases}{$name};
-        push @symbols, {
+        push @symbols, +{
             name => $name,
             kind => 'typedef',
             type => $info->{expr},
@@ -164,7 +164,7 @@ sub _build_symbol_index ($extracted) {
 
     # Variables
     for my $var ($extracted->{variables}->@*) {
-        push @symbols, {
+        push @symbols, +{
             name => $var->{name},
             kind => 'variable',
             type => $var->{type_expr},
@@ -179,7 +179,7 @@ sub _build_symbol_index ($extracted) {
         my $sig = join(', ', $fn->{params_expr}->@*);
         $sig .= ' -> ' . $fn->{returns_expr} if $fn->{returns_expr};
 
-        push @symbols, {
+        push @symbols, +{
             name => $name,
             kind => 'function',
             type => $sig,

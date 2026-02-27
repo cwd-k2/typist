@@ -93,11 +93,11 @@ subtest 'Maybe type flow' => sub {
 # ── End-to-end: struct validation ────────────────
 
 subtest 'struct type on scalar' => sub {
-    my $person :Type({ name => Str, age => Int }) = { name => "Alice", age => 30 };
+    my $person :Type({ name => Str, age => Int }) = +{ name => "Alice", age => 30 };
     is $person->{name}, "Alice", 'struct field access';
 
     eval {
-        my $bad :Type({ name => Str, age => Int }) = { name => "Bob" };
+        my $bad :Type({ name => Str, age => Int }) = +{ name => "Bob" };
     };
     like $@, qr/type error/, 'struct rejects missing field';
 };

@@ -19,7 +19,7 @@ sub new ($class, %args) {
     binmode $in,  ':raw';
     binmode $out, ':raw';
 
-    bless { in => $in, out => $out }, $class;
+    bless +{ in => $in, out => $out }, $class;
 }
 
 # ── Reading ──────────────────────────────────────
@@ -59,7 +59,7 @@ sub _send ($self, $msg) {
 }
 
 sub send_response ($self, $id, $result) {
-    $self->_send({
+    $self->_send(+{
         jsonrpc => '2.0',
         id      => $id,
         result  => $result,
@@ -67,15 +67,15 @@ sub send_response ($self, $id, $result) {
 }
 
 sub send_error ($self, $id, $code, $message) {
-    $self->_send({
+    $self->_send(+{
         jsonrpc => '2.0',
         id      => $id,
-        error   => { code => $code, message => $message },
+        error   => +{ code => $code, message => $message },
     });
 }
 
 sub send_notification ($self, $method, $params) {
-    $self->_send({
+    $self->_send(+{
         jsonrpc => '2.0',
         method  => $method,
         params  => $params,

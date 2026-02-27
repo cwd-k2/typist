@@ -17,7 +17,7 @@ my %VALIDATORS = (
 );
 
 sub new ($class, $name) {
-    $POOL{$name} //= bless { name => $name }, $class;
+    $POOL{$name} //= bless +{ name => $name }, $class;
 }
 
 sub name      ($self) { $self->{name} }

@@ -7,7 +7,7 @@ use List::Util  'all';
 # Parameterized types: ArrayRef[T], HashRef[K,V], Tuple[T,U,...], etc.
 
 sub new ($class, $base, @params) {
-    bless { base => $base, params => \@params }, $class;
+    bless +{ base => $base, params => \@params }, $class;
 }
 
 sub base     ($self) { $self->{base} }
