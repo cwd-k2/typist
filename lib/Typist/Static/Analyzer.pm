@@ -2,6 +2,7 @@ package Typist::Static::Analyzer;
 use v5.40;
 
 use Typist::Static::Extractor;
+use Typist::Static::TypeChecker;
 use Typist::Registry;
 use Typist::Parser;
 use Typist::Checker;
@@ -12,6 +13,7 @@ use Typist::Error;
 my %SEVERITY = (
     CycleError       => 1,  # critical — breaks resolution
     TypeError        => 2,
+    TypeMismatch     => 2,
     ResolveError     => 2,
     UndeclaredTypeVar => 3,
     UnknownType      => 4,
@@ -93,6 +95,16 @@ sub analyze ($class, $source, %opts) {
     # 4. Run Checker
     my $checker = Typist::Checker->new(registry => $registry, errors => $errors);
     $checker->analyze;
+
+    # 4.5. Run TypeChecker (static type mismatch detection)
+    my $type_checker = Typist::Static::TypeChecker->new(
+        registry  => $registry,
+        errors    => $errors,
+        extracted => $extracted,
+        ppi_doc   => $extracted->{ppi_doc},
+        file      => $file,
+    );
+    $type_checker->analyze;
 
     # 5. Build results
     return +{

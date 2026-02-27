@@ -13,6 +13,7 @@ our $VERSION = '0.01';
 my %SEVERITY_MAP = (
     CycleError       => $SEVERITY_HIGHEST,   # 5
     TypeError        => $SEVERITY_HIGH,       # 4
+    TypeMismatch     => $SEVERITY_HIGH,       # 4
     ResolveError     => $SEVERITY_HIGH,       # 4
     UndeclaredTypeVar => $SEVERITY_MEDIUM,    # 3
     UnknownType      => $SEVERITY_LOW,        # 2

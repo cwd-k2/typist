@@ -16,6 +16,7 @@ sub extract ($class, $source) {
         variables => [],
         functions => +{},
         package   => 'main',
+        ppi_doc   => $doc,
     };
 
     # Detect package declaration
@@ -99,11 +100,21 @@ sub _extract_variables ($class, $doc, $result) {
             my $type_expr = $class->_list_content($list);
             next unless $type_expr;
 
+            # Find the initializer node (RHS of '=')
+            my $init_node;
+            for my $j ($i + 3 .. $#children) {
+                if ($children[$j]->isa('PPI::Token::Operator') && $children[$j]->content eq '=') {
+                    $init_node = $children[$j + 1] if $j + 1 <= $#children;
+                    last;
+                }
+            }
+
             push $result->{variables}->@*, +{
                 name      => $var_name,
                 type_expr => $type_expr,
                 line      => $next->line_number,
                 col       => $next->column_number,
+                init_node => $init_node,
             };
         }
     }
@@ -144,6 +155,7 @@ sub _extract_functions ($class, $doc, $result) {
             generics     => \@generics,
             line         => $sub_stmt->line_number,
             col          => $sub_stmt->column_number,
+            block        => $sub_stmt->block,
         };
     }
 }

@@ -20,7 +20,9 @@ my @modules = qw(
     Typist::Checker
     Typist::Error
     Typist::Tie::Scalar
+    Typist::Static::Infer
     Typist::Static::Extractor
+    Typist::Static::TypeChecker
     Typist::Static::Analyzer
     Typist::LSP
     Typist::LSP::Transport
