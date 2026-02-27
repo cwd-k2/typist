@@ -1,3 +1,5 @@
 local/
 .carton/
 .nvim.lua
+.vscode/
+.zed/
