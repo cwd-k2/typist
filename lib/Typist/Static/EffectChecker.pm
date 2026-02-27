@@ -72,7 +72,7 @@ sub _collect_called_effects ($self, $block, $pkg) {
 
         # Must be followed by a list (function call pattern)
         my $next = $word->snext_sibling // next;
-        next unless $next->isa('PPI::Structure::List');
+        next unless ref $next && $next->isa('PPI::Structure::List');
 
         # Skip if it's a sub declaration
         my $parent = $word->parent;

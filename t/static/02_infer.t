@@ -127,7 +127,9 @@ subtest 'hash with string values' => sub {
     ok $t->is_param, 'is param';
     is $t->base, 'HashRef', 'HashRef';
     my @p = $t->params;
-    is $p[0]->name, 'Str', 'value type Str';
+    is scalar @p, 2, 'two params (key, value)';
+    is $p[0]->name, 'Str', 'key type Str';
+    is $p[1]->name, 'Str', 'value type Str';
 };
 
 # ── Non-inferable expressions ────────────────────

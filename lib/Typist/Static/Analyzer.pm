@@ -10,6 +10,8 @@ use Typist::Type::Eff;
 use Typist::Static::Checker;
 use Typist::Error;
 use Typist::Attribute;
+use Typist::Type::Newtype;
+use Typist::Effect;
 
 # ── Severity Mapping ─────────────────────────────
 
@@ -56,6 +58,32 @@ sub analyze ($class, $source, %opts) {
             next;
         }
         $registry->define_alias($name, $info->{expr});
+    }
+
+    # 2b. Register this file's newtypes
+    for my $name (sort keys $extracted->{newtypes}->%*) {
+        my $info = $extracted->{newtypes}{$name};
+        my $inner = eval { Typist::Parser->parse($info->{inner_expr}) };
+        if ($@) {
+            $errors->collect(
+                kind    => 'ResolveError',
+                message => "Failed to parse newtype '$name': $@",
+                file    => $file,
+                line    => $info->{line},
+            );
+            next;
+        }
+        $registry->register_newtype($name, Typist::Type::Newtype->new($name, $inner));
+    }
+
+    # 2c. Register this file's effects
+    for my $name (sort keys $extracted->{effects}->%*) {
+        $registry->register_effect($name, Typist::Effect->new(name => $name, operations => +{}));
+    }
+
+    # 2d. Register this file's typeclasses (as known names for bound checking)
+    for my $name (sort keys $extracted->{typeclasses}->%*) {
+        $registry->register_typeclass($name, undef) unless $registry->has_typeclass($name);
     }
 
     # 3. Register this file's functions
@@ -175,7 +203,18 @@ sub _to_diagnostics ($errors, $default_file, $extracted) {
                 }
             }
         }
-        if ($file eq '(function signature)') {
+        if ($file eq '(function signature)' || $file eq '(effect annotation)') {
+            if ($err->message =~ /in (?:\w+::)*(\w+)/) {
+                my $fn_name = $1;
+                if (my $info = $extracted->{functions}{$fn_name}) {
+                    $line = $info->{line};
+                    $file = $default_file;
+                }
+            }
+        }
+
+        # (type expression) errors: try alias first, then function context
+        if ($file eq '(type expression)' && $line == 0) {
             if ($err->message =~ /in (?:\w+::)*(\w+)/) {
                 my $fn_name = $1;
                 if (my $info = $extracted->{functions}{$fn_name}) {

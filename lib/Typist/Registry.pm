@@ -163,6 +163,11 @@ sub register_typeclass ($invocant, $name, $def) {
     $self->{typeclasses}{$name} = $def;
 }
 
+sub has_typeclass ($invocant, $name) {
+    my $self = _self($invocant);
+    exists $self->{typeclasses}{$name};
+}
+
 sub lookup_typeclass ($invocant, $name) {
     my $self = _self($invocant);
     $self->{typeclasses}{$name};

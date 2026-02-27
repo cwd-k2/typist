@@ -148,10 +148,11 @@ sub _check_type_wellformed ($self, $type, $context) {
     return unless $type;
 
     if ($type->is_alias) {
-        unless ($self->{registry}->has_alias($type->alias_name)) {
+        my $name = $type->alias_name;
+        unless ($self->{registry}->has_alias($name) || $self->{registry}->has_typeclass($name)) {
             $self->{errors}->collect(
                 kind    => 'UnknownType',
-                message => "Type alias '" . $type->alias_name . "' is not defined (in $context)",
+                message => "Type alias '$name' is not defined (in $context)",
                 file    => '(type expression)',
                 line    => 0,
             );

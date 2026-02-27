@@ -123,7 +123,9 @@ sub _infer_hash ($constructor) {
         $i++ if $i < @children && $children[$i]->isa('PPI::Token::Operator') && $children[$i]->content eq ',';
     }
 
-    return Typist::Type::Param->new('HashRef', Typist::Type::Atom->new('Any'))
+    my $str_type = Typist::Type::Atom->new('Str');
+
+    return Typist::Type::Param->new('HashRef', $str_type, Typist::Type::Atom->new('Any'))
         unless @val_types;
 
     my $common = $val_types[0];
@@ -131,7 +133,7 @@ sub _infer_hash ($constructor) {
         $common = Typist::Subtype->common_super($common, $val_types[$j]);
     }
 
-    Typist::Type::Param->new('HashRef', $common);
+    Typist::Type::Param->new('HashRef', $str_type, $common);
 }
 
 1;
