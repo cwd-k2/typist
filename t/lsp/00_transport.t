@@ -1,18 +1,12 @@
 use v5.40;
 use Test::More;
-use lib 'lib';
+use lib 'lib', 't/lib';
 
 use JSON::PP;
 use Typist::LSP::Transport;
+use Test::Typist::LSP qw(frame);
 
 my $JSON = JSON::PP->new->utf8->canonical;
-
-# ── Helper: build a framed message ──────────────
-
-sub frame ($msg) {
-    my $body = $JSON->encode($msg);
-    "Content-Length: " . length($body) . "\r\n\r\n$body";
-}
 
 # ── Read message ─────────────────────────────────
 

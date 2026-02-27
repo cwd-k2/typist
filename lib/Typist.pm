@@ -113,7 +113,11 @@ sub _instance ($class_name, $type_expr, %methods) {
 }
 
 CHECK {
+    Typist::Error::Global->reset;
     Typist::Static::Checker->new->analyze;
+    if (Typist::Error::Global->has_errors) {
+        warn Typist::Error::Global->report;
+    }
 }
 
 1;

@@ -55,6 +55,7 @@ mise run test:core         # Core type system tests
 mise run test:static       # Static analysis tests
 mise run test:lsp          # LSP server tests
 mise run test:critic       # Perl::Critic policy tests
+mise run test:e2e          # LSP E2E smoke test (subprocess)
 mise run example           # Run all examples
 mise run example:basics    # Run basics example
 mise run example:generics  # Run generics example

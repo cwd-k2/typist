@@ -45,7 +45,7 @@ sub scan ($self) {
 # ── File Indexing ────────────────────────────────
 
 sub _index_file ($self, $path) {
-    open my $fh, '<', $path or return;
+    open my $fh, '<:encoding(UTF-8)', $path or return;
     my $source = do { local $/; <$fh> };
     close $fh;
 

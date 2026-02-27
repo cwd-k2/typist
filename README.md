@@ -185,6 +185,85 @@ carton exec -- prove -l t/lsp/
 
 # Perl::Critic policy (requires Perl::Critic)
 carton exec -- prove -l t/critic/
+
+# LSP E2E smoke test (subprocess via IPC::Open2)
+carton exec -- perl t/lsp/e2e_smoke.pl
+```
+
+## Debugging the LSP Server
+
+### Logging
+
+Set `TYPIST_LSP_LOG` to control log verbosity on stderr:
+
+| Level   | Output                            |
+|---------|-----------------------------------|
+| `off`   | No output (default in tests)      |
+| `error` | Errors only                       |
+| `warn`  | Errors + warnings                 |
+| `info`  | Lifecycle events (default)        |
+| `debug` | Message dispatch, diagnostics     |
+| `trace` | Full message content              |
+
+```sh
+TYPIST_LSP_LOG=debug carton exec -- perl bin/typist-lsp
+```
+
+### Message Tracing
+
+Set `TYPIST_LSP_TRACE` to a file path to record all JSON-RPC messages in JSONL format:
+
+```sh
+TYPIST_LSP_TRACE=/tmp/trace.jsonl carton exec -- perl bin/typist-lsp
+```
+
+Each line is a JSON object:
+
+```json
+{"dir":"recv","ts":"12:34:56.789","msg":{"jsonrpc":"2.0","method":"initialize",...}}
+{"dir":"send","ts":"12:34:56.790","msg":{"jsonrpc":"2.0","id":1,"result":{...}}}
+```
+
+### Trace Replay
+
+Replay a recorded trace against a fresh server instance:
+
+```sh
+# Replay only
+carton exec -- perl script/lsp-replay trace.jsonl
+
+# Compare responses against original recording
+carton exec -- perl script/lsp-replay --compare trace.jsonl
+
+# Verbose: show each message as it is sent/received
+carton exec -- perl script/lsp-replay --verbose trace.jsonl
+```
+
+### Editor Debug Configuration
+
+**Neovim** — redirect stderr to a log file:
+
+```lua
+configs.typist = {
+  default_config = {
+    cmd = { 'sh', '-c', 'TYPIST_LSP_LOG=debug carton exec -- perl bin/typist-lsp 2>/tmp/typist-lsp.log' },
+    filetypes = { 'perl' },
+    root_dir = function(fname)
+      return vim.fs.dirname(
+        vim.fs.find({ 'lib', '.git' }, { upward = true, path = fname })[1]
+      )
+    end,
+  },
+}
+```
+
+**VS Code** — add environment variables to server settings:
+
+```json
+{
+  "typist-lsp.command": "sh",
+  "typist-lsp.args": ["-c", "TYPIST_LSP_LOG=debug TYPIST_LSP_TRACE=/tmp/trace.jsonl carton exec -- perl bin/typist-lsp 2>/tmp/typist-lsp.log"]
+}
 ```
 
 ## License

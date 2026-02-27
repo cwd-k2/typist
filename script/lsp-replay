@@ -1,0 +1,134 @@
+#!/usr/bin/env perl
+#
+# Replay a JSONL trace file against typist-lsp.
+#
+# Usage:
+#   script/lsp-replay              trace.jsonl            # replay only
+#   script/lsp-replay  --compare   trace.jsonl            # compare responses
+#   script/lsp-replay  --verbose   trace.jsonl            # show all messages
+#
+use v5.40;
+use Getopt::Long;
+use IPC::Open2;
+use JSON::PP;
+
+my $JSON = JSON::PP->new->utf8->canonical;
+
+# ── Options ─────────────────────────────────────
+
+my $compare = 0;
+my $verbose = 0;
+GetOptions(
+    'compare' => \$compare,
+    'verbose' => \$verbose,
+) or die "Usage: $0 [--compare] [--verbose] <trace.jsonl>\n";
+
+my $file = shift @ARGV or die "Usage: $0 [--compare] [--verbose] <trace.jsonl>\n";
+
+# ── Load trace ──────────────────────────────────
+
+open my $fh, '<', $file or die "Cannot open $file: $!\n";
+my (@recv_msgs, @expected_sends);
+while (<$fh>) {
+    chomp;
+    my $entry = $JSON->decode($_);
+    if ($entry->{dir} eq 'recv') {
+        push @recv_msgs, $entry->{msg};
+    } elsif ($entry->{dir} eq 'send') {
+        push @expected_sends, $entry->{msg};
+    }
+}
+close $fh;
+
+say "Loaded " . scalar(@recv_msgs) . " recv, " . scalar(@expected_sends) . " send messages from $file";
+
+# ── Launch server ───────────────────────────────
+
+alarm(10);
+$SIG{ALRM} = sub { say "TIMEOUT"; exit 1 };
+
+my $pid = open2(my $from_srv, my $to_srv, 'perl', 'bin/typist-lsp')
+    or die "Failed to launch typist-lsp: $!\n";
+
+binmode $from_srv, ':raw';
+binmode $to_srv,   ':raw';
+
+# ── Helpers ─────────────────────────────────────
+
+sub frame ($msg) {
+    my $body = $JSON->encode($msg);
+    "Content-Length: " . length($body) . "\r\n\r\n$body";
+}
+
+sub read_response ($fh) {
+    my $header = <$fh>;
+    return undef unless defined $header && $header =~ /Content-Length:\s*(\d+)/i;
+    my $len = $1;
+    scalar <$fh>;  # blank line
+    my $body = '';
+    my $remaining = $len;
+    while ($remaining > 0) {
+        my $read = read($fh, my $chunk, $remaining);
+        return undef unless $read;
+        $body      .= $chunk;
+        $remaining -= $read;
+    }
+    $JSON->decode($body);
+}
+
+# ── Replay ──────────────────────────────────────
+
+my $send_idx   = 0;
+my $mismatches = 0;
+
+for my $msg (@recv_msgs) {
+    my $method = $msg->{method} // '(response)';
+    my $id     = $msg->{id};
+
+    say ">> send: $method" . (defined $id ? " (id=$id)" : '') if $verbose;
+
+    print $to_srv frame($msg);
+
+    # Read responses: one per request (id-bearing), one per notification that triggers a response
+    my $expects_response = defined $id;
+    # Notifications can trigger server-initiated notifications (e.g. diagnostics)
+    my $triggers_notification = $method =~ m{^textDocument/did(?:Open|Change|Save)$};
+
+    if ($expects_response || $triggers_notification) {
+        my $resp = read_response($from_srv);
+        if ($resp) {
+            say "<< recv: " . ($resp->{method} // "id=$resp->{id}") if $verbose;
+
+            if ($compare && $send_idx < @expected_sends) {
+                my $expected = $expected_sends[$send_idx];
+                my $got_json = $JSON->encode($resp);
+                my $exp_json = $JSON->encode($expected);
+
+                if ($got_json ne $exp_json) {
+                    $mismatches++;
+                    say "MISMATCH at send[$send_idx]:";
+                    say "  expected: $exp_json";
+                    say "  got:      $got_json";
+                }
+                $send_idx++;
+            }
+        }
+    }
+}
+
+close $to_srv;
+waitpid($pid, 0);
+alarm(0);
+
+# ── Summary ─────────────────────────────────────
+
+if ($compare) {
+    if ($mismatches == 0) {
+        say "All $send_idx responses match.";
+    } else {
+        say "$mismatches/$send_idx mismatches.";
+        exit 1;
+    }
+} else {
+    say "Replay complete.";
+}

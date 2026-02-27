@@ -6,12 +6,29 @@ use Typist::LSP::Document;
 use Typist::LSP::Workspace;
 use Typist::LSP::Hover;
 use Typist::LSP::Completion;
+use Typist::LSP::Logger;
+
+# ── Dispatch Table (class-level constant) ──────
+
+my %DISPATCH = (
+    'initialize'              => \&_handle_initialize,
+    'initialized'             => \&_handle_noop,
+    'shutdown'                => \&_handle_shutdown,
+    'exit'                    => \&_handle_exit,
+    'textDocument/didOpen'    => \&_handle_did_open,
+    'textDocument/didChange'  => \&_handle_did_change,
+    'textDocument/didSave'    => \&_handle_did_save,
+    'textDocument/didClose'   => \&_handle_did_close,
+    'textDocument/hover'      => \&_handle_hover,
+    'textDocument/completion' => \&_handle_completion,
+);
 
 # ── Constructor ──────────────────────────────────
 
 sub new ($class, %args) {
     bless +{
         transport => $args{transport} // Typist::LSP::Transport->new,
+        log       => $args{logger}    // Typist::LSP::Logger->new,
         workspace => undef,
         documents => +{},
         shutdown  => 0,
@@ -22,59 +39,62 @@ sub new ($class, %args) {
 # ── Main Loop ────────────────────────────────────
 
 sub run ($self) {
+    my $log = $self->{log};
+    $log->info('typist-lsp starting');
+
+    # Ignore SIGPIPE — client may disconnect at any time
+    local $SIG{PIPE} = 'IGNORE';
+
     while (my $msg = $self->{transport}->read_message) {
-        if (my $method = $msg->{method}) {
-            my $id     = $msg->{id};
-            my $params = $msg->{params} // {};
+        my $method = $msg->{method} // next;
+        my $id     = $msg->{id};
+        my $params = $msg->{params} // +{};
 
-            my $handler = $self->_dispatch($method);
+        $log->debug("recv $method" . (defined $id ? " (id=$id)" : ''));
 
-            if ($handler) {
-                my $result = eval { $handler->($self, $params) };
-                if ($@) {
-                    $self->{transport}->send_error($id, -32603, "$@") if defined $id;
-                } elsif (defined $id) {
-                    $self->{transport}->send_response($id, $result);
-                }
-            } elsif (defined $id) {
-                $self->{transport}->send_error($id, -32601, "Method not found: $method");
+        # After shutdown, reject all requests except exit
+        if ($self->{shutdown} && $method ne 'exit') {
+            if (defined $id) {
+                $self->{transport}->send_error($id, -32600, 'Server is shutting down');
             }
+            next;
+        }
+
+        my $handler = $DISPATCH{$method};
+
+        if ($handler) {
+            my $result = eval { $handler->($self, $params) };
+            if ($@) {
+                my $err = "$@";
+                chomp $err;
+                $log->error("handler $method died: $err");
+                $self->{transport}->send_error($id, -32603, $err) if defined $id;
+            } elsif (defined $id) {
+                $self->{transport}->send_response($id, $result);
+            }
+        } elsif (defined $id) {
+            $log->warn("unknown method: $method");
+            $self->{transport}->send_error($id, -32601, "Method not found: $method");
         }
 
         last if $self->{exit};
     }
-}
 
-# ── Dispatch Table ───────────────────────────────
-
-sub _dispatch ($self, $method) {
-    my %table = (
-        'initialize'              => \&_handle_initialize,
-        'initialized'             => \&_handle_noop,
-        'shutdown'                => \&_handle_shutdown,
-        'exit'                    => \&_handle_exit,
-        'textDocument/didOpen'    => \&_handle_did_open,
-        'textDocument/didChange'  => \&_handle_did_change,
-        'textDocument/didSave'    => \&_handle_did_save,
-        'textDocument/didClose'   => \&_handle_did_close,
-        'textDocument/hover'      => \&_handle_hover,
-        'textDocument/completion' => \&_handle_completion,
-    );
-
-    $table{$method};
+    $log->info('typist-lsp exiting');
 }
 
 # ── Lifecycle Handlers ──────────────────────────
 
 sub _handle_initialize ($self, $params) {
-    # Initialize workspace from root URI
     my $root = $params->{rootUri} // $params->{rootPath};
     if ($root) {
-        $root =~ s{^file://}{};
+        $root = _uri_to_path($root);
         my $lib = "$root/lib";
         $self->{workspace} = Typist::LSP::Workspace->new(root => -d $lib ? $lib : $root);
+        $self->{log}->info("workspace root: $root");
     } else {
         $self->{workspace} = Typist::LSP::Workspace->new;
+        $self->{log}->info('workspace: no root');
     }
 
     +{
@@ -89,11 +109,16 @@ sub _handle_initialize ($self, $params) {
                 triggerCharacters => ['(', '[', ',', '|', '&'],
             },
         },
+        serverInfo => +{
+            name    => 'typist-lsp',
+            version => '0.1.0',
+        },
     };
 }
 
 sub _handle_shutdown ($self, $params) {
     $self->{shutdown} = 1;
+    $self->{log}->info('shutdown requested');
     undef;
 }
 
@@ -103,6 +128,8 @@ sub _handle_exit ($self, $params) {
 }
 
 sub _handle_noop ($self, $params) { undef }
+
+sub did_shutdown ($self) { $self->{shutdown} }
 
 # ── Document Handlers ───────────────────────────
 
@@ -117,6 +144,7 @@ sub _handle_did_open ($self, $params) {
     );
 
     $self->{documents}{$uri} = $doc;
+    $self->{log}->debug("didOpen $uri (v$td->{version})");
     $self->_publish_diagnostics($doc);
 
     undef;
@@ -129,7 +157,9 @@ sub _handle_did_change ($self, $params) {
 
     # Full sync — take the last change
     if (@$changes) {
-        $doc->update($changes->[-1]{text}, $params->{textDocument}{version});
+        my $ver = $params->{textDocument}{version};
+        $doc->update($changes->[-1]{text}, $ver);
+        $self->{log}->debug("didChange $uri (v$ver)");
     }
 
     $self->_publish_diagnostics($doc);
@@ -147,8 +177,9 @@ sub _handle_did_save ($self, $params) {
     }
 
     # Update workspace index
-    my $path = $uri =~ s{^file://}{}r;
+    my $path = _uri_to_path($uri);
     $self->{workspace}->update_file($path, $doc->content) if $self->{workspace};
+    $self->{log}->debug("didSave $uri -> workspace updated");
 
     # Invalidate and re-diagnose all open documents (cross-file types may have changed)
     for my $other_doc (values $self->{documents}->%*) {
@@ -160,7 +191,9 @@ sub _handle_did_save ($self, $params) {
 }
 
 sub _handle_did_close ($self, $params) {
-    delete $self->{documents}{$params->{textDocument}{uri}};
+    my $uri = $params->{textDocument}{uri};
+    delete $self->{documents}{$uri};
+    $self->{log}->debug("didClose $uri");
     undef;
 }
 
@@ -199,9 +232,22 @@ sub _handle_completion ($self, $params) {
 # ── Diagnostics Publishing ──────────────────────
 
 sub _publish_diagnostics ($self, $doc) {
-    my $result = $doc->analyze(
-        workspace_registry => $self->{workspace} && $self->{workspace}->registry,
-    );
+    my $result = eval {
+        $doc->analyze(
+            workspace_registry => $self->{workspace} && $self->{workspace}->registry,
+        );
+    };
+    if ($@) {
+        my $err = "$@";
+        chomp $err;
+        $self->{log}->error("analyze failed for @{[$doc->uri]}: $err");
+        # Publish empty diagnostics to clear stale markers
+        $self->{transport}->send_notification('textDocument/publishDiagnostics', +{
+            uri         => $doc->uri,
+            diagnostics => [],
+        });
+        return;
+    }
 
     my @lsp_diags;
     for my $d ($result->{diagnostics}->@*) {
@@ -219,6 +265,8 @@ sub _publish_diagnostics ($self, $doc) {
         };
     }
 
+    $self->{log}->debug("publishing @{[scalar @lsp_diags]} diagnostics for @{[$doc->uri]}");
+
     $self->{transport}->send_notification('textDocument/publishDiagnostics', +{
         uri         => $doc->uri,
         diagnostics => \@lsp_diags,
@@ -228,6 +276,15 @@ sub _publish_diagnostics ($self, $doc) {
 # Map internal severity (1=critical..4=info) to LSP severity (1=Error..4=Hint)
 sub _lsp_severity ($internal) {
     $internal // 3;
+}
+
+# ── URI Utilities ───────────────────────────────
+
+# Convert file:// URI to filesystem path with percent-decoding.
+sub _uri_to_path ($uri) {
+    $uri =~ s{^file://}{};
+    $uri =~ s/%([0-9A-Fa-f]{2})/chr(hex($1))/ge;
+    $uri;
 }
 
 1;

@@ -1,4 +1,6 @@
 #!/usr/bin/env perl
 use v5.40;
+use FindBin;
+use lib "$FindBin::Bin/../lib";
 use Typist::LSP;
 Typist::LSP->run;

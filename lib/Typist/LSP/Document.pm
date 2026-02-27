@@ -40,6 +40,7 @@ sub analyze ($self, %opts) {
 
     my $file = $self->{uri};
     $file =~ s{^file://}{};
+    $file =~ s/%([0-9A-Fa-f]{2})/chr(hex($1))/ge;
 
     $self->{result} = Typist::Static::Analyzer->analyze(
         $self->{content},
@@ -110,21 +111,14 @@ sub symbol_at ($self, $line, $col) {
         }
     }
 
-    # Fallback: closest definition line at or above cursor
-    my $best;
+    # Fallback: exact definition line match only (no distant guessing)
     for my $sym (@$symbols) {
         next unless defined $sym->{line};
         my $sym_line = $sym->{line} - 1;  # PPI 1-indexed -> LSP 0-indexed
-        if ($sym_line == $line) {
-            $best = $sym;
-            last;
-        }
-        if ($sym_line <= $line) {
-            $best = $sym unless $best && ($line - ($best->{line} - 1)) < ($line - $sym_line);
-        }
+        return $sym if $sym_line == $line;
     }
 
-    $best;
+    undef;
 }
 
 # Determine completion context at a given position.

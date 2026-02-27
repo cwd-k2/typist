@@ -7,6 +7,7 @@ use File::Path qw(make_path);
 
 use Typist::LSP::Server;
 use Typist::LSP::Transport;
+use Typist::LSP::Logger;
 
 # Helper: capture sent messages
 my @sent;
@@ -31,7 +32,7 @@ subtest 'didSave triggers re-diagnosis of all open docs' => sub {
     print $fh "package Types;\ntypedef Age => 'Int';\n1;\n";
     close $fh;
 
-    my $server = Typist::LSP::Server->new;
+    my $server = Typist::LSP::Server->new(logger => Typist::LSP::Logger->new(level => 'off'));
 
     # Initialize
     $server->_handle_initialize(+{
@@ -80,7 +81,7 @@ subtest 'didSave updates workspace index' => sub {
     my $dir = tempdir(CLEANUP => 1);
     make_path("$dir/lib");
 
-    my $server = Typist::LSP::Server->new;
+    my $server = Typist::LSP::Server->new(logger => Typist::LSP::Logger->new(level => 'off'));
     $server->_handle_initialize(+{
         rootUri => "file://$dir",
     });

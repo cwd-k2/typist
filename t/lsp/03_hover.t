@@ -1,39 +1,8 @@
 use v5.40;
 use Test::More;
-use lib 'lib';
+use lib 'lib', 't/lib';
 
-use JSON::PP;
-use Typist::LSP::Transport;
-use Typist::LSP::Server;
-
-my $JSON = JSON::PP->new->utf8->canonical;
-
-sub frame ($msg) {
-    my $body = $JSON->encode($msg);
-    "Content-Length: " . length($body) . "\r\n\r\n$body";
-}
-
-sub run_session (@messages) {
-    my $input = join('', map { frame($_) } @messages);
-    open my $in, '<', \$input or die;
-    my $out = '';
-    open my $out_fh, '>', \$out or die;
-
-    my $transport = Typist::LSP::Transport->new(in => $in, out => $out_fh);
-    my $server = Typist::LSP::Server->new(transport => $transport);
-    $server->run;
-
-    my @results;
-    while ($out =~ /Content-Length: (\d+)\r\n\r\n/g) {
-        my $len = $1;
-        my $pos = pos($out);
-        my $body = substr($out, $pos, $len);
-        push @results, $JSON->decode($body);
-        pos($out) = $pos + $len;
-    }
-
-    @results;
-}
+use Test::Typist::LSP qw(run_session lsp_request lsp_notification init_shutdown_wrap);
 
 # ── Hover on function ───────────────────────────
 
@@ -43,27 +12,15 @@ use v5.40;
 sub add :Params(Int, Int) :Returns(Int) ($a, $b) { $a + $b }
 PERL
 
-    my @results = run_session(
-        +{ jsonrpc => '2.0', id => 1, method => 'initialize', params => +{} },
-        +{ jsonrpc => '2.0', method => 'initialized', params => +{} },
-        +{
-            jsonrpc => '2.0',
-            method  => 'textDocument/didOpen',
-            params  => +{
-                textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
-            },
-        },
-        +{
-            jsonrpc => '2.0', id => 2,
-            method  => 'textDocument/hover',
-            params  => +{
-                textDocument => +{ uri => 'file:///test.pm' },
-                position => +{ line => 1, character => 5 },  # on 'add'
-            },
-        },
-        +{ jsonrpc => '2.0', id => 3, method => 'shutdown' },
-        +{ jsonrpc => '2.0', method => 'exit' },
-    );
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 1, character => 5 },  # on 'add'
+        }),
+    ));
 
     my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
     ok $hover, 'got hover response';
@@ -80,27 +37,15 @@ use v5.40;
 typedef Age => 'Int';
 PERL
 
-    my @results = run_session(
-        +{ jsonrpc => '2.0', id => 1, method => 'initialize', params => +{} },
-        +{ jsonrpc => '2.0', method => 'initialized', params => +{} },
-        +{
-            jsonrpc => '2.0',
-            method  => 'textDocument/didOpen',
-            params  => +{
-                textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
-            },
-        },
-        +{
-            jsonrpc => '2.0', id => 2,
-            method  => 'textDocument/hover',
-            params  => +{
-                textDocument => +{ uri => 'file:///test.pm' },
-                position => +{ line => 1, character => 10 },  # on typedef line
-            },
-        },
-        +{ jsonrpc => '2.0', id => 3, method => 'shutdown' },
-        +{ jsonrpc => '2.0', method => 'exit' },
-    );
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 1, character => 10 },  # on typedef line
+        }),
+    ));
 
     my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
     ok $hover, 'got hover response';
@@ -118,27 +63,15 @@ sub add :Params(Int, Int) :Returns(Int) ($a, $b) { $a + $b }
 say greet("Bob");
 PERL
 
-    my @results = run_session(
-        +{ jsonrpc => '2.0', id => 1, method => 'initialize', params => +{} },
-        +{ jsonrpc => '2.0', method => 'initialized', params => +{} },
-        +{
-            jsonrpc => '2.0',
-            method  => 'textDocument/didOpen',
-            params  => +{
-                textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
-            },
-        },
-        +{
-            jsonrpc => '2.0', id => 2,
-            method  => 'textDocument/hover',
-            params  => +{
-                textDocument => +{ uri => 'file:///test.pm' },
-                position => +{ line => 3, character => 5 },  # on 'greet' in call
-            },
-        },
-        +{ jsonrpc => '2.0', id => 3, method => 'shutdown' },
-        +{ jsonrpc => '2.0', method => 'exit' },
-    );
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 3, character => 5 },  # on 'greet' in call
+        }),
+    ));
 
     my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
     ok $hover, 'got hover response';
@@ -157,27 +90,15 @@ sub add :Params(Int, Int) :Returns(Int) ($a, $b) { $a + $b }
 my $result = add(1, 2);
 PERL
 
-    my @results = run_session(
-        +{ jsonrpc => '2.0', id => 1, method => 'initialize', params => +{} },
-        +{ jsonrpc => '2.0', method => 'initialized', params => +{} },
-        +{
-            jsonrpc => '2.0',
-            method  => 'textDocument/didOpen',
-            params  => +{
-                textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
-            },
-        },
-        +{
-            jsonrpc => '2.0', id => 2,
-            method  => 'textDocument/hover',
-            params  => +{
-                textDocument => +{ uri => 'file:///test.pm' },
-                position => +{ line => 3, character => 15 },  # on 'add' in call
-            },
-        },
-        +{ jsonrpc => '2.0', id => 3, method => 'shutdown' },
-        +{ jsonrpc => '2.0', method => 'exit' },
-    );
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 3, character => 15 },  # on 'add' in call
+        }),
+    ));
 
     my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
     ok $hover, 'got hover response';

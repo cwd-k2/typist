@@ -20,14 +20,8 @@ sub new ($class, %args) {
 # ── CHECK-phase Static Analysis ─────────────────
 
 sub analyze ($self) {
-    $self->{errors}->reset;
-
     $self->_check_aliases;
     $self->_check_functions;
-
-    if ($self->{errors}->has_errors) {
-        warn $self->{errors}->report;
-    }
 }
 
 # ── Alias Validation ────────────────────────────
@@ -69,17 +63,17 @@ sub _check_functions ($self) {
         my %declared = map { $_->{name} => 1 }
                        ($sig->{generics} // [])->@*;
 
-        # Collect all free type variables from params and returns
-        my @free;
+        # Collect unique free type variables from params and returns
+        my %seen_free;
         for my $ptype (($sig->{params} // [])->@*) {
-            push @free, $ptype->free_vars;
+            $seen_free{$_} = 1 for $ptype->free_vars;
         }
         if ($sig->{returns}) {
-            push @free, $sig->{returns}->free_vars;
+            $seen_free{$_} = 1 for $sig->{returns}->free_vars;
         }
 
         # Check each free variable is declared
-        for my $var (@free) {
+        for my $var (sort keys %seen_free) {
             unless ($declared{$var}) {
                 $self->{errors}->collect(
                     kind    => 'UndeclaredTypeVar',
