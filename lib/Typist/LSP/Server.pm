@@ -224,7 +224,8 @@ sub _handle_completion ($self, $params) {
     return +{ items => [] } unless $ctx;
 
     my @typedefs = $self->{workspace} ? $self->{workspace}->all_typedef_names : ();
-    my $items = Typist::LSP::Completion->complete($ctx, \@typedefs);
+    my @effects  = $self->{workspace} ? $self->{workspace}->all_effect_names  : ();
+    my $items = Typist::LSP::Completion->complete($ctx, \@typedefs, \@effects);
 
     +{ items => $items };
 }

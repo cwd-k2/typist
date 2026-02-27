@@ -16,6 +16,15 @@ use Typist::Type::Eff;
 
 my %PRIMITIVES = map { $_ => 1 } qw(Any Void Never Undef Bool Int Num Str);
 
+# DSL constructor names that use (...) syntax
+my %DSL_CONSTRUCTORS = (
+    Struct  => \&_parse_dsl_struct,
+    Func    => \&_parse_dsl_func,
+    Alias   => \&_parse_dsl_alias,
+    # Parametric: ArrayRef(...), HashRef(...), Maybe(...), Tuple(...), Ref(...), CodeRef(...)
+    (map { $_ => \&_parse_dsl_param } qw(ArrayRef HashRef Maybe Tuple Ref CodeRef)),
+);
+
 # ── Public API ────────────────────────────────────
 
 sub parse ($class, $expr) {
@@ -90,10 +99,15 @@ sub _parse_primary ($tokens, $pos) {
     return _parse_named($tokens, $pos);
 }
 
-# named ::= IDENT ('[' param_list ']')?
+# named ::= IDENT ('[' param_list ']')? | DSL_NAME '(' ... ')'
 # param_list ::= type_expr (',' type_expr)* ('->' type_expr)?
 sub _parse_named ($tokens, $pos) {
     my $name = $tokens->[$$pos++];
+
+    # DSL constructor dispatch: Name(...)
+    if ($$pos < @$tokens && $tokens->[$$pos] eq '(' && $DSL_CONSTRUCTORS{$name}) {
+        return $DSL_CONSTRUCTORS{$name}->($name, $tokens, $pos);
+    }
 
     # Without parameters — resolve as Atom, Var, or Alias
     unless ($$pos < @$tokens && $tokens->[$$pos] eq '[') {
@@ -189,6 +203,147 @@ sub _parse_grouped ($tokens, $pos) {
     $$pos++;
 
     $inner;
+}
+
+# ── DSL Constructors ─────────────────────────────
+
+# Struct(k => V, ...) → Type::Struct
+sub _parse_dsl_struct ($name, $tokens, $pos) {
+    $$pos++; # consume '('
+
+    my %fields;
+    unless ($$pos < @$tokens && $tokens->[$$pos] eq ')') {
+        my $key = $tokens->[$$pos++];
+        if ($$pos < @$tokens && $tokens->[$$pos] eq '?') {
+            $key .= '?';
+            $$pos++;
+        }
+        die "Typist::Parser: expected '=>' after struct key"
+            unless $$pos < @$tokens && $tokens->[$$pos] eq '=>';
+        $$pos++;
+        $fields{$key} = _parse_union($tokens, $pos);
+
+        while ($$pos < @$tokens && $tokens->[$$pos] eq ',') {
+            $$pos++;
+            last if $$pos < @$tokens && $tokens->[$$pos] eq ')';
+            $key = $tokens->[$$pos++];
+            if ($$pos < @$tokens && $tokens->[$$pos] eq '?') {
+                $key .= '?';
+                $$pos++;
+            }
+            die "Typist::Parser: expected '=>' after struct key"
+                unless $$pos < @$tokens && $tokens->[$$pos] eq '=>';
+            $$pos++;
+            $fields{$key} = _parse_union($tokens, $pos);
+        }
+    }
+
+    die "Typist::Parser: expected ')' after Struct(...)"
+        unless $$pos < @$tokens && $tokens->[$$pos] eq ')';
+    $$pos++;
+
+    Typist::Type::Struct->new(%fields);
+}
+
+# Func(A, B, returns => R) → Type::Func
+sub _parse_dsl_func ($name, $tokens, $pos) {
+    $$pos++; # consume '('
+
+    my @params;
+    my $return_type;
+
+    unless ($$pos < @$tokens && $tokens->[$$pos] eq ')') {
+        # Parse args; stop at 'returns' keyword or ')'
+        while (1) {
+            # Check for 'returns => R' keyword pair
+            if ($tokens->[$$pos] eq 'returns'
+                && $$pos + 1 < @$tokens && $tokens->[$$pos + 1] eq '=>') {
+                $$pos += 2; # consume 'returns' and '=>'
+                $return_type = _parse_union($tokens, $pos);
+                last;
+            }
+
+            push @params, _parse_union($tokens, $pos);
+
+            if ($$pos < @$tokens && $tokens->[$$pos] eq ',') {
+                $$pos++;
+                next;
+            }
+            last;
+        }
+    }
+
+    die "Typist::Parser: expected ')' after Func(...)"
+        unless $$pos < @$tokens && $tokens->[$$pos] eq ')';
+    $$pos++;
+
+    die "Typist::Parser: Func() requires 'returns => Type'"
+        unless $return_type;
+
+    Typist::Type::Func->new(\@params, $return_type);
+}
+
+# Alias('Name') → resolve as _resolve_name
+sub _parse_dsl_alias ($name, $tokens, $pos) {
+    $$pos++; # consume '('
+
+    die "Typist::Parser: expected name inside Alias()"
+        unless $$pos < @$tokens;
+
+    my $tok = $tokens->[$$pos++];
+    my $inner;
+    if ($tok =~ /\A['"](.+)['"]\z/) {
+        $inner = $1;
+    } else {
+        $inner = $tok;
+    }
+
+    die "Typist::Parser: expected ')' after Alias(...)"
+        unless $$pos < @$tokens && $tokens->[$$pos] eq ')';
+    $$pos++;
+
+    _resolve_name($inner);
+}
+
+# ArrayRef(T), HashRef(K,V), Maybe(T), etc. → same as bracket form
+sub _parse_dsl_param ($name, $tokens, $pos) {
+    $$pos++; # consume '('
+
+    my @params;
+    my $return_type;
+
+    unless ($$pos < @$tokens && $tokens->[$$pos] eq ')') {
+        push @params, _parse_union($tokens, $pos);
+
+        while ($$pos < @$tokens && $tokens->[$$pos] eq ',') {
+            $$pos++;
+            push @params, _parse_union($tokens, $pos);
+        }
+
+        if ($$pos < @$tokens && $tokens->[$$pos] eq '->') {
+            $$pos++;
+            $return_type = _parse_union($tokens, $pos);
+        }
+    }
+
+    die "Typist::Parser: expected ')' after $name(...)"
+        unless $$pos < @$tokens && $tokens->[$$pos] eq ')';
+    $$pos++;
+
+    # Maybe(T) desugars to T | Undef
+    if ($name eq 'Maybe' && @params == 1 && !$return_type) {
+        return Typist::Type::Union->new(
+            $params[0],
+            Typist::Type::Atom->new('Undef'),
+        );
+    }
+
+    # CodeRef(Args -> Return)
+    if ($name eq 'CodeRef' && $return_type) {
+        return Typist::Type::Func->new(\@params, $return_type);
+    }
+
+    Typist::Type::Param->new($name, @params);
 }
 
 # ── Literal Types ────────────────────────────────

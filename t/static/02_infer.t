@@ -27,35 +27,35 @@ sub infer_from_source ($source) {
 subtest 'integer literal' => sub {
     my $t = infer_from_source('my $x = 42;');
     ok $t, 'inferred';
-    ok $t->is_atom, 'is atom';
-    is $t->name, 'Int', '42 → Int';
+    ok $t->is_literal, 'is literal';
+    is $t->base_type, 'Int', '42 → Literal(Int)';
 };
 
 subtest 'negative integer' => sub {
     # PPI parses `-5` as Operator(-) followed by Number(5)
-    # We only see the Number token, which infers to Int
+    # We only see the Number token, which infers to Literal(Int)
     my $doc = PPI::Document->new(\'my $x = 5;');
     my $num = $doc->find_first('PPI::Token::Number');
     my $t = Typist::Static::Infer->infer_expr($num);
-    ok $t && $t->is_atom && $t->name eq 'Int', '5 → Int';
+    ok $t && $t->is_literal && $t->base_type eq 'Int', '5 → Literal(Int)';
 };
 
 subtest 'float literal' => sub {
     my $t = infer_from_source('my $x = 3.14;');
     ok $t, 'inferred';
-    is $t->name, 'Num', '3.14 → Num';
+    is $t->base_type, 'Num', '3.14 → Literal(Num)';
 };
 
 subtest 'bool literal 0' => sub {
     my $t = infer_from_source('my $x = 0;');
     ok $t, 'inferred';
-    is $t->name, 'Bool', '0 → Bool';
+    is $t->base_type, 'Bool', '0 → Literal(Bool)';
 };
 
 subtest 'bool literal 1' => sub {
     my $t = infer_from_source('my $x = 1;');
     ok $t, 'inferred';
-    is $t->name, 'Bool', '1 → Bool';
+    is $t->base_type, 'Bool', '1 → Literal(Bool)';
 };
 
 # ── String Literals ──────────────────────────────
@@ -63,13 +63,14 @@ subtest 'bool literal 1' => sub {
 subtest 'single-quoted string' => sub {
     my $t = infer_from_source(q{my $x = 'hello';});
     ok $t, 'inferred';
-    is $t->name, 'Str', "'hello' → Str";
+    ok $t->is_literal, 'is literal';
+    is $t->base_type, 'Str', "'hello' → Literal(Str)";
 };
 
 subtest 'double-quoted string' => sub {
     my $t = infer_from_source('my $x = "world";');
     ok $t, 'inferred';
-    is $t->name, 'Str', '"world" → Str';
+    is $t->base_type, 'Str', '"world" → Literal(Str)';
 };
 
 # ── undef ────────────────────────────────────────

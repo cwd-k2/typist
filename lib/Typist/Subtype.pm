@@ -28,13 +28,18 @@ sub is_subtype ($class, $sub, $super) {
 sub common_super ($class, $a, $b) {
     return $a if $a->equals($b);
 
-    if ($a->is_atom && $b->is_atom) {
-        my $oa = $ATOM_ORDER{$a->name} // 4;
-        my $ob = $ATOM_ORDER{$b->name} // 4;
+    # Promote literals to their base Atom for LUB computation
+    my $a_eff = $a->is_literal ? Typist::Type::Atom->new($a->base_type) : $a;
+    my $b_eff = $b->is_literal ? Typist::Type::Atom->new($b->base_type) : $b;
+    return $a_eff if $a_eff->equals($b_eff);
 
-        if (exists $ATOM_ORDER{$a->name} && exists $ATOM_ORDER{$b->name}) {
-            if ($a->name ne 'Str' && $b->name ne 'Str') {
-                return $oa > $ob ? $a : $b;
+    if ($a_eff->is_atom && $b_eff->is_atom) {
+        my $oa = $ATOM_ORDER{$a_eff->name} // 4;
+        my $ob = $ATOM_ORDER{$b_eff->name} // 4;
+
+        if (exists $ATOM_ORDER{$a_eff->name} && exists $ATOM_ORDER{$b_eff->name}) {
+            if ($a_eff->name ne 'Str' && $b_eff->name ne 'Str') {
+                return $oa > $ob ? $a_eff : $b_eff;
             }
         }
     }
@@ -95,7 +100,11 @@ sub _check ($sub, $super) {
     }
 
     # ── Literal types ─────────────────────────────
-    # Literal <: Literal  only when same value (identity, already handled above)
+    # Literal(v1, B1) <: Literal(v2, B2) iff same value AND base subtype
+    if ($sub->is_literal && $super->is_literal) {
+        return "${\$sub->value}" eq "${\$super->value}"
+            && _atom_subtype($sub->base_type, $super->base_type);
+    }
     # Literal(v) <: BaseType  when base_type hierarchy holds
     if ($sub->is_literal && $super->is_atom) {
         return _atom_subtype($sub->base_type, $super->name);

@@ -3,6 +3,7 @@ use v5.40;
 
 use Typist::Type::Atom;
 use Typist::Type::Param;
+use Typist::Type::Literal;
 use Typist::Subtype;
 
 # ── Public API ───────────────────────────────────
@@ -19,7 +20,11 @@ sub infer_expr ($class, $element) {
     }
 
     # ── String literals ─────────────────────────
-    if ($element->isa('PPI::Token::Quote') || $element->isa('PPI::Token::HereDoc')) {
+    if ($element->isa('PPI::Token::Quote')) {
+        my $str = $element->can('string') ? $element->string : $element->content;
+        return Typist::Type::Literal->new($str, 'Str');
+    }
+    if ($element->isa('PPI::Token::HereDoc')) {
         return Typist::Type::Atom->new('Str');
     }
 
@@ -44,18 +49,20 @@ sub infer_expr ($class, $element) {
 # ── Number Inference ─────────────────────────────
 
 sub _infer_number ($token) {
-    # Float / Exp → Num
-    if ($token->isa('PPI::Token::Number::Float') || $token->isa('PPI::Token::Number::Exp')) {
-        return Typist::Type::Atom->new('Num');
-    }
-
-    # 0 or 1 → Bool, otherwise → Int
     my $content = $token->content;
-    if ($content eq '0' || $content eq '1') {
-        return Typist::Type::Atom->new('Bool');
+
+    # Float / Exp → Num literal
+    if ($token->isa('PPI::Token::Number::Float') || $token->isa('PPI::Token::Number::Exp')) {
+        return Typist::Type::Literal->new($content + 0, 'Num');
     }
 
-    Typist::Type::Atom->new('Int');
+    # 0 or 1 → Bool literal, otherwise → Int literal
+    my $val = $content + 0;
+    if ($content eq '0' || $content eq '1') {
+        return Typist::Type::Literal->new($val, 'Bool');
+    }
+
+    Typist::Type::Literal->new($val, 'Int');
 }
 
 # ── Array Inference ──────────────────────────────

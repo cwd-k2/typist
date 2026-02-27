@@ -135,4 +135,73 @@ subtest 'complex expression' => sub {
     ok $t->is_union, 'outer is union';
 };
 
+# ── DSL constructor syntax ───────────────────────
+
+subtest 'DSL: Struct(...)' => sub {
+    my $t = Typist::Parser->parse('Struct(name => Str, age => Int)');
+    ok $t->is_struct, 'Struct(...) is struct';
+    my %f = $t->fields;
+    is $f{name}->to_string, 'Str', 'name field is Str';
+    is $f{age}->to_string,  'Int', 'age field is Int';
+};
+
+subtest 'DSL: Struct with optional fields' => sub {
+    my $t = Typist::Parser->parse('Struct(name => Str, age? => Int)');
+    ok $t->is_struct, 'Struct with optional is struct';
+    my %req = $t->required_fields;
+    my %opt = $t->optional_fields;
+    ok exists $req{name}, 'name is required';
+    ok exists $opt{age},  'age is optional';
+};
+
+subtest 'DSL: ArrayRef(T)' => sub {
+    my $t = Typist::Parser->parse('ArrayRef(Int)');
+    ok $t->is_param, 'ArrayRef(...) is param';
+    is $t->base, 'ArrayRef', 'base is ArrayRef';
+    is +($t->params)[0]->to_string, 'Int', 'param is Int';
+};
+
+subtest 'DSL: HashRef(K, V)' => sub {
+    my $t = Typist::Parser->parse('HashRef(Str, Int)');
+    ok $t->is_param, 'HashRef(...) is param';
+    is scalar($t->params), 2, 'two params';
+};
+
+subtest 'DSL: Maybe(T)' => sub {
+    my $t = Typist::Parser->parse('Maybe(Str)');
+    ok $t->is_union, 'Maybe(...) desugars to union';
+    my @m = $t->members;
+    ok((grep { $_->is_atom && $_->name eq 'Str' } @m),   'contains Str');
+    ok((grep { $_->is_atom && $_->name eq 'Undef' } @m), 'contains Undef');
+};
+
+subtest 'DSL: Func(A, B, returns => R)' => sub {
+    my $t = Typist::Parser->parse('Func(Str, Int, returns => Bool)');
+    ok $t->is_func, 'Func(...) is func';
+    is scalar($t->params), 2, 'two params';
+    is $t->returns->to_string, 'Bool', 'returns Bool';
+};
+
+subtest 'DSL: Alias(Name)' => sub {
+    my $t = Typist::Parser->parse("Alias('UserId')");
+    ok $t->is_alias || $t->is_atom, 'Alias resolves to alias or atom';
+    # 'UserId' is not a primitive, should be alias
+    ok $t->is_alias, 'UserId is alias';
+    is $t->alias_name, 'UserId', 'alias_name is UserId';
+};
+
+subtest 'DSL: nested DSL constructors' => sub {
+    my $t = Typist::Parser->parse('ArrayRef(Struct(x => Int, y => Int))');
+    ok $t->is_param, 'outer is param';
+    my ($inner) = $t->params;
+    ok $inner->is_struct, 'inner is struct';
+};
+
+subtest 'DSL: mixed bracket and paren' => sub {
+    # Bracket syntax still works
+    my $t1 = Typist::Parser->parse('ArrayRef[Int]');
+    my $t2 = Typist::Parser->parse('ArrayRef(Int)');
+    is $t1->to_string, $t2->to_string, 'bracket and paren produce same result';
+};
+
 done_testing;

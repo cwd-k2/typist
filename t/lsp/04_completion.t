@@ -75,4 +75,29 @@ subtest 'no completion outside type context' => sub {
     is scalar @{$comp->{result}{items}}, 0, 'no completions outside type context';
 };
 
+# ── Completion inside :Eff( ─────────────────────
+
+subtest 'completion inside :Eff(' => sub {
+    my $source = "use v5.40;\nsub foo :Eff(";
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/completion', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 1, character => length('sub foo :Eff(') },
+        }),
+    ));
+
+    my ($comp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $comp, 'got completion response';
+    # Should return items (even if empty, no primitives in effect context)
+    ok $comp->{result}{items}, 'has items array';
+    # Should NOT include type primitives
+    my @labels = map { $_->{label} } @{$comp->{result}{items}};
+    ok(!(grep { $_ eq 'Int' } @labels), 'Int not in effect completions');
+    ok(!(grep { $_ eq 'Str' } @labels), 'Str not in effect completions');
+};
+
 done_testing;

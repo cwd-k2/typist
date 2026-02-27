@@ -55,10 +55,8 @@ sub _extract_typedefs ($class, $doc, $result) {
         next unless $children[2]->isa('PPI::Token::Operator')
                  && $children[2]->content eq '=>';
 
-        my $expr_tok = $children[3];
-        my $expr = $expr_tok->isa('PPI::Token::Quote')
-            ? $expr_tok->string
-            : $expr_tok->content;
+        my $expr = $class->_collect_rhs_expr(@children[3 .. $#children]);
+        next unless defined $expr;
 
         $result->{aliases}{$name} = +{
             expr => $expr,
@@ -85,10 +83,8 @@ sub _extract_newtypes ($class, $doc, $result) {
         next unless $children[2]->isa('PPI::Token::Operator')
                  && $children[2]->content eq '=>';
 
-        my $expr_tok = $children[3];
-        my $expr = $expr_tok->isa('PPI::Token::Quote')
-            ? $expr_tok->string
-            : $expr_tok->content;
+        my $expr = $class->_collect_rhs_expr(@children[3 .. $#children]);
+        next unless defined $expr;
 
         $result->{newtypes}{$name} = +{
             inner_expr => $expr,
@@ -248,6 +244,28 @@ sub _extract_functions ($class, $doc, $result) {
 }
 
 # ── Helpers ──────────────────────────────────────
+
+# Collect RHS expression tokens: everything before ';', joining content.
+# Single Quote token → ->string (strip quotes). Otherwise join all token contents.
+sub _collect_rhs_expr ($class, @children) {
+    my @tokens;
+    for my $child (@children) {
+        last if $child->isa('PPI::Token::Structure') && $child->content eq ';';
+        push @tokens, $child;
+    }
+    return undef unless @tokens;
+
+    # Single Quote token → strip quotes
+    if (@tokens == 1 && $tokens[0]->isa('PPI::Token::Quote')) {
+        return $tokens[0]->string;
+    }
+
+    # Join all token contents, normalizing whitespace
+    my $raw = join '', map { $_->content } @tokens;
+    $raw =~ s/\A\s+//;
+    $raw =~ s/\s+\z//;
+    length($raw) ? $raw : undef;
+}
 
 # Extract the textual content of a PPI::Structure::List, stripping parens.
 sub _list_content ($class, $list) {

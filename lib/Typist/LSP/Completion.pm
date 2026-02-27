@@ -10,13 +10,19 @@ my @TYPE_VARS    = qw(T U V K);
 # ── Public API ───────────────────────────────────
 
 # Generate completion items based on context.
-#   context:  'type_expr' | 'generic'
+#   context:  'type_expr' | 'generic' | 'effect'
 #   typedefs: arrayref of typedef names from workspace
-sub complete ($class, $context, $typedefs) {
+#   effects:  arrayref of effect names from workspace
+sub complete ($class, $context, $typedefs, $effects) {
     $typedefs //= [];
+    $effects  //= [];
 
     if ($context eq 'generic') {
         return [map { _item($_, 'TypeParameter', "$_ type variable") } @TYPE_VARS];
+    }
+
+    if ($context eq 'effect') {
+        return [map { _item($_, 'Event', "effect $_") } @$effects];
     }
 
     if ($context eq 'type_expr') {
@@ -61,6 +67,7 @@ sub _item_snippet ($name, $kind) {
 sub _kind_number ($kind) {
     my %kinds = (
         Class         => 7,
+        Event         => 23,
         TypeParameter => 25,
     );
     $kinds{$kind} // 1;

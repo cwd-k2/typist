@@ -19,7 +19,7 @@ my $x :Type(Int) = "hello";
 PERL
 
     is scalar @$errs, 1, 'one error';
-    like $errs->[0]{message}, qr/\$x.*Int.*Str/, 'message mentions Int and Str';
+    like $errs->[0]{message}, qr/\$x.*Int/, 'message mentions variable and expected type';
 };
 
 subtest 'variable: no error on matching type' => sub {
@@ -127,7 +127,7 @@ sub greet :Params(Str) :Returns(Int) ($name) {
 PERL
 
     is scalar @$errs, 1, 'one error';
-    like $errs->[0]{message}, qr/Return.*greet.*Int.*Str/, 'return type mismatch';
+    like $errs->[0]{message}, qr/Return.*greet.*Int/, 'return type mismatch';
 };
 
 subtest 'return: no error on matching type' => sub {
@@ -206,6 +206,46 @@ first("hello");
 PERL
 
     is scalar @$errs, 0, 'skip generic function calls';
+};
+
+# ── Literal Type Checks ────────────────────────
+
+subtest 'literal: numeric literal matches declared type' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+my $x :Type(Int) = 42;
+my $y :Type(Num) = 3.14;
+my $z :Type(Bool) = 1;
+PERL
+
+    is scalar @$errs, 0, 'no errors for matching literals';
+};
+
+subtest 'literal: Bool literal matches Int (subtype)' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+my $x :Type(Int) = 1;
+PERL
+
+    is scalar @$errs, 0, 'Bool literal is subtype of Int';
+};
+
+subtest 'literal: string literal matches Str' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+my $x :Type(Str) = "hello";
+PERL
+
+    is scalar @$errs, 0, 'string literal matches Str';
+};
+
+subtest 'literal: ArrayRef with mixed literals infers common super' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+my $xs :Type(ArrayRef[Int]) = [1, 2, 3];
+PERL
+
+    is scalar @$errs, 0, 'array of int literals matches ArrayRef[Int]';
 };
 
 done_testing;

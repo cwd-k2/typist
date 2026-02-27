@@ -107,4 +107,77 @@ PERL
     unlike $hover->{result}{contents}{value}, qr/sub greet/, 'does not show greet';
 };
 
+# ── Hover on newtype ──────────────────────────────
+
+subtest 'hover returns newtype info' => sub {
+    my $source = <<'PERL';
+use v5.40;
+newtype UserId => Int;
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 1, character => 10 },  # on 'UserId'
+        }),
+    ));
+
+    my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $hover, 'got hover response';
+    ok $hover->{result}, 'hover has result';
+    like $hover->{result}{contents}{value}, qr/newtype UserId/, 'contains newtype';
+};
+
+# ── Hover on effect ──────────────────────────────
+
+subtest 'hover returns effect info' => sub {
+    my $source = <<'PERL';
+use v5.40;
+effect Console => {};
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 1, character => 8 },  # on 'Console'
+        }),
+    ));
+
+    my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $hover, 'got hover response';
+    ok $hover->{result}, 'hover has result';
+    like $hover->{result}{contents}{value}, qr/effect Console/, 'contains effect';
+};
+
+# ── Hover on function with generics and effects ──
+
+subtest 'hover shows generics and effects on function' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub fetch :Generic(T) :Params(Str) :Returns(T) :Eff(Console) ($url) { }
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 1, character => 5 },  # on 'fetch'
+        }),
+    ));
+
+    my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $hover, 'got hover response';
+    ok $hover->{result}, 'hover has result';
+    like $hover->{result}{contents}{value}, qr/<T>/, 'contains generics';
+    like $hover->{result}{contents}{value}, qr/!Eff\(Console\)/, 'contains effect annotation';
+};
+
 done_testing;

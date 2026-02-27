@@ -111,13 +111,6 @@ sub symbol_at ($self, $line, $col) {
         }
     }
 
-    # Fallback: exact definition line match only (no distant guessing)
-    for my $sym (@$symbols) {
-        next unless defined $sym->{line};
-        my $sym_line = $sym->{line} - 1;  # PPI 1-indexed -> LSP 0-indexed
-        return $sym if $sym_line == $line;
-    }
-
     undef;
 }
 
@@ -131,6 +124,9 @@ sub completion_context ($self, $line, $col) {
 
     # Inside :Generic(...)
     return 'generic' if $text =~ /:Generic\([^)]*\z/;
+
+    # Inside :Eff(...)
+    return 'effect' if $text =~ /:Eff\([^)]*\z/;
 
     # Inside :Type(...), :Params(...), :Returns(...)
     return 'type_expr' if $text =~ /:(?:Type|Params|Returns)\([^)]*\z/;

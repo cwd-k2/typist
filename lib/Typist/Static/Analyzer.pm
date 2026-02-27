@@ -233,11 +233,47 @@ sub _build_symbol_index ($extracted) {
         $sig .= ' -> ' . $fn->{returns_expr} if $fn->{returns_expr};
 
         push @symbols, +{
+            name     => $name,
+            kind     => 'function',
+            type     => $sig,
+            generics => $fn->{generics},
+            eff_expr => $fn->{eff_expr},
+            line     => $fn->{line},
+            col      => $fn->{col},
+        };
+    }
+
+    # Newtypes
+    for my $name (sort keys $extracted->{newtypes}->%*) {
+        my $info = $extracted->{newtypes}{$name};
+        push @symbols, +{
             name => $name,
-            kind => 'function',
-            type => $sig,
-            line => $fn->{line},
-            col  => $fn->{col},
+            kind => 'newtype',
+            type => $info->{inner_expr},
+            line => $info->{line},
+            col  => $info->{col},
+        };
+    }
+
+    # Effects
+    for my $name (sort keys $extracted->{effects}->%*) {
+        my $info = $extracted->{effects}{$name};
+        push @symbols, +{
+            name => $name,
+            kind => 'effect',
+            line => $info->{line},
+            col  => $info->{col},
+        };
+    }
+
+    # Typeclasses
+    for my $name (sort keys $extracted->{typeclasses}->%*) {
+        my $info = $extracted->{typeclasses}{$name};
+        push @symbols, +{
+            name => $name,
+            kind => 'typeclass',
+            line => $info->{line},
+            col  => $info->{col},
         };
     }
 

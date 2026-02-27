@@ -6,7 +6,9 @@ use Typist::Registry;
 use Typist::Static::Extractor;
 use Typist::Parser;
 use Typist::Type::Newtype;
+use Typist::Type::Eff;
 use Typist::Effect;
+use Typist::Attribute;
 
 # ── Constructor ──────────────────────────────────
 
@@ -106,6 +108,44 @@ sub _register_file_types ($self, $extracted) {
         my $eff = Typist::Effect->new(name => $name, operations => +{});
         $reg->register_effect($name, $eff);
     }
+
+    # Register functions for cross-file type checking
+    my $pkg = $extracted->{package} // 'main';
+    my $fns = $extracted->{functions} // +{};
+    for my $name (keys $fns->%*) {
+        my $fn = $extracted->{functions}{$name};
+        eval {
+            my @param_types;
+            for my $expr ($fn->{params_expr}->@*) {
+                push @param_types, Typist::Parser->parse($expr);
+            }
+
+            my $return_type;
+            if ($fn->{returns_expr}) {
+                $return_type = Typist::Parser->parse($fn->{returns_expr});
+            }
+
+            my $effects;
+            if ($fn->{eff_expr}) {
+                my $row = Typist::Parser->parse_row($fn->{eff_expr});
+                $effects = Typist::Type::Eff->new($row);
+            }
+
+            my @generics;
+            if ($fn->{generics} && @{$fn->{generics}}) {
+                my $spec = join(', ', $fn->{generics}->@*);
+                @generics = Typist::Attribute->parse_generic_decl($spec, registry => $reg);
+            }
+
+            $reg->register_function($pkg, $name, +{
+                params   => \@param_types,
+                returns  => $return_type,
+                generics => \@generics,
+                effects  => $effects,
+            });
+        };
+        # Skip functions that fail to parse (non-fatal)
+    }
 }
 
 sub _rebuild_registry ($self) {
@@ -116,9 +156,11 @@ sub _rebuild_registry ($self) {
         # Re-register from stored extracted data (simulate extraction result)
         $self->_register_file_types(+{
             aliases     => $info->{aliases}     // +{},
+            functions   => $info->{functions}   // +{},
             newtypes    => $info->{newtypes}    // +{},
             effects     => $info->{effects}     // +{},
             typeclasses => $info->{typeclasses} // +{},
+            package     => $info->{package}     // 'main',
         });
     }
 }
@@ -130,6 +172,14 @@ sub all_typedef_names ($self) {
     for my $info (values $self->{files}->%*) {
         $seen{$_} = 1 for keys($info->{aliases}->%*);
         $seen{$_} = 1 for keys($info->{newtypes}->%*);
+    }
+    sort keys %seen;
+}
+
+sub all_effect_names ($self) {
+    my %seen;
+    for my $info (values $self->{files}->%*) {
+        $seen{$_} = 1 for keys(($info->{effects} // +{})->%*);
     }
     sort keys %seen;
 }
