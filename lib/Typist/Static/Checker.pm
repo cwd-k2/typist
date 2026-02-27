@@ -1,16 +1,19 @@
-package Typist::Checker;
+package Typist::Static::Checker;
 use v5.40;
 
 use Typist::Registry;
 use Typist::Parser;
 use Typist::Error;
+use Typist::Error::Global;
+use Typist::Kind;
+use Typist::KindChecker;
 
 # ── Constructor ──────────────────────────────────
 
 sub new ($class, %args) {
     bless +{
         registry => $args{registry} // 'Typist::Registry',
-        errors   => $args{errors}   // 'Typist::Error',
+        errors   => $args{errors}   // 'Typist::Error::Global',
     }, $class;
 }
 
@@ -63,7 +66,7 @@ sub _check_functions ($self) {
 
     for my $fqn (sort keys %functions) {
         my $sig = $functions{$fqn};
-        my %declared = map { ref $_ eq 'HASH' ? ($_->{name} => 1) : ($_ => 1) }
+        my %declared = map { $_->{name} => 1 }
                        ($sig->{generics} // [])->@*;
 
         # Collect all free type variables from params and returns
@@ -111,6 +114,37 @@ sub _check_functions ($self) {
         # Validate that param/return type expressions are well-formed
         $self->_check_type_wellformed($_, $fqn) for ($sig->{params} // [])->@*;
         $self->_check_type_wellformed($sig->{returns}, $fqn) if $sig->{returns};
+
+        # Kind well-formedness: verify type expressions respect declared kinds
+        my %var_kinds;
+        for my $g (($sig->{generics} // [])->@*) {
+            next unless ref $g eq 'HASH' && $g->{var_kind};
+            $var_kinds{$g->{name}} = $g->{var_kind};
+        }
+        if (%var_kinds) {
+            for my $ptype (($sig->{params} // [])->@*) {
+                eval { Typist::KindChecker->infer_kind($ptype, \%var_kinds) };
+                if ($@) {
+                    $self->{errors}->collect(
+                        kind    => 'KindError',
+                        message => "Kind error in parameter of $fqn: $@",
+                        file    => '(function signature)',
+                        line    => 0,
+                    );
+                }
+            }
+            if ($sig->{returns}) {
+                eval { Typist::KindChecker->infer_kind($sig->{returns}, \%var_kinds) };
+                if ($@) {
+                    $self->{errors}->collect(
+                        kind    => 'KindError',
+                        message => "Kind error in return type of $fqn: $@",
+                        file    => '(function signature)',
+                        line    => 0,
+                    );
+                }
+            }
+        }
     }
 }
 

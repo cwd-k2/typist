@@ -28,6 +28,11 @@ sub update ($self, $content, $version) {
     $self->{lines}   = undef;
 }
 
+# Invalidate cached analysis without changing content (e.g., workspace registry changed).
+sub invalidate ($self) {
+    $self->{result} = undef;
+}
+
 # ── Analysis ─────────────────────────────────────
 
 sub analyze ($self, %opts) {

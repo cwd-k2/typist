@@ -17,7 +17,7 @@ my @modules = qw(
     Typist::Type::Row
     Typist::Type::Eff
     Typist::Effect
-    Typist::Effect::Checker
+    Typist::Static::EffectChecker
     Typist::Parser
     Typist::Transform
     Typist::TypeClass
@@ -27,8 +27,10 @@ my @modules = qw(
     Typist::Subtype
     Typist::Inference
     Typist::Attribute
-    Typist::Checker
+    Typist::Static::Checker
     Typist::Error
+    Typist::Error::Global
+    Typist::DSL
     Typist::Tie::Scalar
     Typist::Static::Infer
     Typist::Static::Extractor

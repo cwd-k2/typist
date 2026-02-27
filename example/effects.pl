@@ -2,17 +2,18 @@
 use v5.40;
 use lib 'lib';
 use Typist;
+use Typist::DSL;
 
 # ── Effect Definitions ──────────────────────────
 
 BEGIN {
     effect Console => +{
-        readLine  => 'CodeRef[-> Str]',
-        writeLine => 'CodeRef[Str -> Void]',
+        readLine  => Func(returns => Str),
+        writeLine => Func(Str, returns => Void),
     };
 
     effect Log => +{
-        log => 'CodeRef[Str -> Void]',
+        log => Func(Str, returns => Void),
     };
 }
 

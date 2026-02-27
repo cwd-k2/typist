@@ -58,7 +58,27 @@ sub _check_call_sites ($self) {
 
     for my $word (@$words) {
         my $name = $word->content;
-        my $fn = $self->{extracted}{functions}{$name} // next;
+
+        # Try local extraction first, then registry for cross-package calls (Pkg::func)
+        my $fn = $self->{extracted}{functions}{$name};
+        my $cross_pkg;
+        unless ($fn) {
+            # Check for Pkg::func pattern via registry
+            if ($name =~ /::/) {
+                my ($pkg, $fname) = $name =~ /\A(.+)::(\w+)\z/;
+                if ($pkg && $fname) {
+                    my $sig = $self->{registry}->lookup_function($pkg, $fname);
+                    if ($sig) {
+                        $cross_pkg = +{
+                            params_expr => [map { $_->to_string } ($sig->{params} // [])->@*],
+                            generics    => $sig->{generics},
+                        };
+                    }
+                }
+            }
+            next unless $cross_pkg;
+            $fn = $cross_pkg;
+        }
 
         # Skip if the word is part of a sub declaration
         my $parent = $word->parent;

@@ -4,6 +4,9 @@ use v5.40;
 use File::Find;
 use Typist::Registry;
 use Typist::Static::Extractor;
+use Typist::Parser;
+use Typist::Type::Newtype;
+use Typist::Effect;
 
 # ── Constructor ──────────────────────────────────
 
@@ -11,7 +14,7 @@ sub new ($class, %args) {
     my $self = bless +{
         root     => $args{root},
         registry => Typist::Registry->new,
-        files    => +{},  # path -> +{ aliases => +{...} }
+        files    => +{},  # path -> +{ aliases, functions, newtypes, effects, typeclasses, package }
     }, $class;
 
     $self->scan if $self->{root};
@@ -49,41 +52,59 @@ sub _index_file ($self, $path) {
     my $extracted = eval { Typist::Static::Extractor->extract($source) };
     return if $@;
 
-    # Store file's contribution
     $self->{files}{$path} = +{
-        aliases   => $extracted->{aliases},
-        functions => $extracted->{functions},
-        package   => $extracted->{package},
+        aliases     => $extracted->{aliases},
+        functions   => $extracted->{functions},
+        newtypes    => $extracted->{newtypes},
+        effects     => $extracted->{effects},
+        typeclasses => $extracted->{typeclasses},
+        package     => $extracted->{package},
     };
 
-    # Register aliases into workspace registry
-    for my $name (keys $extracted->{aliases}->%*) {
-        $self->{registry}->define_alias($name, $extracted->{aliases}{$name}{expr});
-    }
+    $self->_register_file_types($extracted);
 }
 
 # ── Incremental Update ──────────────────────────
 
 sub update_file ($self, $path, $source) {
-    # Remove old contributions from this file
-    if (my $old = $self->{files}{$path}) {
-        # We need to rebuild the registry from remaining files
+    if (exists $self->{files}{$path}) {
         delete $self->{files}{$path};
         $self->_rebuild_registry;
     }
 
-    # Re-extract and register
     my $extracted = eval { Typist::Static::Extractor->extract($source) };
     return if $@;
 
     $self->{files}{$path} = +{
-        aliases   => $extracted->{aliases},
-        functions => $extracted->{functions},
-        package   => $extracted->{package},
+        aliases     => $extracted->{aliases},
+        functions   => $extracted->{functions},
+        newtypes    => $extracted->{newtypes},
+        effects     => $extracted->{effects},
+        typeclasses => $extracted->{typeclasses},
+        package     => $extracted->{package},
     };
 
+    $self->_register_file_types($extracted);
+}
+
+sub _register_file_types ($self, $extracted) {
+    my $reg = $self->{registry};
+
     for my $name (keys $extracted->{aliases}->%*) {
-        $self->{registry}->define_alias($name, $extracted->{aliases}{$name}{expr});
+        $reg->define_alias($name, $extracted->{aliases}{$name}{expr});
+    }
+
+    for my $name (keys $extracted->{newtypes}->%*) {
+        my $info = $extracted->{newtypes}{$name};
+        my $inner = eval { Typist::Parser->parse($info->{inner_expr}) };
+        next if $@;
+        my $type = Typist::Type::Newtype->new($name, $inner);
+        $reg->register_newtype($name, $type);
+    }
+
+    for my $name (keys $extracted->{effects}->%*) {
+        my $eff = Typist::Effect->new(name => $name, operations => +{});
+        $reg->register_effect($name, $eff);
     }
 }
 
@@ -92,19 +113,23 @@ sub _rebuild_registry ($self) {
 
     for my $path (sort keys $self->{files}->%*) {
         my $info = $self->{files}{$path};
-        for my $name (keys $info->{aliases}->%*) {
-            $self->{registry}->define_alias($name, $info->{aliases}{$name}{expr});
-        }
+        # Re-register from stored extracted data (simulate extraction result)
+        $self->_register_file_types(+{
+            aliases     => $info->{aliases}     // +{},
+            newtypes    => $info->{newtypes}    // +{},
+            effects     => $info->{effects}     // +{},
+            typeclasses => $info->{typeclasses} // +{},
+        });
     }
 }
 
 # ── Query ────────────────────────────────────────
 
-# Return all known typedef names across the workspace.
 sub all_typedef_names ($self) {
     my %seen;
     for my $info (values $self->{files}->%*) {
-        $seen{$_} = 1 for keys $info->{aliases}->%*;
+        $seen{$_} = 1 for keys($info->{aliases}->%*);
+        $seen{$_} = 1 for keys($info->{newtypes}->%*);
     }
     sort keys %seen;
 }

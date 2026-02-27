@@ -35,8 +35,14 @@ sub _self ($invocant) {
 
 sub define_alias ($invocant, $name, $expr) {
     my $self = _self($invocant);
-    $self->{aliases}{$name} = $expr;
-    delete $self->{resolved}{$name};
+    # Accept Type objects directly — store the string form for aliases, resolve immediately
+    if (ref $expr && $expr->isa('Typist::Type')) {
+        $self->{aliases}{$name}  = $expr->to_string;
+        $self->{resolved}{$name} = $expr;
+    } else {
+        $self->{aliases}{$name} = $expr;
+        delete $self->{resolved}{$name};
+    }
 }
 
 sub lookup_type ($invocant, $name) {
@@ -175,26 +181,8 @@ sub register_instance ($invocant, $class_name, $type_expr, $inst) {
 
 sub resolve_instance ($invocant, $class_name, $type) {
     my $self = _self($invocant);
-    my $insts = $self->{instances}{$class_name} // return undef;
-
-    require Typist::Subtype;
-
-    for my $inst (@$insts) {
-        my $type_expr = $inst->type_expr;
-
-        # HKT: match by constructor name (e.g., "ArrayRef" matches ArrayRef[T])
-        if ($type->is_param && $type_expr eq $type->base) {
-            return $inst;
-        }
-
-        my $inst_type = Typist::Parser->parse($type_expr);
-        # Exact match or subtype match
-        if ($type->equals($inst_type)
-            || Typist::Subtype->is_subtype($type, $inst_type)) {
-            return $inst;
-        }
-    }
-    undef;
+    require Typist::TypeClass;
+    Typist::TypeClass::Def->resolve($class_name, $type, $self->{instances});
 }
 
 # ── Effect Management ────────────────────────────
@@ -228,10 +216,18 @@ sub merge ($self, $other) {
     for my $fqn (keys $other->{functions}->%*) {
         $self->{functions}{$fqn} //= $other->{functions}{$fqn};
     }
-    if ($other->{effects}) {
-        for my $name (keys $other->{effects}->%*) {
-            $self->{effects}{$name} //= $other->{effects}{$name};
-        }
+    for my $name (keys $other->{effects}->%*) {
+        $self->{effects}{$name} //= $other->{effects}{$name};
+    }
+    for my $name (keys $other->{newtypes}->%*) {
+        $self->{newtypes}{$name} //= $other->{newtypes}{$name};
+    }
+    for my $name (keys $other->{typeclasses}->%*) {
+        $self->{typeclasses}{$name} //= $other->{typeclasses}{$name};
+    }
+    for my $class_name (keys $other->{instances}->%*) {
+        $self->{instances}{$class_name} //= [];
+        push $self->{instances}{$class_name}->@*, $other->{instances}{$class_name}->@*;
     }
     # Clear resolved cache since new aliases may change resolution
     $self->{resolved} = +{};
@@ -260,7 +256,8 @@ sub reset ($invocant) {
 # ── Exported typedef ────────────────────────────
 
 sub typedef ($name, $expr) {
-    __PACKAGE__->define_alias($name, $expr);
+    require Typist::Type;
+    __PACKAGE__->define_alias($name, Typist::Type->coerce($expr));
 }
 
 1;

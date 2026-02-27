@@ -7,35 +7,34 @@ Typist is a pure Perl type system for Perl 5.40+. It provides type annotations v
 ## Architecture
 
 ```
-Typist.pm                  — Entry point. Registers packages, installs attributes, exports typedef/newtype/unwrap/typeclass/instance/effect.
-Typist::Parser             — Recursive-descent parser for type expressions (atoms, params, unions, intersections, structs, literals).
-Typist::Registry           — Global singleton. Stores aliases, newtypes, typeclasses, instances, effects, function signatures, variables, packages.
-Typist::Type               — Abstract base class for all type nodes.
-  ::Type::Atom             — Primitives (Any, Num, Int, Bool, Str, Undef, Void, Never). Flyweight pool.
-  ::Type::Param            — ArrayRef[T], HashRef[K,V], Tuple[...], Ref[T].
-  ::Type::Union            — T | U. Normalizing constructor.
-  ::Type::Intersection     — T & U. Normalizing constructor.
-  ::Type::Func             — CodeRef[A, B -> R].
-  ::Type::Struct           — { key => Type, key? => Type, ... }. Required + optional field support.
-  ::Type::Var              — Type variables (single or multi-char). Optional bound and kind.
-  ::Type::Alias            — Named aliases, lazily resolved via Registry. Supports recursive types.
-  ::Type::Literal          — Singleton literal types: "hello", 42, 3.14.
-  ::Type::Newtype          — Nominal wrapper types. Blessed scalar ref, no structural subtyping.
-Typist::Transform          — Post-parse tree walk: converts Alias → Var for :Generic-declared names.
-Typist::Subtype            — Structural subtype relation (is_subtype). Handles Never, Literal, Newtype, Optional struct fields.
-Typist::Inference          — Runtime value inference + HM-style unification for generics.
-Typist::Attribute          — Perl attribute handlers for :Type, :Params, :Returns, :Generic, :Eff. Bounded + typeclass constraint checking.
-Typist::Checker            — CHECK-phase static analysis (alias cycles, undeclared vars, bound well-formedness, effect well-formedness).
-Typist::Error              — Structured error collection and reporting.
-Typist::Tie::Scalar        — Tie-based scalar guard. Validates on every STORE.
-Typist::TypeClass          — Type class definition (Def) and instance (Inst) structures.
-Typist::Kind               — Kind system: Star (*), Row, and Arrow (* -> *).
-Typist::KindChecker        — Kind inference and application checking for type constructors.
-Typist::Effect             — Effect definition structure (name + operations map).
-  ::Type::Row              — Effect row type: sorted labels + optional tail variable. Phantom.
-  ::Type::Eff              — Eff(row) wrapper. Delegates to inner Row.
-Typist::Effect::Checker    — PPI-based static effect checker (call graph + label inclusion).
+Runtime Layer                Static Analysis Layer         LSP Layer
+──────────────────           ─────────────────────         ──────────────
+Typist.pm (entry)            Static::Extractor             LSP::Server
+Attribute.pm                 Static::Analyzer              LSP::Document
+Tie::Scalar                  Static::Checker (CHECK)       LSP::Workspace
+Inference.pm                 Static::TypeChecker           LSP::Hover
+                             Static::EffectChecker         LSP::Completion
+                             Static::Infer                 LSP::Transport
+
+Shared Infrastructure
+──────────────────────────
+Registry, Parser, Subtype, Transform
+Error (value + Collector), Error::Global (singleton buffer)
+Type::{Atom,Param,Union,Intersection,Func,Struct,Var,Alias,Literal,Newtype,Row,Eff}
+Kind, KindChecker, TypeClass, Effect
+DSL (Type constructors: Int, Str, ArrayRef(...), Struct(...), Func(...), etc.)
 ```
+
+### Key Modules
+
+- `Typist::DSL` — Type DSL with operator overloading. Exports atom constants (`Int`, `Str`, `Num`, ...), type variable constants (`T`, `U`, `V`, ...), and parametric constructors (`ArrayRef(...)`, `Struct(...)`, `Func(..., returns => R)`). Enables `typedef Name => Str | Int` syntax.
+- `Typist::Type` — Abstract base with `|` (union), `&` (intersection), `""` (stringify) overloads. `coerce($expr)` accepts both Type objects and strings.
+- `Typist::Error` — Value class + Collector (instance-based). `Typist::Error::Global` provides the global singleton buffer.
+- `Typist::Static::Checker` — CHECK-phase validation (alias cycles, undeclared vars, bound/kind/effect well-formedness).
+- `Typist::Static::EffectChecker` — PPI-based static effect checker (call graph + label inclusion, cross-package support).
+- `Typist::Subtype` — Structural subtype relation + `common_super` (LUB for atom types).
+- `Typist::Attribute` — Attribute handlers + `parse_generic_decl` (shared between runtime and static paths).
+- `Typist::TypeClass` — Type class Def (with `install_dispatch`, `check_instance_completeness`, `resolve`) and Inst structures.
 
 ## Conventions
 
@@ -82,4 +81,20 @@ Tests are numbered and ordered by dependency:
 - `t/15_effects_row.t` — Row parsing, subtyping, unification
 - `t/16_effects_attribute.t` — :Eff attribute, effect keyword, :Generic(r: Row)
 - `t/17_effects_integration.t` — End-to-end effect system scenarios
-- `t/static/04_effects.t` — Static effect mismatch detection via Analyzer
+- `t/18_dsl.t` — Type DSL (operators, constructors, coerce)
+- `t/static/00_extractor.t` — PPI-based type extraction
+- `t/static/01_analyzer.t` — Static analysis pipeline
+- `t/static/02_infer.t` — Static type inference
+- `t/static/03_typecheck.t` — Static type mismatch detection
+- `t/static/04_effects.t` — Static effect mismatch detection
+- `t/static/05_extractor_advanced.t` — Extractor: newtype/effect/typeclass extraction
+- `t/static/06_crossfile_analyzer.t` — Cross-file type resolution via workspace registry
+- `t/lsp/00_transport.t` — JSON-RPC transport
+- `t/lsp/01_server.t` — LSP server lifecycle
+- `t/lsp/02_diagnostics.t` — Diagnostics publishing
+- `t/lsp/03_hover.t` — Hover provider
+- `t/lsp/04_completion.t` — Completion provider
+- `t/lsp/05_workspace.t` — Workspace scanning
+- `t/lsp/06_workspace_crossfile.t` — Cross-file workspace registration
+- `t/lsp/07_crossfile_diagnostics.t` — Cross-file re-diagnosis on save
+- `t/critic/00_policy.t` — Perl::Critic policy bridge

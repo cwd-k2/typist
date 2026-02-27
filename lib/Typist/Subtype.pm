@@ -14,11 +14,32 @@ my %PARENT = (
     Void  => 'Any',
 );
 
+# Atom ordering for common supertype (LUB) computation
+my %ATOM_ORDER = (Bool => 0, Int => 1, Num => 2, Str => 3, Any => 4);
+
 # ── Public API ────────────────────────────────────
 
 # Is $sub a subtype of $super?
 sub is_subtype ($class, $sub, $super) {
     _check($sub, $super);
+}
+
+# Least upper bound of two types in the atom lattice.
+sub common_super ($class, $a, $b) {
+    return $a if $a->equals($b);
+
+    if ($a->is_atom && $b->is_atom) {
+        my $oa = $ATOM_ORDER{$a->name} // 4;
+        my $ob = $ATOM_ORDER{$b->name} // 4;
+
+        if (exists $ATOM_ORDER{$a->name} && exists $ATOM_ORDER{$b->name}) {
+            if ($a->name ne 'Str' && $b->name ne 'Str') {
+                return $oa > $ob ? $a : $b;
+            }
+        }
+    }
+
+    Typist::Type::Atom->new('Any');
 }
 
 # ── Internal ──────────────────────────────────────

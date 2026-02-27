@@ -2,14 +2,15 @@
 use v5.40;
 use lib 'lib';
 use Typist;
+use Typist::DSL;
 
 # ── Type Aliases ──────────────────────────────────
 
 # typedef in BEGIN so CHECK-phase analysis can see them
 BEGIN {
-    typedef Name   => 'Str';
-    typedef Age    => 'Int';
-    typedef Person => '{ name => Str, age => Int }';
+    typedef Name   => Str;
+    typedef Age    => Int;
+    typedef Person => Struct(name => Str, age => Int);
 }
 
 # ── Typed Variables ───────────────────────────────

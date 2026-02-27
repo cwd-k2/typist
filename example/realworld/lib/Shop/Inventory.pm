@@ -2,6 +2,7 @@ package Shop::Inventory;
 use v5.40;
 use lib 'lib';
 use Typist;
+use Typist::DSL;
 use Shop::Types;
 
 # ── Internal Storage ───────────────────────────

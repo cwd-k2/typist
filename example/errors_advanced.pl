@@ -2,6 +2,7 @@
 use v5.40;
 use lib 'lib';
 use Typist;
+use Typist::DSL;
 
 # ═══════════════════════════════════════════════════
 #  Advanced Type Errors — Generics, newtypes, literals
@@ -29,8 +30,8 @@ say "";
 say "── Newtype Violations ────────────────────────";
 
 BEGIN {
-    newtype UserId  => 'Int';
-    newtype OrderId => 'Int';
+    newtype UserId  => Int;
+    newtype OrderId => Int;
 }
 
 # Newtype rejects raw values (must be wrapped)
@@ -118,7 +119,7 @@ say "── Recursive Type Violations ──────────────
 
 BEGIN {
     typedef JsonValue =>
-        'Str | Num | Bool | Undef | ArrayRef[JsonValue] | HashRef[Str, JsonValue]';
+        Str | Num | Bool | Undef | ArrayRef(Alias('JsonValue')) | HashRef(Str, Alias('JsonValue'));
 }
 
 # Valid JSON structures
@@ -136,7 +137,7 @@ say "";
 say "── Optional Struct Field Violations ──────────";
 
 BEGIN {
-    typedef Config => '{ host => Str, port => Int, debug? => Bool }';
+    typedef Config => Struct(host => Str, port => Int, 'debug?' => Bool);
 }
 
 # Required fields present, optional omitted — ok
@@ -159,7 +160,7 @@ say "── Intersection of Errors ───────────────
 
 # Multi-layer nesting: ArrayRef of structs
 BEGIN {
-    typedef UserList => 'ArrayRef[{ name => Str, age => Int }]';
+    typedef UserList => ArrayRef(Struct(name => Str, age => Int));
 }
 
 my $users :Type(UserList) = [+{ name => "Alice", age => 30 }];

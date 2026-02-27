@@ -1,4 +1,4 @@
-package Typist::Effect::Checker;
+package Typist::Static::EffectChecker;
 use v5.40;
 
 use Typist::Type::Row;
@@ -78,8 +78,13 @@ sub _collect_called_effects ($self, $block, $pkg) {
         my $parent = $word->parent;
         next if $parent && $parent->isa('PPI::Statement::Sub');
 
-        # Look up callee's sig
+        # Look up callee's sig — local package first, then cross-package (Pkg::func)
         my $callee_sig = $self->{registry}->lookup_function($pkg, $callee_name);
+        unless ($callee_sig) {
+            if ($callee_name =~ /\A(.+)::(\w+)\z/) {
+                $callee_sig = $self->{registry}->lookup_function($1, $2);
+            }
+        }
         next unless $callee_sig;
         next unless $callee_sig->{effects};
 

@@ -4,8 +4,8 @@ use parent 'Typist::Type';
 
 # Named alias — resolves lazily against Registry on first access.
 
-sub new ($class, $name) {
-    bless +{ name => $name, resolved => undef }, $class;
+sub new ($class, $name, %opts) {
+    bless +{ name => $name, resolved => undef, registry => $opts{registry} }, $class;
 }
 
 sub alias_name ($self) { $self->{name} }
@@ -13,8 +13,13 @@ sub is_alias   ($self) { 1 }
 
 sub _resolve ($self) {
     unless ($self->{resolved}) {
-        require Typist::Registry;
-        $self->{resolved} = Typist::Registry->lookup_type($self->{name});
+        my $reg = $self->{registry};
+        if ($reg) {
+            $self->{resolved} = $reg->lookup_type($self->{name});
+        } else {
+            require Typist::Registry;
+            $self->{resolved} = Typist::Registry->lookup_type($self->{name});
+        }
     }
     $self->{resolved};
 }

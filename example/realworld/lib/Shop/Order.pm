@@ -2,6 +2,7 @@ package Shop::Order;
 use v5.40;
 use lib 'lib';
 use Typist;
+use Typist::DSL;
 use Shop::Types;
 use Shop::Inventory;
 

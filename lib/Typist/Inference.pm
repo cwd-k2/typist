@@ -5,6 +5,7 @@ use Scalar::Util 'looks_like_number', 'reftype';
 use Typist::Type::Atom;
 use Typist::Type::Param;
 use Typist::Type::Struct;
+use Typist::Subtype;
 
 # ── Value Inference ───────────────────────────────
 
@@ -45,7 +46,7 @@ sub _infer_array ($arr) {
     # Find the common supertype of all elements
     my $elem = __PACKAGE__->infer_value($arr->[0]);
     for my $i (1 .. $#$arr) {
-        $elem = _common_super($elem, __PACKAGE__->infer_value($arr->[$i]));
+        $elem = Typist::Subtype->common_super($elem, __PACKAGE__->infer_value($arr->[$i]));
     }
     Typist::Type::Param->new('ArrayRef', $elem);
 }
@@ -57,29 +58,9 @@ sub _infer_hash ($hash) {
     my @vals = map { __PACKAGE__->infer_value($_) } values %$hash;
     my $vtype = $vals[0];
     for my $i (1 .. $#vals) {
-        $vtype = _common_super($vtype, $vals[$i]);
+        $vtype = Typist::Subtype->common_super($vtype, $vals[$i]);
     }
     Typist::Type::Param->new('HashRef', $vtype);
-}
-
-my %ATOM_ORDER = (Bool => 0, Int => 1, Num => 2, Str => 3, Any => 4);
-
-sub _common_super ($a, $b) {
-    return $a if $a->equals($b);
-
-    if ($a->is_atom && $b->is_atom) {
-        my $oa = $ATOM_ORDER{$a->name} // 4;
-        my $ob = $ATOM_ORDER{$b->name} // 4;
-
-        # If they're on the same numeric chain, return the higher one
-        if (exists $ATOM_ORDER{$a->name} && exists $ATOM_ORDER{$b->name}) {
-            if ($a->name ne 'Str' && $b->name ne 'Str') {
-                return $oa > $ob ? $a : $b;
-            }
-        }
-    }
-
-    Typist::Type::Atom->new('Any');
 }
 
 # ── Generic Instantiation ────────────────────────
@@ -106,7 +87,7 @@ sub _unify ($formal, $actual, $bindings) {
         if (exists $bindings->{$name}) {
             # Already bound — check compatibility
             return if $bindings->{$name}->equals($actual);
-            $bindings->{$name} = _common_super($bindings->{$name}, $actual);
+            $bindings->{$name} = Typist::Subtype->common_super($bindings->{$name}, $actual);
         } else {
             $bindings->{$name} = $actual;
         }

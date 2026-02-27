@@ -3,12 +3,13 @@ use v5.40;
 
 use Typist::Static::Extractor;
 use Typist::Static::TypeChecker;
-use Typist::Effect::Checker;
+use Typist::Static::EffectChecker;
 use Typist::Registry;
 use Typist::Parser;
 use Typist::Type::Eff;
-use Typist::Checker;
+use Typist::Static::Checker;
 use Typist::Error;
+use Typist::Attribute;
 
 # ── Severity Mapping ─────────────────────────────
 
@@ -107,16 +108,23 @@ sub analyze ($class, $source, %opts) {
             }
         }
 
+        # Parse generic declarations into structured form
+        my @generics;
+        if ($fn->{generics} && @{$fn->{generics}}) {
+            my $spec = join(', ', $fn->{generics}->@*);
+            @generics = Typist::Attribute->parse_generic_decl($spec, registry => $registry);
+        }
+
         $registry->register_function($pkg, $name, +{
             params   => \@param_types,
             returns  => $return_type,
-            generics => $fn->{generics},
+            generics => \@generics,
             effects  => $effects,
         });
     }
 
     # 4. Run Checker
-    my $checker = Typist::Checker->new(registry => $registry, errors => $errors);
+    my $checker = Typist::Static::Checker->new(registry => $registry, errors => $errors);
     $checker->analyze;
 
     # 4.5. Run TypeChecker (static type mismatch detection)
@@ -130,7 +138,7 @@ sub analyze ($class, $source, %opts) {
     $type_checker->analyze;
 
     # 4.6. Run Effect Checker (static effect mismatch detection)
-    my $effect_checker = Typist::Effect::Checker->new(
+    my $effect_checker = Typist::Static::EffectChecker->new(
         registry  => $registry,
         errors    => $errors,
         extracted => $extracted,

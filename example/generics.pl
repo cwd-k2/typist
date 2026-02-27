@@ -2,6 +2,7 @@
 use v5.40;
 use lib 'lib';
 use Typist;
+use Typist::DSL;
 
 # ── Generic Functions ─────────────────────────────
 

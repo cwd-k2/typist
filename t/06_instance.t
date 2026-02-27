@@ -4,7 +4,8 @@ use lib 'lib';
 
 use Typist::Registry;
 use Typist::Error;
-use Typist::Checker;
+use Typist::Error::Global;
+use Typist::Static::Checker;
 use Typist::Parser;
 
 # ── Registry instance isolation ──────────────────
@@ -91,13 +92,13 @@ subtest 'Registry merge combines functions' => sub {
 # ── Error collector instance ─────────────────────
 
 subtest 'Error collector is isolated from global' => sub {
-    Typist::Error->reset;
+    Typist::Error::Global->reset;
     my $c = Typist::Error->collector;
 
     $c->collect(kind => 'TestError', message => 'test msg', file => 'test.pm', line => 1);
 
-    ok  $c->has_errors,             'collector has errors';
-    ok !Typist::Error->has_errors,  'global is clean';
+    ok  $c->has_errors,                    'collector has errors';
+    ok !Typist::Error::Global->has_errors, 'global is clean';
 
     my @errs = $c->errors;
     is scalar @errs, 1, 'collector has 1 error';
@@ -135,7 +136,7 @@ subtest 'Checker with instance registry and collector' => sub {
     $reg->define_alias('Loop1', 'Loop2');
     $reg->define_alias('Loop2', 'Loop1');
 
-    my $checker = Typist::Checker->new(registry => $reg, errors => $err);
+    my $checker = Typist::Static::Checker->new(registry => $reg, errors => $err);
     $checker->analyze;
 
     ok $err->has_errors, 'checker found errors';
@@ -154,7 +155,7 @@ subtest 'Checker validates undeclared type vars' => sub {
         generics => [],  # T not declared
     });
 
-    my $checker = Typist::Checker->new(registry => $reg, errors => $err);
+    my $checker = Typist::Static::Checker->new(registry => $reg, errors => $err);
     $checker->analyze;
 
     ok $err->has_errors, 'checker found errors';
@@ -173,7 +174,7 @@ subtest 'Checker with clean registry produces no errors' => sub {
         generics => [],
     });
 
-    my $checker = Typist::Checker->new(registry => $reg, errors => $err);
+    my $checker = Typist::Static::Checker->new(registry => $reg, errors => $err);
     $checker->analyze;
 
     ok !$err->has_errors, 'no errors for valid registry';

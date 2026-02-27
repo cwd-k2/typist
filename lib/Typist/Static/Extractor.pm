@@ -12,11 +12,14 @@ sub extract ($class, $source) {
         or die "Typist::Static::Extractor: failed to parse source";
 
     my $result = +{
-        aliases   => +{},
-        variables => [],
-        functions => +{},
-        package   => 'main',
-        ppi_doc   => $doc,
+        aliases     => +{},
+        variables   => [],
+        functions   => +{},
+        newtypes    => +{},
+        effects     => +{},
+        typeclasses => +{},
+        package     => 'main',
+        ppi_doc     => $doc,
     };
 
     # Detect package declaration
@@ -25,6 +28,9 @@ sub extract ($class, $source) {
     }
 
     $class->_extract_typedefs($doc, $result);
+    $class->_extract_newtypes($doc, $result);
+    $class->_extract_effects($doc, $result);
+    $class->_extract_typeclasses($doc, $result);
     $class->_extract_variables($doc, $result);
     $class->_extract_functions($doc, $result);
 
@@ -56,6 +62,83 @@ sub _extract_typedefs ($class, $doc, $result) {
 
         $result->{aliases}{$name} = +{
             expr => $expr,
+            line => $stmt->line_number,
+            col  => $stmt->column_number,
+        };
+    }
+}
+
+# ── Newtype Extraction ─────────────────────────
+
+sub _extract_newtypes ($class, $doc, $result) {
+    my $statements = $doc->find('PPI::Statement') || [];
+
+    for my $stmt (@$statements) {
+        my @children = $stmt->schildren;
+        next unless @children >= 4;
+
+        # newtype Name => 'Expr'
+        next unless $children[0]->isa('PPI::Token::Word')
+                 && $children[0]->content eq 'newtype';
+
+        my $name = $children[1]->content;
+        next unless $children[2]->isa('PPI::Token::Operator')
+                 && $children[2]->content eq '=>';
+
+        my $expr_tok = $children[3];
+        my $expr = $expr_tok->isa('PPI::Token::Quote')
+            ? $expr_tok->string
+            : $expr_tok->content;
+
+        $result->{newtypes}{$name} = +{
+            inner_expr => $expr,
+            line       => $stmt->line_number,
+            col        => $stmt->column_number,
+        };
+    }
+}
+
+# ── Effect Extraction ──────────────────────────
+
+sub _extract_effects ($class, $doc, $result) {
+    my $statements = $doc->find('PPI::Statement') || [];
+
+    for my $stmt (@$statements) {
+        my @children = $stmt->schildren;
+        next unless @children >= 3;
+
+        # effect Name => { ... } or effect Name => [ ... ]
+        next unless $children[0]->isa('PPI::Token::Word')
+                 && $children[0]->content eq 'effect';
+
+        my $name = $children[1]->content;
+
+        $result->{effects}{$name} = +{
+            line => $stmt->line_number,
+            col  => $stmt->column_number,
+        };
+    }
+}
+
+# ── TypeClass Extraction ───────────────────────
+
+sub _extract_typeclasses ($class, $doc, $result) {
+    my $statements = $doc->find('PPI::Statement') || [];
+
+    for my $stmt (@$statements) {
+        my @children = $stmt->schildren;
+        next unless @children >= 3;
+
+        # typeclass Name => 'VarSpec', method => sig, ...
+        next unless $children[0]->isa('PPI::Token::Word')
+                 && $children[0]->content eq 'typeclass';
+
+        my $name_tok = $children[1];
+        my $name = $name_tok->isa('PPI::Token::Quote')
+            ? $name_tok->string
+            : $name_tok->content;
+
+        $result->{typeclasses}{$name} = +{
             line => $stmt->line_number,
             col  => $stmt->column_number,
         };

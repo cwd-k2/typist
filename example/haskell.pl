@@ -2,6 +2,7 @@
 use v5.40;
 use lib 'lib';
 use Typist;
+use Typist::DSL;
 
 # ── Newtype (Nominal Types) ─────────────────────
 
@@ -9,8 +10,8 @@ use Typist;
 # Same inner type, distinct identity — no structural subtyping.
 
 BEGIN {
-    newtype UserId  => 'Int';
-    newtype OrderId => 'Int';
+    newtype UserId  => Int;
+    newtype OrderId => Int;
 }
 
 my $uid = UserId(42);
@@ -44,7 +45,7 @@ say "tag: $tag";
 
 BEGIN {
     typedef JsonValue =>
-        'Str | Num | Bool | Undef | ArrayRef[JsonValue] | HashRef[Str, JsonValue]';
+        Str | Num | Bool | Undef | ArrayRef(Alias('JsonValue')) | HashRef(Str, Alias('JsonValue'));
 }
 
 my $json :Type(JsonValue) = +{

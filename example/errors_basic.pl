@@ -2,6 +2,7 @@
 use v5.40;
 use lib 'lib';
 use Typist;
+use Typist::DSL;
 
 # ═══════════════════════════════════════════════════
 #  Basic Type Errors — Runtime type checking in action
@@ -71,7 +72,7 @@ say "";
 say "── Struct Type Violations ────────────────────";
 
 BEGIN {
-    typedef Person => '{ name => Str, age => Int }';
+    typedef Person => Struct(name => Str, age => Int);
 }
 
 # Valid struct

@@ -150,7 +150,11 @@ sub _handle_did_save ($self, $params) {
     my $path = $uri =~ s{^file://}{}r;
     $self->{workspace}->update_file($path, $doc->content) if $self->{workspace};
 
-    $self->_publish_diagnostics($doc);
+    # Invalidate and re-diagnose all open documents (cross-file types may have changed)
+    for my $other_doc (values $self->{documents}->%*) {
+        $other_doc->invalidate;
+        $self->_publish_diagnostics($other_doc);
+    }
 
     undef;
 }

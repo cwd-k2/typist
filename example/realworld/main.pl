@@ -2,6 +2,7 @@
 use v5.40;
 use lib 'lib', 'example/realworld/lib';
 use Typist;
+use Typist::DSL;
 use Shop::Types;
 use Shop::Inventory;
 use Shop::Order;

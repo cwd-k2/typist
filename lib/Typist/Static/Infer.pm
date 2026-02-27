@@ -3,6 +3,7 @@ use v5.40;
 
 use Typist::Type::Atom;
 use Typist::Type::Param;
+use Typist::Subtype;
 
 # ── Public API ───────────────────────────────────
 
@@ -59,8 +60,6 @@ sub _infer_number ($token) {
 
 # ── Array Inference ──────────────────────────────
 
-my %ATOM_ORDER = (Bool => 0, Int => 1, Num => 2, Str => 3, Any => 4);
-
 sub _infer_array ($constructor) {
     # PPI uses PPI::Statement (not ::Expression) inside array constructors
     my $expr = $constructor->find_first('PPI::Statement');
@@ -79,7 +78,7 @@ sub _infer_array ($constructor) {
 
     my $common = $elem_types[0];
     for my $i (1 .. $#elem_types) {
-        $common = _common_super($common, $elem_types[$i]);
+        $common = Typist::Subtype->common_super($common, $elem_types[$i]);
     }
 
     Typist::Type::Param->new('ArrayRef', $common);
@@ -122,29 +121,10 @@ sub _infer_hash ($constructor) {
 
     my $common = $val_types[0];
     for my $j (1 .. $#val_types) {
-        $common = _common_super($common, $val_types[$j]);
+        $common = Typist::Subtype->common_super($common, $val_types[$j]);
     }
 
     Typist::Type::Param->new('HashRef', $common);
-}
-
-# ── Helpers ──────────────────────────────────────
-
-sub _common_super ($a, $b) {
-    return $a if $a->equals($b);
-
-    if ($a->is_atom && $b->is_atom) {
-        my $oa = $ATOM_ORDER{$a->name} // 4;
-        my $ob = $ATOM_ORDER{$b->name} // 4;
-
-        if (exists $ATOM_ORDER{$a->name} && exists $ATOM_ORDER{$b->name}) {
-            if ($a->name ne 'Str' && $b->name ne 'Str') {
-                return $oa > $ob ? $a : $b;
-            }
-        }
-    }
-
-    Typist::Type::Atom->new('Any');
 }
 
 1;

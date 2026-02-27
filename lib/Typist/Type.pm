@@ -1,6 +1,13 @@
 package Typist::Type;
 use v5.40;
 
+use overload
+    '|'    => \&_op_union,
+    '&'    => \&_op_intersection,
+    '""'   => sub ($self, @) { $self->to_string },
+    'bool' => sub { 1 },
+    fallback => 1;
+
 # Abstract base class for all type objects.
 # Every type is an immutable value object sharing this interface.
 
@@ -23,5 +30,28 @@ sub is_literal      { 0 }
 sub is_newtype      { 0 }
 sub is_row          { 0 }
 sub is_eff          { 0 }
+
+# Coerce a value into a Type object: blessed Types pass through, strings are parsed.
+sub coerce ($class, $expr) {
+    return $expr if ref $expr && $expr->isa('Typist::Type');
+    require Typist::Parser;
+    Typist::Parser->parse($expr);
+}
+
+# ── Operator Overloads ──────────────────────────
+
+sub _op_union {
+    my ($self, $other) = @_;
+    require Typist::Type::Union;
+    $other = Typist::Type->coerce($other) unless ref $other && $other->isa('Typist::Type');
+    Typist::Type::Union->new($self, $other);
+}
+
+sub _op_intersection {
+    my ($self, $other) = @_;
+    require Typist::Type::Intersection;
+    $other = Typist::Type->coerce($other) unless ref $other && $other->isa('Typist::Type');
+    Typist::Type::Intersection->new($self, $other);
+}
 
 1;

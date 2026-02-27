@@ -1,7 +1,7 @@
 package Typist::Error;
 use v5.40;
 
-# ── Error Object ─────────────────────────────────
+# ── Error Value Object ───────────────────────────
 
 sub new ($class, %args) {
     bless +{
@@ -22,38 +22,16 @@ sub to_string ($self) {
         $self->{kind}, $self->{message}, $self->{file}, $self->{line};
 }
 
-# ── Global Batch Collector (backward compat) ────
+# ── Collector ────────────────────────────────────
+# Instance-based error accumulator for isolated analysis (LSP, static checker).
 
-my @ERRORS;
-
-sub collect ($invocant, %args) {
-    my $err = Typist::Error->new(%args);
-    if (ref $invocant && $invocant->isa('Typist::Error::Collector')) {
-        push $invocant->{errors}->@*, $err;
-    } else {
-        push @ERRORS, $err;
-    }
+sub collector ($class) {
+    Typist::Error::Collector->new;
 }
 
-sub has_errors ($invocant) {
-    if (ref $invocant && $invocant->isa('Typist::Error::Collector')) {
-        return scalar $invocant->{errors}->@*;
-    }
-    scalar @ERRORS;
-}
+# ── Reporting Helpers ────────────────────────────
 
-sub errors ($invocant) {
-    if (ref $invocant && $invocant->isa('Typist::Error::Collector')) {
-        return $invocant->{errors}->@*;
-    }
-    @ERRORS;
-}
-
-sub report ($invocant) {
-    my @errs = ref $invocant && $invocant->isa('Typist::Error::Collector')
-        ? $invocant->{errors}->@*
-        : @ERRORS;
-
+sub _format_report (@errs) {
     return unless @errs;
     my $n = scalar @errs;
     my $s = $n == 1 ? '' : 's';
@@ -63,24 +41,33 @@ sub report ($invocant) {
     $report;
 }
 
-sub reset ($invocant) {
-    if (ref $invocant && $invocant->isa('Typist::Error::Collector')) {
-        $invocant->{errors} = [];
-    } else {
-        @ERRORS = ();
-    }
-}
-
-# ── Collector Factory ────────────────────────────
-
-sub collector ($class) {
-    bless +{ errors => [] }, 'Typist::Error::Collector';
-}
-
 # ── Collector Class ──────────────────────────────
 
 package Typist::Error::Collector;
 use v5.40;
-our @ISA = ('Typist::Error');
+
+sub new ($class) {
+    bless +{ errors => [] }, $class;
+}
+
+sub collect ($self, %args) {
+    push $self->{errors}->@*, Typist::Error->new(%args);
+}
+
+sub has_errors ($self) {
+    scalar $self->{errors}->@*;
+}
+
+sub errors ($self) {
+    $self->{errors}->@*;
+}
+
+sub report ($self) {
+    Typist::Error::_format_report($self->{errors}->@*);
+}
+
+sub reset ($self) {
+    $self->{errors} = [];
+}
 
 1;

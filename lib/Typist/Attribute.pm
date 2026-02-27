@@ -9,6 +9,8 @@ use Typist::Subtype;
 use Typist::Tie::Scalar;
 use Typist::Transform;
 use Typist::Type::Eff;
+use Typist::Kind;
+use Typist::KindChecker;
 
 # ── Public API ────────────────────────────────────
 
@@ -51,6 +53,62 @@ sub _handle_scalar_attrs ($pkg, $ref, @attrs) {
     @unhandled;
 }
 
+# ── Generic Declaration Parsing ──────────────────
+
+# Parse a :Generic(...) specification into structured hashrefs.
+# Shared between runtime Attribute handling and static Analyzer.
+#   $spec: the string inside :Generic(...)
+#   %opts: registry => $registry (defaults to Typist::Registry singleton)
+# Returns: list of hashrefs with keys: name, bound_expr, is_row_var, var_kind, tc_constraints
+sub parse_generic_decl ($class, $spec, %opts) {
+    my $registry = $opts{registry} // 'Typist::Registry';
+    my @generics;
+
+    for my $decl (split /\s*,\s*/, $spec) {
+        if ($decl =~ /\A(\w+)\s*:\s*(.+)\z/) {
+            my ($vname, $constraint) = ($1, $2);
+            my @parts = split /\s*\+\s*/, $constraint;
+            my @tc_constraints;
+            my $is_typeclass = 1;
+            for my $part (@parts) {
+                if ($registry->lookup_typeclass($part)) {
+                    push @tc_constraints, $part;
+                } else {
+                    $is_typeclass = 0;
+                    last;
+                }
+            }
+            if ($constraint eq 'Row') {
+                push @generics, +{
+                    name       => $vname,
+                    bound_expr => undef,
+                    is_row_var => 1,
+                    var_kind   => Typist::Kind->Row,
+                };
+            } elsif ($constraint =~ /\A[\s\*\-\>]+\z/) {
+                my $kind = Typist::Kind->parse($constraint);
+                push @generics, +{
+                    name       => $vname,
+                    bound_expr => undef,
+                    var_kind   => $kind,
+                };
+            } elsif ($is_typeclass && @tc_constraints) {
+                push @generics, +{
+                    name           => $vname,
+                    bound_expr     => undef,
+                    tc_constraints => \@tc_constraints,
+                };
+            } else {
+                push @generics, +{ name => $vname, bound_expr => $constraint };
+            }
+        } else {
+            push @generics, +{ name => $decl, bound_expr => undef };
+        }
+    }
+
+    @generics;
+}
+
 # ── Code Attributes ──────────────────────────────
 
 sub _handle_code_attrs ($pkg, $coderef, @attrs) {
@@ -68,40 +126,7 @@ sub _handle_code_attrs ($pkg, $coderef, @attrs) {
             $eff_expr = $1;
         }
         elsif ($attr =~ /\AGeneric\((.+)\)\z/) {
-            for my $decl (split /\s*,\s*/, $1) {
-                if ($decl =~ /\A(\w+)\s*:\s*(.+)\z/) {
-                    my ($vname, $constraint) = ($1, $2);
-                    # Check if constraints are type class names (possibly '+' separated)
-                    my @parts = split /\s*\+\s*/, $constraint;
-                    my @tc_constraints;
-                    my $is_typeclass = 1;
-                    for my $part (@parts) {
-                        if (Typist::Registry->lookup_typeclass($part)) {
-                            push @tc_constraints, $part;
-                        } else {
-                            $is_typeclass = 0;
-                            last;
-                        }
-                    }
-                    if ($constraint eq 'Row') {
-                        push @generics, +{
-                            name       => $vname,
-                            bound_expr => undef,
-                            is_row_var => 1,
-                        };
-                    } elsif ($is_typeclass && @tc_constraints) {
-                        push @generics, +{
-                            name          => $vname,
-                            bound_expr    => undef,
-                            tc_constraints => \@tc_constraints,
-                        };
-                    } else {
-                        push @generics, +{ name => $vname, bound_expr => $constraint };
-                    }
-                } else {
-                    push @generics, +{ name => $decl, bound_expr => undef };
-                }
-            }
+            @generics = __PACKAGE__->parse_generic_decl($1);
         }
         else {
             push @unhandled, $attr;

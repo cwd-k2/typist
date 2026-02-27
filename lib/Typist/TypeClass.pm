@@ -52,6 +52,61 @@ sub supers       ($self) { $self->{supers}->@* }
 
 sub method_names ($self) { sort keys $self->{methods}->%* }
 
+# Install dispatch functions into namespace for runtime instance resolution.
+sub install_dispatch ($self, $caller) {
+    require Typist::Inference;
+    require Typist::Registry;
+
+    my $name = $self->{name};
+    my $ns = "Typist::TC::${name}";
+    no strict 'refs';
+    for my $method_name (keys $self->{methods}->%*) {
+        *{"${ns}::${method_name}"} = sub {
+            my @args = @_;
+            my $arg_type = Typist::Inference->infer_value($args[0]);
+            my $inst = Typist::Registry->resolve_instance($name, $arg_type)
+                // die "Typist: no instance of $name for " . $arg_type->to_string . "\n";
+            my $impl = $inst->get_method($method_name)
+                // die "Typist: instance $name for " . $inst->type_expr
+                     . " missing method $method_name\n";
+            $impl->(@args);
+        };
+        *{"${caller}::${name}::${method_name}"} = \&{"${ns}::${method_name}"};
+    }
+}
+
+# Verify that an instance provides all required methods.
+sub check_instance_completeness ($self, $type_expr, %methods) {
+    for my $required ($self->method_names) {
+        die "Typist: instance $self->{name} for $type_expr missing method '$required'\n"
+            unless exists $methods{$required};
+    }
+}
+
+# Resolve instance for a given type from instance list.
+sub resolve ($class_or_self, $class_name, $type, $instances) {
+    require Typist::Subtype;
+    require Typist::Parser;
+
+    my $insts = $instances->{$class_name} // return undef;
+
+    for my $inst (@$insts) {
+        my $type_expr = $inst->type_expr;
+
+        # HKT: match by constructor name (e.g., "ArrayRef" matches ArrayRef[T])
+        if ($type->is_param && $type_expr eq $type->base) {
+            return $inst;
+        }
+
+        my $inst_type = Typist::Parser->parse($type_expr);
+        if ($type->equals($inst_type)
+            || Typist::Subtype->is_subtype($type, $inst_type)) {
+            return $inst;
+        }
+    }
+    undef;
+}
+
 # ── Instance ─────────────────────────────────────
 
 package Typist::TypeClass::Inst;
