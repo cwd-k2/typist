@@ -1,7 +1,7 @@
 package Typist::Error;
 use v5.40;
 
-# ── Error Object ──────────────────────────────────
+# ── Error Object ─────────────────────────────────
 
 sub new ($class, %args) {
     bless {
@@ -22,34 +22,65 @@ sub to_string ($self) {
         $self->{kind}, $self->{message}, $self->{file}, $self->{line};
 }
 
-# ── Batch Collector ───────────────────────────────
+# ── Global Batch Collector (backward compat) ────
 
 my @ERRORS;
 
-sub collect ($class, %args) {
-    push @ERRORS, $class->new(%args);
+sub collect ($invocant, %args) {
+    my $err = Typist::Error->new(%args);
+    if (ref $invocant && $invocant->isa('Typist::Error::Collector')) {
+        push $invocant->{errors}->@*, $err;
+    } else {
+        push @ERRORS, $err;
+    }
 }
 
-sub has_errors ($class) {
+sub has_errors ($invocant) {
+    if (ref $invocant && $invocant->isa('Typist::Error::Collector')) {
+        return scalar $invocant->{errors}->@*;
+    }
     scalar @ERRORS;
 }
 
-sub errors ($class) {
+sub errors ($invocant) {
+    if (ref $invocant && $invocant->isa('Typist::Error::Collector')) {
+        return $invocant->{errors}->@*;
+    }
     @ERRORS;
 }
 
-sub report ($class) {
-    return unless @ERRORS;
-    my $n = scalar @ERRORS;
+sub report ($invocant) {
+    my @errs = ref $invocant && $invocant->isa('Typist::Error::Collector')
+        ? $invocant->{errors}->@*
+        : @ERRORS;
+
+    return unless @errs;
+    my $n = scalar @errs;
     my $s = $n == 1 ? '' : 's';
 
     my $report = "Typist found $n type error${s}:\n\n";
-    $report .= $_->to_string . "\n" for @ERRORS;
+    $report .= $_->to_string . "\n" for @errs;
     $report;
 }
 
-sub reset ($class) {
-    @ERRORS = ();
+sub reset ($invocant) {
+    if (ref $invocant && $invocant->isa('Typist::Error::Collector')) {
+        $invocant->{errors} = [];
+    } else {
+        @ERRORS = ();
+    }
 }
+
+# ── Collector Factory ────────────────────────────
+
+sub collector ($class) {
+    bless { errors => [] }, 'Typist::Error::Collector';
+}
+
+# ── Collector Class ──────────────────────────────
+
+package Typist::Error::Collector;
+use v5.40;
+our @ISA = ('Typist::Error');
 
 1;

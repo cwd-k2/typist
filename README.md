@@ -40,10 +40,116 @@ sub first :Generic(T) :Params(ArrayRef[T]) :Returns(T) ($arr) {
 - **Generics** — `:Generic(T)` with Hindley-Milner style unification
 - **Structural subtyping** — width subtyping for structs, contravariant parameters for functions
 - **CHECK-phase analysis** — detects alias cycles, unknown types, and undeclared type variables before runtime
+- **LSP server** — hover, completion, and diagnostics for editors
+- **Perl::Critic policy** — type error detection via PerlNavigator
 
 ## Requirements
 
 - Perl 5.40+
+- `PPI` (CPAN) — for static analysis and LSP
+- `Perl::Critic` (CPAN, optional) — for Perl::Critic integration
+
+## Editor Integration
+
+Typist provides two layers of editor integration:
+
+### Perl::Critic Policy (via PerlNavigator)
+
+If you already use PerlNavigator, add the Typist policy to get inline type error diagnostics:
+
+```ini
+# .perlcriticrc
+[Typist::TypeCheck]
+severity = 2
+```
+
+```json
+// VS Code settings
+{
+  "perlnavigator.perlcriticEnabled": true,
+  "perlnavigator.perlcriticProfile": ".perlcriticrc"
+}
+```
+
+### LSP Server
+
+The standalone LSP server provides hover, completion, and diagnostics:
+
+```sh
+perl -Ilib bin/typist-lsp
+```
+
+**Capabilities:**
+
+- **Diagnostics** — alias cycles, unknown types, undeclared type variables
+- **Hover** — type signatures for variables, functions, and typedefs
+- **Completion** — type names inside `:Type()`, `:Params()`, `:Returns()`, `:Generic()`
+
+#### Neovim (nvim-lspconfig)
+
+```lua
+local configs = require('lspconfig.configs')
+
+configs.typist = {
+  default_config = {
+    cmd = { 'perl', '-Ilib', 'bin/typist-lsp' },
+    filetypes = { 'perl' },
+    root_dir = function(fname)
+      return vim.fs.dirname(
+        vim.fs.find({ 'lib', '.git' }, { upward = true, path = fname })[1]
+      )
+    end,
+  },
+}
+
+require('lspconfig').typist.setup {}
+```
+
+If Typist is installed globally or via `@INC`, replace `-Ilib` with the appropriate path.
+
+#### VS Code
+
+Use the `vscode-languageclient` extension with this server configuration:
+
+```json
+{
+  "typist-lsp.command": "perl",
+  "typist-lsp.args": ["-Ilib", "bin/typist-lsp"]
+}
+```
+
+## Examples
+
+See `example/` for runnable demonstrations:
+
+- `example/basics.pl` — typed variables, typed functions, typedef, error handling
+- `example/generics.pl` — generic functions, parameterized types, union types
+- `example/lsp_demo.pm` — module showcasing LSP hover/completion/diagnostic targets
+
+```sh
+cd example
+perl basics.pl
+perl generics.pl
+```
+
+## Testing
+
+```sh
+# All tests
+prove -l t/ t/static/ t/lsp/ t/critic/
+
+# Core type system
+prove -l t/
+
+# Static analysis engine
+prove -l t/static/
+
+# LSP server
+prove -l t/lsp/
+
+# Perl::Critic policy (requires Perl::Critic)
+prove -l t/critic/
+```
 
 ## License
 

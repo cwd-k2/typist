@@ -20,6 +20,15 @@ my @modules = qw(
     Typist::Checker
     Typist::Error
     Typist::Tie::Scalar
+    Typist::Static::Extractor
+    Typist::Static::Analyzer
+    Typist::LSP
+    Typist::LSP::Transport
+    Typist::LSP::Server
+    Typist::LSP::Workspace
+    Typist::LSP::Document
+    Typist::LSP::Hover
+    Typist::LSP::Completion
 );
 
 for my $mod (@modules) {
