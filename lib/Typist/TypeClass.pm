@@ -11,12 +11,20 @@ use v5.40;
 
 sub new_class ($class, %args) {
     my $var_spec = $args{var} // 'T';
-    my ($var_name, $var_kind_str);
+    my ($var_name, $var_kind_str, @supers);
 
-    # Parse "F: * -> *" syntax for HKT
+    # Parse "T: constraint" — distinguish HKT kind from superclass constraint
     if ($var_spec =~ /\A(\w+)\s*:\s*(.+)\z/) {
-        $var_name     = $1;
-        $var_kind_str = $2;
+        my ($vn, $constraint) = ($1, $2);
+        if ($constraint =~ /\A[\s\*\-\>]+\z/) {
+            # HKT kind syntax: "F: * -> *"
+            $var_name     = $vn;
+            $var_kind_str = $constraint;
+        } else {
+            # Superclass constraint: "T: Eq" or "T: Show + Eq"
+            $var_name = $vn;
+            @supers   = split /\s*\+\s*/, $constraint;
+        }
     } else {
         $var_name     = $var_spec;
         $var_kind_str = undef;
@@ -27,7 +35,7 @@ sub new_class ($class, %args) {
         var          => $var_name,
         var_kind_str => $var_kind_str,
         methods      => ($args{methods} // +{}),
-        supers       => ($args{supers}  // []),
+        supers       => ($args{supers}  // \@supers),
     }, "${class}::Def";
 }
 
@@ -72,6 +80,17 @@ sub install_dispatch ($self, $caller) {
             $impl->(@args);
         };
         *{"${caller}::${name}::${method_name}"} = \&{"${ns}::${method_name}"};
+    }
+}
+
+# Verify that superclass instances exist for the given type.
+sub check_superclass_instances ($self, $type_expr, $registry) {
+    for my $super ($self->supers) {
+        my $type = Typist::Parser->parse($type_expr);
+        my $resolved = $registry->resolve_instance($super, $type);
+        die "Typist: instance $self->{name} for $type_expr requires "
+          . "superclass instance $super for $type_expr\n"
+            unless $resolved;
     }
 }
 

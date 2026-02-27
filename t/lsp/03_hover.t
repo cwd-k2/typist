@@ -232,4 +232,32 @@ PERL
     like $hover->{result}{contents}{value}, qr/Str/, 'shows inferred type Str';
 };
 
+# ── Hover on typeclass with superclass ──────────
+
+subtest 'hover shows typeclass with var_spec and methods' => sub {
+    my $source = <<'PERL';
+use v5.40;
+typeclass Ord => 'T: Eq', +{
+    compare => Func(T, T, returns => Int),
+};
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 1, character => 12 },  # on 'Ord'
+        }),
+    ));
+
+    my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $hover, 'got hover response';
+    ok $hover->{result}, 'hover has result';
+    like $hover->{result}{contents}{value}, qr/typeclass Ord/, 'contains typeclass name';
+    like $hover->{result}{contents}{value}, qr/T: Eq/, 'contains superclass constraint';
+    like $hover->{result}{contents}{value}, qr/compare/, 'contains method name';
+};
+
 done_testing;

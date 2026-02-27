@@ -58,7 +58,14 @@ sub _format ($class, $sym) {
     }
 
     if ($kind eq 'typeclass') {
-        return "```perl\ntypeclass $sym->{name}\n```";
+        my $display = "typeclass $sym->{name}";
+        if ($sym->{var_spec}) {
+            $display .= "<$sym->{var_spec}>";
+        }
+        if ($sym->{method_names} && @{$sym->{method_names}}) {
+            $display .= ' { ' . join(', ', @{$sym->{method_names}}) . ' }';
+        }
+        return "```perl\n$display\n```";
     }
 
     undef;

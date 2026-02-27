@@ -78,18 +78,47 @@ say "Caught: $@" if $@;
 # Dispatch is ad-hoc: resolved by inferring the argument type at runtime.
 
 BEGIN {
-    typeclass 'Show', 'T',
-        show => 'CodeRef[T -> Str]';
+    typeclass Show => T, +{
+        show => Func(T, returns => Str),
+    };
 
-    instance 'Show', 'Int',
-        show => sub ($v) { "Int($v)" };
+    instance Show => Int, +{
+        show => sub ($v) { "Int($v)" },
+    };
 
-    instance 'Show', 'Str',
-        show => sub ($v) { qq["$v"] };
+    instance Show => Str, +{
+        show => sub ($v) { qq["$v"] },
+    };
 }
 
 say Show::show(42);
 say Show::show("hello");
+
+# ── Superclass Constraints ─────────────────────
+
+# `Ord => 'T: Eq'` means every Ord instance requires an Eq instance.
+# Like Haskell's `class Eq a => Ord a where ...`.
+
+BEGIN {
+    typeclass Eq => T, +{
+        eq => Func(T, T, returns => Bool),
+    };
+
+    instance Eq => Int, +{
+        eq => sub ($a, $b) { $a == $b ? 1 : 0 },
+    };
+
+    typeclass Ord => 'T: Eq', +{
+        compare => Func(T, T, returns => Int),
+    };
+
+    instance Ord => Int, +{
+        compare => sub ($a, $b) { $a <=> $b },
+    };
+}
+
+say "Eq::eq(1, 1):      ", Eq::eq(1, 1);
+say "Ord::compare(1, 2): ", Ord::compare(1, 2);
 
 # ── Higher-Kinded Types ─────────────────────────
 
@@ -99,11 +128,13 @@ say Show::show("hello");
 # so the container comes first: fmap(F[A], A -> B) -> F[B].
 
 BEGIN {
-    typeclass 'Functor', 'F: * -> *',
-        fmap => 'CodeRef[F[A], CodeRef[A -> B] -> F[B]]';
+    typeclass Functor => 'F: * -> *', +{
+        fmap => 'CodeRef[F[A], CodeRef[A -> B] -> F[B]]',
+    };
 
-    instance 'Functor', 'ArrayRef',
-        fmap => sub ($arr, $f) { [map { $f->($_) } @$arr] };
+    instance Functor => 'ArrayRef', +{
+        fmap => sub ($arr, $f) { [map { $f->($_) } @$arr] },
+    };
 }
 
 my $doubled = Functor::fmap([1, 2, 3], sub ($x) { $x * 2 });

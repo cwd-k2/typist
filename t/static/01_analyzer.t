@@ -122,4 +122,45 @@ PERL
     is $diags[0]->{file}, 'test.pm', 'diagnostic has file';
 };
 
+# ── TypeClass superclass validation ────────────
+
+subtest 'detects unknown superclass in typeclass' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', file => 'test.pm');
+use v5.40;
+typeclass Ord => 'T: NonExistent', +{
+    compare => Func(T, T, returns => Int),
+};
+PERL
+
+    my @unknown = grep { $_->{kind} eq 'UnknownTypeClass' } @{$result->{diagnostics}};
+    ok @unknown, 'found UnknownTypeClass error';
+    like $unknown[0]->{message}, qr/NonExistent/, 'mentions NonExistent';
+};
+
+subtest 'valid superclass produces no error' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+typeclass Eq => T, +{
+    eq => Func(T, T, returns => Bool),
+};
+typeclass Ord => 'T: Eq', +{
+    compare => Func(T, T, returns => Int),
+};
+PERL
+
+    my @unknown = grep { $_->{kind} eq 'UnknownTypeClass' } @{$result->{diagnostics}};
+    is scalar @unknown, 0, 'no UnknownTypeClass errors';
+};
+
+subtest 'detects superclass cycle' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', file => 'test.pm');
+use v5.40;
+typeclass CycleA => 'T: CycleB', +{};
+typeclass CycleB => 'T: CycleA', +{};
+PERL
+
+    my @cycles = grep { $_->{kind} eq 'CycleError' } @{$result->{diagnostics}};
+    ok @cycles, 'found CycleError for typeclass superclass cycle';
+};
+
 done_testing;

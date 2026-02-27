@@ -9,6 +9,7 @@ use Typist::Type::Newtype;
 use Typist::Type::Eff;
 use Typist::Effect;
 use Typist::Attribute;
+use Typist::TypeClass;
 
 # ── Constructor ──────────────────────────────────
 
@@ -109,6 +110,18 @@ sub _register_file_types ($self, $extracted) {
         $reg->register_effect($name, $eff);
     }
 
+    for my $name (keys $extracted->{typeclasses}->%*) {
+        next if $reg->has_typeclass($name);
+        my $info = $extracted->{typeclasses}{$name};
+        my $def = eval {
+            Typist::TypeClass->new_class(
+                name => $name,
+                var  => $info->{var_spec} // 'T',
+            );
+        };
+        $reg->register_typeclass($name, $def // undef);
+    }
+
     # Register functions for cross-file type checking
     my $pkg = $extracted->{package} // 'main';
     my $fns = $extracted->{functions} // +{};
@@ -180,6 +193,14 @@ sub all_effect_names ($self) {
     my %seen;
     for my $info (values $self->{files}->%*) {
         $seen{$_} = 1 for keys(($info->{effects} // +{})->%*);
+    }
+    sort keys %seen;
+}
+
+sub all_typeclass_names ($self) {
+    my %seen;
+    for my $info (values $self->{files}->%*) {
+        $seen{$_} = 1 for keys(($info->{typeclasses} // +{})->%*);
     }
     sort keys %seen;
 }

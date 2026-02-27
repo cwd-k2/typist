@@ -76,8 +76,12 @@ sub _unwrap ($value) {
 
 # ── TypeClass Support ───────────────────────────
 
-sub _typeclass ($name, $var_spec, %method_sigs) {
+sub _typeclass ($name, $var_spec_arg, $methods_ref) {
     my $caller = caller;
+
+    # Boundary coercion: DSL Type objects → strings for internal API
+    my $var_spec    = _coerce_var_spec($var_spec_arg);
+    my %method_sigs = _coerce_method_sigs($methods_ref);
 
     my $def = Typist::TypeClass->new_class(
         name    => $name,
@@ -86,6 +90,23 @@ sub _typeclass ($name, $var_spec, %method_sigs) {
     );
     Typist::Registry->register_typeclass($name, $def);
     $def->install_dispatch($caller);
+}
+
+# ── Boundary Coercion Helpers ──────────────────
+
+sub _coerce_var_spec ($arg) {
+    return $arg unless ref $arg && $arg->isa('Typist::Type');
+    # Type::Var with optional kind → "T" or "F: * -> *"
+    my $spec = $arg->name;
+    $spec .= ': ' . $arg->kind if $arg->can('kind') && $arg->kind;
+    $spec;
+}
+
+sub _coerce_method_sigs ($methods_ref) {
+    map {
+        my $v = $methods_ref->{$_};
+        $_ => (ref $v && $v->isa('Typist::Type') ? $v->to_string : $v)
+    } keys %$methods_ref;
 }
 
 # ── Effect Support ──────────────────────────────
@@ -98,11 +119,18 @@ sub _effect ($name, $operations_ref) {
     Typist::Registry->register_effect($name, $eff);
 }
 
-sub _instance ($class_name, $type_expr, %methods) {
+sub _instance ($class_name, $type_expr_arg, $methods_ref) {
+    # Boundary coercion: DSL Type object → string for internal API
+    my $type_expr = ref $type_expr_arg && $type_expr_arg->isa('Typist::Type')
+        ? $type_expr_arg->to_string
+        : $type_expr_arg;
+    my %methods = %$methods_ref;
+
     my $def = Typist::Registry->lookup_typeclass($class_name)
         // die "Typist: unknown typeclass '$class_name'\n";
 
     $def->check_instance_completeness($type_expr, %methods);
+    $def->check_superclass_instances($type_expr, 'Typist::Registry');
 
     my $inst = Typist::TypeClass->new_instance(
         class     => $class_name,

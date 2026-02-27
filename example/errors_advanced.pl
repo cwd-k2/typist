@@ -82,14 +82,17 @@ say "";
 say "── Type Class Violations ─────────────────────";
 
 BEGIN {
-    typeclass 'Eq', 'T',
-        eq => 'CodeRef[T, T -> Bool]';
+    typeclass Eq => T, +{
+        eq => Func(T, T, returns => Bool),
+    };
 
-    instance 'Eq', 'Int',
-        eq => sub ($a, $b) { $a == $b ? 1 : 0 };
+    instance Eq => Int, +{
+        eq => sub ($a, $b) { $a == $b ? 1 : 0 },
+    };
 
-    instance 'Eq', 'Str',
-        eq => sub ($a, $b) { $a eq $b ? 1 : 0 };
+    instance Eq => Str, +{
+        eq => sub ($a, $b) { $a eq $b ? 1 : 0 },
+    };
 }
 
 say "Eq::eq(1, 1):         ", Eq::eq(1, 1);

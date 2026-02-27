@@ -13,6 +13,7 @@ use Typist::Error;
 use Typist::Attribute;
 use Typist::Type::Newtype;
 use Typist::Effect;
+use Typist::TypeClass;
 
 # ── Severity Mapping ─────────────────────────────
 
@@ -25,6 +26,7 @@ my %SEVERITY = (
     EffectMismatch   => 2,
     UndeclaredRowVar => 3,
     UnknownEffect    => 3,
+    UnknownTypeClass => 2,
     UnknownType      => 4,
 );
 
@@ -82,9 +84,17 @@ sub analyze ($class, $source, %opts) {
         $registry->register_effect($name, Typist::Effect->new(name => $name, operations => +{}));
     }
 
-    # 2d. Register this file's typeclasses (as known names for bound checking)
+    # 2d. Register this file's typeclasses with full Def (parses superclass from var_spec)
     for my $name (sort keys $extracted->{typeclasses}->%*) {
-        $registry->register_typeclass($name, undef) unless $registry->has_typeclass($name);
+        next if $registry->has_typeclass($name);
+        my $info = $extracted->{typeclasses}{$name};
+        my $def = eval {
+            Typist::TypeClass->new_class(
+                name => $name,
+                var  => $info->{var_spec} // 'T',
+            );
+        };
+        $registry->register_typeclass($name, $def // undef);
     }
 
     # 3. Register this file's functions
@@ -220,6 +230,16 @@ sub _to_diagnostics ($errors, $default_file, $extracted) {
             }
         }
 
+        if ($file eq '(typeclass definition)') {
+            if ($err->message =~ /'(\w+)'/) {
+                my $name = $1;
+                if (my $info = $extracted->{typeclasses}{$name}) {
+                    $line = $info->{line};
+                    $file = $default_file;
+                }
+            }
+        }
+
         # (type expression) errors: try alias first, then function context
         if ($file eq '(type expression)' && $line == 0) {
             if ($err->message =~ /in (?:\w+::)*(\w+)/) {
@@ -329,10 +349,12 @@ sub _build_symbol_index ($extracted, $env = undef) {
     for my $name (sort keys $extracted->{typeclasses}->%*) {
         my $info = $extracted->{typeclasses}{$name};
         push @symbols, +{
-            name => $name,
-            kind => 'typeclass',
-            line => $info->{line},
-            col  => $info->{col},
+            name         => $name,
+            kind         => 'typeclass',
+            var_spec     => $info->{var_spec},
+            method_names => $info->{method_names},
+            line         => $info->{line},
+            col          => $info->{col},
         };
     }
 

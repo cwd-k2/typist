@@ -223,9 +223,10 @@ sub _handle_completion ($self, $params) {
     my $ctx = $doc->completion_context($pos->{line}, $pos->{character});
     return +{ items => [] } unless $ctx;
 
-    my @typedefs = $self->{workspace} ? $self->{workspace}->all_typedef_names : ();
-    my @effects  = $self->{workspace} ? $self->{workspace}->all_effect_names  : ();
-    my $items = Typist::LSP::Completion->complete($ctx, \@typedefs, \@effects);
+    my @typedefs    = $self->{workspace} ? $self->{workspace}->all_typedef_names    : ();
+    my @effects     = $self->{workspace} ? $self->{workspace}->all_effect_names     : ();
+    my @typeclasses = $self->{workspace} ? $self->{workspace}->all_typeclass_names  : ();
+    my $items = Typist::LSP::Completion->complete($ctx, \@typedefs, \@effects, \@typeclasses);
 
     +{ items => $items };
 }

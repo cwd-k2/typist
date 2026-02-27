@@ -148,4 +148,88 @@ subtest 'dispatch function' => sub {
     ok !$dispatch_eq->(1, 2),  'dispatch eq(1, 2)';
 };
 
+# ── Superclass parsing ──────────────────────────
+
+subtest 'superclass constraint parsing' => sub {
+    my $def = Typist::TypeClass->new_class(
+        name => 'Ord',
+        var  => 'T: Eq',
+        methods => +{ compare => 'CodeRef[T, T -> Int]' },
+    );
+
+    is $def->name, 'Ord', 'class name';
+    is $def->var, 'T', 'type variable extracted';
+    is_deeply [$def->supers], ['Eq'], 'single superclass parsed';
+    ok !$def->var_kind_str, 'no HKT kind';
+};
+
+subtest 'multiple superclass constraints' => sub {
+    my $def = Typist::TypeClass->new_class(
+        name => 'Printable',
+        var  => 'T: Show + Eq',
+        methods => +{ display => 'CodeRef[T -> Str]' },
+    );
+
+    is $def->var, 'T', 'type variable extracted';
+    is_deeply [$def->supers], ['Show', 'Eq'], 'multiple superclasses parsed';
+};
+
+subtest 'HKT kind not confused with superclass' => sub {
+    my $def = Typist::TypeClass->new_class(
+        name => 'Functor',
+        var  => 'F: * -> *',
+        methods => +{},
+    );
+
+    is $def->var, 'F', 'type variable';
+    is $def->var_kind_str, '* -> *', 'HKT kind preserved';
+    is_deeply [$def->supers], [], 'no superclasses';
+};
+
+# ── Superclass instance validation ──────────────
+
+subtest 'superclass instance check passes when super instance exists' => sub {
+    Typist::Registry->reset;
+
+    my $eq_def = Typist::TypeClass->new_class(
+        name => 'Eq', var => 'T',
+        methods => +{ eq => 'CodeRef[T, T -> Bool]' },
+    );
+    Typist::Registry->register_typeclass('Eq', $eq_def);
+
+    my $eq_inst = Typist::TypeClass->new_instance(
+        class => 'Eq', type_expr => 'Int',
+        methods => +{ eq => sub ($a, $b) { $a == $b ? 1 : 0 } },
+    );
+    Typist::Registry->register_instance('Eq', 'Int', $eq_inst);
+
+    my $ord_def = Typist::TypeClass->new_class(
+        name => 'Ord', var => 'T: Eq',
+        methods => +{ compare => 'CodeRef[T, T -> Int]' },
+    );
+    Typist::Registry->register_typeclass('Ord', $ord_def);
+
+    eval { $ord_def->check_superclass_instances('Int', 'Typist::Registry') };
+    ok !$@, 'superclass check passes with Eq instance for Int';
+};
+
+subtest 'superclass instance check fails when super instance missing' => sub {
+    Typist::Registry->reset;
+
+    my $eq_def = Typist::TypeClass->new_class(
+        name => 'Eq', var => 'T',
+        methods => +{ eq => 'CodeRef[T, T -> Bool]' },
+    );
+    Typist::Registry->register_typeclass('Eq', $eq_def);
+    # No Eq instance for Str registered
+
+    my $ord_def = Typist::TypeClass->new_class(
+        name => 'Ord', var => 'T: Eq',
+        methods => +{ compare => 'CodeRef[T, T -> Int]' },
+    );
+
+    eval { $ord_def->check_superclass_instances('Str', 'Typist::Registry') };
+    like $@, qr/requires superclass instance Eq/, 'dies when superclass instance missing';
+};
+
 done_testing;

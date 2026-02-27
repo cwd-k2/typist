@@ -22,6 +22,7 @@ sub new ($class, %args) {
 sub analyze ($self) {
     $self->_check_aliases;
     $self->_check_functions;
+    $self->_check_typeclasses;
 }
 
 # ── Alias Validation ────────────────────────────
@@ -213,6 +214,54 @@ sub _check_effect_wellformed ($self, $eff, $context, $declared_vars) {
             );
         }
     }
+}
+
+# ── TypeClass Superclass Validation ────────────
+
+sub _check_typeclasses ($self) {
+    my %typeclasses = $self->{registry}->all_typeclasses;
+
+    # Check superclass references are valid
+    for my $name (sort keys %typeclasses) {
+        my $def = $typeclasses{$name} // next;
+        for my $super ($def->supers) {
+            unless ($self->{registry}->has_typeclass($super)) {
+                $self->{errors}->collect(
+                    kind    => 'UnknownTypeClass',
+                    message => "Superclass '$super' of typeclass '$name' is not defined",
+                    file    => '(typeclass definition)',
+                    line    => 0,
+                );
+            }
+        }
+    }
+
+    # Detect superclass cycles via DFS
+    my %visited;
+    my %visiting;
+
+    my $visit;
+    $visit = sub ($tc_name) {
+        return if $visited{$tc_name};
+        if ($visiting{$tc_name}) {
+            $self->{errors}->collect(
+                kind    => 'CycleError',
+                message => "Superclass cycle detected involving '$tc_name'",
+                file    => '(typeclass definition)',
+                line    => 0,
+            );
+            return;
+        }
+        $visiting{$tc_name} = 1;
+        my $def = $typeclasses{$tc_name};
+        if ($def) {
+            $visit->($_) for $def->supers;
+        }
+        delete $visiting{$tc_name};
+        $visited{$tc_name} = 1;
+    };
+
+    $visit->($_) for sort keys %typeclasses;
 }
 
 1;

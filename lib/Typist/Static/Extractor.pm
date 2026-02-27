@@ -125,7 +125,7 @@ sub _extract_typeclasses ($class, $doc, $result) {
         my @children = $stmt->schildren;
         next unless @children >= 3;
 
-        # typeclass Name => 'VarSpec', method => sig, ...
+        # typeclass Name => VarSpec, +{ method => sig, ... }
         next unless $children[0]->isa('PPI::Token::Word')
                  && $children[0]->content eq 'typeclass';
 
@@ -134,9 +134,44 @@ sub _extract_typeclasses ($class, $doc, $result) {
             ? $name_tok->string
             : $name_tok->content;
 
+        # Extract var_spec from [3] (after => operator)
+        my $var_spec;
+        if (@children >= 4
+            && $children[2]->isa('PPI::Token::Operator')
+            && $children[2]->content eq '=>')
+        {
+            my $vs_tok = $children[3];
+            $var_spec = $vs_tok->isa('PPI::Token::Quote')
+                ? $vs_tok->string
+                : $vs_tok->content;
+        }
+
+        # Extract method names from the hashref constructor (top-level keys only)
+        my @method_names;
+        for my $child (@children) {
+            next unless $child->isa('PPI::Structure::Constructor')
+                     || $child->isa('PPI::Structure::Block');
+            # Constructor wraps a single Expression; scan its schildren for Word => patterns
+            for my $expr ($child->schildren) {
+                next unless $expr->isa('PPI::Statement') || $expr->isa('PPI::Statement::Expression');
+                my @sc = $expr->schildren;
+                for my $i (0 .. $#sc - 1) {
+                    if ($sc[$i]->isa('PPI::Token::Word')
+                        && $sc[$i + 1]->isa('PPI::Token::Operator')
+                        && $sc[$i + 1]->content eq '=>')
+                    {
+                        push @method_names, $sc[$i]->content;
+                    }
+                }
+            }
+            last;
+        }
+
         $result->{typeclasses}{$name} = +{
-            line => $stmt->line_number,
-            col  => $stmt->column_number,
+            var_spec     => $var_spec,
+            method_names => \@method_names,
+            line         => $stmt->line_number,
+            col          => $stmt->column_number,
         };
     }
 }

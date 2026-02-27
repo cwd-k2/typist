@@ -122,6 +122,9 @@ sub completion_context ($self, $line, $col) {
 
     my $text = substr($lines->[$line], 0, $col);
 
+    # Inside :Generic(...) after "T: " — constraint context for typeclass names
+    return 'constraint' if $text =~ /:Generic\([^)]*\w+\s*:\s*(?:\w+\s*\+\s*)*\z/;
+
     # Inside :Generic(...)
     return 'generic' if $text =~ /:Generic\([^)]*\z/;
 

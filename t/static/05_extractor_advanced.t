@@ -54,21 +54,56 @@ PERL
 
 # ── TypeClass extraction ────────────────────────
 
-subtest 'extracts typeclasses' => sub {
+subtest 'extracts typeclasses with var_spec and method_names' => sub {
     my $result = Typist::Static::Extractor->extract(<<'PERL');
 package MyApp;
 use v5.40;
-typeclass 'Show', 'T',
-    show => 'CodeRef[T -> Str]';
+typeclass Show => T, +{
+    show => Func(T, returns => Str),
+};
 
-typeclass 'Eq', 'T',
-    eq => 'CodeRef[T, T -> Bool]';
+typeclass Eq => T, +{
+    eq => Func(T, T, returns => Bool),
+};
 PERL
 
     my $tc = $result->{typeclasses};
     ok exists $tc->{Show}, 'Show typeclass found';
     ok exists $tc->{Eq},   'Eq typeclass found';
     ok $tc->{Show}{line} > 0, 'Show has line number';
+
+    is $tc->{Show}{var_spec}, 'T', 'Show var_spec is T';
+    is_deeply $tc->{Show}{method_names}, ['show'], 'Show method_names';
+    is $tc->{Eq}{var_spec}, 'T', 'Eq var_spec is T';
+    is_deeply $tc->{Eq}{method_names}, ['eq'], 'Eq method_names';
+};
+
+subtest 'extracts typeclass with superclass constraint' => sub {
+    my $result = Typist::Static::Extractor->extract(<<'PERL');
+use v5.40;
+typeclass Ord => 'T: Eq', +{
+    compare => Func(T, T, returns => Int),
+};
+PERL
+
+    my $tc = $result->{typeclasses};
+    ok exists $tc->{Ord}, 'Ord typeclass found';
+    is $tc->{Ord}{var_spec}, 'T: Eq', 'Ord var_spec includes superclass';
+    is_deeply $tc->{Ord}{method_names}, ['compare'], 'Ord method_names';
+};
+
+subtest 'extracts typeclass with multiple superclass constraints' => sub {
+    my $result = Typist::Static::Extractor->extract(<<'PERL');
+use v5.40;
+typeclass Printable => 'T: Show + Eq', +{
+    display => Func(T, returns => Str),
+};
+PERL
+
+    my $tc = $result->{typeclasses};
+    ok exists $tc->{Printable}, 'Printable typeclass found';
+    is $tc->{Printable}{var_spec}, 'T: Show + Eq', 'multiple superclass var_spec';
+    is_deeply $tc->{Printable}{method_names}, ['display'], 'Printable method_names';
 };
 
 # ── Combined extraction ─────────────────────────
@@ -88,8 +123,9 @@ effect Logger => +{
     log => 'CodeRef[Str -> Void]',
 };
 
-typeclass 'Printable', 'T',
-    display => 'CodeRef[T -> Str]';
+typeclass Printable => T, +{
+    display => Func(T, returns => Str),
+};
 
 sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
     $a + $b;

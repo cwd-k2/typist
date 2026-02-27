@@ -37,14 +37,17 @@ BEGIN {
 # ── Type Classes ───────────────────────────────
 
 BEGIN {
-    typeclass 'Printable', 'T',
-        display => 'CodeRef[T -> Str]';
+    typeclass Printable => T, +{
+        display => Func(T, returns => Str),
+    };
 
-    instance 'Printable', 'Int',
-        display => sub ($v) { "Int<$v>" };
+    instance Printable => Int, +{
+        display => sub ($v) { "Int<$v>" },
+    };
 
-    instance 'Printable', 'Str',
-        display => sub ($v) { qq[Str<$v>] };
+    instance Printable => Str, +{
+        display => sub ($v) { qq[Str<$v>] },
+    };
 }
 
 1;
