@@ -108,4 +108,82 @@ PERL
     like $hover->{result}{contents}{value}, qr/type Age/, 'contains typedef';
 };
 
+# ── Hover on function call site ─────────────────
+
+subtest 'hover on function call site' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub greet :Params(Str) :Returns(Str) ($name) { "Hello, $name" }
+sub add :Params(Int, Int) :Returns(Int) ($a, $b) { $a + $b }
+say greet("Bob");
+PERL
+
+    my @results = run_session(
+        +{ jsonrpc => '2.0', id => 1, method => 'initialize', params => +{} },
+        +{ jsonrpc => '2.0', method => 'initialized', params => +{} },
+        +{
+            jsonrpc => '2.0',
+            method  => 'textDocument/didOpen',
+            params  => +{
+                textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+            },
+        },
+        +{
+            jsonrpc => '2.0', id => 2,
+            method  => 'textDocument/hover',
+            params  => +{
+                textDocument => +{ uri => 'file:///test.pm' },
+                position => +{ line => 3, character => 5 },  # on 'greet' in call
+            },
+        },
+        +{ jsonrpc => '2.0', id => 3, method => 'shutdown' },
+        +{ jsonrpc => '2.0', method => 'exit' },
+    );
+
+    my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $hover, 'got hover response';
+    ok $hover->{result}, 'hover has result';
+    like $hover->{result}{contents}{value}, qr/sub greet/, 'resolves to greet, not add';
+    unlike $hover->{result}{contents}{value}, qr/sub add/, 'does not show add';
+};
+
+# ── Hover distinguishes multiple functions ──────
+
+subtest 'hover distinguishes between multiple functions' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub greet :Params(Str) :Returns(Str) ($name) { "Hello, $name" }
+sub add :Params(Int, Int) :Returns(Int) ($a, $b) { $a + $b }
+my $result = add(1, 2);
+PERL
+
+    my @results = run_session(
+        +{ jsonrpc => '2.0', id => 1, method => 'initialize', params => +{} },
+        +{ jsonrpc => '2.0', method => 'initialized', params => +{} },
+        +{
+            jsonrpc => '2.0',
+            method  => 'textDocument/didOpen',
+            params  => +{
+                textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+            },
+        },
+        +{
+            jsonrpc => '2.0', id => 2,
+            method  => 'textDocument/hover',
+            params  => +{
+                textDocument => +{ uri => 'file:///test.pm' },
+                position => +{ line => 3, character => 15 },  # on 'add' in call
+            },
+        },
+        +{ jsonrpc => '2.0', id => 3, method => 'shutdown' },
+        +{ jsonrpc => '2.0', method => 'exit' },
+    );
+
+    my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $hover, 'got hover response';
+    ok $hover->{result}, 'hover has result';
+    like $hover->{result}{contents}{value}, qr/sub add/, 'resolves to add';
+    unlike $hover->{result}{contents}{value}, qr/sub greet/, 'does not show greet';
+};
+
 done_testing;
