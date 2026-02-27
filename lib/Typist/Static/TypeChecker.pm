@@ -20,6 +20,7 @@ sub new ($class, %args) {
 # ── Public API ───────────────────────────────────
 
 sub analyze ($self) {
+    $self->{env} = $self->_build_env;
     $self->_check_variable_initializers;
     $self->_check_call_sites;
     $self->_check_return_types;
@@ -31,8 +32,9 @@ sub _check_variable_initializers ($self) {
     for my $var ($self->{extracted}{variables}->@*) {
         my $init_node = $var->{init_node} // next;
 
-        my $inferred = Typist::Static::Infer->infer_expr($init_node);
+        my $inferred = Typist::Static::Infer->infer_expr($init_node, $self->{env});
         next unless defined $inferred;
+        next if $inferred->is_atom && $inferred->name eq 'Any';
 
         my $declared = $self->_resolve_type($var->{type_expr});
         next unless defined $declared;
@@ -99,8 +101,9 @@ sub _check_call_sites ($self) {
 
         my $n = @param_exprs < @args ? @param_exprs : @args;
         for my $i (0 .. $n - 1) {
-            my $inferred = Typist::Static::Infer->infer_expr($args[$i]);
+            my $inferred = Typist::Static::Infer->infer_expr($args[$i], $self->{env});
             next unless defined $inferred;
+            next if $inferred->is_atom && $inferred->name eq 'Any';
 
             my $declared = $self->_resolve_type($param_exprs[$i]);
             next unless defined $declared;
@@ -141,8 +144,9 @@ sub _check_return_types ($self) {
             # skip 'return;' (bare return)
             next if $val->isa('PPI::Token::Structure') && $val->content eq ';';
 
-            my $inferred = Typist::Static::Infer->infer_expr($val);
+            my $inferred = Typist::Static::Infer->infer_expr($val, $self->{env});
             next unless defined $inferred;
+            next if $inferred->is_atom && $inferred->name eq 'Any';
 
             unless (Typist::Subtype->is_subtype($inferred, $declared)) {
                 $self->{errors}->collect(
@@ -157,6 +161,29 @@ sub _check_return_types ($self) {
 }
 
 # ── Helpers ──────────────────────────────────────
+
+sub _build_env ($self) {
+    my (%variables, %functions);
+
+    for my $var ($self->{extracted}{variables}->@*) {
+        my $type = $self->_resolve_type($var->{type_expr});
+        $variables{$var->{name}} = $type if $type;
+    }
+
+    for my $name (keys $self->{extracted}{functions}->%*) {
+        my $fn = $self->{extracted}{functions}{$name};
+        if (my $ret_expr = $fn->{returns_expr}) {
+            my $type = $self->_resolve_type($ret_expr);
+            $functions{$name} = $type if $type;
+        }
+    }
+
+    +{
+        variables => \%variables,
+        functions => \%functions,
+        registry  => $self->{registry},
+    };
+}
 
 sub _resolve_type ($self, $expr) {
     my $parsed = eval { Typist::Parser->parse($expr) };
@@ -182,10 +209,31 @@ sub _extract_args ($self, $list) {
             // $list->find_first('PPI::Statement');
     return () unless $expr;
 
+    # Group Word+List pairs as a single function-call argument
+    my @children = $expr->schildren;
     my @args;
-    for my $child ($expr->schildren) {
-        next if $child->isa('PPI::Token::Operator') && $child->content eq ',';
-        push @args, $child;
+    my $i = 0;
+    while ($i < @children) {
+        my $child = $children[$i];
+
+        # Skip commas
+        if ($child->isa('PPI::Token::Operator') && $child->content eq ',') {
+            $i++;
+            next;
+        }
+
+        # Word followed by List → function call (count as one arg)
+        if ($i + 1 < @children
+            && $child->isa('PPI::Token::Word')
+            && $children[$i + 1]->isa('PPI::Structure::List'))
+        {
+            push @args, $child;
+            $i += 2;    # skip the List
+        }
+        else {
+            push @args, $child;
+            $i++;
+        }
     }
 
     @args;

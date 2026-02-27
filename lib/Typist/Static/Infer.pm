@@ -11,7 +11,7 @@ use Typist::Subtype;
 # Infer a Typist type from a PPI element (static analysis counterpart of
 # Typist::Inference::infer_value).  Returns undef for expressions we cannot
 # reason about statically — the caller should skip the check in that case.
-sub infer_expr ($class, $element) {
+sub infer_expr ($class, $element, $env = undef) {
     return undef unless defined $element;
 
     # ── Numeric literals ────────────────────────
@@ -41,6 +41,43 @@ sub infer_expr ($class, $element) {
     # ── Hash constructor {...} with => ──────────
     if ($element->isa('PPI::Structure::Constructor') && $element->start->content eq '{') {
         return _infer_hash($element);
+    }
+
+    # ── Variable symbol → lookup in type env ────
+    if ($element->isa('PPI::Token::Symbol')) {
+        return undef unless $env;
+        return $env->{variables}{$element->content};
+    }
+
+    # ── Function call: Word followed by List ────
+    if ($element->isa('PPI::Token::Word')) {
+        my $next = $element->snext_sibling;
+        if ($next && $next->isa('PPI::Structure::List')) {
+            return _infer_call($element->content, $env);
+        }
+    }
+
+    undef;
+}
+
+# ── Function Call Inference ──────────────────────
+
+sub _infer_call ($name, $env) {
+    return undef unless $env;
+
+    # Local function in the same file
+    if (my $ret = $env->{functions}{$name}) {
+        return $ret;
+    }
+
+    # Cross-package: Pkg::func → registry lookup
+    if ($name =~ /\A(.+)::(\w+)\z/) {
+        my ($pkg, $fname) = ($1, $2);
+        my $registry = $env->{registry};
+        if ($registry) {
+            my $sig = $registry->lookup_function($pkg, $fname);
+            return $sig->{returns} if $sig && $sig->{returns};
+        }
     }
 
     undef;

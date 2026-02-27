@@ -248,4 +248,160 @@ PERL
     is scalar @$errs, 0, 'array of int literals matches ArrayRef[Int]';
 };
 
+# ── Function Return Type Propagation ───────────
+
+subtest 'call: infers return type of called function' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub greet :Params(Str) :Returns(Str) ($name) {
+    return "hello $name";
+}
+my $x :Type(Str) = greet("world");
+PERL
+
+    is scalar @$errs, 0, 'greet() returns Str, assigned to Str — no error';
+};
+
+subtest 'call: detects return-type vs variable-type mismatch' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub greet :Params(Str) :Returns(Str) ($name) {
+    return "hello $name";
+}
+my $x :Type(Int) = greet("world");
+PERL
+
+    is scalar @$errs, 1, 'one error';
+    like $errs->[0]{message}, qr/\$x.*Int.*Str/, 'Str vs Int mismatch';
+};
+
+subtest 'call: nested call type propagation' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub greet :Params(Str) :Returns(Str) ($name) {
+    return "hello $name";
+}
+sub loud :Params(Str) :Returns(Str) ($s) {
+    return $s;
+}
+loud(greet("world"));
+PERL
+
+    is scalar @$errs, 0, 'greet() returns Str, loud() accepts Str — no error';
+};
+
+subtest 'call: nested call type mismatch' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub greet :Params(Str) :Returns(Str) ($name) {
+    return "hello $name";
+}
+sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+    return $a + $b;
+}
+add(greet("world"), 42);
+PERL
+
+    is scalar @$errs, 1, 'one error';
+    like $errs->[0]{message}, qr/Argument 1.*add.*Int.*Str/, 'greet returns Str, add expects Int';
+};
+
+subtest 'call: nested call with correct arg count' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub double :Params(Int) :Returns(Int) ($x) {
+    return $x * 2;
+}
+sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+    return $a + $b;
+}
+add(double(3), 42);
+PERL
+
+    is scalar @$errs, 0, 'nested call: double(3) returns Int, add(Int, Int) — no error';
+};
+
+# ── Variable Symbol Resolution ─────────────────
+
+subtest 'variable: symbol resolves to declared type' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub loud :Params(Str) :Returns(Str) ($s) {
+    return $s;
+}
+my $x :Type(Str) = "hi";
+loud($x);
+PERL
+
+    is scalar @$errs, 0, '$x is Str, loud accepts Str — no error';
+};
+
+subtest 'variable: symbol type mismatch at call site' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+    return $a + $b;
+}
+my $name :Type(Str) = "alice";
+add($name, 42);
+PERL
+
+    is scalar @$errs, 1, 'one error';
+    like $errs->[0]{message}, qr/Argument 1.*add.*Int.*Str/, '$name is Str but add expects Int';
+};
+
+subtest 'variable: unannotated variable → skip' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+    return $a + $b;
+}
+my $x = 42;
+add($x, 1);
+PERL
+
+    is scalar @$errs, 0, 'unannotated variable — skip check';
+};
+
+# ── Unannotated Function → Skip (gradual typing) ─
+
+subtest 'skip: unannotated function call as initializer' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub get_value ($x) {
+    return $x;
+}
+my $y :Type(Int) = get_value(42);
+PERL
+
+    is scalar @$errs, 0, 'unannotated function → skip (unknown return type)';
+};
+
+subtest 'skip: unannotated function call as argument' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub make_thing ($x) {
+    return $x;
+}
+sub process :Params(Int) :Returns(Int) ($n) {
+    return $n;
+}
+process(make_thing(42));
+PERL
+
+    is scalar @$errs, 0, 'unannotated function as arg → skip check';
+};
+
+subtest 'skip: partially annotated function (Params only, no Returns)' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub compute :Params(Int) ($n) {
+    return $n * 2;
+}
+my $x :Type(Int) = compute(42);
+PERL
+
+    is scalar @$errs, 0, 'Params-only function → return type unknown, skip';
+};
+
 done_testing;
