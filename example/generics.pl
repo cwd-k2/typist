@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 use v5.40;
-use lib '../lib';
+use lib 'lib';
 use Typist;
 
 # ── Generic Functions ─────────────────────────────

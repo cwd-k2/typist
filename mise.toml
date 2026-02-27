@@ -1,0 +1,35 @@
+[tasks.deps]
+description = "Install dependencies"
+run = "carton install"
+
+[tasks.test]
+description = "Run all tests"
+depends = ["test:core", "test:static", "test:lsp", "test:critic"]
+
+[tasks."test:core"]
+description = "Run core type system tests"
+run = "carton exec -- prove -l t/"
+
+[tasks."test:static"]
+description = "Run static analysis tests"
+run = "carton exec -- prove -l t/static/"
+
+[tasks."test:lsp"]
+description = "Run LSP server tests"
+run = "carton exec -- prove -l t/lsp/"
+
+[tasks."test:critic"]
+description = "Run Perl::Critic policy tests"
+run = "carton exec -- prove -l t/critic/"
+
+[tasks.example]
+description = "Run all examples"
+depends = ["example:basics", "example:generics"]
+
+[tasks."example:basics"]
+description = "Run basics example"
+run = "carton exec -- perl example/basics.pl"
+
+[tasks."example:generics"]
+description = "Run generics example"
+run = "carton exec -- perl example/generics.pl"

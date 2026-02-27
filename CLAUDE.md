@@ -39,14 +39,15 @@ Typist::Tie::Scalar        — Tie-based scalar guard. Validates on every STORE.
 ## Commands
 
 ```sh
-# Install dependencies
-carton install
-
-# Run all tests
-carton exec -- prove -l t/ t/static/ t/lsp/ t/critic/
-
-# Run a specific test
-carton exec -- prove -l t/00_compile.t
+mise run deps              # Install dependencies
+mise run test              # Run all tests (parallel)
+mise run test:core         # Core type system tests
+mise run test:static       # Static analysis tests
+mise run test:lsp          # LSP server tests
+mise run test:critic       # Perl::Critic policy tests
+mise run example           # Run all examples
+mise run example:basics    # Run basics example
+mise run example:generics  # Run generics example
 ```
 
 ## Test Structure

@@ -1,6 +1,6 @@
 package LSP::Demo;
 use v5.40;
-use lib '../lib';
+use lib 'lib';
 use Typist;
 
 # This file demonstrates features visible via the Typist LSP server:
