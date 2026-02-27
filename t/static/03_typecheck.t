@@ -515,4 +515,44 @@ PERL
     is $fn->{eff_expr}, '*', 'unannotated function shows eff_expr = *';
 };
 
+# ── Function Parameter Typing ─────────────────
+
+subtest 'return: param type enables return type mismatch detection' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub greet :Params(Str) :Returns(Int) ($name) {
+    return $name;
+}
+PERL
+
+    is scalar @$errs, 1, 'one error: returning Str param as Int';
+    like $errs->[0]{message}, qr/Return.*greet.*Int.*Str/, 'detects Str vs Int mismatch';
+};
+
+subtest 'return: param type matches return type' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub identity :Params(Int) :Returns(Int) ($x) {
+    return $x;
+}
+PERL
+
+    is scalar @$errs, 0, 'no error: returning Int param as Int';
+};
+
+subtest 'call: param type used in inner call site check' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+    return $a + $b;
+}
+sub wrong :Params(Str) :Returns(Int) ($s) {
+    return add($s, 1);
+}
+PERL
+
+    is scalar @$errs, 1, 'one error: Str param passed to Int arg';
+    like $errs->[0]{message}, qr/Argument 1.*add.*Int.*Str/, 'detects param type mismatch at inner call';
+};
+
 done_testing;

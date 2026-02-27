@@ -175,4 +175,46 @@ PERL
     is $result->{aliases}{Age}{expr}, 'Int', 'quoted typedef strips quotes';
 };
 
+# ── param_names extraction ──────────────────────
+
+subtest 'extracts param_names from annotated function' => sub {
+    my $result = Typist::Static::Extractor->extract(<<'PERL');
+use v5.40;
+sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+    return $a + $b;
+}
+PERL
+
+    my $fn = $result->{functions}{add};
+    ok $fn, 'add function found';
+    is_deeply $fn->{param_names}, ['$a', '$b'], 'param_names extracted';
+};
+
+subtest 'extracts param_names from unannotated function' => sub {
+    my $result = Typist::Static::Extractor->extract(<<'PERL');
+use v5.40;
+sub helper ($x, $y) { $x + $y }
+PERL
+
+    my $fn = $result->{functions}{helper};
+    ok $fn, 'helper found';
+    is_deeply $fn->{param_names}, ['$x', '$y'], 'param_names for unannotated fn';
+};
+
+# ── end_line extraction ────────────────────────
+
+subtest 'extracts end_line for function block' => sub {
+    my $result = Typist::Static::Extractor->extract(<<'PERL');
+use v5.40;
+sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+    return $a + $b;
+}
+PERL
+
+    my $fn = $result->{functions}{add};
+    ok $fn, 'add function found';
+    ok defined $fn->{end_line}, 'end_line is defined';
+    ok $fn->{end_line} > $fn->{line}, 'end_line > line';
+};
+
 done_testing;

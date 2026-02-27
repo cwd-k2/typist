@@ -23,6 +23,10 @@ sub hover ($class, $symbol) {
 sub _format ($class, $sym) {
     my $kind = $sym->{kind};
 
+    if ($kind eq 'parameter') {
+        return "```perl\n$sym->{name}: $sym->{type} (parameter of $sym->{fn_name})\n```";
+    }
+
     if ($kind eq 'variable') {
         return "```perl\n$sym->{name}: $sym->{type}\n```";
     }

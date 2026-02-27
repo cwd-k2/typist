@@ -303,7 +303,9 @@ sub _extract_functions ($class, $doc, $result) {
                 returns_expr => $returns_expr,
                 generics     => \@generics,
                 eff_expr     => $eff_expr,
+                param_names  => $class->_extract_sig_params($sub_stmt),
                 line         => $sub_stmt->line_number,
+                end_line     => $class->_end_line($sub_stmt),
                 col          => $sub_stmt->column_number,
                 block        => $sub_stmt->block,
             };
@@ -318,7 +320,9 @@ sub _extract_functions ($class, $doc, $result) {
                 generics     => [],
                 eff_expr     => undef,
                 unannotated  => 1,
+                param_names  => $class->_extract_sig_params($sub_stmt),
                 line         => $sub_stmt->line_number,
+                end_line     => $class->_end_line($sub_stmt),
                 col          => $sub_stmt->column_number,
                 block        => $sub_stmt->block,
             };
@@ -350,15 +354,32 @@ sub _collect_rhs_expr ($class, @children) {
     length($raw) ? $raw : undef;
 }
 
+# Extract parameter names from a subroutine signature.
+# Returns an arrayref of symbol names (e.g., ['$a', '$b']).
+# Only considers direct-child Lists of the sub statement (before the block),
+# not Lists nested inside the function body.
+sub _extract_sig_params ($class, $sub_stmt) {
+    my $sig_list;
+    for my $child ($sub_stmt->schildren) {
+        last if $child->isa('PPI::Structure::Block');
+        $sig_list = $child if $child->isa('PPI::Structure::List');
+    }
+    return [] unless $sig_list;
+
+    my $inner = $sig_list->find('PPI::Token::Symbol') || [];
+    [map { $_->content } @$inner];
+}
+
 # Count the number of parameters in a subroutine signature.
 sub _count_sig_params ($class, $sub_stmt) {
-    my $params = $sub_stmt->find('PPI::Structure::List');
-    return 0 unless $params && @$params;
+    scalar $class->_extract_sig_params($sub_stmt)->@*;
+}
 
-    # The last List in a sub declaration is the signature
-    my $sig_list = $params->[-1];
-    my $inner = $sig_list->find('PPI::Token::Symbol') || [];
-    scalar @$inner;
+# Extract the end line of a subroutine block (last token's line number).
+sub _end_line ($class, $sub_stmt) {
+    my $block = $sub_stmt->block // return undef;
+    my $last = $block->last_token // return undef;
+    $last->line_number;
 }
 
 # Extract the textual content of a PPI::Structure::List, stripping parens.

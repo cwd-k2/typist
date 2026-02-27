@@ -97,21 +97,46 @@ sub symbol_at ($self, $line, $col) {
 
     # Primary: match by word under cursor
     if (my $word = $self->_word_at($line, $col)) {
-        for my $sym (@$symbols) {
-            next unless defined $sym->{name};
-            return $sym if $sym->{name} eq $word;
-        }
+        my $sym = $self->_find_best_symbol($symbols, $word, $line);
+        return $sym if $sym;
+
         # Try without sigil (e.g. cursor on "foo" matches function "foo")
         (my $bare = $word) =~ s/^[\$\@%]//;
         if ($bare ne $word) {
-            for my $sym (@$symbols) {
-                next unless defined $sym->{name};
-                return $sym if $sym->{name} eq $bare;
-            }
+            my $sym = $self->_find_best_symbol($symbols, $bare, $line);
+            return $sym if $sym;
         }
     }
 
     undef;
+}
+
+# Find the best matching symbol: prefer scoped symbols when cursor is within scope.
+sub _find_best_symbol ($self, $symbols, $name, $line) {
+    my $ppi_line = $line + 1;  # LSP 0-indexed → PPI 1-indexed
+    my @candidates;
+
+    for my $sym (@$symbols) {
+        next unless defined $sym->{name} && $sym->{name} eq $name;
+        push @candidates, $sym;
+    }
+
+    return undef unless @candidates;
+    return $candidates[0] if @candidates == 1;
+
+    # Prefer scoped symbol (parameter) when cursor is within its scope
+    for my $sym (@candidates) {
+        if ($sym->{scope_start} && $sym->{scope_end}) {
+            return $sym if $ppi_line >= $sym->{scope_start}
+                        && $ppi_line <= $sym->{scope_end};
+        }
+    }
+
+    # Fallback: first non-scoped symbol, or first candidate
+    for my $sym (@candidates) {
+        return $sym unless $sym->{scope_start};
+    }
+    $candidates[0];
 }
 
 # Determine completion context at a given position.

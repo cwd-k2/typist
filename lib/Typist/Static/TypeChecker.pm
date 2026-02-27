@@ -98,12 +98,15 @@ sub _check_call_sites ($self) {
         my @param_exprs = $fn->{params_expr}->@*;
         next unless @param_exprs;
 
+        # Determine the env: use function-scoped env if call is inside a function body
+        my $env = $self->_env_for_node($word);
+
         # Extract argument expressions from the list
         my @args = $self->_extract_args($next);
 
         my $n = @param_exprs < @args ? @param_exprs : @args;
         for my $i (0 .. $n - 1) {
-            my $inferred = Typist::Static::Infer->infer_expr($args[$i], $self->{env});
+            my $inferred = Typist::Static::Infer->infer_expr($args[$i], $env);
             next unless defined $inferred;
             next if $inferred->is_atom && $inferred->name eq 'Any';
 
@@ -137,6 +140,8 @@ sub _check_return_types ($self) {
 
         next if $self->_has_type_var($declared);
 
+        my $env = $self->_fn_env($fn);
+
         # Find return statements within the block
         my $returns = $block->find('PPI::Token::Word') || [];
         for my $ret (@$returns) {
@@ -146,7 +151,7 @@ sub _check_return_types ($self) {
             # skip 'return;' (bare return)
             next if $val->isa('PPI::Token::Structure') && $val->content eq ';';
 
-            my $inferred = Typist::Static::Infer->infer_expr($val, $self->{env});
+            my $inferred = Typist::Static::Infer->infer_expr($val, $env);
             next unless defined $inferred;
             next if $inferred->is_atom && $inferred->name eq 'Any';
 
@@ -163,6 +168,30 @@ sub _check_return_types ($self) {
 }
 
 # ── Helpers ──────────────────────────────────────
+
+# Build a function-scoped env: base env + parameter bindings.
+sub _fn_env ($self, $fn) {
+    my $base = $self->{env};
+    my $names  = $fn->{param_names}  // [];
+    my $exprs  = $fn->{params_expr}  // [];
+
+    return $base unless @$names;
+
+    # Shallow copy variables hash and add parameter bindings
+    my %vars = $base->{variables}->%*;
+    for my $i (0 .. $#$names) {
+        my $expr = $exprs->[$i] // next;
+        my $type = $self->_resolve_type($expr) // next;
+        $vars{$names->[$i]} = $type;
+    }
+
+    +{
+        variables => \%vars,
+        functions => $base->{functions},
+        known     => $base->{known},
+        registry  => $base->{registry},
+    };
+}
 
 sub _build_env ($self) {
     my (%variables, %functions, %known);
@@ -223,6 +252,27 @@ sub _resolve_type ($self, $expr) {
 sub _has_type_var ($self, $type) {
     return 1 if $type->is_var;
     return scalar $type->free_vars;
+}
+
+# Determine the appropriate env for a PPI node.
+# If the node is inside a function body, return fn_env with parameter bindings.
+sub _env_for_node ($self, $node) {
+    my $ancestor = $node->parent;
+    while ($ancestor) {
+        if ($ancestor->isa('PPI::Structure::Block')) {
+            # Check if this block belongs to a known function
+            my $sub_stmt = $ancestor->parent;
+            if ($sub_stmt && $sub_stmt->isa('PPI::Statement::Sub')) {
+                my $fn_name = $sub_stmt->name;
+                if ($fn_name && $self->{extracted}{functions}{$fn_name}) {
+                    my $fn = $self->{extracted}{functions}{$fn_name};
+                    return $self->_fn_env($fn) if $fn->{block} && $fn->{block} == $ancestor;
+                }
+            }
+        }
+        $ancestor = $ancestor->parent;
+    }
+    $self->{env};
 }
 
 sub _extract_args ($self, $list) {

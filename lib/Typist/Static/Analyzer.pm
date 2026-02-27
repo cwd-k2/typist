@@ -322,6 +322,29 @@ sub _build_symbol_index ($extracted, $env = undef) {
         };
     }
 
+    # Parameters
+    for my $name (sort keys $extracted->{functions}->%*) {
+        my $fn = $extracted->{functions}{$name};
+        my $param_names = $fn->{param_names} // [];
+        my $param_exprs = $fn->{params_expr} // [];
+
+        for my $i (0 .. $#$param_names) {
+            my $pname = $param_names->[$i];
+            my $ptype = $param_exprs->[$i] // 'Any';
+
+            push @symbols, +{
+                name        => $pname,
+                kind        => 'parameter',
+                type        => $ptype,
+                fn_name     => $name,
+                line        => $fn->{line},
+                col         => $fn->{col},
+                scope_start => $fn->{line},
+                scope_end   => $fn->{end_line},
+            };
+        }
+    }
+
     # Newtypes
     for my $name (sort keys $extracted->{newtypes}->%*) {
         my $info = $extracted->{newtypes}{$name};

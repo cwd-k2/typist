@@ -260,4 +260,31 @@ PERL
     like $hover->{result}{contents}{value}, qr/compare/, 'contains method name';
 };
 
+# ── Hover on function parameter ───────────────
+
+subtest 'hover shows parameter type inside function' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+    return $a + $b;
+}
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 2, character => 12 },  # on '$a' in return
+        }),
+    ));
+
+    my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $hover, 'got hover response';
+    ok $hover->{result}, 'hover has result';
+    like $hover->{result}{contents}{value}, qr/\$a: Int/, 'shows $a as Int';
+    like $hover->{result}{contents}{value}, qr/parameter of add/, 'shows parameter of add';
+};
+
 done_testing;
