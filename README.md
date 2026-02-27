@@ -26,6 +26,21 @@ sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
 sub first :Generic(T) :Params(ArrayRef[T]) :Returns(T) ($arr) {
     $arr->[0];
 }
+
+# Algebraic effects
+effect Console => +{
+    readLine  => 'CodeRef[-> Str]',
+    writeLine => 'CodeRef[Str -> Void]',
+};
+
+sub greet :Params(Str) :Returns(Str) :Eff(Console) ($name) {
+    "Hello, $name!";
+}
+
+# Row polymorphism — "at least Log, plus whatever r adds"
+sub with_log :Generic(r: Row) :Params(Str) :Returns(Str) :Eff(Log | r) ($msg) {
+    $msg;
+}
 ```
 
 ## Features
@@ -37,7 +52,14 @@ sub first :Generic(T) :Params(ArrayRef[T]) :Returns(T) ($arr) {
 - **Struct types** — `{ name => Str, age => Int }`
 - **Maybe sugar** — `Maybe[T]` desugars to `T | Undef`
 - **Named aliases** — `typedef` for reusable type definitions
+- **Literal types** — `42`, `"hello"` as singleton types
+- **Newtype** — `newtype UserId => 'Int'` for nominal (non-structural) type identity
+- **Recursive types** — self-referential `typedef` through type constructors
 - **Generics** — `:Generic(T)` with Hindley-Milner style unification
+- **Bounded quantification** — `:Generic(T: Num)` to constrain type variables
+- **Type classes** — `typeclass` / `instance` with ad-hoc polymorphism dispatch
+- **Higher-kinded types** — `F: * -> *` kind annotations for type constructor abstraction
+- **Algebraic effects** — `effect` keyword, `:Eff(Console | Log)` annotations, row polymorphism via `:Generic(r: Row)`
 - **Structural subtyping** — width subtyping for structs, contravariant parameters for functions
 - **CHECK-phase analysis** — detects alias cycles, unknown types, and undeclared type variables before runtime
 - **LSP server** — hover, completion, and diagnostics for editors
@@ -94,7 +116,7 @@ carton exec -- perl bin/typist-lsp
 
 - **Diagnostics** — alias cycles, unknown types, undeclared type variables
 - **Hover** — type signatures for variables, functions, and typedefs
-- **Completion** — type names inside `:Type()`, `:Params()`, `:Returns()`, `:Generic()`
+- **Completion** — type names inside `:Type()`, `:Params()`, `:Returns()`, `:Generic()`, `:Eff()`
 
 #### Neovim (nvim-lspconfig)
 
@@ -135,11 +157,15 @@ See `example/` for runnable demonstrations:
 
 - `example/basics.pl` — typed variables, typed functions, typedef, error handling
 - `example/generics.pl` — generic functions, parameterized types, union types
+- `example/effects.pl` — algebraic effects, row polymorphism, phantom effect tracking
+- `example/haskell.pl` — newtype, literal types, recursive types, bounded quantification, type classes, HKT
 - `example/lsp_demo.pm` — module showcasing LSP hover/completion/diagnostic targets
 
 ```sh
 carton exec -- perl example/basics.pl
 carton exec -- perl example/generics.pl
+carton exec -- perl example/effects.pl
+carton exec -- perl example/haskell.pl
 ```
 
 ## Testing
