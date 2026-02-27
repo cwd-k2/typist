@@ -82,6 +82,10 @@ sub infer_kind ($class, $type, $var_kinds = undef) {
         return Typist::Kind->Star;
     }
 
+    if ($type->is_row || $type->is_eff) {
+        return Typist::Kind->Row;
+    }
+
     if ($type->is_param) {
         my @param_kinds = map { $class->infer_kind($_, $var_kinds) } $type->params;
         return $class->check_application($type->base, @param_kinds);

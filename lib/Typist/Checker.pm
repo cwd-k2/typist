@@ -87,6 +87,11 @@ sub _check_functions ($self) {
             }
         }
 
+        # Validate effect annotations
+        if ($sig->{effects}) {
+            $self->_check_effect_wellformed($sig->{effects}, $fqn, \%declared);
+        }
+
         # Validate bound expressions are well-formed
         for my $g (($sig->{generics} // [])->@*) {
             next unless ref $g eq 'HASH' && $g->{bound_expr};
@@ -142,6 +147,41 @@ sub _check_type_wellformed ($self, $type, $context) {
         my %r = $type->required_fields;
         my %o = $type->optional_fields;
         $self->_check_type_wellformed($_, $context) for values %r, values %o;
+    }
+
+    if ($type->is_eff) {
+        $self->_check_type_wellformed($type->row, $context);
+    }
+}
+
+# ── Effect Well-formedness ────────────────────────
+
+sub _check_effect_wellformed ($self, $eff, $context, $declared_vars) {
+    my $row = $eff->is_eff ? $eff->row : $eff;
+    return unless $row->is_row;
+
+    # Check labels are registered effects
+    for my $label ($row->labels) {
+        unless ($self->{registry}->is_effect_label($label)) {
+            $self->{errors}->collect(
+                kind    => 'UnknownEffect',
+                message => "Effect '$label' is not defined (in $context)",
+                file    => '(effect annotation)',
+                line    => 0,
+            );
+        }
+    }
+
+    # Check row variable is declared in :Generic
+    if (defined $row->row_var) {
+        unless ($declared_vars->{$row->row_var}) {
+            $self->{errors}->collect(
+                kind    => 'UndeclaredRowVar',
+                message => "Row variable '" . $row->row_var . "' in $context is not declared in :Generic",
+                file    => '(effect annotation)',
+                line    => 0,
+            );
+        }
     }
 }
 

@@ -21,5 +21,7 @@ sub is_var          { 0 }
 sub is_alias        { 0 }
 sub is_literal      { 0 }
 sub is_newtype      { 0 }
+sub is_row          { 0 }
+sub is_eff          { 0 }
 
 1;

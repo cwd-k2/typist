@@ -8,6 +8,7 @@ use Typist::Inference;
 use Typist::Subtype;
 use Typist::Tie::Scalar;
 use Typist::Transform;
+use Typist::Type::Eff;
 
 # ── Public API ────────────────────────────────────
 
@@ -54,7 +55,7 @@ sub _handle_scalar_attrs ($pkg, $ref, @attrs) {
 
 sub _handle_code_attrs ($pkg, $coderef, @attrs) {
     my @unhandled;
-    my (@params_expr, $returns_expr, @generics);
+    my (@params_expr, $returns_expr, @generics, $eff_expr);
 
     for my $attr (@attrs) {
         if ($attr =~ /\AParams\((.+)\)\z/) {
@@ -62,6 +63,9 @@ sub _handle_code_attrs ($pkg, $coderef, @attrs) {
         }
         elsif ($attr =~ /\AReturns\((.+)\)\z/) {
             $returns_expr = $1;
+        }
+        elsif ($attr =~ /\AEff\((.+)\)\z/) {
+            $eff_expr = $1;
         }
         elsif ($attr =~ /\AGeneric\((.+)\)\z/) {
             for my $decl (split /\s*,\s*/, $1) {
@@ -79,7 +83,13 @@ sub _handle_code_attrs ($pkg, $coderef, @attrs) {
                             last;
                         }
                     }
-                    if ($is_typeclass && @tc_constraints) {
+                    if ($constraint eq 'Row') {
+                        push @generics, +{
+                            name       => $vname,
+                            bound_expr => undef,
+                            is_row_var => 1,
+                        };
+                    } elsif ($is_typeclass && @tc_constraints) {
                         push @generics, +{
                             name          => $vname,
                             bound_expr    => undef,
@@ -99,9 +109,16 @@ sub _handle_code_attrs ($pkg, $coderef, @attrs) {
     }
 
     # Only proceed if we have type annotations
-    if (@params_expr || $returns_expr) {
+    if (@params_expr || $returns_expr || $eff_expr) {
         my @param_types  = map { Typist::Parser->parse($_) } @params_expr;
         my $return_type  = $returns_expr ? Typist::Parser->parse($returns_expr) : undef;
+
+        # Parse effect annotation
+        my $effects;
+        if ($eff_expr) {
+            my $row = Typist::Parser->parse_row($eff_expr);
+            $effects = Typist::Type::Eff->new($row);
+        }
 
         # Multi-char type variable support: transform aliases → vars
         if (@generics) {
@@ -109,12 +126,15 @@ sub _handle_code_attrs ($pkg, $coderef, @attrs) {
             @param_types = map { Typist::Transform->aliases_to_vars($_, \%var_names) } @param_types;
             $return_type = Typist::Transform->aliases_to_vars($return_type, \%var_names)
                 if $return_type;
+            $effects = Typist::Transform->aliases_to_vars($effects, \%var_names)
+                if $effects;
         }
 
         my $sig = +{
             params   => \@param_types,
             returns  => $return_type,
             generics => \@generics,
+            effects  => $effects,
         };
 
         # Recover the subroutine name via B introspection

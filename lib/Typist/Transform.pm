@@ -45,6 +45,25 @@ sub _walk ($type, $vars) {
         return Typist::Type::Struct->new(%new);
     }
 
+    # Eff — recurse into inner Row
+    if ($type->is_eff) {
+        my $new_row = _walk($type->row, $vars);
+        return $new_row->equals($type->row)
+            ? $type
+            : Typist::Type::Eff->new($new_row);
+    }
+
+    # Row — leaf-like; row_var might be an alias to transform
+    if ($type->is_row) {
+        my $var = $type->row_var;
+        if (defined $var && $vars->{$var}) {
+            # The row_var name matches a declared type variable — keep as-is
+            # (Row stores row_var as a plain string, not a type node)
+            return $type;
+        }
+        return $type;
+    }
+
     # Atoms, Vars, Literals — leaf nodes, return as-is
     $type;
 }

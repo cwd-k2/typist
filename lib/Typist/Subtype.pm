@@ -137,6 +137,21 @@ sub _check ($sub, $super) {
         return 1;
     }
 
+    # ── Eff types — delegate to inner Row ────────
+    if ($sub->is_eff && $super->is_eff) {
+        return _check($sub->row, $super->row);
+    }
+
+    # ── Row subtyping — label set inclusion ───────
+    # Row(A,B,C) <: Row(A,B) iff super's labels ⊆ sub's labels
+    if ($sub->is_row && $super->is_row) {
+        my %sub_labels = map { $_ => 1 } $sub->labels;
+        for my $label ($super->labels) {
+            return 0 unless $sub_labels{$label};
+        }
+        return 1;
+    }
+
     0;
 }
 

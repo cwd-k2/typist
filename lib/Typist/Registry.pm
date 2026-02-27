@@ -21,6 +21,7 @@ sub new ($class, %args) {
         newtypes   => +{},
         typeclasses => +{},
         instances   => +{},
+        effects     => +{},
     }, $class;
 }
 
@@ -196,6 +197,28 @@ sub resolve_instance ($invocant, $class_name, $type) {
     undef;
 }
 
+# ── Effect Management ────────────────────────────
+
+sub register_effect ($invocant, $name, $effect) {
+    my $self = _self($invocant);
+    $self->{effects}{$name} = $effect;
+}
+
+sub lookup_effect ($invocant, $name) {
+    my $self = _self($invocant);
+    $self->{effects}{$name};
+}
+
+sub all_effects ($invocant) {
+    my $self = _self($invocant);
+    $self->{effects}->%*;
+}
+
+sub is_effect_label ($invocant, $name) {
+    my $self = _self($invocant);
+    exists $self->{effects}{$name};
+}
+
 # ── Merge ────────────────────────────────────────
 
 sub merge ($self, $other) {
@@ -204,6 +227,11 @@ sub merge ($self, $other) {
     }
     for my $fqn (keys $other->{functions}->%*) {
         $self->{functions}{$fqn} //= $other->{functions}{$fqn};
+    }
+    if ($other->{effects}) {
+        for my $name (keys $other->{effects}->%*) {
+            $self->{effects}{$name} //= $other->{effects}{$name};
+        }
     }
     # Clear resolved cache since new aliases may change resolution
     $self->{resolved} = +{};
@@ -223,6 +251,7 @@ sub reset ($invocant) {
         $invocant->{newtypes}   = +{};
         $invocant->{typeclasses} = +{};
         $invocant->{instances}   = +{};
+        $invocant->{effects}     = +{};
     } else {
         $DEFAULT = undef;
     }

@@ -3,8 +3,10 @@ use v5.40;
 
 use Typist::Static::Extractor;
 use Typist::Static::TypeChecker;
+use Typist::Effect::Checker;
 use Typist::Registry;
 use Typist::Parser;
+use Typist::Type::Eff;
 use Typist::Checker;
 use Typist::Error;
 
@@ -16,6 +18,9 @@ my %SEVERITY = (
     TypeMismatch     => 2,
     ResolveError     => 2,
     UndeclaredTypeVar => 3,
+    EffectMismatch   => 2,
+    UndeclaredRowVar => 3,
+    UnknownEffect    => 3,
     UnknownType      => 4,
 );
 
@@ -85,10 +90,28 @@ sub analyze ($class, $source, %opts) {
             }
         }
 
+        # Parse effect annotation
+        my $effects;
+        if ($fn->{eff_expr}) {
+            $effects = eval {
+                my $row = Typist::Parser->parse_row($fn->{eff_expr});
+                Typist::Type::Eff->new($row);
+            };
+            if ($@) {
+                $errors->collect(
+                    kind    => 'ResolveError',
+                    message => "Failed to parse effect annotation '$fn->{eff_expr}' in $name: $@",
+                    file    => $file,
+                    line    => $fn->{line},
+                );
+            }
+        }
+
         $registry->register_function($pkg, $name, +{
             params   => \@param_types,
             returns  => $return_type,
             generics => $fn->{generics},
+            effects  => $effects,
         });
     }
 
@@ -105,6 +128,16 @@ sub analyze ($class, $source, %opts) {
         file      => $file,
     );
     $type_checker->analyze;
+
+    # 4.6. Run Effect Checker (static effect mismatch detection)
+    my $effect_checker = Typist::Effect::Checker->new(
+        registry  => $registry,
+        errors    => $errors,
+        extracted => $extracted,
+        ppi_doc   => $extracted->{ppi_doc},
+        file      => $file,
+    );
+    $effect_checker->analyze;
 
     # 5. Build results
     return +{

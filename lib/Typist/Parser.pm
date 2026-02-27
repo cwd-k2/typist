@@ -11,6 +11,9 @@ use Typist::Type::Var;
 use Typist::Type::Alias;
 use Typist::Type::Literal;
 
+use Typist::Type::Row;
+use Typist::Type::Eff;
+
 my %PRIMITIVES = map { $_ => 1 } qw(Any Void Never Undef Bool Int Num Str);
 
 # ── Public API ────────────────────────────────────
@@ -210,6 +213,31 @@ sub _resolve_name ($name) {
     return Typist::Type::Atom->new($name) if $PRIMITIVES{$name};
     return Typist::Type::Var->new($name)  if $name =~ /\A[A-Z]\z/;
     Typist::Type::Alias->new($name);
+}
+
+# ── Row Parsing ──────────────────────────────────
+
+# Parse a row expression: "Console | State | r"
+# Labels are uppercase-initial identifiers; a trailing lowercase identifier is a row variable.
+sub parse_row ($class, $expr) {
+    my @tokens = grep { $_ ne '' } split /\s*\|\s*/, $expr;
+    my (@labels, $row_var);
+
+    for my $i (0 .. $#tokens) {
+        my $tok = $tokens[$i];
+        $tok =~ s/\A\s+//;
+        $tok =~ s/\s+\z//;
+
+        if ($tok =~ /\A[a-z]/) {
+            die "Typist::Parser: row variable '$tok' must be the last element in '$expr'"
+                unless $i == $#tokens;
+            $row_var = $tok;
+        } else {
+            push @labels, $tok;
+        }
+    }
+
+    Typist::Type::Row->new(labels => \@labels, row_var => $row_var);
 }
 
 1;

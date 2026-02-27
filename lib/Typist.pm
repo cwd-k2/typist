@@ -14,6 +14,9 @@ use Typist::Type::Var;
 use Typist::Type::Alias;
 use Typist::Type::Literal;
 use Typist::Type::Newtype;
+use Typist::Type::Row;
+use Typist::Type::Eff;
+use Typist::Effect;
 use Typist::TypeClass;
 use Typist::Kind;
 use Typist::KindChecker;
@@ -41,6 +44,7 @@ sub import ($class, @args) {
     *{"${caller}::unwrap"}    = \&_unwrap;
     *{"${caller}::typeclass"} = \&_typeclass;
     *{"${caller}::instance"}  = \&_instance;
+    *{"${caller}::effect"}    = \&_effect;
 }
 
 # ── Newtype Support ─────────────────────────────
@@ -97,6 +101,16 @@ sub _typeclass ($name, $var_spec, %method_sigs) {
         # Also install into caller's namespace for convenience
         *{"${caller}::${name}::${method_name}"} = \&{"${ns}::${method_name}"};
     }
+}
+
+# ── Effect Support ──────────────────────────────
+
+sub _effect ($name, $operations_ref) {
+    my $eff = Typist::Effect->new(
+        name       => $name,
+        operations => $operations_ref,
+    );
+    Typist::Registry->register_effect($name, $eff);
 }
 
 sub _instance ($class_name, $type_expr, %methods) {

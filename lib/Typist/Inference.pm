@@ -132,6 +132,18 @@ sub _unify ($formal, $actual, $bindings) {
         return;
     }
 
+    # Eff types — delegate to Row unification
+    if ($formal->is_eff && $actual->is_eff) {
+        _unify_rows($formal->row, $actual->row, $bindings);
+        return;
+    }
+
+    # Row types — Rémy-style row unification
+    if ($formal->is_row && $actual->is_row) {
+        _unify_rows($formal, $actual, $bindings);
+        return;
+    }
+
     # Struct types — unify required and optional fields separately
     if ($formal->is_struct && $actual->is_struct) {
         my %freq = $formal->required_fields;
@@ -153,6 +165,43 @@ sub _unify ($formal, $actual, $bindings) {
             }
         }
         return;
+    }
+}
+
+# ── Rémy-style Row Unification ──────────────────
+
+sub _unify_rows ($formal, $actual, $bindings) {
+    require Typist::Type::Row;
+
+    my %fl = map { $_ => 1 } $formal->labels;
+    my %al = map { $_ => 1 } $actual->labels;
+
+    # Common labels cancel out
+    my @common = grep { $al{$_} } keys %fl;
+    delete @fl{@common};
+    delete @al{@common};
+
+    my @formal_excess = sort keys %fl;
+    my @actual_excess = sort keys %al;
+
+    # Bind formal's row_var to actual's excess labels + actual's tail
+    if (defined $formal->row_var) {
+        my $name = $formal->row_var;
+        my $bound = Typist::Type::Row->new(
+            labels  => \@actual_excess,
+            row_var => $actual->row_var,
+        );
+        $bindings->{$name} = $bound;
+    }
+
+    # Bind actual's row_var to formal's excess labels + formal's tail
+    if (defined $actual->row_var) {
+        my $name = $actual->row_var;
+        my $bound = Typist::Type::Row->new(
+            labels  => \@formal_excess,
+            row_var => $formal->row_var,
+        );
+        $bindings->{$name} = $bound;
     }
 }
 

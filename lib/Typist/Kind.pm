@@ -12,6 +12,11 @@ sub Star ($class) {
     $star;
 }
 
+sub Row ($class) {
+    state $row = bless +{ kind => 'Row' }, "${class}::Row";
+    $row;
+}
+
 sub Arrow ($class, $from, $to) {
     bless +{ from => $from, to => $to }, "${class}::Arrow";
 }
@@ -40,8 +45,9 @@ sub _parse_kind ($tokens, $pos) {
 sub _parse_primary ($tokens, $pos) {
     die "Kind: unexpected end of input" if $$pos >= @$tokens;
     my $tok = $tokens->[$$pos++];
-    die "Kind: expected '*', got '$tok'" unless $tok eq '*';
-    Typist::Kind->Star;
+    return Typist::Kind->Star if $tok eq '*';
+    return Typist::Kind->Row  if $tok eq 'Row';
+    die "Kind: expected '*' or 'Row', got '$tok'";
 }
 
 # ── Star Kind ───────────────────────────────────
@@ -53,6 +59,19 @@ sub to_string ($self) { '*' }
 
 sub equals ($self, $other) {
     ref $other eq 'Typist::Kind::Star';
+}
+
+sub arity ($self) { 0 }
+
+# ── Row Kind ────────────────────────────────────
+
+package Typist::Kind::Row;
+use v5.40;
+
+sub to_string ($self) { 'Row' }
+
+sub equals ($self, $other) {
+    ref $other eq 'Typist::Kind::Row';
 }
 
 sub arity ($self) { 0 }

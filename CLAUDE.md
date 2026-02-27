@@ -2,14 +2,14 @@
 
 ## Project Overview
 
-Typist is a pure Perl type system for Perl 5.40+. It provides type annotations via attributes and enforces them through `tie` (scalars) and sub wrapping (functions). The type system supports generics, type classes, higher-kinded types, nominal types, recursive types, literal types, and bounded quantification.
+Typist is a pure Perl type system for Perl 5.40+. It provides type annotations via attributes and enforces them through `tie` (scalars) and sub wrapping (functions). The type system supports generics, type classes, higher-kinded types, nominal types, recursive types, literal types, bounded quantification, and algebraic effects with row polymorphism.
 
 ## Architecture
 
 ```
-Typist.pm                  — Entry point. Registers packages, installs attributes, exports typedef/newtype/unwrap/typeclass/instance.
+Typist.pm                  — Entry point. Registers packages, installs attributes, exports typedef/newtype/unwrap/typeclass/instance/effect.
 Typist::Parser             — Recursive-descent parser for type expressions (atoms, params, unions, intersections, structs, literals).
-Typist::Registry           — Global singleton. Stores aliases, newtypes, typeclasses, instances, function signatures, variables, packages.
+Typist::Registry           — Global singleton. Stores aliases, newtypes, typeclasses, instances, effects, function signatures, variables, packages.
 Typist::Type               — Abstract base class for all type nodes.
   ::Type::Atom             — Primitives (Any, Num, Int, Bool, Str, Undef, Void, Never). Flyweight pool.
   ::Type::Param            — ArrayRef[T], HashRef[K,V], Tuple[...], Ref[T].
@@ -24,13 +24,17 @@ Typist::Type               — Abstract base class for all type nodes.
 Typist::Transform          — Post-parse tree walk: converts Alias → Var for :Generic-declared names.
 Typist::Subtype            — Structural subtype relation (is_subtype). Handles Never, Literal, Newtype, Optional struct fields.
 Typist::Inference          — Runtime value inference + HM-style unification for generics.
-Typist::Attribute          — Perl attribute handlers for :Type, :Params, :Returns, :Generic. Bounded + typeclass constraint checking.
-Typist::Checker            — CHECK-phase static analysis (alias cycles, undeclared vars, bound well-formedness).
+Typist::Attribute          — Perl attribute handlers for :Type, :Params, :Returns, :Generic, :Eff. Bounded + typeclass constraint checking.
+Typist::Checker            — CHECK-phase static analysis (alias cycles, undeclared vars, bound well-formedness, effect well-formedness).
 Typist::Error              — Structured error collection and reporting.
 Typist::Tie::Scalar        — Tie-based scalar guard. Validates on every STORE.
 Typist::TypeClass          — Type class definition (Def) and instance (Inst) structures.
-Typist::Kind               — Kind system: Star (*) and Arrow (* -> *).
+Typist::Kind               — Kind system: Star (*), Row, and Arrow (* -> *).
 Typist::KindChecker        — Kind inference and application checking for type constructors.
+Typist::Effect             — Effect definition structure (name + operations map).
+  ::Type::Row              — Effect row type: sorted labels + optional tail variable. Phantom.
+  ::Type::Eff              — Eff(row) wrapper. Delegates to inner Row.
+Typist::Effect::Checker    — PPI-based static effect checker (call graph + label inclusion).
 ```
 
 ## Conventions
@@ -74,3 +78,8 @@ Tests are numbered and ordered by dependency:
 - `t/11_bounded.t` — Bounded quantification (:Generic(T: Num))
 - `t/12_typeclass.t` — Type classes (definition, instances, dispatch)
 - `t/13_hkt.t` — Higher-kinded types and Kind system
+- `t/14_effects_foundation.t` — Effect/Row/Eff types, Kind::Row
+- `t/15_effects_row.t` — Row parsing, subtyping, unification
+- `t/16_effects_attribute.t` — :Eff attribute, effect keyword, :Generic(r: Row)
+- `t/17_effects_integration.t` — End-to-end effect system scenarios
+- `t/static/04_effects.t` — Static effect mismatch detection via Analyzer

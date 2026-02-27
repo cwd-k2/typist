@@ -131,7 +131,7 @@ sub _extract_functions ($class, $doc, $result) {
         my $attrs = $sub_stmt->find('PPI::Token::Attribute') || [];
         next unless @$attrs;
 
-        my (@params_expr, $returns_expr, @generics);
+        my (@params_expr, $returns_expr, @generics, $eff_expr);
 
         for my $attr (@$attrs) {
             my $content = $attr->content;
@@ -142,17 +142,21 @@ sub _extract_functions ($class, $doc, $result) {
             elsif ($content =~ /\AReturns\((.+)\)\z/) {
                 $returns_expr = $1;
             }
+            elsif ($content =~ /\AEff\((.+)\)\z/) {
+                $eff_expr = $1;
+            }
             elsif ($content =~ /\AGeneric\((.+)\)\z/) {
                 @generics = split /\s*,\s*/, $1;
             }
         }
 
-        next unless @params_expr || $returns_expr;
+        next unless @params_expr || $returns_expr || $eff_expr;
 
         $result->{functions}{$name} = +{
             params_expr  => \@params_expr,
             returns_expr => $returns_expr,
             generics     => \@generics,
+            eff_expr     => $eff_expr,
             line         => $sub_stmt->line_number,
             col          => $sub_stmt->column_number,
             block        => $sub_stmt->block,
