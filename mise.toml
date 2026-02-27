@@ -4,7 +4,7 @@ run = "carton install"
 
 [tasks.test]
 description = "Run all tests"
-depends = ["test:core", "test:static", "test:lsp", "test:critic", "test:e2e"]
+depends = ["test:core", "test:static", "test:lsp", "test:critic", "test:e2e", "test:workspace"]
 
 [tasks."test:core"]
 description = "Run core type system tests"
@@ -25,6 +25,10 @@ run = "carton exec -- prove -l t/critic/"
 [tasks."test:e2e"]
 description = "Run LSP E2E smoke test"
 run = "carton exec -- perl t/lsp/e2e_smoke.pl"
+
+[tasks."test:workspace"]
+description = "Verify LSP workspace on realworld example"
+run = "carton exec -- perl script/lsp-verify-workspace"
 
 [tasks.example]
 description = "Run all examples"

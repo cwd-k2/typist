@@ -56,6 +56,7 @@ mise run test:static       # Static analysis tests
 mise run test:lsp          # LSP server tests
 mise run test:critic       # Perl::Critic policy tests
 mise run test:e2e          # LSP E2E smoke test (subprocess)
+mise run test:workspace    # Verify LSP workspace on realworld example
 mise run example           # Run all examples
 mise run example:basics    # Run basics example
 mise run example:generics  # Run generics example
@@ -98,4 +99,5 @@ Tests are numbered and ordered by dependency:
 - `t/lsp/05_workspace.t` — Workspace scanning
 - `t/lsp/06_workspace_crossfile.t` — Cross-file workspace registration
 - `t/lsp/07_crossfile_diagnostics.t` — Cross-file re-diagnosis on save
+- `t/lsp/08_workspace_realworld.t` — Workspace integration on realworld example (diagnostics, hover, completion)
 - `t/critic/00_policy.t` — Perl::Critic policy bridge

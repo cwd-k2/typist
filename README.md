@@ -188,6 +188,12 @@ carton exec -- prove -l t/critic/
 
 # LSP E2E smoke test (subprocess via IPC::Open2)
 carton exec -- perl t/lsp/e2e_smoke.pl
+
+# Workspace integration verification (realworld example)
+carton exec -- perl script/lsp-verify-workspace
+
+# Workspace verification on a custom directory
+carton exec -- perl script/lsp-verify-workspace path/to/lib
 ```
 
 ## Debugging the LSP Server

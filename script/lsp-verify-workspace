@@ -1,0 +1,104 @@
+#!/usr/bin/env perl
+# Verify LSP workspace integration on a directory of Perl modules.
+#
+# Usage:
+#   carton exec -- perl script/lsp-verify-workspace [root_dir]
+#
+# Default root_dir: example/realworld/lib
+#
+# Exercises the same code path the LSP server uses:
+#   Workspace->scan → registry → Analyzer->analyze (per file)
+#
+# Reports: registry contents, per-file diagnostics, hover, completion.
+
+use v5.40;
+use lib 'lib';
+
+use Typist::LSP::Workspace;
+use Typist::LSP::Document;
+use Typist::LSP::Hover;
+use Typist::LSP::Completion;
+use Typist::Static::Analyzer;
+
+my $root = $ARGV[0] // 'example/realworld/lib';
+die "Directory not found: $root\n" unless -d $root;
+
+# ── Workspace Scan ──────────────────────────────
+
+say "=== Workspace: $root ===";
+my $ws  = Typist::LSP::Workspace->new(root => $root);
+my $reg = $ws->registry;
+
+my %aliases  = $reg->all_aliases;
+my %fns      = $reg->all_functions;
+my %effects  = $reg->all_effects;
+my %newtypes = $reg->all_newtypes;
+
+say "  aliases:   " . join(', ', sort keys %aliases)  || '(none)';
+say "  newtypes:  " . join(', ', sort keys %newtypes) || '(none)';
+say "  effects:   " . join(', ', sort keys %effects)  || '(none)';
+say "  functions: " . join(', ', sort keys %fns)      || '(none)';
+say '';
+
+# ── Per-file Analysis ───────────────────────────
+
+my $total_diags = 0;
+
+for my $path (sort glob("$root/**/*.pm"), sort glob("$root/*.pm")) {
+    open my $fh, '<', $path or do { warn "skip $path: $!\n"; next };
+    my $src = do { local $/; <$fh> };
+    close $fh;
+
+    my $result = Typist::Static::Analyzer->analyze($src,
+        file               => $path,
+        workspace_registry => $reg,
+    );
+
+    my @diags = @{$result->{diagnostics}};
+    (my $short = $path) =~ s{^\Q$root\E/}{};
+
+    if (@diags) {
+        say "=== $short ===";
+        for my $d (@diags) {
+            printf "  L%d [%s] %s\n", $d->{line}, $d->{kind}, $d->{message};
+        }
+        $total_diags += @diags;
+    } else {
+        say "=== $short === (clean)";
+    }
+
+    # Hover summary
+    my $doc = Typist::LSP::Document->new(uri => "file://$path", content => $src);
+    $doc->analyze(workspace_registry => $reg);
+
+    my @syms = @{$result->{symbols} // []};
+    my @fn_syms = grep { $_->{kind} eq 'function' } @syms;
+    if (@fn_syms) {
+        for my $sym (@fn_syms) {
+            my $hover = Typist::LSP::Hover->hover($sym);
+            my $val = $hover->{contents}{value} // '(no hover)';
+            $val =~ s/```perl\n//; $val =~ s/\n```//;
+            printf "  hover: %s\n", $val;
+        }
+    }
+    say '';
+}
+
+# ── Completion Summary ──────────────────────────
+
+my @type_names   = $ws->all_typedef_names;
+my @effect_names = $ws->all_effect_names;
+
+say "=== Completion ===";
+say "  type names:   " . join(', ', @type_names);
+say "  effect names: " . join(', ', @effect_names);
+say '';
+
+# ── Summary ─────────────────────────────────────
+
+if ($total_diags == 0) {
+    say "Result: ALL CLEAN (${\scalar keys %fns} functions, ${\scalar keys %aliases} aliases, ${\scalar keys %newtypes} newtypes, ${\scalar keys %effects} effects)";
+} else {
+    say "Result: $total_diags diagnostic(s) found";
+    exit 1;
+}
