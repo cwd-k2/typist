@@ -204,4 +204,199 @@ subtest 'handler with multiple operations' => sub {
     Typist::Handler->pop_handler;
 };
 
+# ══════════════════════════════════════════════════════
+# C-2b: handle block tests
+# ══════════════════════════════════════════════════════
+
+# ── Basic handle block: returns body value ──────────
+
+subtest 'handle returns body value' => sub {
+    reset_handlers();
+
+    my $result = handle {
+        42;
+    } Console => +{
+        log => sub ($msg) { },
+    };
+
+    is $result, 42, 'handle returns body return value';
+};
+
+# ── handle dispatches to handler ────────────────────
+
+subtest 'handle dispatches effect operations' => sub {
+    reset_handlers();
+
+    my @captured;
+    my $result = handle {
+        perform Console => log => "hello";
+        perform Console => log => "world";
+        "done";
+    } Console => +{
+        log => sub ($msg) { push @captured, $msg },
+    };
+
+    is_deeply \@captured, ["hello", "world"],
+        'handler received all perform calls';
+    is $result, "done", 'body return value propagated';
+};
+
+# ── handle pops handlers on normal exit ─────────────
+
+subtest 'handle pops handler after body completes' => sub {
+    reset_handlers();
+
+    handle {
+        perform Console => log => "inside";
+    } Console => +{
+        log => sub ($msg) { },
+    };
+
+    # After handle returns, handler is gone
+    eval { perform Console => log => "outside" };
+    like $@, qr/No handler for effect Console::log/,
+        'handler is inactive after handle scope';
+};
+
+# ── handle pops handlers on exception ───────────────
+
+subtest 'handle pops handler on exception' => sub {
+    reset_handlers();
+
+    eval {
+        handle {
+            perform Console => log => "before die";
+            die "boom\n";
+        } Console => +{
+            log => sub ($msg) { },
+        };
+    };
+    like $@, qr/boom/, 'exception propagated from handle body';
+
+    # Handler must be popped even after exception
+    eval { perform Console => log => "after" };
+    like $@, qr/No handler for effect Console::log/,
+        'handler popped despite exception';
+};
+
+# ── Multiple effects simultaneously ─────────────────
+
+subtest 'handle multiple effects simultaneously' => sub {
+    reset_handlers();
+
+    my @logs;
+    my $result = handle {
+        perform Console => log => "start";
+        perform State => put => 10;
+        my $v = perform State => get =>;
+        perform Console => log => "val=$v";
+        $v;
+    } Console => +{
+        log => sub ($msg) { push @logs, $msg },
+    }, State => +{
+        get => sub { 99 },
+        put => sub ($v) { },
+    };
+
+    is_deeply \@logs, ["start", "val=99"],
+        'Console handler received correct messages';
+    is $result, 99, 'State get returned handler value';
+};
+
+# ── Nested handle: inner shadows outer ──────────────
+
+subtest 'nested handle: inner shadows outer' => sub {
+    reset_handlers();
+
+    my @outer_log;
+    my @inner_log;
+
+    my $result = handle {
+        perform Console => log => "outer-scope";
+
+        my $inner = handle {
+            perform Console => log => "inner-scope";
+            "inner-result";
+        } Console => +{
+            log => sub ($msg) { push @inner_log, $msg },
+        };
+
+        # After inner handle returns, outer handler is active again
+        perform Console => log => "outer-again";
+        $inner;
+    } Console => +{
+        log => sub ($msg) { push @outer_log, $msg },
+    };
+
+    is_deeply \@inner_log, ["inner-scope"],
+        'inner handler captured inner perform';
+    is_deeply \@outer_log, ["outer-scope", "outer-again"],
+        'outer handler captured outer performs';
+    is $result, "inner-result",
+        'nested handle return value propagated';
+};
+
+# ── State effect: full get/put counter example ──────
+
+subtest 'State effect counter via handle' => sub {
+    reset_handlers();
+
+    my $state = 0;
+    my $result = handle {
+        my $n = perform State => get =>;
+        perform State => put => $n + 1;
+        my $n2 = perform State => get =>;
+        perform State => put => $n2 + 1;
+        perform State => get =>;
+    } State => +{
+        get => sub () { $state },
+        put => sub ($n) { $state = $n; undef },
+    };
+
+    is $result, 2, 'final get returns 2 after two increments';
+    is $state, 2, 'state variable was mutated by handler';
+};
+
+# ── handle with no perform in body ──────────────────
+
+subtest 'handle with no perform in body' => sub {
+    reset_handlers();
+
+    my $result = handle {
+        "no effects used";
+    } Console => +{
+        log => sub ($msg) { die "should not be called" },
+    };
+
+    is $result, "no effects used",
+        'handle works even when body performs no effects';
+};
+
+# ── Multiple effects popped on exception ────────────
+
+subtest 'multiple handlers all popped on exception' => sub {
+    reset_handlers();
+
+    eval {
+        handle {
+            die "multi-boom\n";
+        } Console => +{
+            log => sub ($msg) { },
+        }, State => +{
+            get => sub { 0 },
+            put => sub ($v) { },
+        };
+    };
+    like $@, qr/multi-boom/, 'exception propagated';
+
+    # Both handlers must be gone
+    eval { perform Console => log => "test" };
+    like $@, qr/No handler for effect Console::log/,
+        'Console handler popped after exception';
+
+    eval { perform State => get => };
+    like $@, qr/No handler for effect State::get/,
+        'State handler popped after exception';
+};
+
 done_testing;

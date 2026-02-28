@@ -57,6 +57,7 @@ sub import ($class, @args) {
     *{"${caller}::declare"}   = \&_declare;
     *{"${caller}::datatype"}  = \&_datatype;
     *{"${caller}::perform"}   = \&_perform;
+    *{"${caller}::handle"}    = \&_handle;
 }
 
 # ── Newtype Support ─────────────────────────────
@@ -139,6 +140,43 @@ sub _perform ($effect_name, $op_name, @args) {
     }
 
     die "No handler for effect ${effect_name}::${op_name}\n";
+}
+
+# ── Handle Support (scoped effect handler block) ──
+#
+#   handle { BODY } Effect => +{ op => sub ... }, ...;
+#
+# The (&@) prototype allows bare-block syntax at call sites.
+# Pushes handlers, executes BODY, pops handlers (even on exception),
+# and returns BODY's result.
+
+sub _handle :prototype(&@) {
+    my ($body, @handler_specs) = @_;
+
+    # Push all effect handlers onto the stack
+    my $pushed = 0;
+    while (@handler_specs >= 2) {
+        my $effect   = shift @handler_specs;
+        my $handlers = shift @handler_specs;
+        Typist::Handler->push_handler($effect, $handlers);
+        $pushed++;
+    }
+
+    # Execute body, ensuring handlers are popped even on exception
+    my @result;
+    my $ok = eval {
+        @result = $body->();
+        1;
+    };
+    my $err = $@;
+
+    # Pop handlers (LIFO — matches push order)
+    Typist::Handler->pop_handler for 1 .. $pushed;
+
+    # Re-raise if body threw
+    die $err unless $ok;
+
+    wantarray ? @result : $result[0];
 }
 
 # ── Declare Support (external function annotations) ──
