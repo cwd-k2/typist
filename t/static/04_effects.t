@@ -263,7 +263,7 @@ PERL
 
     my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
     ok @eff_diags > 0, 'calling builtin say inside Eff(Console) is flagged';
-    like $eff_diags[0]{message}, qr/unannotated.*say/, 'reports unannotated builtin say';
+    like $eff_diags[0]{message}, qr/say.*IO/, 'reports missing IO effect for builtin say';
 };
 
 subtest 'Analyzer: builtin in pure function is flagged' => sub {
@@ -279,7 +279,7 @@ PERL
 
     my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
     ok @eff_diags > 0, 'calling builtin print inside pure function is flagged';
-    like $eff_diags[0]{message}, qr/unannotated.*print/, 'reports unannotated builtin print';
+    like $eff_diags[0]{message}, qr/print.*IO/, 'reports IO effect mismatch for builtin print';
 };
 
 # ── Declared builtins override Eff(*) ────────────

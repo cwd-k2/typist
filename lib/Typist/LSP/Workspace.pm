@@ -10,6 +10,7 @@ use Typist::Type::Eff;
 use Typist::Effect;
 use Typist::Attribute;
 use Typist::TypeClass;
+use Typist::Prelude;
 
 # ── Constructor ──────────────────────────────────
 
@@ -19,6 +20,9 @@ sub new ($class, %args) {
         registry => Typist::Registry->new,
         files    => +{},  # path -> +{ aliases, functions, newtypes, effects, typeclasses, package }
     }, $class;
+
+    # Install builtin type prelude (CORE:: defaults)
+    Typist::Prelude->install($self->{registry});
 
     $self->scan if $self->{root};
     $self;
@@ -185,12 +189,18 @@ sub _register_file_types ($self, $extracted) {
                 @generics = Typist::Attribute->parse_generic_decl($spec, registry => $reg);
             }
 
-            $reg->register_function($pkg, $name, +{
+            my $sig = +{
                 params   => \@param_types,
                 returns  => $return_type,
                 generics => \@generics,
                 effects  => $effects,
-            });
+            };
+
+            if ($fn->{is_method}) {
+                $reg->register_method($pkg, $name, $sig);
+            } else {
+                $reg->register_function($pkg, $name, $sig);
+            }
         };
         # Skip functions that fail to parse (non-fatal)
     }
@@ -198,6 +208,9 @@ sub _register_file_types ($self, $extracted) {
 
 sub _rebuild_registry ($self) {
     $self->{registry} = Typist::Registry->new;
+
+    # Re-install builtin type prelude (CORE:: defaults)
+    Typist::Prelude->install($self->{registry});
 
     for my $path (sort keys $self->{files}->%*) {
         my $info = $self->{files}{$path};
