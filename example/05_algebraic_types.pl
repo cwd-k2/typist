@@ -96,6 +96,56 @@ for my $input ("42", "abc") {
     }
 }
 
+# ── Parameterized ADTs ──────────────────────────────────
+#
+# Type parameters make ADTs polymorphic. Use quoted name
+# with brackets: datatype 'Name[T]' => ...
+# Constructors infer type arguments from actual values.
+
+BEGIN {
+    datatype 'Option[T]' =>
+        Some => '(T)',
+        None => '()';
+}
+
+my $x = Some(42);       # T inferred as Int
+my $y = Some("hello");  # T inferred as Str
+my $z = None();          # no inference needed
+
+say "Some(42):      tag=$x->{_tag}  val=$x->{_values}[0]";
+say "Some('hello'): tag=$y->{_tag}  val=$y->{_values}[0]";
+say "None():        tag=$z->{_tag}";
+
+# Type checking with instantiated types
+use Typist::Type::Data;
+use Typist::Type::Atom;
+
+my $opt_int = Typist::Registry->lookup_datatype('Option')
+    ->instantiate(Typist::Type::Atom->new('Int'));
+
+say "Option[Int] contains Some(42)?      ", $opt_int->contains($x) ? 'yes' : 'no';
+say "Option[Int] contains Some('hello')? ", $opt_int->contains($y) ? 'yes' : 'no';
+say "Option[Int] contains None()?        ", $opt_int->contains($z) ? 'yes' : 'no';
+
+# ── Multi-Parameter ADTs ─────────────────────────────────
+
+BEGIN {
+    datatype 'Either[L, R]' =>
+        Left  => '(L)',
+        Right => '(R)';
+}
+
+my $ok  = Right(200);
+my $err = Left("not found");
+
+sub describe_either ($e) {
+    if ($e->{_tag} eq 'Right') { "success: $e->{_values}[0]" }
+    else                       { "error: $e->{_values}[0]" }
+}
+
+say "Right(200):         ", describe_either($ok);
+say "Left('not found'):  ", describe_either($err);
+
 # ── Nullary-like Constructors ─────────────────────────────
 #
 # Even single-field constructors carry typed values.
