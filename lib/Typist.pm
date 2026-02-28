@@ -2,6 +2,7 @@ package Typist;
 use v5.40;
 
 our $VERSION = '0.01';
+our $RUNTIME = $ENV{TYPIST_RUNTIME} ? 1 : 0;
 
 use Typist::Type;
 use Typist::Type::Atom;
@@ -32,6 +33,7 @@ use Typist::DSL;
 
 sub import ($class, @args) {
     my $caller = caller;
+    $Typist::RUNTIME = 1 if grep { $_ eq '-runtime' } @args;
 
     # Track this package
     Typist::Registry->register_package($caller);
@@ -185,10 +187,58 @@ sub _instance ($class_name, $type_expr_arg, $methods_ref) {
 
 CHECK {
     Typist::Error::Global->reset;
+
+    # 1. Structural checks on global Registry (alias cycles, free vars, bounds, kinds)
     Typist::Static::Checker->new->analyze;
+
+    # 2. Full static analysis per loaded file (TypeChecker + EffectChecker)
+    _check_analyze();
+
     if (Typist::Error::Global->has_errors) {
         warn Typist::Error::Global->report;
     }
+}
+
+# ── CHECK-Phase Static Analysis ──────────────────
+
+sub _check_analyze () {
+    require Typist::Static::Analyzer;
+
+    my $ws_registry = Typist::Registry->_default;
+
+    for my $pkg (Typist::Registry->all_packages) {
+        my $file   = _package_to_file($pkg) // next;
+        my $source = _slurp($file)          // next;
+
+        my $result = eval {
+            Typist::Static::Analyzer->analyze($source,
+                workspace_registry => $ws_registry,
+                file               => $file,
+            );
+        };
+        next if $@;
+
+        for my $diag ($result->{diagnostics}->@*) {
+            Typist::Error::Global->collect(
+                kind    => $diag->{kind},
+                message => $diag->{message},
+                file    => $diag->{file} // $file,
+                line    => $diag->{line} // 0,
+            );
+        }
+    }
+}
+
+sub _package_to_file ($pkg) {
+    return $0 if $pkg eq 'main' && -f $0;
+    my $path = $pkg =~ s|::|/|gr;
+    $INC{"${path}.pm"};
+}
+
+sub _slurp ($path) {
+    open my $fh, '<', $path or return undef;
+    local $/;
+    scalar readline $fh;
 }
 
 1;

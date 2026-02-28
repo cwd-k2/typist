@@ -1,7 +1,7 @@
 use v5.40;
 use Test::More;
 
-use Typist;
+use Typist -runtime;
 
 # ── Register effects at compile time ─────────────
 

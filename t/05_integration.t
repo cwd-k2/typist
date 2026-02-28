@@ -1,7 +1,7 @@
 use v5.40;
 use Test::More;
 use lib 'lib';
-use Typist;
+use Typist -runtime;
 
 # ── End-to-end: typed scalars ────────────────────
 

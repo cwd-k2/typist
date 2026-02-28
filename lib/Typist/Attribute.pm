@@ -41,10 +41,12 @@ sub _handle_scalar_attrs ($pkg, $ref, @attrs) {
                 pkg  => $pkg,
             });
 
-            tie $$ref, 'Typist::Tie::Scalar',
-                type => $type,
-                name => "\$$ref",
-                pkg  => $pkg;
+            if ($Typist::RUNTIME) {
+                tie $$ref, 'Typist::Tie::Scalar',
+                    type => $type,
+                    name => "\$$ref",
+                    pkg  => $pkg;
+            }
         } else {
             push @unhandled, $attr;
         }
@@ -160,7 +162,9 @@ sub _handle_code_attrs ($pkg, $coderef, @attrs) {
 
             my $sub_name = _recover_name($coderef) // '(anonymous)';
             Typist::Registry->register_function($pkg, $sub_name, $sig);
-            _wrap_sub($coderef, $sig, $pkg, $sub_name);
+            if ($Typist::RUNTIME) {
+                _wrap_sub($coderef, $sig, $pkg, $sub_name);
+            }
         } else {
             push @unhandled, $attr;
         }

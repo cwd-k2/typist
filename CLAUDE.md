@@ -2,27 +2,41 @@
 
 ## Project Overview
 
-Typist is a pure Perl type system for Perl 5.40+. It provides type annotations via attributes and enforces them through `tie` (scalars) and sub wrapping (functions). The type system supports generics, type classes, higher-kinded types, nominal types, recursive types, literal types, bounded quantification, and algebraic effects with row polymorphism.
+Typist is a pure Perl type system for Perl 5.40+. It provides type annotations via attributes and uses a **static-first** architecture: errors are caught at compile time (CHECK phase) and via LSP, with runtime enforcement available as an opt-in mode. The type system supports generics, type classes, higher-kinded types, nominal types, recursive types, literal types, bounded quantification, and algebraic effects with row polymorphism.
 
 ## Architecture
 
 ```
-Runtime Layer                Static Analysis Layer         LSP Layer
-──────────────────           ─────────────────────         ──────────────
-Typist.pm (entry)            Static::Extractor             LSP::Server
-Attribute.pm                 Static::Analyzer              LSP::Document
-Tie::Scalar                  Static::Checker (CHECK)       LSP::Workspace
-Inference.pm                 Static::TypeChecker           LSP::Hover
-                             Static::EffectChecker         LSP::Completion
-                             Static::Infer                 LSP::Transport
+Static-First (default)       Runtime (opt-in: -runtime)    LSP Layer
+──────────────────────       ─────────────────────────     ──────────────
+Typist.pm (entry+CHECK)      Tie::Scalar                   LSP::Server
+Static::Checker              Attribute._wrap_sub            LSP::Document
+Static::Analyzer (CHECK)     Inference.pm                   LSP::Workspace
+Static::TypeChecker                                         LSP::Hover
+Static::EffectChecker                                       LSP::Completion
+Static::Extractor                                           LSP::Transport
+Static::Infer
 
 Shared Infrastructure
 ──────────────────────────
-Registry, Parser, Subtype, Transform
+Registry, Parser, Subtype, Transform, Attribute
 Error (value + Collector), Error::Global (singleton buffer)
 Type::{Atom,Param,Union,Intersection,Func,Struct,Var,Alias,Literal,Newtype,Row,Eff}
 Kind, KindChecker, TypeClass, Effect
 DSL (Type constructors: Int, Str, ArrayRef(...), Struct(...), Func(...), etc.)
+```
+
+### Error Detection Phases
+
+```
+Phase           | Catches                    | Surface       | Tool Integration
+────────────────|────────────────────────────|───────────────|─────────────────
+Static (LSP)    | TypeMismatch, EffectMis.   | Diagnostics   | typist-lsp, editors
+                | CycleError, UnknownType    |               |
+CHECK (compile) | All of above (expanded)    | warn → STDERR | perlnavigator, prove
+Runtime (opt-in)| Generic instantiation      | die           | -runtime flag
+                | TypeClass constraints      |               |
+                | Boundary (newtype) [always] |              |
 ```
 
 ### Key Modules
@@ -47,6 +61,8 @@ DSL (Type constructors: Int, Str, ArrayRef(...), Struct(...), Func(...), etc.)
 - Sub wrapping uses direct glob assignment to replace the original.
 - Hashref literals always use `+{}` to disambiguate from blocks.
 - No source filters or external preprocessors.
+- Static-first: `use Typist;` = static-only (default). Runtime enforcement via `use Typist -runtime;` or `TYPIST_RUNTIME=1`. Newtype constructors and `unwrap` always validate (boundary enforcement).
+- CHECK phase runs both structural checks (Checker) and full static analysis (Analyzer with TypeChecker + EffectChecker) per loaded package. Diagnostics surface as `warn` → perlnavigator picks these up.
 - Gradual typing: fully annotated → all checks enforced; partially annotated (some attrs, no `:Eff`) → pure, return type unknown if no `:Returns`; completely unannotated → `(Any...) -> Any ! Eff(*)`, type checks skip, effect checks flag.
 
 ## Commands
@@ -88,6 +104,7 @@ Tests are numbered and ordered by dependency:
 - `t/16_effects_attribute.t` — :Eff attribute, effect keyword, :Generic(r: Row)
 - `t/17_effects_integration.t` — End-to-end effect system scenarios
 - `t/18_dsl.t` — Type DSL (operators, constructors, coerce)
+- `t/20_check_diagnostics.t` — CHECK-phase static analysis (subprocess-based, TypeMismatch/EffectMismatch detection, -runtime flag, TYPIST_RUNTIME env)
 - `t/static/00_extractor.t` — PPI-based type extraction
 - `t/static/01_analyzer.t` — Static analysis pipeline
 - `t/static/02_infer.t` — Static type inference
