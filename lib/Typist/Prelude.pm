@@ -12,34 +12,92 @@ use Typist::Effect;
 # override these entries — register_function uses plain assignment.
 
 my %BUILTINS = (
-    # IO effects
-    say     => '(Any) -> Bool !Eff(IO)',
-    print   => '(Any) -> Bool !Eff(IO)',
-    warn    => '(Any) -> Bool !Eff(IO)',
-    die     => '(Any) -> Never !Eff(Exn)',
+    # ── IO ────────────────────────────────────────
+    say     => '(...Any) -> Bool !Eff(IO)',
+    print   => '(...Any) -> Bool !Eff(IO)',
+    warn    => '(...Any) -> Bool !Eff(IO)',
+    die     => '(...Any) -> Never !Eff(Exn)',
+    open    => '(...Any) -> Bool !Eff(IO)',
+    close   => '(Any) -> Bool !Eff(IO)',
+    read    => '(Any, Any, Int) -> Int !Eff(IO)',
+    write   => '(Any, Any, Int) -> Int !Eff(IO)',
+    binmode => '(Any) -> Bool !Eff(IO)',
+    eof     => '(Any) -> Bool !Eff(IO)',
+    seek    => '(Any, Int, Int) -> Bool !Eff(IO)',
+    tell    => '(Any) -> Int !Eff(IO)',
 
-    # Pure string operations
+    # ── String operations ─────────────────────────
     length  => '(Str) -> Int',
-    substr  => '(Str, Int, Int) -> Str',
+    substr  => '(Str, Int, ...Int) -> Str',
     uc      => '(Str) -> Str',
     lc      => '(Str) -> Str',
-    index   => '(Str, Str) -> Int',
+    ucfirst => '(Str) -> Str',
+    lcfirst => '(Str) -> Str',
+    index   => '(Str, Str, ...Int) -> Int',
+    rindex  => '(Str, Str, ...Int) -> Int',
+    chomp   => '(Any) -> Int',
+    chop    => '(Any) -> Str',
+    chr     => '(Int) -> Str',
+    ord     => '(Str) -> Int',
+    hex     => '(Str) -> Int',
+    oct     => '(Str) -> Int',
+    quotemeta => '(Str) -> Str',
+    sprintf => '(Str, ...Any) -> Str',
 
-    # Pure numeric operations
+    # ── Numeric operations ────────────────────────
     abs     => '(Num) -> Num',
     int     => '(Num) -> Int',
     sqrt    => '(Num) -> Num',
+    log     => '(Num) -> Num',
+    exp     => '(Num) -> Num',
+    sin     => '(Num) -> Num',
+    cos     => '(Num) -> Num',
+    atan2   => '(Num, Num) -> Num',
+    rand    => '(...Num) -> Num',
+    srand   => '(...Int) -> Int',
 
-    # Pure list operations
+    # ── Type/value introspection ──────────────────
+    defined     => '(Any) -> Bool',
+    ref         => '(Any) -> Str',
+    wantarray   => '() -> Bool',
+    caller      => '(...Int) -> Any',
+
+    # ── Array operations ──────────────────────────
     scalar  => '(Any) -> Int',
-    reverse => '(Any) -> Any',
-    sort    => '(Any) -> Any',
+    push    => '(Any, ...Any) -> Int',
+    pop     => '(Any) -> Any',
+    shift   => '(...Any) -> Any',
+    unshift => '(Any, ...Any) -> Int',
+    splice  => '(Any, ...Any) -> Any',
+    reverse => '(...Any) -> Any',
+    sort    => '(...Any) -> Any',
+    map     => '(Any, ...Any) -> Any',
+    grep    => '(Any, ...Any) -> Any',
 
-    # IO operations
-    open    => '(Any, Any) -> Bool !Eff(IO)',
-    close   => '(Any) -> Bool !Eff(IO)',
-    chomp   => '(Any) -> Int',
-    chop    => '(Any) -> Str',
+    # ── Hash operations ───────────────────────────
+    keys    => '(Any) -> Any',
+    values  => '(Any) -> Any',
+    each    => '(Any) -> Any',
+    delete  => '(Any) -> Any',
+    exists  => '(Any) -> Bool',
+
+    # ── String matching ───────────────────────────
+    split   => '(Any, ...Any) -> Any',
+    join    => '(Str, ...Any) -> Str',
+    pack    => '(Str, ...Any) -> Str',
+    unpack  => '(Str, Str) -> Any',
+
+    # ── Misc ──────────────────────────────────────
+    eval    => '(Any) -> Any',
+    require => '(Any) -> Bool',
+    use     => '(Any) -> Bool',
+    exit    => '(...Int) -> Never',
+    system  => '(...Any) -> Int !Eff(IO)',
+    exec    => '(...Any) -> Never !Eff(IO)',
+    sleep   => '(...Int) -> Int',
+    time    => '() -> Int',
+    localtime => '(...Int) -> Any',
+    gmtime  => '(...Int) -> Any',
 );
 
 # ── Standard Effect Labels ───────────────────────
@@ -74,10 +132,11 @@ sub install ($class, $registry) {
             ? Typist::Type::Eff->new($type->effects) : undef;
 
         $registry->register_function('CORE', $name, +{
-            params      => \@params,
-            returns     => $returns,
-            effects     => $effects,
-            params_expr => [map { $_->to_string } @params],
+            params       => \@params,
+            returns      => $returns,
+            effects      => $effects,
+            variadic     => $type->variadic,
+            params_expr  => [map { $_->to_string } @params],
             returns_expr => $returns->to_string,
         });
     }
