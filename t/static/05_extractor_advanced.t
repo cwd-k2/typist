@@ -144,6 +144,48 @@ PERL
     ok exists $result->{functions}{add},       'function add found';
 };
 
+# ── Declare extraction ─────────────────────────
+
+subtest 'extracts declare with bare name (builtin)' => sub {
+    my $result = Typist::Static::Extractor->extract(<<'PERL');
+package MyApp;
+use v5.40;
+declare say => '(Str) -> Void ! Console';
+PERL
+
+    my $declares = $result->{declares};
+    ok exists $declares->{say}, 'declare say found';
+    is $declares->{say}{package},   'CORE', 'bare name maps to CORE';
+    is $declares->{say}{func_name}, 'say',  'func_name is say';
+    is $declares->{say}{type_expr}, '(Str) -> Void ! Console', 'type_expr captured';
+    ok $declares->{say}{line} > 0, 'has line number';
+};
+
+subtest 'extracts declare with qualified name' => sub {
+    my $result = Typist::Static::Extractor->extract(<<'PERL');
+use v5.40;
+declare 'JSON::encode_json' => '(Any) -> Str';
+PERL
+
+    my $declares = $result->{declares};
+    ok exists $declares->{'JSON::encode_json'}, 'qualified declare found';
+    is $declares->{'JSON::encode_json'}{package},   'JSON',        'package is JSON';
+    is $declares->{'JSON::encode_json'}{func_name}, 'encode_json', 'func_name extracted';
+    is $declares->{'JSON::encode_json'}{type_expr}, '(Any) -> Str', 'type_expr captured';
+};
+
+subtest 'extracts declare with generics' => sub {
+    my $result = Typist::Static::Extractor->extract(<<'PERL');
+use v5.40;
+declare 'List::Util::first' => '<T>(CodeRef, ArrayRef[T]) -> T';
+PERL
+
+    my $declares = $result->{declares};
+    ok exists $declares->{'List::Util::first'}, 'generic declare found';
+    is $declares->{'List::Util::first'}{type_expr},
+       '<T>(CodeRef, ArrayRef[T]) -> T', 'generic type_expr preserved';
+};
+
 # ── Edge cases ──────────────────────────────────
 
 subtest 'empty source has empty collections' => sub {

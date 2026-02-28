@@ -97,6 +97,46 @@ sub analyze ($class, $source, %opts) {
         $registry->register_typeclass($name, $def // undef);
     }
 
+    # 2e. Register this file's declares (external function annotations)
+    for my $name (sort keys $extracted->{declares}->%*) {
+        my $decl = $extracted->{declares}{$name};
+        my $ann = eval { Typist::Parser->parse_annotation($decl->{type_expr}) };
+        if ($@) {
+            $errors->collect(
+                kind    => 'ResolveError',
+                message => "Failed to parse declare type for '$name': $@",
+                file    => $file,
+                line    => $decl->{line},
+            );
+            next;
+        }
+
+        my $type = $ann->{type};
+        my (@param_types, $return_type, $effects);
+
+        if ($type->is_func) {
+            @param_types = $type->params;
+            $return_type = $type->returns;
+            $effects = $type->effects
+                ? Typist::Type::Eff->new($type->effects) : undef;
+        } else {
+            $return_type = $type;
+        }
+
+        my @generics;
+        if ($ann->{generics_raw} && @{$ann->{generics_raw}}) {
+            my $spec = join(', ', $ann->{generics_raw}->@*);
+            @generics = Typist::Attribute->parse_generic_decl($spec, registry => $registry);
+        }
+
+        $registry->register_function($decl->{package}, $decl->{func_name}, +{
+            params   => \@param_types,
+            returns  => $return_type,
+            generics => \@generics,
+            effects  => $effects,
+        });
+    }
+
     # 3. Register this file's functions
     for my $name (sort keys $extracted->{functions}->%*) {
         my $fn = $extracted->{functions}{$name};
@@ -321,6 +361,37 @@ sub _build_symbol_index ($extracted, $env = undef) {
             eff_expr    => $eff,
             line        => $fn->{line},
             col         => $fn->{col},
+        };
+    }
+
+    # Declares (external function annotations)
+    for my $name (sort keys $extracted->{declares}->%*) {
+        my $decl = $extracted->{declares}{$name};
+        my $ann = eval { Typist::Parser->parse_annotation($decl->{type_expr}) };
+        next if $@;
+
+        my $type = $ann->{type};
+        my (@params_expr, $returns_expr, $eff_expr);
+
+        if ($type->is_func) {
+            @params_expr  = map { $_->to_string } $type->params;
+            $returns_expr = $type->returns->to_string;
+            $eff_expr     = $type->effects
+                ? $type->effects->to_string : undef;
+        } else {
+            $returns_expr = $type->to_string;
+        }
+
+        push @symbols, +{
+            name         => $decl->{func_name},
+            kind         => 'function',
+            params_expr  => \@params_expr,
+            returns_expr => $returns_expr,
+            generics     => $ann->{generics_raw},
+            eff_expr     => $eff_expr,
+            declared     => 1,
+            line         => $decl->{line},
+            col          => $decl->{col},
         };
     }
 

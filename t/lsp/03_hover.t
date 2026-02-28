@@ -308,4 +308,31 @@ PERL
     like $hover->{result}{contents}{value}, qr/sub say\(Any\.\.\.\) -> Any !Eff\(\*\)/, 'shows sub say(Any...) -> Any !Eff(*)';
 };
 
+# ── Hover on declared builtin ───────────────────
+
+subtest 'hover shows declared builtin with specific type' => sub {
+    my $source = <<'PERL';
+use v5.40;
+declare say => '(Str) -> Void ! Console';
+say "hello";
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 2, character => 1 },  # on 'say'
+        }),
+    ));
+
+    my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $hover, 'got hover response';
+    ok $hover->{result}, 'hover has result';
+    like $hover->{result}{contents}{value}, qr/sub say\(Str\) -> Void/, 'shows declared type';
+    like $hover->{result}{contents}{value}, qr/!Eff\(Console\)/, 'shows Console effect';
+    like $hover->{result}{contents}{value}, qr/declared/, 'shows declared label';
+};
+
 done_testing;

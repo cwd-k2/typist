@@ -115,28 +115,46 @@ sub _collect_called_effects ($self, $block, $pkg) {
         my $next = $word->snext_sibling;
         next if $next && ref $next && $next->isa('PPI::Token::Operator') && $next->content eq '=>';
 
-        # Builtin functions: treated as unannotated Eff(*)
+        # Builtin functions: check CORE registry for declared type, fallback to Eff(*)
         # Builtins can be called without parens (say "hello"), so no List check needed.
         if ($BUILTINS{$callee_name}) {
-            push @calls, +{
-                name        => $callee_name,
-                effects     => 1,  # sentinel; unannotated branch does not inspect
-                unannotated => 1,
-                line        => $word->line_number,
-            };
+            my $declared_sig = $self->{registry}->lookup_function('CORE', $callee_name);
+            if ($declared_sig && $declared_sig->{effects}) {
+                # Use declared effects for inclusion checking
+                my $eff = $declared_sig->{effects};
+                my $row = $eff->is_eff ? $eff->row : $eff;
+                my $is_unannotated = $row->is_row && ($row->row_var_name // '') eq '*';
+
+                push @calls, +{
+                    name        => $callee_name,
+                    effects     => $eff,
+                    unannotated => $is_unannotated,
+                    line        => $word->line_number,
+                };
+            } elsif (!$declared_sig) {
+                # No declaration → original behavior: unannotated Eff(*)
+                push @calls, +{
+                    name        => $callee_name,
+                    effects     => 1,  # sentinel; unannotated branch does not inspect
+                    unannotated => 1,
+                    line        => $word->line_number,
+                };
+            }
+            # else: declared pure (no effects) → skip
             next;
         }
 
         # Must be followed by a list (function call pattern)
         next unless $next && ref $next && $next->isa('PPI::Structure::List');
 
-        # Look up callee's sig — local package first, then cross-package (Pkg::func)
+        # Look up callee's sig — local package, cross-package, then CORE
         my $callee_sig = $self->{registry}->lookup_function($pkg, $callee_name);
         unless ($callee_sig) {
             if ($callee_name =~ /\A(.+)::(\w+)\z/) {
                 $callee_sig = $self->{registry}->lookup_function($1, $2);
             }
         }
+        $callee_sig //= $self->{registry}->lookup_function('CORE', $callee_name);
         next unless $callee_sig;
         next unless $callee_sig->{effects};
 

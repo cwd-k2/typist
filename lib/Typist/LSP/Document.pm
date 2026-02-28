@@ -368,8 +368,9 @@ sub completion_context ($self, $line, $col) {
     # Inside :Type(...)
     return 'type_expr' if $text =~ /:Type\([^)]*\z/;
 
-    # After typedef Name =>
+    # After typedef Name => or declare Name =>
     return 'type_expr' if $text =~ /typedef\s+\w+\s*=>\s*['"]?\s*\z/;
+    return 'type_expr' if $text =~ /declare\s+(?:\w+|'[^']*')\s*=>\s*['"]?\s*\z/;
 
     undef;
 }

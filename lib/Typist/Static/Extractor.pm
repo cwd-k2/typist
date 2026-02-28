@@ -18,6 +18,7 @@ sub extract ($class, $source) {
         newtypes    => +{},
         effects     => +{},
         typeclasses => +{},
+        declares    => +{},
         package     => 'main',
         ppi_doc     => $doc,
     };
@@ -31,6 +32,7 @@ sub extract ($class, $source) {
     $class->_extract_newtypes($doc, $result);
     $class->_extract_effects($doc, $result);
     $class->_extract_typeclasses($doc, $result);
+    $class->_extract_declares($doc, $result);
     $class->_extract_variables($doc, $result);
     $class->_extract_functions($doc, $result);
 
@@ -172,6 +174,57 @@ sub _extract_typeclasses ($class, $doc, $result) {
             method_names => \@method_names,
             line         => $stmt->line_number,
             col          => $stmt->column_number,
+        };
+    }
+}
+
+# ── Declare Extraction ─────────────────────────
+
+sub _extract_declares ($class, $doc, $result) {
+    my $statements = $doc->find('PPI::Statement') || [];
+
+    for my $stmt (@$statements) {
+        my @children = $stmt->schildren;
+        next unless @children >= 4;
+
+        # declare NAME => 'type_expr'
+        # declare 'Pkg::Name' => 'type_expr'
+        next unless $children[0]->isa('PPI::Token::Word')
+                 && $children[0]->content eq 'declare';
+
+        # Name: bare Word or quoted string
+        my $name_tok = $children[1];
+        my $name;
+        if ($name_tok->isa('PPI::Token::Quote')) {
+            $name = $name_tok->string;
+        } elsif ($name_tok->isa('PPI::Token::Word')) {
+            $name = $name_tok->content;
+        } else {
+            next;
+        }
+
+        # => operator
+        next unless $children[2]->isa('PPI::Token::Operator')
+                 && $children[2]->content eq '=>';
+
+        my $type_expr = $class->_collect_rhs_expr(@children[3 .. $#children]);
+        next unless defined $type_expr;
+
+        # Determine package and function name
+        my ($pkg, $fn_name);
+        if ($name =~ /\A(.+)::(\w+)\z/) {
+            ($pkg, $fn_name) = ($1, $2);
+        } else {
+            ($pkg, $fn_name) = ('CORE', $name);
+        }
+
+        $result->{declares}{$name} = +{
+            name      => $name,
+            package   => $pkg,
+            func_name => $fn_name,
+            type_expr => $type_expr,
+            line      => $stmt->line_number,
+            col       => $stmt->column_number,
         };
     }
 }

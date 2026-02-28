@@ -282,4 +282,70 @@ PERL
     like $eff_diags[0]{message}, qr/unannotated.*print/, 'reports unannotated builtin print';
 };
 
+# ── Declared builtins override Eff(*) ────────────
+
+subtest 'Analyzer: declared say with Console — no error in Eff(Console)' => sub {
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Effect;
+    $ws_reg->register_effect('Console', Typist::Effect->new(
+        name => 'Console', operations => +{},
+    ));
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws_reg);
+package DeclaredBuiltin;
+use v5.40;
+
+declare say => '(Str) -> Void ! Console';
+
+sub greet :Type((Str) -> Void ! Console) ($name) {
+    say "Hello, $name";
+}
+PERL
+
+    my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
+    is scalar @eff_diags, 0, 'no effect mismatch when say is declared with Console';
+};
+
+subtest 'Analyzer: declared die with Abort — error when caller only has Console' => sub {
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Effect;
+    $ws_reg->register_effect('Console', Typist::Effect->new(
+        name => 'Console', operations => +{},
+    ));
+    $ws_reg->register_effect('Abort', Typist::Effect->new(
+        name => 'Abort', operations => +{},
+    ));
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws_reg);
+package DeclaredDie;
+use v5.40;
+
+declare die => '(Any) -> Never ! Abort';
+
+sub handler :Type((Str) -> Void ! Console) ($msg) {
+    die("fatal: $msg");
+}
+PERL
+
+    my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
+    ok @eff_diags > 0, 'effect mismatch detected for declared die';
+    like $eff_diags[0]{message}, qr/Abort/, 'reports missing Abort effect';
+};
+
+subtest 'Analyzer: declared pure builtin — no effect error' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package DeclaredPure;
+use v5.40;
+
+declare length => '(Str) -> Int';
+
+sub count :Type((Str) -> Int) ($s) {
+    length($s);
+}
+PERL
+
+    my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
+    is scalar @eff_diags, 0, 'declared pure builtin causes no effect error';
+};
+
 done_testing;

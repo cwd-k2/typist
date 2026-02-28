@@ -55,6 +55,9 @@ sub _format ($class, $sym) {
             $sig .= " !Eff($sym->{eff_expr})";
         }
 
+        # Declared annotation
+        $sig .= ' (declared)' if $sym->{declared};
+
         return "```perl\n$sig\n```";
     }
 

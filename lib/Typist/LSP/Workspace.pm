@@ -61,6 +61,7 @@ sub _index_file ($self, $path) {
         newtypes    => $extracted->{newtypes},
         effects     => $extracted->{effects},
         typeclasses => $extracted->{typeclasses},
+        declares    => $extracted->{declares},
         package     => $extracted->{package},
     };
 
@@ -84,6 +85,7 @@ sub update_file ($self, $path, $source) {
         newtypes    => $extracted->{newtypes},
         effects     => $extracted->{effects},
         typeclasses => $extracted->{typeclasses},
+        declares    => $extracted->{declares},
         package     => $extracted->{package},
     };
 
@@ -120,6 +122,39 @@ sub _register_file_types ($self, $extracted) {
             );
         };
         $reg->register_typeclass($name, $def // undef);
+    }
+
+    # Register declared external functions
+    my $decls = $extracted->{declares} // +{};
+    for my $name (keys $decls->%*) {
+        my $decl = $decls->{$name};
+        eval {
+            my $ann = Typist::Parser->parse_annotation($decl->{type_expr});
+            my $type = $ann->{type};
+
+            my (@param_types, $return_type, $effects);
+            if ($type->is_func) {
+                @param_types = $type->params;
+                $return_type = $type->returns;
+                $effects = $type->effects
+                    ? Typist::Type::Eff->new($type->effects) : undef;
+            } else {
+                $return_type = $type;
+            }
+
+            my @generics;
+            if ($ann->{generics_raw} && @{$ann->{generics_raw}}) {
+                my $spec = join(', ', $ann->{generics_raw}->@*);
+                @generics = Typist::Attribute->parse_generic_decl($spec, registry => $reg);
+            }
+
+            $reg->register_function($decl->{package}, $decl->{func_name}, +{
+                params   => \@param_types,
+                returns  => $return_type,
+                generics => \@generics,
+                effects  => $effects,
+            });
+        };
     }
 
     # Register functions for cross-file type checking
@@ -173,6 +208,7 @@ sub _rebuild_registry ($self) {
             newtypes    => $info->{newtypes}    // +{},
             effects     => $info->{effects}     // +{},
             typeclasses => $info->{typeclasses} // +{},
+            declares    => $info->{declares}    // +{},
             package     => $info->{package}     // 'main',
         });
     }

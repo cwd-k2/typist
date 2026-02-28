@@ -47,6 +47,7 @@ sub import ($class, @args) {
     *{"${caller}::typeclass"} = \&_typeclass;
     *{"${caller}::instance"}  = \&_instance;
     *{"${caller}::effect"}    = \&_effect;
+    *{"${caller}::declare"}   = \&_declare;
 }
 
 # ── Newtype Support ─────────────────────────────
@@ -117,6 +118,48 @@ sub _effect ($name, $operations_ref) {
         operations => $operations_ref,
     );
     Typist::Registry->register_effect($name, $eff);
+}
+
+# ── Declare Support (external function annotations) ──
+
+sub _declare ($name, $type_expr_str) {
+    my $ann = Typist::Parser->parse_annotation($type_expr_str);
+    my $type = $ann->{type};
+
+    # Determine package and function name
+    my ($pkg, $fn_name);
+    if ($name =~ /::/) {
+        ($pkg, $fn_name) = $name =~ /\A(.+)::(\w+)\z/;
+        die("Typist: declare — invalid qualified name '$name'\n")
+            unless $pkg && $fn_name;
+    } else {
+        ($pkg, $fn_name) = ('CORE', $name);
+    }
+
+    # Extract signature components
+    my (@param_types, $return_type, $effects);
+    if ($type->is_func) {
+        @param_types = $type->params;
+        $return_type = $type->returns;
+        $effects     = $type->effects
+            ? Typist::Type::Eff->new($type->effects) : undef;
+    } else {
+        $return_type = $type;
+    }
+
+    # Parse generic declarations
+    my @generics;
+    if ($ann->{generics_raw} && @{$ann->{generics_raw}}) {
+        my $spec = join(', ', $ann->{generics_raw}->@*);
+        @generics = Typist::Attribute->parse_generic_decl($spec);
+    }
+
+    Typist::Registry->register_function($pkg, $fn_name, +{
+        params   => \@param_types,
+        returns  => $return_type,
+        generics => \@generics,
+        effects  => $effects,
+    });
 }
 
 sub _instance ($class_name, $type_expr_arg, $methods_ref) {
