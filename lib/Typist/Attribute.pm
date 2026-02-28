@@ -159,6 +159,7 @@ sub _handle_code_attrs ($pkg, $coderef, @attrs) {
                 returns  => $return_type,
                 generics => \@generics,
                 effects  => $effects,
+                variadic => $type->variadic,
             };
 
             my $sub_name = _recover_name($coderef) // '(anonymous)';
@@ -232,7 +233,9 @@ sub _wrap_sub ($coderef, $sig, $pkg, $name) {
                 }
             }
 
-            for my $i (0 .. $#ptypes) {
+            my $is_variadic = $sig->{variadic};
+            my $fixed_count = $is_variadic ? $#ptypes : @ptypes;
+            for my $i (0 .. $fixed_count - 1) {
                 my $ptype = $ptypes[$i];
                 $ptype = $ptype->substitute(\%bindings) if %bindings;
 
@@ -242,6 +245,21 @@ sub _wrap_sub ($coderef, $sig, $pkg, $name) {
                         die sprintf(
                             "Typist: %s::%s — param %d expected %s, got %s\n",
                             $pkg, $name, $i + 1, $ptype->to_string, $got,
+                        );
+                    }
+                }
+            }
+
+            # Variadic: check remaining args against the last param type
+            if ($is_variadic && @ptypes) {
+                my $rest_type = $ptypes[-1];
+                $rest_type = $rest_type->substitute(\%bindings) if %bindings;
+                for my $i ($fixed_count .. $#args) {
+                    unless ($rest_type->contains($args[$i])) {
+                        my $got = defined $args[$i] ? "'$args[$i]'" : 'undef';
+                        die sprintf(
+                            "Typist: %s::%s — variadic param %d expected %s, got %s\n",
+                            $pkg, $name, $i + 1, $rest_type->to_string, $got,
                         );
                     }
                 }

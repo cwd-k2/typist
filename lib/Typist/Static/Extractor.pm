@@ -425,11 +425,13 @@ sub _extract_functions ($class, $doc, $result) {
                 my $type = $ann->{type};
                 my (@params_expr, $returns_expr, $eff_expr);
 
+                my $variadic = 0;
                 if ($type->is_func) {
                     @params_expr = map { $_->to_string } $type->params;
                     $returns_expr = $type->returns->to_string;
                     $eff_expr = $type->effects
                         ? $type->effects->to_string : undef;
+                    $variadic = $type->variadic;
                 } else {
                     $returns_expr = $type->to_string;
                 }
@@ -439,6 +441,7 @@ sub _extract_functions ($class, $doc, $result) {
                     returns_expr => $returns_expr,
                     generics     => $ann->{generics_raw},
                     eff_expr     => $eff_expr,
+                    variadic     => $variadic,
                     param_names  => $param_names,
                     is_method    => $is_method,
                     method_kind  => $method_kind,

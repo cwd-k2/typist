@@ -45,7 +45,8 @@ sub _tokenize ($input) {
     while (pos($input) < length($input)) {
         next if $input =~ /\G\s+/gc;
 
-        if    ($input =~ /\G(->)/gc)              { push @tokens, $1 }
+        if    ($input =~ /\G(\.\.\.)/gc)            { push @tokens, $1 }
+        elsif ($input =~ /\G(->)/gc)              { push @tokens, $1 }
         elsif ($input =~ /\G(=>)/gc)              { push @tokens, $1 }
         elsif ($input =~ /\G("(?:[^"\\]|\\.)*")/gc) { push @tokens, $1 }
         elsif ($input =~ /\G('(?:[^'\\]|\\.)*')/gc) { push @tokens, $1 }
@@ -203,14 +204,24 @@ sub _parse_grouped ($tokens, $pos) {
 }
 
 # func_type ::= '(' param_list? ')' '->' return_type ('!' effect_row)?
+# Variadic: '...' before the last param type: (Int, ...Str) -> Void
 sub _parse_func_type ($tokens, $pos) {
     $$pos++; # consume '('
 
     my @params;
+    my $variadic = 0;
     unless ($$pos < @$tokens && $tokens->[$$pos] eq ')') {
+        if ($$pos < @$tokens && $tokens->[$$pos] eq '...') {
+            $$pos++;
+            $variadic = 1;
+        }
         push @params, _parse_union($tokens, $pos);
         while ($$pos < @$tokens && $tokens->[$$pos] eq ',') {
             $$pos++;
+            if ($$pos < @$tokens && $tokens->[$$pos] eq '...') {
+                $$pos++;
+                $variadic = 1;
+            }
             push @params, _parse_union($tokens, $pos);
         }
     }
@@ -231,7 +242,7 @@ sub _parse_func_type ($tokens, $pos) {
         $effects = _parse_effect_row($tokens, $pos);
     }
 
-    Typist::Type::Func->new(\@params, $return_type, $effects);
+    Typist::Type::Func->new(\@params, $return_type, $effects, variadic => $variadic);
 }
 
 # ── DSL Constructors ─────────────────────────────
@@ -246,12 +257,13 @@ sub _parse_dsl_struct ($name, $tokens, $pos) {
     Typist::Type::Struct->new(%fields);
 }
 
-# Func(A, B, returns => R) → Type::Func
+# Func(A, B, returns => R) or Func(Int, ...Str, returns => R) → Type::Func
 sub _parse_dsl_func ($name, $tokens, $pos) {
     $$pos++; # consume '('
 
     my @params;
     my $return_type;
+    my $variadic = 0;
 
     unless ($$pos < @$tokens && $tokens->[$$pos] eq ')') {
         # Parse args; stop at 'returns' keyword or ')'
@@ -262,6 +274,11 @@ sub _parse_dsl_func ($name, $tokens, $pos) {
                 $$pos += 2; # consume 'returns' and '=>'
                 $return_type = _parse_union($tokens, $pos);
                 last;
+            }
+
+            if ($$pos < @$tokens && $tokens->[$$pos] eq '...') {
+                $$pos++;
+                $variadic = 1;
             }
 
             push @params, _parse_union($tokens, $pos);
@@ -288,7 +305,7 @@ sub _parse_dsl_func ($name, $tokens, $pos) {
     die "Typist::Parser: Func() requires 'returns => Type'"
         unless $return_type;
 
-    Typist::Type::Func->new(\@params, $return_type, $effect_row);
+    Typist::Type::Func->new(\@params, $return_type, $effect_row, variadic => $variadic);
 }
 
 # Alias('Name') → resolve as _resolve_name

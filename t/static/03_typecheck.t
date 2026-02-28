@@ -1056,4 +1056,54 @@ PERL
     is scalar @$errs, 0, 'no error: defined($x) with parens narrows';
 };
 
+# ── Variadic Function Arity ──────────────────────
+
+subtest 'variadic: accepts minimum args' => sub {
+    my $errs = arity_errors(<<'PERL');
+use v5.40;
+sub vfunc :Type((Int, ...Str) -> Int) ($n, @rest) { $n }
+vfunc(1);
+PERL
+    is scalar @$errs, 0, 'no error: minimum args ok';
+};
+
+subtest 'variadic: accepts extra args' => sub {
+    my $errs = arity_errors(<<'PERL');
+use v5.40;
+sub vfunc :Type((Int, ...Str) -> Int) ($n, @rest) { $n }
+vfunc(1, "a", "b", "c");
+PERL
+    is scalar @$errs, 0, 'no error: extra variadic args ok';
+};
+
+subtest 'variadic: detects too few args' => sub {
+    my $errs = arity_errors(<<'PERL');
+use v5.40;
+sub vfunc :Type((Int, ...Str) -> Int) ($n, @rest) { $n }
+vfunc();
+PERL
+    is scalar @$errs, 1, 'one arity error';
+    like $errs->[0]{message}, qr/at least 1/, 'message says at least N';
+};
+
+subtest 'variadic: rest-only function' => sub {
+    my $errs = arity_errors(<<'PERL');
+use v5.40;
+sub vfunc :Type((...Int) -> Int) (@nums) { 0 }
+vfunc();
+vfunc(1);
+vfunc(1, 2, 3);
+PERL
+    is scalar @$errs, 0, 'no error: rest-only accepts 0+ args';
+};
+
+subtest 'variadic: type check on variadic args' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub vfunc :Type((Int, ...Str) -> Int) ($n, @rest) { $n }
+vfunc(1, "a", "b");
+PERL
+    is scalar @$errs, 0, 'no error: correct variadic arg types';
+};
+
 done_testing;

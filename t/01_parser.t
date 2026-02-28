@@ -204,4 +204,44 @@ subtest 'DSL: mixed bracket and paren' => sub {
     is $t1->to_string, $t2->to_string, 'bracket and paren produce same result';
 };
 
+# ── Variadic function types ──────────────────────
+
+subtest 'variadic function type' => sub {
+    my $t = Typist::Parser->parse('(Int, ...Str) -> Void');
+    ok $t->is_func, 'variadic is func';
+    ok $t->variadic, 'variadic flag set';
+    my @params = $t->params;
+    is scalar @params, 2, 'two params (fixed + rest)';
+    is $params[0]->to_string, 'Int', 'fixed param';
+    is $params[1]->to_string, 'Str', 'rest element type';
+    is $t->to_string, '(Int, ...Str) -> Void', 'to_string shows ...';
+};
+
+subtest 'variadic only rest' => sub {
+    my $t = Typist::Parser->parse('(...Any) -> Void');
+    ok $t->variadic, 'variadic with only rest param';
+    my @params = $t->params;
+    is scalar @params, 1, 'one param (rest)';
+    is $t->to_string, '(...Any) -> Void', 'to_string';
+};
+
+subtest 'non-variadic has no flag' => sub {
+    my $t = Typist::Parser->parse('(Int, Str) -> Bool');
+    ok !$t->variadic, 'regular func not variadic';
+};
+
+subtest 'variadic annotation' => sub {
+    my $ann = Typist::Parser->parse_annotation('(Int, ...Str) -> Int');
+    my $type = $ann->{type};
+    ok $type->is_func, 'annotation parses func';
+    ok $type->variadic, 'annotation preserves variadic';
+};
+
+subtest 'variadic generic annotation' => sub {
+    my $ann = Typist::Parser->parse_annotation('<T>(T, ...T) -> T');
+    my $type = $ann->{type};
+    ok $type->variadic, 'generic variadic';
+    is scalar(my @p = $type->params), 2, 'two params';
+};
+
 done_testing;

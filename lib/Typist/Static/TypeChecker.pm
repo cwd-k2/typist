@@ -174,12 +174,14 @@ sub _check_call_sites ($self) {
         my @args = $self->_extract_args($next);
 
         # ── Arity check ──────────────────────────────
-        my $is_variadic = @param_exprs && $param_exprs[-1] =~ /ArrayRef/;
+        my $is_variadic = $fn->{variadic};
+        my $min_args = $is_variadic ? @param_exprs - 1 : @param_exprs;
 
-        if (@args < @param_exprs && !$is_variadic) {
+        if (@args < $min_args) {
+            my $expect = $is_variadic ? "at least $min_args" : "${\scalar @param_exprs}";
             $self->{errors}->collect(
                 kind    => 'ArityMismatch',
-                message => "$name() expects ${\scalar @param_exprs} arguments, got ${\scalar @args}",
+                message => "$name() expects $expect arguments, got ${\scalar @args}",
                 file    => $self->{file},
                 line    => $word->line_number,
             );
@@ -257,16 +259,18 @@ sub _check_method_call ($self, $word, $arrow) {
     my $display = "\$self->${name}";
 
     # ── Arity check ──────────────────────────────
-    my $is_variadic = @param_exprs && $param_exprs[-1] =~ /ArrayRef/;
+    my $is_variadic = $method_sig->{variadic};
+    my $min_args = $is_variadic ? @param_exprs - 1 : @param_exprs;
 
-    if (@args != @param_exprs && !$is_variadic) {
+    if (@args < $min_args || (!$is_variadic && @args > @param_exprs)) {
+        my $expect = $is_variadic ? "at least $min_args" : "${\scalar @param_exprs}";
         $self->{errors}->collect(
             kind    => 'ArityMismatch',
-            message => "$display() expects ${\scalar @param_exprs} arguments, got ${\scalar @args}",
+            message => "$display() expects $expect arguments, got ${\scalar @args}",
             file    => $self->{file},
             line    => $word->line_number,
         );
-        return if @args < @param_exprs;
+        return if @args < $min_args;
     }
 
     return unless @param_exprs;
