@@ -88,6 +88,32 @@ sub infer_kind ($class, $type, $var_kinds = undef) {
 
     if ($type->is_param) {
         my @param_kinds = map { $class->infer_kind($_, $var_kinds) } $type->params;
+
+        # Type variable application: F[T] where F is a Var with higher kind.
+        if ($type->has_var_base) {
+            my $var_name = $type->base->name;
+            my $var_kind = $var_kinds->{$var_name}
+                // return Typist::Kind->Star;  # Unknown var assumed *
+
+            my $kind = $var_kind;
+            for my $i (0 .. $#param_kinds) {
+                unless (ref $kind eq 'Typist::Kind::Arrow') {
+                    my $excess = scalar(@param_kinds) - $i;
+                    die "KindChecker: type variable $var_name applied to too many"
+                        . " type arguments ($excess excess)\n";
+                }
+                unless ($kind->from->equals($param_kinds[$i])) {
+                    die sprintf(
+                        "KindChecker: %s argument %d has kind %s, expected %s\n",
+                        $var_name, $i + 1,
+                        $param_kinds[$i]->to_string, $kind->from->to_string,
+                    );
+                }
+                $kind = $kind->to;
+            }
+            return $kind;
+        }
+
         return $class->check_application($type->base, @param_kinds);
     }
 

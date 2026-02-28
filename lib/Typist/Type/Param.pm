@@ -5,6 +5,8 @@ use Scalar::Util 'reftype';
 use List::Util  'all';
 
 # Parameterized types: ArrayRef[T], HashRef[K,V], Tuple[T,U,...], etc.
+# Base may be a string name (e.g. 'ArrayRef') or a Typist::Type object
+# (e.g. Var('F')) for type variable application in HKT contexts.
 
 sub new ($class, $base, @params) {
     bless +{ base => $base, params => \@params }, $class;
@@ -13,6 +15,11 @@ sub new ($class, $base, @params) {
 sub base     ($self) { $self->{base} }
 sub params   ($self) { $self->{params}->@* }
 sub is_param ($self) { 1 }
+
+# Whether the base is a type variable (HKT application).
+sub has_var_base ($self) {
+    ref $self->{base} && $self->{base}->isa('Typist::Type') && $self->{base}->is_var;
+}
 
 sub name ($self) {
     $self->{base};
@@ -25,7 +32,15 @@ sub to_string ($self) {
 
 sub equals ($self, $other) {
     return 0 unless $other->is_param;
-    return 0 unless $self->{base} eq $other->base;
+
+    # Compare bases: both may be strings or Type objects.
+    # String comparison via eq works for both (Type objects stringify via overload).
+    my ($sb, $ob) = ($self->{base}, $other->base);
+    if (ref $sb && $sb->isa('Typist::Type') && ref $ob && $ob->isa('Typist::Type')) {
+        return 0 unless $sb->equals($ob);
+    } else {
+        return 0 unless "$sb" eq "$ob";
+    }
 
     my @sp = $self->{params}->@*;
     my @op = $other->params;
@@ -73,12 +88,28 @@ sub contains ($self, $value) {
 }
 
 sub free_vars ($self) {
-    map { $_->free_vars } $self->{params}->@*;
+    my @base_vars;
+    if (ref $self->{base} && $self->{base}->isa('Typist::Type')) {
+        @base_vars = $self->{base}->free_vars;
+    }
+    (@base_vars, map { $_->free_vars } $self->{params}->@*);
 }
 
 sub substitute ($self, $bindings) {
+    my $new_base = $self->{base};
+    if (ref $new_base && $new_base->isa('Typist::Type')) {
+        $new_base = $new_base->substitute($bindings);
+        # Normalize: Alias/Atom results collapse to string names.
+        if (ref $new_base && $new_base->isa('Typist::Type')) {
+            if ($new_base->is_alias) {
+                $new_base = $new_base->alias_name;
+            } elsif ($new_base->is_atom) {
+                $new_base = $new_base->name;
+            }
+        }
+    }
     my @new_params = map { $_->substitute($bindings) } $self->{params}->@*;
-    __PACKAGE__->new($self->{base}, @new_params);
+    __PACKAGE__->new($new_base, @new_params);
 }
 
 1;

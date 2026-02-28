@@ -121,6 +121,14 @@ sub _parse_named ($tokens, $pos) {
         unless $$pos < @$tokens && $tokens->[$$pos] eq ']';
     $$pos++;
 
+    # Type variable application: F[T] → Param(Var('F'), [Var('T')])
+    # Single uppercase letter bases are type variables, not constructors.
+    if ($name =~ /\A[A-Z]\z/) {
+        return Typist::Type::Param->new(
+            Typist::Type::Var->new($name), @$params,
+        );
+    }
+
     _resolve_param_constructor($name, $params, $return_type, $effect_row);
 }
 
@@ -458,13 +466,19 @@ sub parse_annotation ($class, $input) {
     $trimmed =~ s/\s+\z//;
 
     # Leading <...> → extract generics at string level
+    # Carefully skip '>' that appears as part of '->' (arrow in kind annotations).
     if ($trimmed =~ /\A</) {
         my $depth = 0;
         my $end;
-        for my $i (0 .. length($trimmed) - 1) {
+        my $len = length($trimmed);
+        for my $i (0 .. $len - 1) {
             my $ch = substr($trimmed, $i, 1);
             $depth++ if $ch eq '<';
             if ($ch eq '>') {
+                # Check if this '>' is preceded by '-' (part of '->' arrow).
+                if ($i > 0 && substr($trimmed, $i - 1, 1) eq '-') {
+                    next;  # Skip: this is '->', not a closing bracket.
+                }
                 $depth--;
                 if ($depth == 0) { $end = $i; last; }
             }
@@ -506,14 +520,22 @@ sub parse_annotation ($class, $input) {
 }
 
 # Split generic declaration string on commas, respecting <> and () nesting.
+# Skips '>' that appears as part of '->' (arrow in kind annotations).
 sub _split_generics_str ($str) {
     my @result;
     my $current = '';
     my $depth = 0;
+    my @chars = split //, $str;
 
-    for my $ch (split //, $str) {
+    for my $i (0 .. $#chars) {
+        my $ch = $chars[$i];
         if ($ch eq '<' || $ch eq '(') { $depth++ }
-        elsif ($ch eq '>' || $ch eq ')') { $depth-- }
+        elsif ($ch eq '>' || $ch eq ')') {
+            # Skip '>' that is part of '->'
+            unless ($ch eq '>' && $i > 0 && $chars[$i - 1] eq '-') {
+                $depth--;
+            }
+        }
 
         if ($ch eq ',' && $depth == 0) {
             $current =~ s/\A\s+//;
