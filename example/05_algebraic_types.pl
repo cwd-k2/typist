@@ -154,19 +154,27 @@ sub describe_either ($e) {
 say "Right(200):         ", describe_either($ok);
 say "Left('not found'):  ", describe_either($err);
 
-# ── Nullary-like Constructors ─────────────────────────────
+# ── Enum Types ────────────────────────────────────────────
 #
-# Even single-field constructors carry typed values.
-# For "enum-like" ADTs, use a unit value or literal.
+# `enum` is sugar for ADTs with all-nullary constructors.
+# Each variant takes zero arguments — pure enumeration.
 
 BEGIN {
-    datatype Color =>
-        Red   => '(Str)',
-        Green => '(Str)',
-        Blue  => '(Str)';
+    enum Color => qw(Red Green Blue);
 }
 
-my @palette = (Red("red"), Green("green"), Blue("blue"));
+my @palette = (Red(), Green(), Blue());
 for my $c (@palette) {
-    say "  $c->{_tag}: $c->{_values}[0]";
+    say "  Color: $c->{_tag}";
 }
+
+# Match works naturally with enums
+my $favorite = Blue();
+my $name = match $favorite,
+    Red   => sub { "crimson" },
+    Green => sub { "emerald" },
+    Blue  => sub { "sapphire" };
+
+say "Blue is: $name";
+
+# Exhaustiveness warning for enums — try commenting out a branch!

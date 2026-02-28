@@ -61,6 +61,7 @@ sub import ($class, @args) {
     *{"${caller}::perform"}   = \&_perform;
     *{"${caller}::handle"}    = \&_handle;
     *{"${caller}::match"}     = \&_match;
+    *{"${caller}::enum"}      = \&_enum;
 }
 
 # ── Newtype Support ─────────────────────────────
@@ -214,6 +215,35 @@ sub _match ($value, %arms) {
         // die "Typist: match — no arm for tag '$tag' and no fallback '_'\n";
 
     $handler->($value->{_values} ? $value->{_values}->@* : ());
+}
+
+# ── Enum Support (nullary ADT sugar) ─────────────
+#
+#   enum Color => qw(Red Green Blue);
+#
+# Syntactic sugar for datatype with all-nullary variants.
+# Each variant is a zero-argument constructor.
+
+sub _enum ($name, @tags) {
+    my $caller = caller;
+    my %variants;
+    for my $tag (@tags) {
+        $variants{$tag} = '';
+    }
+    # Delegate to _datatype, but need to set caller correctly.
+    # Instead, inline the registration and constructor installation.
+    my %parsed_variants;
+    my $data_class = "Typist::Data::${name}";
+    for my $tag (@tags) {
+        $parsed_variants{$tag} = [];
+        my $tag_copy = $tag;
+        no strict 'refs';
+        *{"${caller}::${tag_copy}"} = sub () {
+            bless +{ _tag => $tag_copy, _values => [] }, $data_class;
+        };
+    }
+    my $data_type = Typist::Type::Data->new($name, \%parsed_variants);
+    Typist::Registry->register_datatype($name, $data_type);
 }
 
 # ── Declare Support (external function annotations) ──

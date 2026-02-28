@@ -713,4 +713,95 @@ subtest 'match dies on non-tagged value' => sub {
     like $@, qr/no _tag/, 'dies when value has no _tag';
 };
 
+# ── enum syntax ──────────────────────────────────
+
+subtest 'enum creates nullary-only ADT' => sub {
+    require Typist;
+    Typist::Registry->reset;
+
+    Typist::_enum('Direction', 'North', 'South', 'East', 'West');
+
+    my $dt = Typist::Registry->lookup_datatype('Direction');
+    ok $dt && $dt->is_data, 'Direction registered as data type';
+    is scalar(keys $dt->variants->%*), 4, '4 variants';
+
+    for my $tag (qw(North South East West)) {
+        ok exists $dt->variants->{$tag}, "$tag variant exists";
+        is scalar($dt->variants->{$tag}->@*), 0, "$tag is nullary";
+    }
+};
+
+subtest 'enum constructors work' => sub {
+    require Typist;
+    Typist::Registry->reset;
+
+    # Install into main:: for testing
+    {
+        no strict 'refs';
+        local $Typist::_enum_caller = 'main';
+        my $data_class = 'Typist::Data::TrafficLight';
+        my %parsed;
+        for my $tag (qw(RedLight YellowLight GreenLight)) {
+            $parsed{$tag} = [];
+            my $t = $tag;
+            *{"main::${t}"} = sub () {
+                bless +{ _tag => $t, _values => [] }, $data_class;
+            };
+        }
+        Typist::Registry->register_datatype('TrafficLight',
+            Typist::Type::Data->new('TrafficLight', \%parsed));
+    }
+
+    my $r = main::RedLight();
+    is ref($r), 'Typist::Data::TrafficLight', 'enum value blessed correctly';
+    is $r->{_tag}, 'RedLight', 'tag is RedLight';
+    is_deeply $r->{_values}, [], 'no values';
+
+    my $dt = Typist::Registry->lookup_datatype('TrafficLight');
+    ok $dt->contains($r), 'data type contains enum value';
+};
+
+subtest 'enum match with exhaustiveness' => sub {
+    require Typist;
+    Typist::Registry->reset;
+
+    my %parsed;
+    my $data_class = 'Typist::Data::Suit';
+    for my $tag (qw(Hearts Diamonds Clubs Spades)) {
+        $parsed{$tag} = [];
+    }
+    Typist::Registry->register_datatype('Suit',
+        Typist::Type::Data->new('Suit', \%parsed));
+
+    my $hearts = bless +{ _tag => 'Hearts', _values => [] }, $data_class;
+
+    # Non-exhaustive — should warn
+    my @w;
+    local $SIG{__WARN__} = sub { push @w, $_[0] };
+    Typist::_match($hearts,
+        Hearts   => sub { 'red' },
+        Diamonds => sub { 'red' },
+    );
+    ok @w == 1, 'warns on non-exhaustive enum match';
+    like $w[0], qr/missing Clubs, Spades/, 'lists missing enum variants';
+};
+
+subtest 'extractor recognizes enum' => sub {
+    require Typist::Static::Extractor;
+
+    my $source = <<'PERL';
+use v5.40;
+BEGIN {
+    enum Color => qw(Red Green Blue);
+}
+PERL
+
+    my $extracted = Typist::Static::Extractor->extract($source);
+    ok exists $extracted->{datatypes}{Color}, 'enum Color extracted as datatype';
+    my $info = $extracted->{datatypes}{Color};
+    is_deeply [sort keys $info->{variants}->%*], [qw(Blue Green Red)],
+        'all enum variants extracted';
+    is $info->{variants}{Red}, '', 'enum variants are nullary';
+};
+
 done_testing;
