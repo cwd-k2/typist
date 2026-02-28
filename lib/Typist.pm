@@ -30,6 +30,7 @@ use Typist::Registry;
 use Typist::Subtype;
 use Typist::Inference;
 use Typist::Attribute;
+use Typist::Handler;
 use Typist::Static::Checker;
 use Typist::Error;
 use Typist::Error::Global;
@@ -55,6 +56,7 @@ sub import ($class, @args) {
     *{"${caller}::effect"}    = \&_effect;
     *{"${caller}::declare"}   = \&_declare;
     *{"${caller}::datatype"}  = \&_datatype;
+    *{"${caller}::perform"}   = \&_perform;
 }
 
 # ── Newtype Support ─────────────────────────────
@@ -125,6 +127,18 @@ sub _effect ($name, $operations_ref) {
         operations => $operations_ref,
     );
     Typist::Registry->register_effect($name, $eff);
+}
+
+# ── Perform Support (effect operation dispatch) ──
+
+sub _perform ($effect_name, $op_name, @args) {
+    my $handler = Typist::Handler->find_handler($effect_name);
+
+    if ($handler && exists $handler->{$op_name}) {
+        return $handler->{$op_name}->(@args);
+    }
+
+    die "No handler for effect ${effect_name}::${op_name}\n";
 }
 
 # ── Declare Support (external function annotations) ──

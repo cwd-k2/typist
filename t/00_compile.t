@@ -18,6 +18,7 @@ my @modules = qw(
     Typist::Type::Row
     Typist::Type::Eff
     Typist::Effect
+    Typist::Handler
     Typist::Static::EffectChecker
     Typist::Parser
     Typist::Transform
