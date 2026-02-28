@@ -159,7 +159,7 @@ PERL
 subtest 'hover shows generics and effects on function' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub fetch :Type(<T>(Str) -> T ! Console) ($url) { }
+sub fetch :Type(<T>(Str) -> T !Eff(Console)) ($url) { }
 PERL
 
     my @results = run_session(init_shutdown_wrap(
@@ -313,7 +313,7 @@ PERL
 subtest 'hover shows declared builtin with specific type' => sub {
     my $source = <<'PERL';
 use v5.40;
-declare say => '(Str) -> Void ! Console';
+declare say => '(Str) -> Void !Eff(Console)';
 say "hello";
 PERL
 

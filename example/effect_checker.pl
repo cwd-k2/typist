@@ -65,11 +65,11 @@ analyze_and_show('1. Caller has Console, calls Console callee → OK', <<'PERL')
 package Case1;
 use v5.40;
 
-sub write_msg :Type((Str) -> Str ! Console) ($s) {
+sub write_msg :Type((Str) -> Str !Eff(Console)) ($s) {
     return $s;
 }
 
-sub main :Type(() -> Void ! Console) () {
+sub main :Type(() -> Void !Eff(Console)) () {
     write_msg("hello");
 }
 PERL
@@ -80,11 +80,11 @@ analyze_and_show('2. Caller has Console|State|Log, calls Console callee → OK (
 package Case2;
 use v5.40;
 
-sub write_msg :Type((Str) -> Str ! Console) ($s) {
+sub write_msg :Type((Str) -> Str !Eff(Console)) ($s) {
     return $s;
 }
 
-sub main :Type(() -> Void ! Console | State | Log) () {
+sub main :Type(() -> Void !Eff(Console | State | Log)) () {
     write_msg("hello");
 }
 PERL
@@ -95,11 +95,11 @@ analyze_and_show('3. Caller has Console, calls Console|State callee → NG (miss
 package Case3;
 use v5.40;
 
-sub stateful :Type((Str) -> Str ! Console | State) ($x) {
+sub stateful :Type((Str) -> Str !Eff(Console | State)) ($x) {
     return $x;
 }
 
-sub caller_fn :Type(() -> Str ! Console) () {
+sub caller_fn :Type(() -> Str !Eff(Console)) () {
     stateful("hello");
 }
 PERL
@@ -110,7 +110,7 @@ analyze_and_show('4. Pure caller (no effect) calls Console callee → NG', <<'PE
 package Case4;
 use v5.40;
 
-sub io_fn :Type((Str) -> Str ! Console) ($x) {
+sub io_fn :Type((Str) -> Str !Eff(Console)) ($x) {
     return $x;
 }
 
@@ -129,7 +129,7 @@ sub helper ($x) {
     return $x;
 }
 
-sub safe_fn :Type((Str) -> Str ! Console) ($s) {
+sub safe_fn :Type((Str) -> Str !Eff(Console)) ($s) {
     helper($s);
 }
 PERL
@@ -140,7 +140,7 @@ analyze_and_show('6. Unannotated caller calls anything → no check (gradual)', 
 package Case6;
 use v5.40;
 
-sub io_fn :Type((Str) -> Str ! Console) ($x) {
+sub io_fn :Type((Str) -> Str !Eff(Console)) ($x) {
     return $x;
 }
 

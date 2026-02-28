@@ -18,27 +18,27 @@ effect State   => +{};
 
 # ── OK: caller's effects include callee's ────
 
-sub write_msg :Type((Str) -> Str ! Console) ($s) {
+sub write_msg :Type((Str) -> Str !Eff(Console)) ($s) {
     $s;
 }
 
-sub main_ok :Type(() -> Str ! Console | State) () {
+sub main_ok :Type(() -> Str !Eff(Console | State)) () {
     write_msg("hello");     # Console is subset of {Console, State}
 }
 
 # ── NG: caller missing callee's effect ────────
 
-sub stateful :Type((Str) -> Str ! Console | State) ($x) {
+sub stateful :Type((Str) -> Str !Eff(Console | State)) ($x) {
     $x;
 }
 
-sub caller_fn :Type(() -> Str ! Console) () {
+sub caller_fn :Type(() -> Str !Eff(Console)) () {
     stateful("hello");      # State not in {Console}
 }
 
 # ── NG: pure caller calls effectful callee ────
 
-sub io_fn :Type((Str) -> Str ! Console) ($x) {
+sub io_fn :Type((Str) -> Str !Eff(Console)) ($x) {
     $x;
 }
 
@@ -52,7 +52,7 @@ sub helper ($x) {
     $x;
 }
 
-sub safe_fn :Type((Str) -> Str ! Console) ($s) {
+sub safe_fn :Type((Str) -> Str !Eff(Console)) ($s) {
     helper($s);             # helper is unannotated → Eff(*), any effect
 }
 

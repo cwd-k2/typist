@@ -103,7 +103,7 @@ BEGIN {
 
 # Annotated with effect — effect is tracked
 # Return type is Any (not Void) since say returns 1; Void would reject it.
-sub print_msg :Type((Str) -> Any ! Console) ($s) {
+sub print_msg :Type((Str) -> Any !Eff(Console)) ($s) {
     say $s;
 }
 

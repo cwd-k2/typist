@@ -23,16 +23,16 @@ BEGIN {
 
 # ── Effectful functions ──────────────────────────
 
-sub greet :Type((Str) -> Str ! Console) ($name) {
+sub greet :Type((Str) -> Str !Eff(Console)) ($name) {
     "Hello, $name!";
 }
 
-sub main_app :Type(() -> Any ! Console | State) () {
+sub main_app :Type(() -> Any !Eff(Console | State)) () {
     greet("world");
     undef;
 }
 
-sub logged :Type(<a, r: Row>(Str) -> Str ! Log | r) ($msg) {
+sub logged :Type(<a, r: Row>(Str) -> Str !Eff(Log | r)) ($msg) {
     $msg;
 }
 
@@ -150,11 +150,11 @@ subtest 'Analyzer detects effect mismatch' => sub {
 package IntegTest;
 use v5.40;
 
-sub db_op :Type((Str) -> Str ! DB) ($q) {
+sub db_op :Type((Str) -> Str !Eff(DB)) ($q) {
     return $q;
 }
 
-sub handler :Type(() -> Str ! Console) () {
+sub handler :Type(() -> Str !Eff(Console)) () {
     db_op("SELECT 1");
 }
 PERL

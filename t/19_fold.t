@@ -72,7 +72,7 @@ subtest 'map_type transforms nested Aliases' => sub {
 # ── map_type: Func with effects ─────────────────
 
 subtest 'map_type preserves Func effects' => sub {
-    my $type = Typist::Parser->parse_annotation('(Int) -> Str ! Console');
+    my $type = Typist::Parser->parse_annotation('(Int) -> Str !Eff(Console)');
     my $func = $type->{type};
     ok $func->is_func, 'parsed as Func';
     ok $func->effects, 'has effects';

@@ -388,13 +388,19 @@ sub _resolve_name ($name) {
 
 # ── Effect Row (inline) ─────────────────────────
 
-# Parse an effect row within a function type: labels and optional row variable
-# separated by '|', stopping at $close token (']' or ')').
+# Parse an effect row within a function type: Eff(Label | Label | var)
+# Requires the Eff(...) wrapper after '!'.
 sub _parse_effect_row ($tokens, $pos, $close = undef) {
+    die "Typist::Parser: expected 'Eff(' after '!'"
+        unless $$pos + 1 < @$tokens
+            && $tokens->[$$pos] eq 'Eff'
+            && $tokens->[$$pos + 1] eq '(';
+    $$pos += 2;  # consume 'Eff' and '('
+
     my @labels;
     my $row_var;
 
-    while ($$pos < @$tokens && (!defined $close || $tokens->[$$pos] ne $close)) {
+    while ($$pos < @$tokens && $tokens->[$$pos] ne ')') {
         my $tok = $tokens->[$$pos++];
         if ($tok =~ /\A[a-z]/) {
             $row_var = $tok;
@@ -404,6 +410,10 @@ sub _parse_effect_row ($tokens, $pos, $close = undef) {
         last unless $$pos < @$tokens && $tokens->[$$pos] eq '|';
         $$pos++;  # consume '|'
     }
+
+    die "Typist::Parser: expected ')' after Eff(...)"
+        unless $$pos < @$tokens && $tokens->[$$pos] eq ')';
+    $$pos++;  # consume ')'
 
     Typist::Type::Row->new(labels => \@labels, row_var => $row_var);
 }

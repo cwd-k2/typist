@@ -17,7 +17,7 @@ sub order_total :Type((ArrayRef[OrderItem]) -> Price) ($items) {
     $total;
 }
 
-sub create_order :Type((OrderId, ArrayRef[OrderItem]) -> Order ! Logger) ($id, $items) {
+sub create_order :Type((OrderId, ArrayRef[OrderItem]) -> Order !Eff(Logger)) ($id, $items) {
     my $total = order_total($items);
     +{
         id    => $id,

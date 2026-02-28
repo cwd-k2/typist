@@ -34,8 +34,8 @@ BEGIN {
     effect DB      => +{ query     => 'CodeRef[Str -> Any]'  };
 }
 
-sub db_op :Type((Str) -> Str ! DB) ($q) { $q }
-sub handler :Type(() -> Str ! Console) () { db_op("SELECT 1") }
+sub db_op :Type((Str) -> Str !Eff(DB)) ($q) { $q }
+sub handler :Type(() -> Str !Eff(Console)) () { db_op("SELECT 1") }
 
 handler();
 PERL

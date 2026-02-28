@@ -19,7 +19,7 @@ BEGIN {
 
 # ── Single Effect ───────────────────────────────
 
-sub greet :Type((Str) -> Str ! Console) ($name) {
+sub greet :Type((Str) -> Str !Eff(Console)) ($name) {
     "Hello, $name!";
 }
 
@@ -27,7 +27,7 @@ say greet("Alice");
 
 # ── Multiple Effects ────────────────────────────
 
-sub greet_logged :Type((Str) -> Str ! Console | Log) ($name) {
+sub greet_logged :Type((Str) -> Str !Eff(Console | Log)) ($name) {
     "Hello, $name! (logged)";
 }
 
@@ -36,10 +36,10 @@ say greet_logged("Bob");
 # ── Row Polymorphism ────────────────────────────
 
 # <r: Row> declares r as a row variable.
-# ! Log | r means "at least Log, plus whatever r adds."
+# !Eff(Log | r) means "at least Log, plus whatever r adds."
 # Callers can supply any additional effects through r.
 
-sub with_log :Type(<r: Row>(Str) -> Str ! Log | r) ($msg) {
+sub with_log :Type(<r: Row>(Str) -> Str !Eff(Log | r)) ($msg) {
     $msg;
 }
 
