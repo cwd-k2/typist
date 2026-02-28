@@ -164,6 +164,39 @@ sub _check_return_types ($self) {
                 );
             }
         }
+
+        # ── Implicit return (last expression) ──
+        # Void return type — implicit value is irrelevant
+        next if $declared->is_atom && $declared->name eq 'Void';
+
+        my @children = $block->schildren;
+        next unless @children;
+
+        my $last_stmt = $children[-1];
+
+        # Skip nested sub definitions
+        next if $last_stmt->isa('PPI::Statement::Sub');
+
+        # Skip control structures (if/while/for — too complex to infer)
+        next if $last_stmt->isa('PPI::Statement::Compound');
+
+        my $first = $last_stmt->schild(0) // next;
+
+        # Skip if starts with 'return' — already checked in explicit path
+        next if $first->isa('PPI::Token::Word') && $first->content eq 'return';
+
+        my $inferred = Typist::Static::Infer->infer_expr($first, $env);
+        next unless defined $inferred;
+        next if $inferred->is_atom && $inferred->name eq 'Any';
+
+        unless (Typist::Subtype->is_subtype($inferred, $declared)) {
+            $self->{errors}->collect(
+                kind    => 'TypeMismatch',
+                message => "Implicit return of $name(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
+                file    => $self->{file},
+                line    => $first->line_number,
+            );
+        }
     }
 }
 

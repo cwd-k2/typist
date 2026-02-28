@@ -557,6 +557,69 @@ PERL
 
 # ── @typist-ignore ────────────────────────────────
 
+# ── Implicit Return Type Checks ───────────────
+
+subtest 'implicit return: detects mismatch' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub greet :Type((Str) -> Int) ($name) {
+    "hello"
+}
+PERL
+
+    is scalar @$errs, 1, 'one error';
+    like $errs->[0]{message}, qr/Implicit return.*greet.*Int/, 'implicit return type mismatch';
+};
+
+subtest 'implicit return: no error on matching type' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub answer :Type(() -> Int) () {
+    42
+}
+PERL
+
+    is scalar @$errs, 0, 'no errors';
+};
+
+subtest 'implicit return: explicit return does not duplicate' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub double :Type((Int) -> Int) ($x) {
+    return $x
+}
+PERL
+
+    is scalar @$errs, 0, 'no duplicate error for explicit return';
+};
+
+subtest 'implicit return: control structure ending is skipped' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub maybe :Type((Int) -> Int) ($x) {
+    if ($x > 0) {
+        return $x;
+    }
+}
+PERL
+
+    is scalar @$errs, 0, 'no false positive on control structure';
+};
+
+subtest 'implicit return: param variable type mismatch' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub wrong :Type((Str) -> Int) ($name) {
+    $name
+}
+PERL
+
+    is scalar @$errs, 1, 'one error';
+    like $errs->[0]{message}, qr/Implicit return.*wrong.*Int.*Str/, 'param variable Str vs Int';
+};
+
+# ── @typist-ignore ────────────────────────────────
+
 subtest '@typist-ignore suppresses TypeMismatch' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
