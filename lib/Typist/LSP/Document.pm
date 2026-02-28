@@ -3,6 +3,27 @@ use v5.40;
 
 use Typist::Static::Analyzer;
 
+# ── Perl Builtins ───────────────────────────────
+
+my %BUILTINS = map { $_ => 1 } qw(
+    say print printf sprintf warn die exit
+    chomp chop lc uc lcfirst ucfirst length substr index rindex
+    push pop shift unshift splice reverse sort
+    keys values each exists delete
+    map grep join split
+    open close read write seek tell eof binmode truncate
+    stat lstat rename unlink mkdir rmdir chdir chmod chown
+    defined ref tied tie untie bless
+    abs int sqrt rand srand hex oct
+    chr ord pack unpack
+    pos quotemeta
+    scalar wantarray caller
+    eval require use no
+    local my our state
+    return last next redo goto
+    sleep time alarm
+);
+
 # ── Constructor ──────────────────────────────────
 
 sub new ($class, %args) {
@@ -105,6 +126,19 @@ sub symbol_at ($self, $line, $col) {
         if ($bare ne $word) {
             my $sym = $self->_find_best_symbol($symbols, $bare, $line);
             return $sym if $sym;
+        }
+
+        # Fallback: synthesize symbol for Perl builtins
+        my $builtin_name = $bare // $word;
+        if ($BUILTINS{$builtin_name}) {
+            return +{
+                name         => $builtin_name,
+                kind         => 'function',
+                params_expr  => ['Any...'],
+                returns_expr => 'Any',
+                eff_expr     => '*',
+                builtin      => 1,
+            };
         }
     }
 

@@ -284,4 +284,28 @@ PERL
     like $hover->{result}{contents}{value}, qr/parameter of add/, 'shows parameter of add';
 };
 
+# ── Hover on Perl builtin function ──────────────
+
+subtest 'hover shows builtin function as Any with Eff(*)' => sub {
+    my $source = <<'PERL';
+use v5.40;
+say "hello";
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 1, character => 1 },  # on 'say'
+        }),
+    ));
+
+    my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $hover, 'got hover response';
+    ok $hover->{result}, 'hover has result';
+    like $hover->{result}{contents}{value}, qr/sub say\(Any\.\.\.\) -> Any !Eff\(\*\)/, 'shows sub say(Any...) -> Any !Eff(*)';
+};
+
 done_testing;
