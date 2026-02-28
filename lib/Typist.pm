@@ -223,8 +223,19 @@ sub _declare ($name, $type_expr_str) {
 
 # ── Datatype Support (Tagged Union / ADT) ──────
 
-sub _datatype ($name, %variants) {
+sub _datatype ($name_spec, %variants) {
     my $caller = caller;
+
+    # Parse name and type parameters: 'Name[T, U]' or plain 'Name'
+    my ($name, @type_params);
+    if ($name_spec =~ /\A(\w+)\[(.+)\]\z/) {
+        $name = $1;
+        @type_params = map { s/\s//gr } split /,/, $2;
+    } else {
+        $name = $name_spec;
+    }
+
+    my %var_names = map { $_ => 1 } @type_params;
     my %parsed_variants;
 
     for my $tag (keys %variants) {
@@ -235,13 +246,23 @@ sub _datatype ($name, %variants) {
             $inner =~ s/\A\(\s*//;
             $inner =~ s/\s*\)\z//;
             @types = map { Typist::Parser->parse($_) } split /\s*,\s*/, $inner;
+
+            # Promote aliases matching type param names to Var objects
+            if (@type_params) {
+                @types = map {
+                    $_->is_alias && $var_names{$_->alias_name}
+                        ? Typist::Type::Var->new($_->alias_name)
+                        : $_
+                } @types;
+            }
         }
         $parsed_variants{$tag} = \@types;
 
         # Install constructor function into caller's namespace
         my @captured_types = @types;
-        my $tag_copy  = $tag;
+        my $tag_copy   = $tag;
         my $data_class = "Typist::Data::${name}";
+        my @tp = @type_params;
         no strict 'refs';
         *{"${caller}::${tag_copy}"} = sub (@args) {
             die("${tag_copy}(): expected "
@@ -249,19 +270,58 @@ sub _datatype ($name, %variants) {
                 . " arguments, got "
                 . scalar(@args) . "\n")
                 unless @args == @captured_types;
-            for my $i (0 .. $#captured_types) {
-                die("${tag_copy}(): argument "
-                    . ($i + 1)
-                    . " expected "
-                    . $captured_types[$i]->to_string
-                    . ", got $args[$i]\n")
-                    unless $captured_types[$i]->contains($args[$i]);
+
+            if (@tp) {
+                # Parameterized: infer type args, then validate
+                my %bindings;
+                for my $i (0 .. $#captured_types) {
+                    my $formal = $captured_types[$i];
+                    next unless $formal->is_var && $var_names{$formal->name};
+                    my $inferred = Typist::Inference->infer_value($args[$i]);
+                    if (exists $bindings{$formal->name}) {
+                        $bindings{$formal->name} = Typist::Subtype->common_super(
+                            $bindings{$formal->name}, $inferred,
+                        );
+                    } else {
+                        $bindings{$formal->name} = $inferred;
+                    }
+                }
+                for my $i (0 .. $#captured_types) {
+                    my $exp = %bindings
+                        ? $captured_types[$i]->substitute(\%bindings)
+                        : $captured_types[$i];
+                    unless ($exp->contains($args[$i])) {
+                        die("${tag_copy}(): argument "
+                            . ($i + 1) . " expected "
+                            . $exp->to_string . ", got $args[$i]\n");
+                    }
+                }
+                my @type_args = map {
+                    $bindings{$_} // Typist::Type::Atom->new('Any')
+                } @tp;
+                bless +{
+                    _tag       => $tag_copy,
+                    _values    => \@args,
+                    _type_args => \@type_args,
+                }, $data_class;
+            } else {
+                # Non-parameterized: validate directly
+                for my $i (0 .. $#captured_types) {
+                    unless ($captured_types[$i]->contains($args[$i])) {
+                        die("${tag_copy}(): argument "
+                            . ($i + 1) . " expected "
+                            . $captured_types[$i]->to_string
+                            . ", got $args[$i]\n");
+                    }
+                }
+                bless +{ _tag => $tag_copy, _values => \@args }, $data_class;
             }
-            bless +{ _tag => $tag_copy, _values => \@args }, $data_class;
         };
     }
 
-    my $data_type = Typist::Type::Data->new($name, \%parsed_variants);
+    my $data_type = Typist::Type::Data->new($name, \%parsed_variants,
+        type_params => \@type_params,
+    );
     Typist::Registry->register_datatype($name, $data_type);
 }
 

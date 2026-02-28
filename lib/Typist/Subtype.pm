@@ -99,11 +99,15 @@ sub _check ($sub, $super) {
             && $sub->name eq $super->name;
     }
 
-    # ── Data type (nominal identity) ──────────────
-    # Tagged union only subtypes itself (same name)
+    # ── Data type (nominal + covariant type args) ──
     if ($sub->is_data || $super->is_data) {
-        return $sub->is_data && $super->is_data
+        return 0 unless $sub->is_data && $super->is_data
             && $sub->name eq $super->name;
+        my @sa = $sub->type_args;
+        my @oa = $super->type_args;
+        return 1 if !@sa && !@oa;
+        return 0 if @sa != @oa;
+        return all { _check($sa[$_], $oa[$_]) } 0 .. $#sa;
     }
 
     # ── Literal types ─────────────────────────────

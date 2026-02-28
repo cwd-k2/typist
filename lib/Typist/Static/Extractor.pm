@@ -113,9 +113,22 @@ sub _extract_datatypes ($class, $doc, $result) {
         next unless $children[0]->isa('PPI::Token::Word')
                  && $children[0]->content eq 'datatype';
 
-        my $name = $children[1]->content;
+        # Name may be a bare word or quoted string (for parameterized: 'Option[T]')
+        my $name_tok = $children[1];
+        my $name_raw = $name_tok->isa('PPI::Token::Quote')
+            ? $name_tok->string
+            : $name_tok->content;
         next unless $children[2]->isa('PPI::Token::Operator')
                  && $children[2]->content eq '=>';
+
+        # Parse name and type parameters
+        my ($base_name, @type_params);
+        if ($name_raw =~ /\A(\w+)\[(.+)\]\z/) {
+            $base_name = $1;
+            @type_params = map { s/\s//gr } split /,/, $2;
+        } else {
+            $base_name = $name_raw;
+        }
 
         # Parse variant pairs from remaining children
         my @rest = @children[3 .. $#children];
@@ -154,10 +167,11 @@ sub _extract_datatypes ($class, $doc, $result) {
             $i++;
         }
 
-        $result->{datatypes}{$name} = +{
-            variants => \%variants,
-            line     => $stmt->line_number,
-            col      => $stmt->column_number,
+        $result->{datatypes}{$base_name} = +{
+            variants    => \%variants,
+            type_params => \@type_params,
+            line        => $stmt->line_number,
+            col         => $stmt->column_number,
         };
     }
 }

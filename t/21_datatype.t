@@ -26,13 +26,14 @@ subtest 'data type node' => sub {
     ok !$dt->is_atom,    'not is_atom';
     ok !$dt->is_newtype, 'not is_newtype';
 
-    # to_string: variants sorted alphabetically
-    my $str = $dt->to_string;
-    like $str, qr/Circle\(Int\)/,           'to_string contains Circle(Int)';
-    like $str, qr/Point/,                   'to_string contains Point';
-    like $str, qr/Rectangle\(Int, Int\)/,   'to_string contains Rectangle(Int, Int)';
-    # Check ordering (sorted)
-    like $str, qr/Circle.+Point.+Rectangle/, 'to_string alphabetical order';
+    is  $dt->to_string, 'Shape', 'to_string is base name';
+
+    # to_string_full: variants sorted alphabetically
+    my $full = $dt->to_string_full;
+    like $full, qr/Circle\(Int\)/,           'to_string_full contains Circle(Int)';
+    like $full, qr/Point/,                   'to_string_full contains Point';
+    like $full, qr/Rectangle\(Int, Int\)/,   'to_string_full contains Rectangle(Int, Int)';
+    like $full, qr/Circle.+Point.+Rectangle/, 'to_string_full alphabetical order';
 };
 
 # ── Equality ─────────────────────────────────────
@@ -300,6 +301,309 @@ PERL
     is $info->{variants}{Circle},    '(Int)',      'Circle variant spec';
     is $info->{variants}{Rectangle}, '(Int, Int)', 'Rectangle variant spec';
     ok defined $info->{line}, 'line number captured';
+};
+
+# ── Parameterized data type node ─────────────────
+
+subtest 'parameterized data type basics' => sub {
+    my $var_t = Typist::Type::Var->new('T');
+    my $dt = Typist::Type::Data->new('Option', +{
+        Some => [$var_t],
+        None => [],
+    }, type_params => ['T']);
+
+    ok  $dt->is_data, 'is_data';
+    is  $dt->name, 'Option', 'name';
+    is_deeply [$dt->type_params], ['T'], 'type_params';
+    is_deeply [$dt->type_args],   [],    'type_args empty';
+    is  $dt->to_string, 'Option[T]', 'to_string shows params';
+};
+
+subtest 'instantiate parameterized type' => sub {
+    my $var_t = Typist::Type::Var->new('T');
+    my $int   = Typist::Type::Atom->new('Int');
+    my $str   = Typist::Type::Atom->new('Str');
+    my $dt = Typist::Type::Data->new('Option', +{
+        Some => [$var_t],
+        None => [],
+    }, type_params => ['T']);
+
+    my $opt_int = $dt->instantiate($int);
+    is $opt_int->to_string, 'Option[Int]', 'instantiate to_string';
+    is_deeply [$opt_int->type_params], ['T'], 'type_params preserved';
+    my @args = $opt_int->type_args;
+    is scalar @args, 1, 'one type arg';
+    ok $args[0]->is_atom && $args[0]->name eq 'Int', 'type arg is Int';
+
+    my $opt_str = $dt->instantiate($str);
+    is $opt_str->to_string, 'Option[Str]', 'instantiate Str';
+};
+
+subtest 'parameterized contains' => sub {
+    my $var_t = Typist::Type::Var->new('T');
+    my $int   = Typist::Type::Atom->new('Int');
+    my $str   = Typist::Type::Atom->new('Str');
+    my $dt = Typist::Type::Data->new('Option', +{
+        Some => [$var_t],
+        None => [],
+    }, type_params => ['T']);
+
+    my $opt_int = $dt->instantiate($int);
+
+    # Some(42) should be contained in Option[Int]
+    my $some42 = bless +{ _tag => 'Some', _values => [42] }, 'Typist::Data::Option';
+    ok $opt_int->contains($some42), 'Option[Int] contains Some(42)';
+
+    # None() should be contained in Option[Int]
+    my $none = bless +{ _tag => 'None', _values => [] }, 'Typist::Data::Option';
+    ok $opt_int->contains($none), 'Option[Int] contains None()';
+
+    # Some("hello") should NOT be contained in Option[Int]
+    my $some_str = bless +{ _tag => 'Some', _values => ['hello'] }, 'Typist::Data::Option';
+    ok !$opt_int->contains($some_str), 'Option[Int] does not contain Some("hello")';
+
+    # Some("hello") should be contained in Option[Str]
+    my $opt_str = $dt->instantiate($str);
+    ok $opt_str->contains($some_str), 'Option[Str] contains Some("hello")';
+
+    # Uninstantiated Option accepts anything (Var->contains returns 1)
+    ok $dt->contains($some42),  'Option[T] contains Some(42)';
+    ok $dt->contains($some_str), 'Option[T] contains Some("hello")';
+};
+
+subtest 'parameterized equality' => sub {
+    my $var_t = Typist::Type::Var->new('T');
+    my $int   = Typist::Type::Atom->new('Int');
+    my $str   = Typist::Type::Atom->new('Str');
+    my $dt = Typist::Type::Data->new('Option', +{
+        Some => [$var_t],
+        None => [],
+    }, type_params => ['T']);
+
+    my $opt_int1 = $dt->instantiate($int);
+    my $opt_int2 = $dt->instantiate($int);
+    my $opt_str  = $dt->instantiate($str);
+
+    ok  $opt_int1->equals($opt_int2), 'Option[Int] == Option[Int]';
+    ok !$opt_int1->equals($opt_str),  'Option[Int] != Option[Str]';
+    ok !$opt_int1->equals($dt),       'Option[Int] != Option[T]';
+};
+
+subtest 'parameterized subtyping' => sub {
+    my $var_t = Typist::Type::Var->new('T');
+    my $int   = Typist::Type::Atom->new('Int');
+    my $str   = Typist::Type::Atom->new('Str');
+    my $num   = Typist::Type::Atom->new('Num');
+    my $any   = Typist::Type::Atom->new('Any');
+    my $dt = Typist::Type::Data->new('Box', +{
+        Wrap => [$var_t],
+    }, type_params => ['T']);
+
+    my $box_int = $dt->instantiate($int);
+    my $box_num = $dt->instantiate($num);
+    my $box_str = $dt->instantiate($str);
+
+    ok  is_sub($box_int, $box_int), 'Box[Int] <: Box[Int]';
+    ok  is_sub($box_int, $box_num), 'Box[Int] <: Box[Num] (covariant)';
+    ok !is_sub($box_num, $box_int), 'Box[Num] </: Box[Int]';
+    ok !is_sub($box_int, $box_str), 'Box[Int] </: Box[Str]';
+    ok  is_sub($box_int, $any),     'Box[Int] <: Any';
+};
+
+subtest 'parameterized to_string_full' => sub {
+    my $var_t = Typist::Type::Var->new('T');
+    my $int   = Typist::Type::Atom->new('Int');
+    my $dt = Typist::Type::Data->new('Option', +{
+        Some => [$var_t],
+        None => [],
+    }, type_params => ['T']);
+
+    like $dt->to_string_full, qr/Option\[T\]\s*=\s*None \| Some\(T\)/,
+        'to_string_full for parameterized type';
+
+    my $opt_int = $dt->instantiate($int);
+    like $opt_int->to_string_full, qr/Option\[Int\]\s*=\s*None \| Some\(T\)/,
+        'to_string_full for instantiated type (variants keep original params)';
+};
+
+subtest 'parameterized substitute' => sub {
+    my $var_t = Typist::Type::Var->new('T');
+    my $var_u = Typist::Type::Var->new('U');
+    my $int   = Typist::Type::Atom->new('Int');
+    my $dt = Typist::Type::Data->new('Pair', +{
+        MkPair => [$var_t, $var_u],
+    }, type_params => ['T', 'U']);
+
+    my $pair_int = $dt->instantiate($int, $var_u);
+    is $pair_int->to_string, 'Pair[Int, U]', 'partial instantiation';
+
+    my $fully = $pair_int->substitute(+{ U => $int });
+    is $fully->to_string, 'Pair[Int, Int]', 'substitute resolves remaining vars';
+};
+
+subtest 'parameterized free_vars' => sub {
+    my $var_t = Typist::Type::Var->new('T');
+    my $var_u = Typist::Type::Var->new('U');
+    my $int   = Typist::Type::Atom->new('Int');
+    my $dt = Typist::Type::Data->new('Option', +{
+        Some => [$var_t],
+        None => [],
+    }, type_params => ['T']);
+
+    # T is bound by the declaration, not free
+    my @fv = sort $dt->free_vars;
+    is_deeply \@fv, [], 'type params are bound, not free';
+
+    my $opt_int = $dt->instantiate($int);
+    my @fv2 = sort $opt_int->free_vars;
+    is_deeply \@fv2, [], 'instantiated Option[Int] has no free vars';
+
+    # Instantiate with a free variable — U is free
+    my $opt_u = $dt->instantiate($var_u);
+    my @fv3 = sort $opt_u->free_vars;
+    is_deeply \@fv3, ['U'], 'Option[U] has free var U';
+};
+
+# ── Parameterized constructor integration ────────
+
+subtest 'parameterized constructors via _datatype' => sub {
+    Typist::Registry->reset;
+
+    require Typist::Inference;
+
+    my $name_spec = 'Result[T, E]';
+    my ($name, @type_params);
+    if ($name_spec =~ /\A(\w+)\[(.+)\]\z/) {
+        $name = $1;
+        @type_params = map { s/\s//gr } split /,/, $2;
+    } else {
+        $name = $name_spec;
+    }
+
+    my %var_names = map { $_ => 1 } @type_params;
+    my %variants_raw = (
+        Ok  => '(T)',
+        Err => '(E)',
+    );
+    my %parsed;
+    for my $tag (keys %variants_raw) {
+        my $spec = $variants_raw{$tag};
+        my @types;
+        if (defined $spec && $spec =~ /\S/) {
+            my $inner = $spec;
+            $inner =~ s/\A\(\s*//;
+            $inner =~ s/\s*\)\z//;
+            @types = map { Typist::Parser->parse($_) } split /\s*,\s*/, $inner;
+            @types = map {
+                $_->is_alias && $var_names{$_->alias_name}
+                    ? Typist::Type::Var->new($_->alias_name)
+                    : $_
+            } @types;
+        }
+        $parsed{$tag} = \@types;
+
+        # Install constructor
+        my @captured = @types;
+        my $tag_copy = $tag;
+        my @tp = @type_params;
+        no strict 'refs';
+        *{"main::${tag_copy}"} = sub (@args) {
+            die("${tag_copy}(): expected " . scalar(@captured) . " arguments\n")
+                unless @args == @captured;
+            my %bindings;
+            for my $i (0 .. $#captured) {
+                my $f = $captured[$i];
+                next unless $f->is_var && $var_names{$f->name};
+                $bindings{$f->name} = Typist::Inference->infer_value($args[$i]);
+            }
+            for my $i (0 .. $#captured) {
+                my $exp = %bindings ? $captured[$i]->substitute(\%bindings) : $captured[$i];
+                die("${tag_copy}(): type error\n") unless $exp->contains($args[$i]);
+            }
+            my @ta = map { $bindings{$_} // Typist::Type::Atom->new('Any') } @tp;
+            bless +{ _tag => $tag_copy, _values => \@args, _type_args => \@ta },
+                'Typist::Data::Result';
+        };
+    }
+
+    my $dt = Typist::Type::Data->new('Result', \%parsed,
+        type_params => \@type_params,
+    );
+    Typist::Registry->register_datatype('Result', $dt);
+
+    # Construct Ok(42) — infers T=Int, E=Any
+    my $ok = main::Ok(42);
+    is ref($ok), 'Typist::Data::Result', 'Ok blessed correctly';
+    is $ok->{_tag}, 'Ok', 'tag is Ok';
+    is_deeply $ok->{_values}, [42], 'values are [42]';
+    ok exists $ok->{_type_args}, 'has _type_args';
+
+    # Construct Err("oops") — infers E=Str, T=Any
+    my $err = main::Err("oops");
+    is $err->{_tag}, 'Err', 'tag is Err';
+
+    # Result[Int, Str] should contain Ok(42)
+    my $res_int_str = $dt->instantiate(
+        Typist::Type::Atom->new('Int'),
+        Typist::Type::Atom->new('Str'),
+    );
+    ok $res_int_str->contains($ok), 'Result[Int, Str] contains Ok(42)';
+    ok $res_int_str->contains($err), 'Result[Int, Str] contains Err("oops")';
+
+    # Result[Str, Str] contains Ok(42) because Str accepts scalars (Perl coercion)
+    my $res_str_str = $dt->instantiate(
+        Typist::Type::Atom->new('Str'),
+        Typist::Type::Atom->new('Str'),
+    );
+    ok $res_str_str->contains($ok), 'Result[Str, Str] contains Ok(42) (Perl coercion)';
+
+    # Result[Int, Int] should NOT contain Ok([1,2]) since Int rejects refs
+    my $ok_ref = bless +{ _tag => 'Ok', _values => [[1, 2]] }, 'Typist::Data::Result';
+    my $res_int_int = $dt->instantiate(
+        Typist::Type::Atom->new('Int'),
+        Typist::Type::Atom->new('Int'),
+    );
+    ok !$res_int_int->contains($ok_ref), 'Result[Int, Int] does not contain Ok([1,2])';
+};
+
+# ── Extractor: parameterized datatype ───────────
+
+subtest 'extractor recognizes parameterized datatype' => sub {
+    require Typist::Static::Extractor;
+
+    my $source = <<'PERL';
+use v5.40;
+BEGIN {
+    datatype 'Option[T]' =>
+        Some => '(T)',
+        None => '()';
+}
+PERL
+
+    my $extracted = Typist::Static::Extractor->extract($source);
+    ok exists $extracted->{datatypes}{Option}, 'parameterized datatype Option extracted';
+    my $info = $extracted->{datatypes}{Option};
+    is_deeply $info->{type_params}, ['T'], 'type_params extracted';
+    is $info->{variants}{Some}, '(T)', 'Some variant spec';
+    is $info->{variants}{None}, '()',  'None variant spec';
+};
+
+subtest 'extractor: multi-param datatype' => sub {
+    require Typist::Static::Extractor;
+
+    my $source = <<'PERL';
+use v5.40;
+BEGIN {
+    datatype 'Either[L, R]' =>
+        Left  => '(L)',
+        Right => '(R)';
+}
+PERL
+
+    my $extracted = Typist::Static::Extractor->extract($source);
+    ok exists $extracted->{datatypes}{Either}, 'Either extracted';
+    is_deeply $extracted->{datatypes}{Either}{type_params}, ['L', 'R'],
+        'multi type_params extracted';
 };
 
 done_testing;
