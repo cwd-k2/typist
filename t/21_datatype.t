@@ -663,6 +663,49 @@ subtest 'match dies on missing arm' => sub {
     like $@, qr/no arm for tag 'Circle'/, 'dies when no matching arm and no fallback';
 };
 
+subtest 'match exhaustiveness warning' => sub {
+    require Typist;
+    Typist::Registry->reset;
+
+    # Register a datatype so exhaustiveness check can find it
+    my $int = Typist::Type::Atom->new('Int');
+    my $dt = Typist::Type::Data->new('Shape', +{
+        Circle    => [$int],
+        Rectangle => [$int, $int],
+        Point     => [],
+    });
+    Typist::Registry->register_datatype('Shape', $dt);
+
+    my $circle = bless +{ _tag => 'Circle', _values => [5] }, 'Typist::Data::Shape';
+
+    # Non-exhaustive match should warn
+    my @warnings;
+    local $SIG{__WARN__} = sub { push @warnings, $_[0] };
+    Typist::_match($circle,
+        Circle => sub ($r) { $r },
+    );
+    ok @warnings == 1, 'one warning for non-exhaustive match';
+    like $warnings[0], qr/non-exhaustive.*missing Point, Rectangle/,
+        'warning lists missing variants';
+
+    # Exhaustive match should not warn
+    @warnings = ();
+    Typist::_match($circle,
+        Circle    => sub ($r)     { $r },
+        Rectangle => sub ($w, $h) { $w * $h },
+        Point     => sub          { 0 },
+    );
+    is scalar @warnings, 0, 'no warning for exhaustive match';
+
+    # Match with fallback _ should not warn even if not exhaustive
+    @warnings = ();
+    Typist::_match($circle,
+        Circle => sub ($r) { $r },
+        _      => sub      { 0 },
+    );
+    is scalar @warnings, 0, 'no warning with fallback arm';
+};
+
 subtest 'match dies on non-tagged value' => sub {
     require Typist;
 

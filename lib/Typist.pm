@@ -1,6 +1,8 @@
 package Typist;
 use v5.40;
 
+use Scalar::Util 'blessed';
+
 our $VERSION = '0.01';
 our $RUNTIME     = $ENV{TYPIST_RUNTIME}     ? 1 : 0;
 our $CHECK_QUIET = $ENV{TYPIST_CHECK_QUIET} ? 1 : 0;
@@ -192,6 +194,21 @@ sub _handle :prototype(&@) {
 sub _match ($value, %arms) {
     my $tag = $value->{_tag}
         // die "Typist: match — value has no _tag\n";
+
+    # Exhaustiveness: warn if known ADT has uncovered variants (no fallback _)
+    if (!exists $arms{_} && blessed($value)) {
+        my $class = blessed($value);
+        if ($class =~ /\ATypist::Data::(\w+)\z/) {
+            my $dt = Typist::Registry->lookup_datatype($1);
+            if ($dt) {
+                my @missing = grep { !exists $arms{$_} }
+                    sort keys $dt->variants->%*;
+                warn "Typist: match — non-exhaustive pattern: missing "
+                    . join(', ', @missing) . "\n"
+                    if @missing;
+            }
+        }
+    }
 
     my $handler = $arms{$tag} // $arms{_}
         // die "Typist: match — no arm for tag '$tag' and no fallback '_'\n";
