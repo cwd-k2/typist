@@ -1,69 +1,105 @@
 # Typist
 
-A type system for Perl, implemented in pure Perl.
+A pure Perl type system for Perl 5.40+.
 
-Typist brings static-style type annotations to Perl 5.40+ through standard attribute syntax and `tie` mechanics — no source filters, no external tooling.
+Typist brings static type annotations to Perl through standard attribute syntax. Errors are caught at compile time (CHECK phase) and via LSP — no source filters, no external tooling, no runtime cost by default.
+
+```
+                  `:Type(...)` attribute
+                        |
+      +-----------------+-----------------+
+      |                 |                 |
+  CHECK phase       LSP Server     Runtime (opt-in)
+  (compile-time)    (editor)       (-runtime flag)
+      |                 |                 |
+  warn to STDERR   Diagnostics     die on mismatch
+```
 
 ## Synopsis
 
 ```perl
 use Typist;
+use Typist::DSL;
 
 # Type aliases
-typedef Name   => 'Str';
-typedef Config => '{ host => Str, port => Int }';
+BEGIN {
+    typedef Name   => Str;
+    typedef Config => Struct(host => Str, port => Int);
+}
 
 # Typed variables
 my $count :Type(Int) = 0;
 my $label :Type(Maybe[Str]) = undef;
 
-# Typed subroutines
-sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+# Typed subroutines — unified :Type() annotation
+sub add :Type((Int, Int) -> Int) ($a, $b) {
     $a + $b;
 }
 
-# Generics
-sub first :Generic(T) :Params(ArrayRef[T]) :Returns(T) ($arr) {
-    $arr->[0];
+# Generics with bounded quantification
+sub max_of :Type(<T: Num>(T, T) -> T) ($a, $b) {
+    $a > $b ? $a : $b;
 }
 
-# Algebraic effects
-effect Console => +{
-    readLine  => 'CodeRef[-> Str]',
-    writeLine => 'CodeRef[Str -> Void]',
-};
+# Algebraic effects with row polymorphism
+BEGIN {
+    effect Console => +{
+        readLine  => Func(returns => Str),
+        writeLine => Func(Str, returns => Void),
+    };
+}
 
-sub greet :Params(Str) :Returns(Str) :Eff(Console) ($name) {
+sub greet :Type((Str) -> Str !Eff(Console)) ($name) {
     "Hello, $name!";
 }
 
 # Row polymorphism — "at least Log, plus whatever r adds"
-sub with_log :Generic(r: Row) :Params(Str) :Returns(Str) :Eff(Log | r) ($msg) {
+sub with_log :Type(<r: Row>(Str) -> Str !Eff(Log | r)) ($msg) {
     $msg;
 }
 ```
 
 ## Features
 
-- **Primitive types** — `Any`, `Num`, `Int`, `Bool`, `Str`, `Undef`, `Void`
-- **Parameterized types** — `ArrayRef[T]`, `HashRef[K, V]`, `Tuple[T, U, ...]`, `Ref[T]`
-- **Union & Intersection** — `Int | Str`, `Readable & Writable`
-- **Function types** — `CodeRef[Int, Int -> Int]`
-- **Struct types** — `{ name => Str, age => Int }`
-- **Maybe sugar** — `Maybe[T]` desugars to `T | Undef`
-- **Named aliases** — `typedef` for reusable type definitions
-- **Literal types** — `42`, `"hello"` as singleton types
-- **Newtype** — `newtype UserId => 'Int'` for nominal (non-structural) type identity
-- **Recursive types** — self-referential `typedef` through type constructors
-- **Generics** — `:Generic(T)` with Hindley-Milner style unification
-- **Bounded quantification** — `:Generic(T: Num)` to constrain type variables
-- **Type classes** — `typeclass` / `instance` with ad-hoc polymorphism dispatch
-- **Higher-kinded types** — `F: * -> *` kind annotations for type constructor abstraction
-- **Algebraic effects** — `effect` keyword, `:Eff(Console | Log)` annotations, row polymorphism via `:Generic(r: Row)`
-- **Structural subtyping** — width subtyping for structs, contravariant parameters for functions
-- **CHECK-phase analysis** — detects alias cycles, unknown types, and undeclared type variables before runtime
-- **LSP server** — hover, completion, and diagnostics for editors
-- **Perl::Critic policy** — type error detection via PerlNavigator
+### Type System
+
+| Feature | Syntax | Example |
+|---------|--------|---------|
+| Primitive types | `Int`, `Str`, `Bool`, `Num`, `Any`, `Void`, `Never`, `Undef` | `my $x :Type(Int) = 42` |
+| Parameterized types | `Name[T, ...]` | `ArrayRef[Int]`, `HashRef[Str, Int]` |
+| Union types | `A \| B` | `Int \| Str` |
+| Intersection types | `A & B` | `Readable & Writable` |
+| Function types | `(A, B) -> R` | `(Int, Int) -> Int` |
+| Struct types | `{ k => T, k? => T }` | `{ name => Str, age? => Int }` |
+| Maybe sugar | `Maybe[T]` | `Maybe[Str]` = `Str \| Undef` |
+| Literal types | `42`, `"hello"` | Singleton types for specific values |
+| Type aliases | `typedef` | `typedef Price => Int` |
+| Nominal types | `newtype` / `unwrap` | `newtype UserId => Int` |
+| Recursive types | Self-referential `typedef` | `typedef Json => Str \| Int \| ArrayRef[Json]` |
+| Generics | `<T>`, `<T, U>` | `<T>(ArrayRef[T]) -> T` |
+| Bounded quantification | `<T: Bound>` | `<T: Num>(T, T) -> T` |
+| Type classes | `typeclass` / `instance` | Ad-hoc polymorphism with dispatch |
+| Higher-kinded types | `F: * -> *` | Type constructor abstraction |
+| Algebraic effects | `effect` / `!Eff(...)` | `!Eff(Console \| Log)` |
+| Row polymorphism | `<r: Row>` / `Eff(E \| r)` | Effect row extension |
+
+### Analysis
+
+| Feature | Description |
+|---------|-------------|
+| CHECK-phase analysis | Type/effect errors detected at compile time via `warn` |
+| LSP server | Hover, completion, diagnostics, go-to-definition, signature help, inlay hints |
+| Perl::Critic policy | Integration with PerlNavigator |
+| Cross-file checking | Workspace-level type resolution across modules |
+| Gradual typing | Annotation density determines check strictness |
+
+### Architecture
+
+| Mode | Cost | Behavior |
+|------|------|----------|
+| Static-only (default) | Zero runtime overhead | `warn` diagnostics at CHECK phase |
+| Runtime (`-runtime`) | Per-call type checks via `tie` + sub wrapping | `die` on type violation |
+| Newtype boundary | Always active | Constructor/unwrap validation regardless of mode |
 
 ## Requirements
 
@@ -76,47 +112,189 @@ sub with_log :Generic(r: Row) :Params(Str) :Returns(Str) :Eff(Log | r) ($msg) {
 carton install
 ```
 
-This installs runtime dependencies (`PPI`, `JSON::PP`) into `local/`. For optional Perl::Critic integration:
+For optional Perl::Critic integration:
 
 ```sh
 carton install --with-recommends
 ```
 
-## Editor Integration
+## Annotation Syntax
 
-Typist provides two layers of editor integration:
+Typist uses a single unified `:Type(...)` attribute for all type annotations.
 
-### Perl::Critic Policy (via PerlNavigator)
+### Variables
 
-If you already use PerlNavigator, add the Typist policy to get inline type error diagnostics:
-
-```ini
-# .perlcriticrc
-[Typist::TypeCheck]
-severity = 2
+```perl
+my $x :Type(Int) = 42;
+my $y :Type(Str | Undef) = undef;
+my $z :Type({ name => Str, age => Int }) = { name => "Alice", age => 30 };
 ```
 
-```json
-// VS Code settings
-{
-  "perlnavigator.perlcriticEnabled": true,
-  "perlnavigator.perlcriticProfile": ".perlcriticrc"
+### Functions
+
+```perl
+# Parameters and return type
+sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+
+# With effects
+sub greet :Type((Str) -> Str !Eff(Console)) ($name) { "Hello, $name!" }
+
+# With generics
+sub first :Type(<T>(ArrayRef[T]) -> T) ($arr) { $arr->[0] }
+
+# With bounded quantification
+sub max_of :Type(<T: Num>(T, T) -> T) ($a, $b) { $a > $b ? $a : $b }
+
+# With generic row variable
+sub with_log :Type(<r: Row>(Str) -> Str !Eff(Log | r)) ($msg) { $msg }
+
+# No parameters, no return value
+sub noop :Type(() -> Void) () { }
+```
+
+### Type Aliases
+
+```perl
+BEGIN {
+    typedef Name   => 'Str';             # String form
+    typedef Name   => Str;               # DSL form (with Typist::DSL)
+    typedef Person => '{ name => Str, age => Int }';
+    typedef Json   => 'Str | Int | Bool | Undef | ArrayRef[Json] | HashRef[Str, Json]';
 }
 ```
 
+### Nominal Types (Newtype)
+
+```perl
+BEGIN {
+    newtype UserId  => 'Int';
+    newtype Email   => 'Str';
+}
+
+my $uid = UserId(42);       # Constructor validates inner type
+my $raw = unwrap($uid);     # Extracts inner value: 42
+```
+
+### Effects
+
+```perl
+BEGIN {
+    effect Console => +{
+        readLine  => 'CodeRef[-> Str]',
+        writeLine => 'CodeRef[Str -> Void]',
+    };
+}
+
+# Function declares its effects
+sub io_greet :Type((Str) -> Void !Eff(Console)) ($name) { say "Hi, $name" }
+
+# Caller must declare at least callee's effects
+sub main :Type(() -> Void !Eff(Console)) () { io_greet("Alice") }
+```
+
+### Type Classes
+
+```perl
+use Typist::DSL;
+
+BEGIN {
+    typeclass Show => T, +{
+        show => Func(T, returns => Str),
+    };
+
+    instance Show => Int, +{
+        show => sub ($x) { "$x" },
+    };
+
+    instance Show => Str, +{
+        show => sub ($x) { qq{"$x"} },
+    };
+}
+
+say Show::show(42);      # "42"
+say Show::show("hello"); # "\"hello\""
+```
+
+### Declare (External Function Annotations)
+
+```perl
+# Annotate builtins or external functions for effect checking
+declare say    => '(Str) -> Void !Eff(Console)';
+declare length => '(Str) -> Int';                  # Pure builtin
+declare die    => '(Any) -> Never !Eff(Abort)';
+```
+
+### Suppressing Diagnostics
+
+```perl
+sub handler :Type((Str) -> Str !Eff(Console)) ($s) {
+    # @typist-ignore
+    some_unannotated_function($s);  # No EffectMismatch warning
+}
+```
+
+## Gradual Typing
+
+Typist enforces checks proportional to annotation density:
+
+| Annotation Level | Type Checks | Effect Checks |
+|------------------|-------------|---------------|
+| Fully annotated | All params, return, call sites | Full effect inclusion |
+| Partially annotated (no return) | Params only, return type unknown | As declared |
+| Partially annotated (no `:Eff`) | As declared | Treated as pure |
+| Completely unannotated | Skipped (`Any -> Any`) | Treated as `Eff(*)` — flags in callers |
+
+```perl
+# Fully annotated — all checks apply
+sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+
+# Partially annotated — params checked, return unknown
+sub compute :Type((Int) -> Any) ($n) { $n * $n }
+
+# Unannotated — treated as (Any...) -> Any ! Eff(*)
+sub helper ($x) { $x }
+```
+
+## Static-First Architecture
+
+By default, `use Typist;` provides **zero runtime overhead**:
+
+```
+Compile Time                          Runtime
+─────────────────────────────────     ───────────────────
+:Type(...) parsed → Registry          Original sub runs
+CHECK { Checker → Analyzer }          No wrappers
+warn diagnostics → STDERR             No tie overhead
+```
+
+### Enabling Runtime Enforcement
+
+```perl
+use Typist -runtime;    # Flag in code
+# or
+TYPIST_RUNTIME=1        # Environment variable
+```
+
+Runtime mode adds `tie` to typed scalars and wraps typed subs with validation closures.
+
+### Environment Variables
+
+| Variable | Effect |
+|----------|--------|
+| `TYPIST_RUNTIME` | Enable runtime enforcement (`1` = on) |
+| `TYPIST_CHECK_QUIET` | Suppress CHECK-phase diagnostics (`1` = quiet) |
+| `TYPIST_LSP_LOG` | LSP log level (`off`/`error`/`warn`/`info`/`debug`/`trace`) |
+| `TYPIST_LSP_TRACE` | Path to JSONL trace file for LSP message recording |
+
+## Editor Integration
+
 ### LSP Server
 
-The standalone LSP server provides hover, completion, and diagnostics:
+The standalone LSP server provides hover, completion, diagnostics, go-to-definition, signature help, and inlay hints:
 
 ```sh
 carton exec -- perl bin/typist-lsp
 ```
-
-**Capabilities:**
-
-- **Diagnostics** — alias cycles, unknown types, undeclared type variables
-- **Hover** — type signatures for variables, functions, and typedefs
-- **Completion** — type names inside `:Type()`, `:Params()`, `:Returns()`, `:Generic()`, `:Eff()`
 
 #### Neovim (nvim-lspconfig)
 
@@ -138,11 +316,9 @@ configs.typist = {
 require('lspconfig').typist.setup {}
 ```
 
-Carton automatically adds `lib/` and `local/lib/perl5` to `@INC`.
-
 #### VS Code
 
-Use the `vscode-languageclient` extension with this server configuration:
+Use the `vscode-languageclient` extension:
 
 ```json
 {
@@ -151,15 +327,94 @@ Use the `vscode-languageclient` extension with this server configuration:
 }
 ```
 
+### Perl::Critic Policy (via PerlNavigator)
+
+```ini
+# .perlcriticrc
+[Typist::TypeCheck]
+severity = 2
+```
+
+```json
+// VS Code settings
+{
+  "perlnavigator.perlcriticEnabled": true,
+  "perlnavigator.perlcriticProfile": ".perlcriticrc"
+}
+```
+
+## Debugging the LSP Server
+
+### Logging
+
+```sh
+TYPIST_LSP_LOG=debug carton exec -- perl bin/typist-lsp
+```
+
+| Level | Output |
+|-------|--------|
+| `off` | No output |
+| `error` | Errors only |
+| `warn` | Errors + warnings |
+| `info` | Lifecycle events (default) |
+| `debug` | Message dispatch, diagnostics |
+| `trace` | Full message content |
+
+### Message Tracing
+
+```sh
+TYPIST_LSP_TRACE=/tmp/trace.jsonl carton exec -- perl bin/typist-lsp
+```
+
+Each line is a JSON object with direction, timestamp, and message:
+
+```json
+{"dir":"recv","ts":"12:34:56.789","msg":{"jsonrpc":"2.0","method":"initialize",...}}
+{"dir":"send","ts":"12:34:56.790","msg":{"jsonrpc":"2.0","id":1,"result":{...}}}
+```
+
+### Trace Replay
+
+```sh
+carton exec -- perl script/lsp-replay trace.jsonl
+carton exec -- perl script/lsp-replay --compare trace.jsonl   # Golden-file regression
+carton exec -- perl script/lsp-replay --verbose trace.jsonl   # Show each message
+```
+
+### Editor Debug Configuration
+
+**Neovim** — redirect stderr to a log file:
+
+```lua
+cmd = { 'sh', '-c', 'TYPIST_LSP_LOG=debug carton exec -- perl bin/typist-lsp 2>/tmp/typist-lsp.log' },
+```
+
+**VS Code** — add environment variables to server settings:
+
+```json
+{
+  "typist-lsp.command": "sh",
+  "typist-lsp.args": ["-c", "TYPIST_LSP_LOG=debug TYPIST_LSP_TRACE=/tmp/trace.jsonl carton exec -- perl bin/typist-lsp 2>/tmp/typist-lsp.log"]
+}
+```
+
 ## Examples
 
 See `example/` for runnable demonstrations:
 
-- `example/basics.pl` — typed variables, typed functions, typedef, error handling
-- `example/generics.pl` — generic functions, parameterized types, union types
-- `example/effects.pl` — algebraic effects, row polymorphism, phantom effect tracking
-- `example/haskell.pl` — newtype, literal types, recursive types, bounded quantification, type classes, HKT
-- `example/lsp_demo.pm` — module showcasing LSP hover/completion/diagnostic targets
+| File | Topics |
+|------|--------|
+| `basics.pl` | Type aliases, typed variables/functions, runtime error handling |
+| `generics.pl` | Generic functions, parameterized types, union types |
+| `effects.pl` | Effect definitions, row polymorphism, phantom effect tracking |
+| `gradual.pl` | Gradual typing: full, partial, and unannotated functions |
+| `haskell.pl` | Newtypes, literal types, recursive types, bounded quantification, type classes, HKT |
+| `errors_basic.pl` | Runtime type violations for all basic types |
+| `errors_advanced.pl` | Generics, newtypes, bounded quantification violations |
+| `effect_checker.pl` | Static effect analysis demonstrations |
+| `lsp_demo.pm` | LSP hover, completion, diagnostic targets |
+| `lsp_effects.pm` | LSP effect checking demonstrations |
+| `realworld/` | Multi-file shop system (newtypes, effects, cross-module checking) |
 
 ```sh
 carton exec -- perl example/basics.pl
@@ -171,105 +426,79 @@ carton exec -- perl example/haskell.pl
 ## Testing
 
 ```sh
-# All tests
+# All tests (42 files)
 carton exec -- prove -l t/ t/static/ t/lsp/ t/critic/
 
-# Core type system
-carton exec -- prove -l t/
+# By category
+carton exec -- prove -l t/              # Core type system (21 files)
+carton exec -- prove -l t/static/       # Static analysis (7 files)
+carton exec -- prove -l t/lsp/          # LSP server (13 files)
+carton exec -- prove -l t/critic/       # Perl::Critic policy (1 file)
 
-# Static analysis engine
-carton exec -- prove -l t/static/
-
-# LSP server
-carton exec -- prove -l t/lsp/
-
-# Perl::Critic policy (requires Perl::Critic)
-carton exec -- prove -l t/critic/
-
-# LSP E2E smoke test (subprocess via IPC::Open2)
-carton exec -- perl t/lsp/e2e_smoke.pl
-
-# Workspace integration verification (realworld example)
-carton exec -- perl script/lsp-verify-workspace
-
-# Workspace verification on a custom directory
-carton exec -- perl script/lsp-verify-workspace path/to/lib
+# Integration tests
+carton exec -- perl t/lsp/e2e_smoke.pl                     # LSP E2E smoke test
+carton exec -- perl script/lsp-verify-workspace             # Workspace verification
+carton exec -- perl script/lsp-verify-workspace path/to/lib # Custom directory
 ```
 
-## Debugging the LSP Server
+## Project Structure
 
-### Logging
-
-Set `TYPIST_LSP_LOG` to control log verbosity on stderr:
-
-| Level   | Output                            |
-|---------|-----------------------------------|
-| `off`   | No output (default in tests)      |
-| `error` | Errors only                       |
-| `warn`  | Errors + warnings                 |
-| `info`  | Lifecycle events (default)        |
-| `debug` | Message dispatch, diagnostics     |
-| `trace` | Full message content              |
-
-```sh
-TYPIST_LSP_LOG=debug carton exec -- perl bin/typist-lsp
 ```
-
-### Message Tracing
-
-Set `TYPIST_LSP_TRACE` to a file path to record all JSON-RPC messages in JSONL format:
-
-```sh
-TYPIST_LSP_TRACE=/tmp/trace.jsonl carton exec -- perl bin/typist-lsp
-```
-
-Each line is a JSON object:
-
-```json
-{"dir":"recv","ts":"12:34:56.789","msg":{"jsonrpc":"2.0","method":"initialize",...}}
-{"dir":"send","ts":"12:34:56.790","msg":{"jsonrpc":"2.0","id":1,"result":{...}}}
-```
-
-### Trace Replay
-
-Replay a recorded trace against a fresh server instance:
-
-```sh
-# Replay only
-carton exec -- perl script/lsp-replay trace.jsonl
-
-# Compare responses against original recording
-carton exec -- perl script/lsp-replay --compare trace.jsonl
-
-# Verbose: show each message as it is sent/received
-carton exec -- perl script/lsp-replay --verbose trace.jsonl
-```
-
-### Editor Debug Configuration
-
-**Neovim** — redirect stderr to a log file:
-
-```lua
-configs.typist = {
-  default_config = {
-    cmd = { 'sh', '-c', 'TYPIST_LSP_LOG=debug carton exec -- perl bin/typist-lsp 2>/tmp/typist-lsp.log' },
-    filetypes = { 'perl' },
-    root_dir = function(fname)
-      return vim.fs.dirname(
-        vim.fs.find({ 'lib', '.git' }, { upward = true, path = fname })[1]
-      )
-    end,
-  },
-}
-```
-
-**VS Code** — add environment variables to server settings:
-
-```json
-{
-  "typist-lsp.command": "sh",
-  "typist-lsp.args": ["-c", "TYPIST_LSP_LOG=debug TYPIST_LSP_TRACE=/tmp/trace.jsonl carton exec -- perl bin/typist-lsp 2>/tmp/typist-lsp.log"]
-}
+lib/
+  Typist.pm                  Entry point, CHECK phase, exports
+  Typist/
+    Type.pm                  Abstract base (overloads: |, &, "")
+    Type/
+      Atom.pm                Primitives (Int, Str, ...) — flyweight pool
+      Param.pm               Parameterized (ArrayRef[T], HashRef[K,V])
+      Union.pm               A | B — normalized, deduplicated
+      Intersection.pm        A & B — normalized, deduplicated
+      Func.pm                (A, B) -> R !Eff(E) — with effects
+      Struct.pm              { key => T, key? => T } — optional fields
+      Var.pm                 Type variables (T, U, V) — bound + kind
+      Alias.pm               typedef references — lazy resolution
+      Literal.pm             42, "hello" — singleton types
+      Newtype.pm             Nominal wrappers — name-based identity
+      Row.pm                 Effect rows — sorted labels + tail var
+      Eff.pm                 Eff(Row) wrapper
+      Fold.pm                map_type (bottom-up), walk (top-down)
+    Parser.pm                Recursive-descent type expression parser
+    Registry.pm              Type/function/effect store (class + instance)
+    Subtype.pm               Structural subtype relation + LUB
+    Inference.pm             Runtime type inference + unification
+    Transform.pm             Type substitution (aliases → vars)
+    Attribute.pm             :Type() handler, sub wrapping, tie
+    DSL.pm                   Type constructors (Int, Str, Func(...), ...)
+    Kind.pm                  Kind system (Star, Row, Arrow)
+    KindChecker.pm           Kind inference and validation
+    TypeClass.pm             Def + Inst + dispatch
+    Effect.pm                Effect definitions with typed operations
+    Error.pm                 Error value + Collector (instance-based)
+    Error/Global.pm          Singleton error buffer
+    Tie/Scalar.pm            Runtime scalar type enforcement
+    Static/
+      Analyzer.pm            Pipeline coordinator (per-file)
+      Extractor.pm           PPI-based annotation extraction
+      Checker.pm             Structural checks (cycles, vars, kinds)
+      TypeChecker.pm         Type mismatch detection
+      EffectChecker.pm       Effect mismatch detection
+      Infer.pm               Static type inference from PPI
+    LSP/
+      LSP.pm                 Entry point + exit handling
+      Server.pm              Lifecycle, message dispatch
+      Transport.pm           JSON-RPC with Content-Length framing
+      Document.pm            Per-file analysis cache
+      Workspace.pm           Cross-file registry + scanning
+      Hover.pm               Type signature display
+      Completion.pm          Type name suggestions
+      Logger.pm              Configurable stderr logging
+bin/
+  typist-lsp                 LSP server executable
+script/
+  lsp-replay                 JSONL trace replay tool
+  lsp-verify-workspace       Workspace integration verifier
+example/                     Runnable demonstrations
+t/                           Test suite (42 files, 418+ tests)
 ```
 
 ## License
