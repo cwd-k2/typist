@@ -512,7 +512,7 @@ PERL
     my @fns = grep { $_->{kind} eq 'function' } $result->{symbols}->@*;
     my ($fn) = grep { $_->{name} eq 'helper' } @fns;
     ok $fn, 'helper in symbols';
-    is $fn->{eff_expr}, '*', 'unannotated function shows eff_expr = *';
+    is $fn->{eff_expr}, 'Eff(*)', 'unannotated function shows eff_expr = Eff(*)';
 };
 
 # ── Function Parameter Typing ─────────────────

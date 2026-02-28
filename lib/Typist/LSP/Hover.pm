@@ -52,7 +52,7 @@ sub _format ($class, $sym) {
 
         # Effects
         if ($sym->{eff_expr}) {
-            $sig .= " !Eff($sym->{eff_expr})";
+            $sig .= " !$sym->{eff_expr}";
         }
 
         # Declared annotation

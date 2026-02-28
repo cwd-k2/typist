@@ -136,7 +136,7 @@ sub symbol_at ($self, $line, $col) {
                 kind         => 'function',
                 params_expr  => ['Any...'],
                 returns_expr => 'Any',
-                eff_expr     => '*',
+                eff_expr     => 'Eff(*)',
                 builtin      => 1,
             };
         }

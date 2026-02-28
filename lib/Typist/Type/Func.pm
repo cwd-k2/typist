@@ -22,7 +22,7 @@ sub to_string ($self) {
     my $ret  = $self->{returns}->to_string;
     my $str  = "($args) -> $ret";
     if ($self->{effects}) {
-        $str .= ' ! ' . $self->{effects}->to_string;
+        $str .= ' !Eff(' . $self->{effects}->to_string . ')';
     }
     $str;
 }

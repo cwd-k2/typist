@@ -354,7 +354,7 @@ sub _build_symbol_index ($extracted, $env = undef) {
 
         # Unannotated functions: show !Eff(*) to indicate any-effect
         my $eff = $fn->{eff_expr};
-        $eff = '*' if $fn->{unannotated};
+        $eff = $fn->{unannotated} ? 'Eff(*)' : $eff && "Eff($eff)";
 
         push @symbols, +{
             name        => $name,
@@ -381,7 +381,7 @@ sub _build_symbol_index ($extracted, $env = undef) {
             @params_expr  = map { $_->to_string } $type->params;
             $returns_expr = $type->returns->to_string;
             $eff_expr     = $type->effects
-                ? $type->effects->to_string : undef;
+                ? 'Eff(' . $type->effects->to_string . ')' : undef;
         } else {
             $returns_expr = $type->to_string;
         }
