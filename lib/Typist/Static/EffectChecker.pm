@@ -4,6 +4,24 @@ use v5.40;
 use Typist::Type::Row;
 use Typist::Type::Eff;
 
+# ── Perl Builtins (unannotated → Eff(*)) ────────
+
+my %BUILTINS = map { $_ => 1 } qw(
+    say print printf sprintf warn die exit
+    chomp chop lc uc lcfirst ucfirst length substr index rindex
+    push pop shift unshift splice reverse sort
+    keys values each exists delete
+    map grep join split
+    open close read write seek tell eof binmode truncate
+    stat lstat rename unlink mkdir rmdir chdir chmod chown
+    defined ref tied tie untie bless
+    abs int sqrt rand srand hex oct
+    chr ord pack unpack
+    pos quotemeta
+    scalar wantarray caller
+    sleep time alarm
+);
+
 # PPI-based static effect checker.
 # Verifies that each function's body only calls functions whose effects
 # are included in the caller's declared effect row.
@@ -85,13 +103,32 @@ sub _collect_called_effects ($self, $block, $pkg) {
         # Skip keywords
         next if $callee_name =~ /\A(?:my|our|local|return|if|unless|for|foreach|while|until|do|eval|sub|use|no)\z/;
 
-        # Must be followed by a list (function call pattern)
-        my $next = $word->snext_sibling // next;
-        next unless ref $next && $next->isa('PPI::Structure::List');
-
         # Skip if it's a sub declaration
         my $parent = $word->parent;
         next if $parent && $parent->isa('PPI::Statement::Sub');
+
+        # Skip method calls: ->name
+        my $prev = $word->sprevious_sibling;
+        next if $prev && ref $prev && $prev->isa('PPI::Token::Operator') && $prev->content eq '->';
+
+        # Skip hash keys: name => ...
+        my $next = $word->snext_sibling;
+        next if $next && ref $next && $next->isa('PPI::Token::Operator') && $next->content eq '=>';
+
+        # Builtin functions: treated as unannotated Eff(*)
+        # Builtins can be called without parens (say "hello"), so no List check needed.
+        if ($BUILTINS{$callee_name}) {
+            push @calls, +{
+                name        => $callee_name,
+                effects     => 1,  # sentinel; unannotated branch does not inspect
+                unannotated => 1,
+                line        => $word->line_number,
+            };
+            next;
+        }
+
+        # Must be followed by a list (function call pattern)
+        next unless $next && ref $next && $next->isa('PPI::Structure::List');
 
         # Look up callee's sig — local package first, then cross-package (Pkg::func)
         my $callee_sig = $self->{registry}->lookup_function($pkg, $callee_name);

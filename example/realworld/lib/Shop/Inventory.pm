@@ -19,7 +19,7 @@ sub add_product :Type((Product) -> Bool) ($product) {
 
 sub find_product :Type((ProductId) -> Product) ($id) {
     my $key = unwrap($id);
-    $products{$key} // die "Typist: product not found: $key\n";
+    $products{$key};
 }
 
 sub in_stock :Type((ProductId, Quantity) -> Bool) ($id, $qty) {

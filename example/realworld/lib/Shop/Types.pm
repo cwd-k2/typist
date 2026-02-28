@@ -32,6 +32,7 @@ BEGIN {
     effect Logger => +{
         log => Func(Str, returns => Void),
     };
+
 }
 
 # ── Type Classes ───────────────────────────────

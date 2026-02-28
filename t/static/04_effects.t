@@ -243,4 +243,43 @@ PERL
     is scalar @eff_diags, 0, 'annotated function without effect is pure — no error';
 };
 
+# ── Builtin functions are Eff(*) ─────────────────
+
+subtest 'Analyzer: builtin say in Eff(Console) function is flagged' => sub {
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Effect;
+    $ws_reg->register_effect('Console', Typist::Effect->new(
+        name => 'Console', operations => +{},
+    ));
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws_reg);
+package BuiltinInEffect;
+use v5.40;
+
+sub greet :Type((Str) -> Void ! Console) ($name) {
+    say "Hello, $name";
+}
+PERL
+
+    my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
+    ok @eff_diags > 0, 'calling builtin say inside Eff(Console) is flagged';
+    like $eff_diags[0]{message}, qr/unannotated.*say/, 'reports unannotated builtin say';
+};
+
+subtest 'Analyzer: builtin in pure function is flagged' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package BuiltinInPure;
+use v5.40;
+
+sub compute :Type((Int) -> Int) ($n) {
+    print "debug";
+    $n * 2;
+}
+PERL
+
+    my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
+    ok @eff_diags > 0, 'calling builtin print inside pure function is flagged';
+    like $eff_diags[0]{message}, qr/unannotated.*print/, 'reports unannotated builtin print';
+};
+
 done_testing;
