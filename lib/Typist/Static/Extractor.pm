@@ -36,6 +36,8 @@ sub extract ($class, $source) {
     $class->_extract_variables($doc, $result);
     $class->_extract_functions($doc, $result);
 
+    $result->{ignore_lines} = $class->_collect_ignore_lines($doc);
+
     $result;
 }
 
@@ -390,6 +392,22 @@ sub _extract_functions ($class, $doc, $result) {
             };
         }
     }
+}
+
+# ── Ignore Lines ─────────────────────────────────
+
+# Collect lines suppressed by @typist-ignore comments.
+# A comment containing @typist-ignore on line N suppresses diagnostics on line N+1.
+sub _collect_ignore_lines ($class, $doc) {
+    my $comments = $doc->find('PPI::Token::Comment') || [];
+    my %ignored;
+
+    for my $comment (@$comments) {
+        next unless $comment->content =~ /\@typist-ignore/;
+        $ignored{ $comment->line_number + 1 } = 1;
+    }
+
+    \%ignored;
 }
 
 # ── Helpers ──────────────────────────────────────

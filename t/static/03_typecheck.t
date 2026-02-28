@@ -555,4 +555,27 @@ PERL
     like $errs->[0]{message}, qr/Argument 1.*add.*Int.*Str/, 'detects param type mismatch at inner call';
 };
 
+# ── @typist-ignore ────────────────────────────────
+
+subtest '@typist-ignore suppresses TypeMismatch' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+# @typist-ignore
+my $x = add("hello", "world");
+PERL
+    is scalar @$errs, 0, '@typist-ignore suppresses TypeMismatch';
+};
+
+subtest '@typist-ignore does not suppress other lines' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+# @typist-ignore
+my $x = add("hello", "world");
+my $y = add("oops", "bad");
+PERL
+    ok scalar @$errs >= 1, 'non-ignored line still reports TypeMismatch';
+};
+
 done_testing;

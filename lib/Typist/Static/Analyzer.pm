@@ -244,6 +244,7 @@ sub analyze ($class, $source, %opts) {
 # ── Diagnostic Conversion ───────────────────────
 
 sub _to_diagnostics ($errors, $default_file, $extracted) {
+    my $ignore = $extracted->{ignore_lines} // +{};
     my @diags;
 
     for my $err ($errors->errors) {
@@ -290,6 +291,9 @@ sub _to_diagnostics ($errors, $default_file, $extracted) {
                 }
             }
         }
+
+        # @typist-ignore: suppress diagnostics on ignored lines
+        next if $ignore->{$line};
 
         push @diags, +{
             line     => $line,

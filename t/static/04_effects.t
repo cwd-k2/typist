@@ -348,4 +348,20 @@ PERL
     is scalar @eff_diags, 0, 'declared pure builtin causes no effect error';
 };
 
+# ── @typist-ignore ────────────────────────────────
+
+subtest '@typist-ignore suppresses EffectMismatch' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package Ignore;
+use v5.40;
+sub helper ($x) { $x }
+sub main_fn :Type((Str) -> Str ! Console) ($s) {
+    # @typist-ignore
+    helper($s);
+}
+PERL
+    my @eff = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
+    is scalar @eff, 0, '@typist-ignore suppresses EffectMismatch';
+};
+
 done_testing;
