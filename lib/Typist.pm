@@ -5,6 +5,8 @@ our $VERSION = '0.01';
 our $RUNTIME     = $ENV{TYPIST_RUNTIME}     ? 1 : 0;
 our $CHECK_QUIET = $ENV{TYPIST_CHECK_QUIET} ? 1 : 0;
 
+my $NEWTYPE_RE = qr/\ATypist::Newtype::/;
+
 use Typist::Type;
 use Typist::Type::Atom;
 use Typist::Type::Param;
@@ -74,7 +76,7 @@ sub _newtype ($name, $expr) {
 
 sub _unwrap ($value) {
     die "Typist: unwrap — not a newtype value\n"
-        unless defined $value && ref $value && ref($value) =~ /\ATypist::Newtype::/;
+        unless defined $value && ref $value && ref($value) =~ $NEWTYPE_RE;
     $$value;
 }
 

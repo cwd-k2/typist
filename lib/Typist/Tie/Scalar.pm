@@ -6,10 +6,11 @@ use v5.40;
 
 sub TIESCALAR ($class, %args) {
     bless +{
-        type  => $args{type},
-        value => undef,
-        name  => $args{name} // '(anonymous)',
-        pkg   => $args{pkg}  // '(unknown)',
+        type    => $args{type},
+        value   => undef,
+        name    => $args{name} // '(anonymous)',
+        pkg     => $args{pkg}  // '(unknown)',
+        ref_key => $args{ref_key},
     }, $class;
 }
 
@@ -27,6 +28,13 @@ sub STORE ($self, $value) {
 
 sub FETCH ($self) {
     $self->{value};
+}
+
+sub DESTROY ($self) {
+    return if ${^GLOBAL_PHASE} eq 'DESTRUCT';
+    if (defined $self->{ref_key}) {
+        Typist::Registry->_unregister_variable($self->{ref_key});
+    }
 }
 
 1;

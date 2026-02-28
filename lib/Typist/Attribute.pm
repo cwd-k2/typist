@@ -43,9 +43,10 @@ sub _handle_scalar_attrs ($pkg, $ref, @attrs) {
 
             if ($Typist::RUNTIME) {
                 tie $$ref, 'Typist::Tie::Scalar',
-                    type => $type,
-                    name => "\$$ref",
-                    pkg  => $pkg;
+                    type    => $type,
+                    name    => "\$$ref",
+                    pkg     => $pkg,
+                    ref_key => "$ref";
             }
         } else {
             push @unhandled, $attr;
@@ -178,6 +179,14 @@ sub _handle_code_attrs ($pkg, $coderef, @attrs) {
 sub _wrap_sub ($coderef, $sig, $pkg, $name) {
     my $original = $coderef;
 
+    # Pre-parse bound expressions so the wrapper closure reuses cached types
+    my %cached_bounds;
+    for my $g ($sig->{generics}->@*) {
+        if ($g->{bound_expr}) {
+            $cached_bounds{$g->{name}} = Typist::Parser->parse($g->{bound_expr});
+        }
+    }
+
     my $wrapper = sub {
         my @args = @_;
         my %bindings;
@@ -198,9 +207,8 @@ sub _wrap_sub ($coderef, $sig, $pkg, $name) {
                     next unless exists $bindings{$var_name};
                     my $actual = $bindings{$var_name};
 
-                    # Structural bound check
-                    if ($g->{bound_expr}) {
-                        my $bound = Typist::Parser->parse($g->{bound_expr});
+                    # Structural bound check (using cached parse result)
+                    if (my $bound = $cached_bounds{$var_name}) {
                         unless (Typist::Subtype->is_subtype($actual, $bound)) {
                             die sprintf(
                                 "Typist: %s::%s — type variable '%s' bound to %s, but requires <: %s\n",
@@ -240,11 +248,18 @@ sub _wrap_sub ($coderef, $sig, $pkg, $name) {
             }
         }
 
-        # Call original — always capture return value for type checking
-        my $wantarray = wantarray;
-        my @result = $original->(@args);
+        # Call original — propagate the caller's context
+        my @result;
+        if (wantarray) {
+            @result = $original->(@args);
+        } elsif (defined wantarray) {
+            $result[0] = $original->(@args);
+        } else {
+            $original->(@args);
+            return;
+        }
 
-        # Check return type (regardless of calling context)
+        # Check return type
         if ($sig->{returns}) {
             my $rtype = $sig->{returns};
 
@@ -262,7 +277,7 @@ sub _wrap_sub ($coderef, $sig, $pkg, $name) {
             }
         }
 
-        $wantarray ? @result : $result[0];
+        wantarray ? @result : $result[0];
     };
 
     # Install wrapper into the symbol table, replacing the original

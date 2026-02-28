@@ -180,4 +180,38 @@ subtest 'Checker with clean registry produces no errors' => sub {
     ok !$err->has_errors, 'no errors for valid registry';
 };
 
+# ── Variable cleanup on scope exit ──────────────
+
+subtest 'Registry variable is unregistered when tied scalar leaves scope' => sub {
+    require Typist::Tie::Scalar;
+
+    Typist::Registry->reset;
+
+    {
+        my $x;
+        my $ref = \$x;
+        my $ref_key = "$ref";
+
+        # Register with the same key that Attribute would use
+        Typist::Registry->register_variable(+{
+            ref  => $ref,
+            type => Typist::Parser->parse('Int'),
+            pkg  => 'main',
+        });
+
+        tie $x, 'Typist::Tie::Scalar',
+            type    => Typist::Parser->parse('Int'),
+            name    => '$x',
+            pkg     => 'main',
+            ref_key => $ref_key;
+
+        my @vars = Typist::Registry->all_variables;
+        is scalar @vars, 1, 'variable registered while in scope';
+    }
+
+    # $x is out of scope — DESTROY should have fired
+    my @vars = Typist::Registry->all_variables;
+    is scalar @vars, 0, 'variable unregistered after scope exit';
+};
+
 done_testing;

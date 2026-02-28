@@ -92,7 +92,7 @@ subtest 'sub with return type violation' => sub {
         return "not a number";
     }
 
-    eval { bad_return(1) };
+    eval { my $r = bad_return(1) };
     like $@, qr/return expected Int/, 'caught return type violation';
 };
 
@@ -106,6 +106,47 @@ subtest 'typedef' => sub {
 
     eval { $name = [1] };
     like $@, qr/type error/, 'typedef Name rejected arrayref';
+};
+
+# ── Context propagation in _wrap_sub ────────────
+
+subtest 'wrapper propagates calling context' => sub {
+    # A context-sensitive function: returns different values
+    # depending on list vs scalar context
+    sub ctx_sensitive :Type((Int) -> Str) ($n) {
+        return wantarray ? "list" : "scalar";
+    }
+
+    my @list = ctx_sensitive(1);
+    is_deeply \@list, ["list"], 'list context propagated through wrapper';
+
+    my $scalar = ctx_sensitive(1);
+    is $scalar, "scalar", 'scalar context propagated through wrapper';
+};
+
+subtest 'wrapper void context does not die' => sub {
+    our $void_called = 0;
+
+    sub void_ok :Type((Int) -> Int) ($n) {
+        $void_called = 1;
+        return $n;
+    }
+
+    void_ok(42);
+    is $void_called, 1, 'void context call executed the original';
+};
+
+subtest 'wrapper context with wantarray-dependent return' => sub {
+    # Returns count in scalar context, elements in list context
+    sub multi_return :Type((Str) -> Str) ($s) {
+        return wantarray ? ($s, "${s}2") : $s;
+    }
+
+    my @items = multi_return("a");
+    is_deeply \@items, ["a", "a2"], 'list context returns multiple values';
+
+    my $single = multi_return("a");
+    is $single, "a", 'scalar context returns single value';
 };
 
 done_testing;
