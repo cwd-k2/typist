@@ -180,6 +180,36 @@ sub _rebuild_registry ($self) {
 
 # ── Query ────────────────────────────────────────
 
+sub find_definition ($self, $name) {
+    for my $path (sort keys $self->{files}->%*) {
+        my $info = $self->{files}{$path};
+
+        for my $section (qw(aliases newtypes effects typeclasses)) {
+            my $entries = $info->{$section} // next;
+            if (my $entry = $entries->{$name}) {
+                return +{
+                    uri  => "file://$path",
+                    line => ($entry->{line} // 1) - 1,
+                    col  => ($entry->{col}  // 1) - 1,
+                    name => $name,
+                };
+            }
+        }
+
+        # Functions
+        if (my $fn = ($info->{functions} // +{})->{$name}) {
+            return +{
+                uri  => "file://$path",
+                line => ($fn->{line} // 1) - 1,
+                col  => ($fn->{col}  // 1) - 1,
+                name => $name,
+            };
+        }
+    }
+
+    undef;
+}
+
 sub all_typedef_names ($self) {
     my %seen;
     for my $info (values $self->{files}->%*) {

@@ -283,42 +283,44 @@ sub _build_symbol_index ($extracted, $env = undef) {
 
     # Variables
     for my $var ($extracted->{variables}->@*) {
-        my $type = $var->{type_expr};
+        my $type     = $var->{type_expr};
+        my $inferred = 0;
 
         # For unannotated variables, show inferred type from env
         if (!$type && $env && $env->{variables}{$var->{name}}) {
-            $type = $env->{variables}{$var->{name}}->to_string . ' (inferred)';
+            $type     = $env->{variables}{$var->{name}}->to_string;
+            $inferred = 1;
         }
 
         next unless $type;
 
         push @symbols, +{
-            name => $var->{name},
-            kind => 'variable',
-            type => $type,
-            line => $var->{line},
-            col  => $var->{col},
+            name     => $var->{name},
+            kind     => 'variable',
+            type     => $type,
+            inferred => $inferred,
+            line     => $var->{line},
+            col      => $var->{col},
         };
     }
 
     # Functions
     for my $name (sort keys $extracted->{functions}->%*) {
         my $fn = $extracted->{functions}{$name};
-        my $sig = join(', ', $fn->{params_expr}->@*);
-        $sig .= ' -> ' . $fn->{returns_expr} if $fn->{returns_expr};
 
         # Unannotated functions: show !Eff(*) to indicate any-effect
         my $eff = $fn->{eff_expr};
         $eff = '*' if $fn->{unannotated};
 
         push @symbols, +{
-            name     => $name,
-            kind     => 'function',
-            type     => $sig,
-            generics => $fn->{generics},
-            eff_expr => $eff,
-            line     => $fn->{line},
-            col      => $fn->{col},
+            name        => $name,
+            kind        => 'function',
+            params_expr => $fn->{params_expr},
+            returns_expr => $fn->{returns_expr},
+            generics    => $fn->{generics},
+            eff_expr    => $eff,
+            line        => $fn->{line},
+            col         => $fn->{col},
         };
     }
 

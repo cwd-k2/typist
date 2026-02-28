@@ -19,8 +19,12 @@ my %DISPATCH = (
     'textDocument/didChange'  => \&_handle_did_change,
     'textDocument/didSave'    => \&_handle_did_save,
     'textDocument/didClose'   => \&_handle_did_close,
-    'textDocument/hover'      => \&_handle_hover,
-    'textDocument/completion' => \&_handle_completion,
+    'textDocument/hover'          => \&_handle_hover,
+    'textDocument/completion'     => \&_handle_completion,
+    'textDocument/documentSymbol' => \&_handle_document_symbol,
+    'textDocument/definition'     => \&_handle_definition,
+    'textDocument/signatureHelp'  => \&_handle_signature_help,
+    'textDocument/inlayHint'      => \&_handle_inlay_hint,
 );
 
 # ── Constructor ──────────────────────────────────
@@ -104,7 +108,13 @@ sub _handle_initialize ($self, $params) {
                 change    => 1,  # Full content sync
                 save      => +{ includeText => \1 },
             },
-            hoverProvider      => \1,
+            hoverProvider          => \1,
+            documentSymbolProvider => \1,
+            definitionProvider     => \1,
+            signatureHelpProvider  => +{
+                triggerCharacters => ['(', ','],
+            },
+            inlayHintProvider      => \1,
             completionProvider => +{
                 triggerCharacters => ['(', '[', ',', '|', '&'],
             },
@@ -229,6 +239,107 @@ sub _handle_completion ($self, $params) {
     my $items = Typist::LSP::Completion->complete($ctx, \@typedefs, \@effects, \@typeclasses);
 
     +{ items => $items };
+}
+
+# ── Inlay Hint Handler ──────────────────────────
+
+sub _handle_inlay_hint ($self, $params) {
+    my $uri   = $params->{textDocument}{uri};
+    my $doc   = $self->{documents}{$uri} // return [];
+    my $range = $params->{range};
+
+    $doc->analyze(workspace_registry => $self->{workspace} && $self->{workspace}->registry);
+
+    my $start = $range->{start}{line};
+    my $end   = $range->{end}{line};
+
+    $doc->inlay_hints($start, $end);
+}
+
+# ── Signature Help Handler ──────────────────────
+
+sub _handle_signature_help ($self, $params) {
+    my $uri  = $params->{textDocument}{uri};
+    my $doc  = $self->{documents}{$uri} // return undef;
+    my $pos  = $params->{position};
+    my $line = $pos->{line};
+    my $col  = $pos->{character};
+
+    $doc->analyze(workspace_registry => $self->{workspace} && $self->{workspace}->registry);
+
+    my $ctx = $doc->signature_context($line, $col) // return undef;
+    my $sym = $doc->find_function_symbol($ctx->{name}) // return undef;
+
+    my $params_expr  = $sym->{params_expr} // [];
+    my $returns_expr = $sym->{returns_expr};
+
+    # Build label: add(Int, Int) -> Int
+    my $label = "$sym->{name}(" . join(', ', @$params_expr) . ')';
+    $label .= " -> $returns_expr" if $returns_expr;
+
+    # Build parameter labels
+    my @param_labels = map { +{ label => $_ } } @$params_expr;
+
+    +{
+        signatures => [+{
+            label      => $label,
+            parameters => \@param_labels,
+        }],
+        activeSignature => 0,
+        activeParameter => $ctx->{active_parameter},
+    };
+}
+
+# ── Definition Handler ──────────────────────────
+
+sub _handle_definition ($self, $params) {
+    my $uri  = $params->{textDocument}{uri};
+    my $doc  = $self->{documents}{$uri} // return undef;
+    my $pos  = $params->{position};
+    my $line = $pos->{line};
+    my $col  = $pos->{character};
+
+    $doc->analyze(workspace_registry => $self->{workspace} && $self->{workspace}->registry);
+
+    # Try same-file definition first
+    if (my $def = $doc->definition_at($line, $col)) {
+        return +{
+            uri   => $def->{uri},
+            range => +{
+                start => +{ line => $def->{line}, character => $def->{col} },
+                end   => +{ line => $def->{line}, character => $def->{col} + length($def->{name}) },
+            },
+        };
+    }
+
+    # Fallback: workspace cross-file definition
+    if ($self->{workspace}) {
+        my $word = $doc->word_at($line, $col);
+        if ($word) {
+            (my $bare = $word) =~ s/^[\$\@%]//;
+            if (my $def = $self->{workspace}->find_definition($bare)) {
+                return +{
+                    uri   => $def->{uri},
+                    range => +{
+                        start => +{ line => $def->{line}, character => $def->{col} },
+                        end   => +{ line => $def->{line}, character => $def->{col} + length($def->{name}) },
+                    },
+                };
+            }
+        }
+    }
+
+    undef;
+}
+
+# ── Document Symbol Handler ────────────────────
+
+sub _handle_document_symbol ($self, $params) {
+    my $uri = $params->{textDocument}{uri};
+    my $doc = $self->{documents}{$uri} // return [];
+
+    $doc->analyze(workspace_registry => $self->{workspace} && $self->{workspace}->registry);
+    $doc->document_symbols;
 }
 
 # ── Diagnostics Publishing ──────────────────────

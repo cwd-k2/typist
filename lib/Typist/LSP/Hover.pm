@@ -28,7 +28,9 @@ sub _format ($class, $sym) {
     }
 
     if ($kind eq 'variable') {
-        return "```perl\n$sym->{name}: $sym->{type}\n```";
+        my $display = "$sym->{name}: $sym->{type}";
+        $display .= ' (inferred)' if $sym->{inferred};
+        return "```perl\n$display\n```";
     }
 
     if ($kind eq 'function') {
@@ -39,7 +41,14 @@ sub _format ($class, $sym) {
             $sig .= '<' . join(', ', @{$sym->{generics}}) . '>';
         }
 
-        $sig .= "($sym->{type})";
+        # Params in parentheses
+        my $params = join(', ', ($sym->{params_expr} // [])->@*);
+        $sig .= "($params)";
+
+        # Return type after closing paren
+        if ($sym->{returns_expr}) {
+            $sig .= " -> $sym->{returns_expr}";
+        }
 
         # Effects
         if ($sym->{eff_expr}) {

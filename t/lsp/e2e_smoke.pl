@@ -45,7 +45,7 @@ sub send_msg ($fh, $msg) {
 
 my $pass = 0;
 my $fail = 0;
-my $total = 7;
+my $total = 10;
 
 sub ok_test ($ok, $desc) {
     if ($ok) {
@@ -170,20 +170,90 @@ ok_test(
     'completion returns type names',
 );
 
-# ── 6. Unknown method — -32601 error ────────────
+# ── 6. Document Symbol ──────────────────────────
 
-say "# 6. unknown method";
-send_msg($to_srv, +{ jsonrpc => '2.0', id => 4, method => 'bogus/method', params => +{} });
+say "# 6. documentSymbol";
+send_msg($to_srv, +{
+    jsonrpc => '2.0', id => 6,
+    method  => 'textDocument/documentSymbol',
+    params  => +{
+        textDocument => +{ uri => 'file:///e2e/clean.pm' },
+    },
+});
+my $doc_sym = read_response($from_srv);
+ok_test(
+    $doc_sym && $doc_sym->{id} == 6
+      && ref $doc_sym->{result} eq 'ARRAY'
+      && (grep { $_->{name} eq 'inc' } @{$doc_sym->{result}}),
+    'documentSymbol returns function symbol',
+);
+
+# ── 7. Definition ───────────────────────────────
+
+say "# 7. definition";
+send_msg($to_srv, +{
+    jsonrpc => '2.0', id => 7,
+    method  => 'textDocument/definition',
+    params  => +{
+        textDocument => +{ uri => 'file:///e2e/clean.pm' },
+        position     => +{ line => 1, character => 5 },  # on 'inc'
+    },
+});
+my $defn = read_response($from_srv);
+ok_test(
+    $defn && $defn->{id} == 7
+      && $defn->{result}
+      && $defn->{result}{uri} eq 'file:///e2e/clean.pm',
+    'definition returns location in same file',
+);
+
+# ── 8. Signature Help ──────────────────────────
+
+say "# 8. signatureHelp";
+send_msg($to_srv, +{
+    jsonrpc => '2.0',
+    method  => 'textDocument/didOpen',
+    params  => +{
+        textDocument => +{
+            uri     => 'file:///e2e/sighelp.pm',
+            text    => "use v5.40;\nsub add :Type((Int, Int) -> Int) (\$a, \$b) { \$a + \$b }\nadd(\n",
+            version => 1,
+        },
+    },
+});
+read_response($from_srv);  # consume diagnostics
+
+send_msg($to_srv, +{
+    jsonrpc => '2.0', id => 8,
+    method  => 'textDocument/signatureHelp',
+    params  => +{
+        textDocument => +{ uri => 'file:///e2e/sighelp.pm' },
+        position     => +{ line => 2, character => 4 },
+    },
+});
+my $sighelp = read_response($from_srv);
+ok_test(
+    $sighelp && $sighelp->{id} == 8
+      && $sighelp->{result}
+      && $sighelp->{result}{signatures}
+      && @{$sighelp->{result}{signatures}},
+    'signatureHelp returns signature info',
+);
+
+# ── 9. Unknown method — -32601 error ────────────
+
+say "# 9. unknown method";
+send_msg($to_srv, +{ jsonrpc => '2.0', id => 9, method => 'bogus/method', params => +{} });
 my $err = read_response($from_srv);
 ok_test(
-    $err && $err->{id} == 4 && $err->{error} && $err->{error}{code} == -32601,
+    $err && $err->{id} == 9 && $err->{error} && $err->{error}{code} == -32601,
     'unknown method returns -32601',
 );
 
-# ── 7. Shutdown + Exit ──────────────────────────
+# ── 10. Shutdown + Exit ─────────────────────────
 
-say "# 7. shutdown + exit";
-send_msg($to_srv, +{ jsonrpc => '2.0', id => 5, method => 'shutdown' });
+say "# 10. shutdown + exit";
+send_msg($to_srv, +{ jsonrpc => '2.0', id => 10, method => 'shutdown' });
 my $shut = read_response($from_srv);
 send_msg($to_srv, +{ jsonrpc => '2.0', method => 'exit' });
 
@@ -191,7 +261,7 @@ close $to_srv;
 waitpid($pid, 0);
 my $exit_code = $? >> 8;
 ok_test(
-    $shut && $shut->{id} == 5 && $exit_code == 0,
+    $shut && $shut->{id} == 10 && $exit_code == 0,
     'shutdown + exit with code 0',
 );
 

@@ -25,8 +25,7 @@ PERL
     my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
     ok $hover, 'got hover response';
     ok $hover->{result}, 'hover has result';
-    like $hover->{result}{contents}{value}, qr/sub add/, 'contains function name';
-    like $hover->{result}{contents}{value}, qr/Int/, 'contains type info';
+    like $hover->{result}{contents}{value}, qr/sub add\(Int, Int\) -> Int/, 'shows sub add(Int, Int) -> Int';
 };
 
 # ── Hover on typedef ────────────────────────────
@@ -176,8 +175,7 @@ PERL
     my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
     ok $hover, 'got hover response';
     ok $hover->{result}, 'hover has result';
-    like $hover->{result}{contents}{value}, qr/<T>/, 'contains generics';
-    like $hover->{result}{contents}{value}, qr/!Eff\(Console\)/, 'contains effect annotation';
+    like $hover->{result}{contents}{value}, qr/sub fetch<T>\(Str\) -> T !Eff\(Console\)/, 'shows sub fetch<T>(Str) -> T !Eff(Console)';
 };
 
 # ── Hover on unannotated function shows Eff(*) ──
@@ -228,8 +226,7 @@ PERL
     my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
     ok $hover, 'got hover response';
     ok $hover->{result}, 'hover has result';
-    like $hover->{result}{contents}{value}, qr/\$result/, 'contains variable name';
-    like $hover->{result}{contents}{value}, qr/Str/, 'shows inferred type Str';
+    like $hover->{result}{contents}{value}, qr/\$result: Str \(inferred\)/, 'shows inferred type with flag';
 };
 
 # ── Hover on typeclass with superclass ──────────
