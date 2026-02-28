@@ -74,6 +74,9 @@ Runtime (opt-in)| Generic instantiation      | die           | -runtime flag
 - CHECK phase runs both structural checks (Checker) and full static analysis (Analyzer with TypeChecker + EffectChecker) per loaded package. Diagnostics surface as `warn` → perlnavigator picks these up. Suppress with `TYPIST_CHECK_QUIET=1` when using typist-lsp.
 - Gradual typing: fully annotated → all checks enforced; partially annotated (some attrs, no `:Eff`) → pure, return type unknown if no `:Returns`; completely unannotated → `(Any...) -> Any ! Eff(*)`, type checks skip, effect checks flag.
 - `datatype Shape => Circle => '(Int)', Rectangle => '(Int, Int)'` defines ADTs (tagged unions). Constructors are installed into the caller's namespace. Parameterized ADTs via `datatype 'Option[T]' => Some => '(T)', None => '()'` — type params are promoted from aliases to Var objects, constructors infer type arguments via `Inference->infer_value`, subtyping is covariant in type arguments.
+- `enum Color => qw(Red Green Blue)` defines nullary-only ADTs (pure enumerations). Sugar for `datatype` with all zero-argument variants.
+- `match $value, Tag => sub (...) { ... }, _ => sub { ... }` dispatches on `_tag`, splats `_values` into handlers. `_` is the optional fallback arm. Emits exhaustiveness warnings for registered ADTs when arms are incomplete and no fallback is given.
+- Variadic function types: `(Int, ...Str) -> Void` — rest parameter with `...Type` syntax. Arity checking uses minimum args for variadic functions.
 - `perform Effect => op => @args` dispatches an effect operation to the nearest handler on the runtime stack.
 - `handle { BODY } Effect => { op => sub { ... } }` installs scoped effect handlers, executes BODY, and guarantees cleanup (even on exception).
 - Prelude: builtin functions are registered under the CORE:: namespace by `Typist::Prelude->install`. User `declare` statements override prelude entries.
