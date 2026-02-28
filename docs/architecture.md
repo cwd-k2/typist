@@ -31,18 +31,22 @@ Typist operates across three phases of a Perl program's lifecycle:
 |  use Typist;                             |
 |    -> import(): register package,        |
 |       install attribute handlers,        |
-|       export typedef/newtype/effect/...  |
+|       export typedef/newtype/effect/     |
+|       datatype/perform/handle/...        |
 |                                          |
 |  :Type(...) attributes processed:        |
 |    -> Parser->parse_annotation()         |
 |    -> Registry->register_function()      |
+|    -> Registry->register_method()        |
 |    -> [runtime only] Attribute->_wrap()  |
 |                                          |
-|  typedef/newtype/effect/typeclass:       |
+|  typedef/newtype/effect/typeclass/       |
+|  datatype:                               |
 |    -> Registry->define_alias()           |
 |    -> Registry->register_newtype()       |
 |    -> Registry->register_effect()        |
 |    -> Registry->register_typeclass()     |
+|    -> Registry->register_datatype()      |
 +==========================================+
      |
      v
@@ -60,9 +64,14 @@ Typist operates across three phases of a Perl program's lifecycle:
 |     - require Static::Analyzer (lazy)    |
 |     - For each registered package:       |
 |       - Read source file                 |
+|       - Install Prelude (CORE defaults)  |
 |       - PPI::Document->new()             |
 |       - Extractor->extract()             |
+|       - Register methods                 |
+|       - Register datatypes               |
 |       - TypeChecker->analyze()           |
+|         (assignments, arity, generics,   |
+|          methods, narrowing, branches)   |
 |       - EffectChecker->analyze()         |
 |  4. warn Error::Global->report()         |
 +==========================================+
@@ -81,7 +90,10 @@ Typist operates across three phases of a Perl program's lifecycle:
 |                                          |
 |  Always active:                          |
 |    Newtype constructors validate.        |
+|    Datatype constructors validate.       |
 |    unwrap() validates blessed ref.       |
+|    perform() dispatches effect ops.      |
+|    handle { } scoped handler blocks.     |
 +==========================================+
 ```
 
@@ -105,6 +117,9 @@ MODIFY_CODE_ATTRIBUTES callback (Attribute.pm)
      |     +-> Recursive descent: Func([Atom(Int), Atom(Int)], Atom(Int))
      |     +-> Return: { type => Func(...), generics_raw => [] }
      |
+     +-> Detect method: first param $self → register_method
+     |   Detect function: otherwise → register_function
+     |
      +-> Registry->register_function('main', 'add', {
      |       params  => [Atom(Int), Atom(Int)],
      |       returns => Atom(Int),
@@ -122,7 +137,7 @@ Attribute returns () — accepted
 ### The CHECK Phase Pipeline
 
 ```
-CHECK block fires (Typist.pm:189)
+CHECK block fires (Typist.pm)
      |
      +-> Error::Global->reset()
      |
@@ -143,31 +158,47 @@ CHECK block fires (Typist.pm:189)
                  |
                  +-> Analyzer->analyze($source, workspace_registry => ...)
                        |
-                       +--[ Registration Phase ]--+
-                       |  Merge workspace registry |
-                       |  Register typedefs        |
-                       |  Register newtypes        |
-                       |  Register effects         |
-                       |  Register typeclasses     |
-                       |  Register declares        |
-                       |  Register functions       |
-                       +--------------------------+
-                       |
-                       +--[ Extraction Phase ]-----+
-                       |  Extractor->extract($src)  |
-                       |    PPI::Document->new(\$s) |
-                       |    Extract: typedefs,       |
-                       |      newtypes, effects,     |
-                       |      typeclasses, declares, |
-                       |      variables, functions,  |
-                       |      ignore lines           |
-                       +---------------------------+
-                       |
-                       +--[ Check Phase ]-----------+
-                       |  Checker->analyze()         |
-                       |  TypeChecker->analyze()     |
-                       |  EffectChecker->analyze()   |
+                       +--[ Prelude Phase ]--------+
+                       |  Prelude->install(registry) |
+                       |    Register IO, Exn effects |
+                       |    Register CORE:: builtins |
                        +----------------------------+
+                       |
+                       +--[ Extraction Phase ]------+
+                       |  Extractor->extract($src)   |
+                       |    PPI::Document->new(\$s)  |
+                       |    Extract: aliases,         |
+                       |      newtypes, datatypes,    |
+                       |      effects, typeclasses,   |
+                       |      declares, variables,    |
+                       |      functions (with method  |
+                       |      detection), ignore lines|
+                       +----------------------------+
+                       |
+                       +--[ Registration Phase ]----+
+                       |  Register typedefs          |
+                       |  Register newtypes          |
+                       |  Register datatypes         |
+                       |  Register effects           |
+                       |  Register typeclasses       |
+                       |  Register declares          |
+                       |  Register functions         |
+                       |  Register methods           |
+                       +----------------------------+
+                       |
+                       +--[ Check Phase ]------------+
+                       |  Checker->analyze()          |
+                       |  TypeChecker->analyze()      |
+                       |    _check_variable_init      |
+                       |    _check_assignments        |
+                       |    _check_call_sites         |
+                       |      (arity, generic unify,  |
+                       |       method calls, CORE)    |
+                       |    _check_return_types       |
+                       |      (explicit + implicit    |
+                       |       branch analysis)       |
+                       |  EffectChecker->analyze()    |
+                       +-----------------------------+
                        |
                        +-> Return { diagnostics, symbols, extracted, registry }
 ```
@@ -187,11 +218,11 @@ CHECK block fires (Typist.pm:189)
      |                                 |
    (pool)                          (effects)
                                        |
-     +-------+-------+-------+-------+-------+
-     |       |       |       |       |       |
-   Alias  Literal Newtype   Row     Eff    Fold
-                              |       |
-                          (labels)  (wraps Row)
+     +-------+-------+-------+-------+-------+-------+
+     |       |       |       |       |       |       |
+   Alias  Literal Newtype   Data    Row     Eff    Fold
+                              |       |       |
+                          (variants)(labels)(wraps Row)
 ```
 
 ### Module Loading DAG
@@ -199,13 +230,16 @@ CHECK block fires (Typist.pm:189)
 ```
 Typist.pm (entry point)
   |
-  +-- Type::* (13 modules)          Always loaded
+  +-- Type::* (15 modules)          Always loaded
+  |     +-- Type::Data              Tagged unions (ADT)
+  |     +-- Type::Fold              map_type / walk traversals
   +-- Effect, TypeClass             Always loaded
   +-- Kind, KindChecker             Always loaded
   +-- Parser                        Always loaded
   +-- Registry                      Always loaded
   +-- Subtype                       Always loaded
   +-- Inference                     Always loaded
+  +-- Handler                       Always loaded (effect handler stack)
   +-- Attribute                     Always loaded
   |     +-- B (Perl introspection)
   |     +-- Transform
@@ -216,11 +250,15 @@ Typist.pm (entry point)
   +-- DSL                           Always loaded
   |
   +-- Static::Analyzer              LAZY (require in CHECK)
-        +-- Static::Extractor
-        |     +-- PPI               <-- Heavy dependency, lazy
-        +-- Static::TypeChecker
-        |     +-- Static::Infer
-        +-- Static::EffectChecker
+  |     +-- Prelude                 Builtin type annotations
+  |     +-- Static::Extractor
+  |     |     +-- PPI               <-- Heavy dependency, lazy
+  |     +-- Static::TypeChecker
+  |     |     +-- Static::Infer
+  |     |     +-- Static::Unify     Generic instantiation
+  |     +-- Static::EffectChecker
+  |
+  +-- Prelude                       LAZY (via Analyzer, Workspace)
 ```
 
 ### LSP Module Graph
@@ -232,6 +270,7 @@ Typist::LSP (entry point, bin/typist-lsp)
   |     +-- LSP::Transport        JSON-RPC framing
   |     +-- LSP::Document         Per-file analysis cache
   |     +-- LSP::Workspace        Cross-file registry
+  |     |     +-- Prelude         Builtin annotations for workspace
   |     +-- LSP::Hover            Type signature display
   |     +-- LSP::Completion       Type name suggestions
   |     +-- LSP::Logger           Configurable logging
@@ -287,6 +326,7 @@ substitute(\%)  Type            Apply binding map, return new type
 
     Alias(name)        typedef references — lazy resolution
     Newtype(name,T)    Nominal wrappers — name-based identity
+    Data(name,vars)    Tagged unions — nominal ADT with constructors
     Literal(val,base)  42:Int, "hi":Str — singleton types
 
   Effect:
@@ -315,6 +355,7 @@ Union (super)         S <: T|U iff S<:T | S<:U    Any member subtype
 Intersection (sub)    T&U <: S iff T<:S | U<:S    Any member subtype
 Intersection (super)  S <: T&U iff S<:T & S<:U    All members subtype
 Newtype               N <: N iff same name        Nominal identity
+Data                  D <: D iff same name        Nominal identity
 Literal-Literal       L1 <: L2 iff val= & base<:  Value + hierarchy
 Literal-Atom          L <: A iff L.base <: A      Promotion
 Atom                  A <: B iff A in ancestors(B) %PARENT chain
@@ -338,19 +379,26 @@ Analyzer.analyze($source, workspace_registry => $ws_reg)
   +-- 1. Merge workspace registry
   |       $registry->merge($ws_reg)
   |
+  +-- 1b. Install Prelude
+  |       Prelude->install($registry)
+  |         +-> Register IO, Exn effect labels
+  |         +-> Register CORE:: builtin annotations
+  |
   +-- 2. Extract from PPI
   |       Extractor->extract($source)
-  |         -> { typedefs, newtypes, effects, typeclasses,
-  |              declares, variables, functions, ignore_lines,
-  |              package, ppi_doc }
+  |         -> { aliases, newtypes, datatypes, effects, typeclasses,
+  |              declares, variables, functions (with method detection),
+  |              ignore_lines, package, ppi_doc }
   |
   +-- 3. Register extracted data into local registry
   |       for each typedef:   registry->define_alias(name, expr)
   |       for each newtype:   registry->register_newtype(name, type)
+  |       for each datatype:  registry->register_datatype(name, type)
   |       for each effect:    registry->register_effect(name, eff)
   |       for each typeclass: registry->register_typeclass(name, def)
   |       for each declare:   registry->register_function(pkg, name, sig)
   |       for each function:  registry->register_function(pkg, name, sig)
+  |       for each method:    registry->register_method(pkg, name, sig)
   |
   +-- 4. Structural checks
   |       Checker->new(registry => $registry, errors => $errors)
@@ -401,12 +449,23 @@ TypeChecker->analyze()
   |       if !Subtype->is_subtype(inferred, declared):
   |         collect TypeMismatch
   |
+  +-- _check_assignments()
+  |     |
+  |     for each '=' operator in document:
+  |       skip unless annotated variable, skip variable declarations
+  |       inferred = Infer->infer_expr(RHS, env)
+  |       if !Subtype->is_subtype(inferred, declared):
+  |         collect TypeMismatch
+  |
   +-- _check_call_sites()
   |     |
   |     for each PPI::Token::Word in document:
+  |       if preceded by ->: delegate to _check_method_call
+  |       resolve: local function / cross-package / CORE builtin
   |       skip if not a function call (no following List)
-  |       skip if generic function
-  |       env = _env_for_node(word)  # scoped env with param bindings
+  |       arity check (ArityMismatch if wrong count)
+  |       if generic: delegate to _check_generic_call (Unify)
+  |       env = _env_for_node(word)  # scoped + narrowed
   |       for each arg up to min(params, args):
   |         inferred = Infer->infer_expr(arg, env)
   |         if !Subtype->is_subtype(inferred, param_type):
@@ -415,10 +474,9 @@ TypeChecker->analyze()
   +-- _check_return_types()
         |
         for each function with returns_expr and block:
-          for each return statement + implicit return:
-            inferred = Infer->infer_expr(return_value, env)
-            if !Subtype->is_subtype(inferred, declared_return):
-              collect TypeMismatch
+          explicit returns: find 'return' keywords, check each
+          implicit return: _check_implicit_return_of_stmt
+            recursively walks if/else/while/for branches
 ```
 
 ### EffectChecker Internal Flow
@@ -436,10 +494,10 @@ EffectChecker->analyze()
     |       skip keywords, sub names, method calls, hash keys
     |       |
     |       if builtin (say, print, die, ...):
-    |         check CORE registry for declare'd type
-    |         if declared with effects: use those
-    |         if declared pure: skip
-    |         if no declaration: unannotated => 1
+    |         check CORE registry (Prelude or declare):
+    |           declared with effects → use those
+    |           declared pure → skip
+    |           no declaration → unannotated => 1
     |       |
     |       if local/cross-package function with arg list:
     |         lookup in registry
@@ -462,20 +520,26 @@ EffectChecker->analyze()
 Expression Form              Inferred Type         Module
 ───────────────────────────  ────────────────────  ─────────────
 42, 3.14, 0, 1               Literal(val, base)    Infer._infer_number
-"hello", 'world'             Literal(val, 'Str')   Infer (line 23-26)
-<<HEREDOC                    Atom('Str')           Infer (line 28)
-undef                        Atom('Undef')         Infer (line 32-34)
+"hello", 'world'             Literal(val, 'Str')   Infer
+<<HEREDOC                    Atom('Str')           Infer
+undef                        Atom('Undef')         Infer
 [1, 2, 3]                   Param('ArrayRef', T)  Infer._infer_array
 +{ k => v }                  Param('HashRef',S,T)  Infer._infer_hash
-$variable                    env lookup            Infer (line 47-50)
+$variable                    env lookup            Infer
+$arr->[0]                    ArrayRef[T] → T       Infer._infer_subscript
+$h->{k}                      HashRef → V / Struct  Infer._infer_subscript
 func(args)                   env.functions{func}   Infer._infer_call
+CORE::name(args)             Prelude returns type  Infer._infer_call
+$a + $b                      Atom('Num')           Infer._infer_binop
+$a . $b                      Atom('Str')           Infer._infer_binop
+$a == $b                     Atom('Bool')          Infer._infer_binop
+!$x                          Atom('Bool')          Infer._infer_operator
+$x ? $a : $b                 LUB or Union          Infer._infer_ternary
 
 NOT SUPPORTED:
-$a + $b                      -                     Arithmetic
-$x ? $a : $b                 -                     Ternary
-$arr->[0]                    -                     Subscript
-$obj->method()               -                     Method call
 "Hello, $name"               -                     Interpolation
+$x =~ /pattern/              -                     Regex
+@{$arr}, %{$hash}            -                     Dereference
 ```
 
 ---
@@ -509,7 +573,9 @@ Registry
   +-- {resolving}   { "Name" => 1 }                            # Cycle guard
   +-- {variables}   { "$ref_addr" => { type => ..., name => ... } }
   +-- {functions}   { "main::add" => { params => [...], returns => ..., effects => ... } }
+  +-- {methods}     { "Pkg::name" => { params => [...], returns => ..., ... } }
   +-- {newtypes}    { "UserId" => Newtype("UserId", Atom(Int)) }
+  +-- {datatypes}   { "Shape" => Data("Shape", { Circle => [...], ... }) }
   +-- {typeclasses} { "Show" => TypeClass::Def { ... } }
   +-- {instances}   { "Show" => [TypeClass::Inst { type_expr => "Int", ... }, ...] }
   +-- {effects}     { "Console" => Effect { name => "Console", operations => {...} } }
@@ -523,8 +589,9 @@ Workspace Registry (shared)     Local Registry (per-file)
       |   merge($ws_reg)              |
       +------------------------------>+
       |   copies: aliases, newtypes,  |
-      |   effects, typeclasses,       |
-      |   functions                   |
+      |   datatypes, effects,         |
+      |   typeclasses, functions,     |
+      |   methods, instances          |
       |   clears: resolved (cache)    |
                                       |
                                  Analyzer uses local
@@ -562,6 +629,7 @@ Severity 1 (Critical):
 
 Severity 2 (Error):
   TypeMismatch         Value/argument type doesn't match declaration
+  ArityMismatch        Wrong number of arguments at call site
   TypeError            General type error
   ResolveError         Cannot resolve type reference
   UnknownTypeClass     Referenced typeclass not found
@@ -614,16 +682,21 @@ Editor
 ```
 Workspace.scan(root_path)
   |
+  +-- Install Prelude into registry
+  |
   +-- File::Find all *.pm under root
   |
   +-- for each file:
   |     Extractor->extract(source)
-  |     _register_file_types(pkg, extracted, registry)
+  |     _register_file_types(extracted)
   |       +-- register aliases
   |       +-- register newtypes
+  |       +-- register datatypes
   |       +-- register effects
   |       +-- register typeclasses
+  |       +-- register declares
   |       +-- register functions (with parsed types)
+  |       +-- register methods
   |     Store extracted data for rebuild
   |
   +-- Workspace.update_file(uri, source)  [on save]
@@ -703,6 +776,28 @@ Wrapped:
   }
 ```
 
+### Effect Handler Stack (Typist::Handler)
+
+```
+@HANDLER_STACK: LIFO stack of { effect => name, handlers => { op => sub } }
+
+push_handler(effect, handlers):
+  push onto stack
+
+find_handler(effect):
+  reverse search stack for matching effect name
+
+perform(effect, op, @args):
+  find_handler(effect) -> call handlers->{op}->(@args)
+  die if no handler found
+
+handle { BODY } Effect => +{ ... }:
+  push handlers
+  eval { BODY }
+  pop handlers (even on exception)
+  re-raise if exception
+```
+
 ### Cost Summary
 
 ```
@@ -714,6 +809,8 @@ Per function call   0              N * contains() + 1 * contains()
 Per generic call    0              N * infer_value + instantiate +
                                    N * parse(bound) + N * is_subtype
 Newtype construct   contains()     contains()         (always active)
+Datatype construct  arity+types    arity+types        (always active)
+perform/handle      stack ops      stack ops          (always active)
 ```
 
 ---
@@ -724,16 +821,19 @@ Newtype construct   contains()     contains()         (always active)
 
 ```
 EAGER (loaded with `use Typist`):
-  34 modules — all Type::*, Parser, Registry, Subtype, Attribute, etc.
+  36 modules — all Type::* (including Data, Fold), Parser, Registry,
+  Subtype, Attribute, Handler, etc.
   These are needed for compile-time attribute processing.
 
 LAZY (loaded only when needed):
   PPI             — via require Static::Analyzer in CHECK phase
+  Prelude         — via use in Analyzer/Workspace
   Static::Analyzer — via require in _check_analyze()
   Static::Extractor — via use in Analyzer (transitively lazy)
   Static::TypeChecker — via use in Analyzer
   Static::EffectChecker — via use in Analyzer
   Static::Infer   — via use in TypeChecker
+  Static::Unify   — via use in TypeChecker
 
 NEVER (unless LSP):
   LSP::*          — only loaded by bin/typist-lsp
@@ -744,7 +844,7 @@ NEVER (unless LSP):
 
 PPI is the heaviest dependency (~1MB of code, creates full ASTs). By loading it lazily via `require` inside the CHECK block, programs that use `TYPIST_CHECK_QUIET=1` (when the LSP provides diagnostics instead) avoid the PPI startup cost entirely.
 
-The 34 eagerly-loaded modules are lightweight: they define type node classes (small hashref-based objects), the parser (pure Perl recursive descent), and the registry (hash-based storage). This is the minimum needed to process `:Type()` attributes at compile time.
+The eagerly-loaded modules are lightweight: they define type node classes (small hashref-based objects), the parser (pure Perl recursive descent), and the registry (hash-based storage). This is the minimum needed to process `:Type()` attributes at compile time.
 
 ---
 
@@ -757,5 +857,6 @@ The 34 eagerly-loaded modules are lightweight: they define type node classes (sm
 5. **Lazy heavy deps**: PPI loaded only in CHECK phase, never at runtime
 6. **Dual-mode Registry**: class methods for singleton (CHECK), instance methods for LSP
 7. **Gradual typing**: annotation density determines check strictness; `Any` bypasses checks
-8. **Boundary enforcement**: newtype constructors always validate, independent of mode
+8. **Boundary enforcement**: newtype and datatype constructors always validate, independent of mode
 9. **No source filters**: standard Perl attributes + PPI parsing for static analysis
+10. **Effect handlers**: `perform`/`handle` provide dynamic-scope effect dispatch at runtime

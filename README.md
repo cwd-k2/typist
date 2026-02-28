@@ -75,23 +75,33 @@ sub with_log :Type(<r: Row>(Str) -> Str !Eff(Log | r)) ($msg) {
 | Literal types | `42`, `"hello"` | Singleton types for specific values |
 | Type aliases | `typedef` | `typedef Price => Int` |
 | Nominal types | `newtype` / `unwrap` | `newtype UserId => Int` |
+| Algebraic data types | `datatype` | Tagged unions with auto-generated constructors |
 | Recursive types | Self-referential `typedef` | `typedef Json => Str \| Int \| ArrayRef[Json]` |
 | Generics | `<T>`, `<T, U>` | `<T>(ArrayRef[T]) -> T` |
 | Bounded quantification | `<T: Bound>` | `<T: Num>(T, T) -> T` |
 | Type classes | `typeclass` / `instance` | Ad-hoc polymorphism with dispatch |
-| Higher-kinded types | `F: * -> *` | Type constructor abstraction |
+| Multi-parameter type classes | `typeclass Name => 'T, U'` | `Convertible T, U` with multiple type variables |
+| Higher-kinded types | `F: * -> *` | Type constructor abstraction with `F[T]` application |
 | Algebraic effects | `effect` / `!Eff(...)` | `!Eff(Console \| Log)` |
 | Row polymorphism | `<r: Row>` / `Eff(E \| r)` | Effect row extension |
+| Effect handlers | `perform` / `handle` | Optional explicit effect dispatch and scoping |
 
 ### Analysis
 
 | Feature | Description |
 |---------|-------------|
 | CHECK-phase analysis | Type/effect errors detected at compile time via `warn` |
-| LSP server | Hover, completion, diagnostics, go-to-definition, signature help, inlay hints |
+| LSP server | Hover, completion, diagnostics, document symbols, go-to-definition, signature help, inlay hints |
 | Perl::Critic policy | Integration with PerlNavigator |
 | Cross-file checking | Workspace-level type resolution across modules |
 | Gradual typing | Annotation density determines check strictness |
+| Arity checking | Argument count mismatch detected as ArityMismatch |
+| Expression type inference | Arithmetic (`Num`), comparison (`Bool`), string concat (`Str`), subscript access, ternary (Union/LUB) |
+| Variable reassignment tracking | Type mismatch on re-assignment to `:Type`-annotated variables |
+| Method type checking | `$self->method()` argument types and arity checked within the same package |
+| Generic static type checking | Type variables instantiated from call-site arguments for concrete type verification |
+| Type narrowing | `Maybe[T]` narrowed to `T` inside `if (defined $x)` blocks |
+| Builtin prelude | 20 Perl builtins (say, print, length, abs, ...) with pre-installed type annotations |
 
 ### Architecture
 
@@ -175,6 +185,23 @@ my $uid = UserId(42);       # Constructor validates inner type
 my $raw = unwrap($uid);     # Extracts inner value: 42
 ```
 
+### Algebraic Data Types (Datatype)
+
+```perl
+BEGIN {
+    datatype Shape =>
+        Circle    => '(Int)',
+        Rectangle => '(Int, Int)',
+        Point     => '';
+}
+
+my $c = Circle(5);            # Auto-generated constructor, validates argument types
+my $r = Rectangle(3, 4);
+my $p = Point();
+```
+
+Constructors perform runtime validation: arity is checked and each argument is verified against the declared type. Values are blessed into `Typist::Data::$name` with `_tag` and `_values` fields.
+
 ### Effects
 
 ```perl
@@ -191,6 +218,47 @@ sub io_greet :Type((Str) -> Void !Eff(Console)) ($name) { say "Hi, $name" }
 # Caller must declare at least callee's effects
 sub main :Type(() -> Void !Eff(Console)) () { io_greet("Alice") }
 ```
+
+### Effect Handlers (perform / handle)
+
+Effect handlers provide optional explicit effect dispatch at runtime. They coexist with the implicit effect tracking system (Prelude + `:Eff` annotations) which operates at the static analysis level.
+
+```perl
+use Typist -runtime;
+
+BEGIN {
+    effect Console => +{
+        log => '(Str) -> Void',
+    };
+
+    effect State => +{
+        get => '() -> Int',
+        put => '(Int) -> Void',
+    };
+}
+
+# perform dispatches to the nearest handler on the stack
+sub greet :Type((Str) -> Str !Eff(Console)) ($name) {
+    perform Console => log => "Hello, $name!";
+    "greeted $name";
+}
+
+# handle installs scoped handlers, executes a body, then pops them
+my $state = 0;
+my $result = handle {
+    perform Console => log => "start";
+    perform State => put => 10;
+    perform State => get =>;
+} Console => +{
+    log => sub ($msg) { say $msg },
+}, State => +{
+    get => sub ()  { $state },
+    put => sub ($n) { $state = $n; undef },
+};
+# $result is 10; handlers are automatically popped after the block
+```
+
+Handlers form a LIFO stack. Inner `handle` blocks shadow outer ones for the same effect. Handlers are always popped on normal exit and on exception.
 
 ### Type Classes
 
@@ -213,6 +281,51 @@ BEGIN {
 
 say Show::show(42);      # "42"
 say Show::show("hello"); # "\"hello\""
+```
+
+Multi-parameter type classes support multiple type variables:
+
+```perl
+BEGIN {
+    typeclass Convertible => 'T, U', +{
+        convert => Func(T, returns => U),
+    };
+
+    instance Convertible => 'Int, Str', +{
+        convert => sub ($x) { "$x" },
+    };
+}
+```
+
+### Type Narrowing
+
+Inside `if (defined ...)` blocks, `Maybe[T]` is automatically narrowed to `T`:
+
+```perl
+sub safe_length :Type((Maybe[Str]) -> Int) ($s) {
+    if (defined $s) {
+        # Here $s is narrowed from Str | Undef to Str
+        return length($s);  # No type error
+    }
+    return 0;
+}
+```
+
+### Method Type Checking
+
+Methods with `$self` as the first parameter are recognized and type-checked within the same package:
+
+```perl
+package Calculator;
+use Typist;
+
+sub add :Type((Int, Int) -> Int) ($self, $a, $b) {
+    $a + $b;
+}
+
+sub compute :Type((Int) -> Int) ($self, $n) {
+    $self->add($n, $n);  # Argument types and arity checked
+}
 ```
 
 ### Declare (External Function Annotations)
@@ -290,7 +403,7 @@ Runtime mode adds `tie` to typed scalars and wraps typed subs with validation cl
 
 ### LSP Server
 
-The standalone LSP server provides hover, completion, diagnostics, go-to-definition, signature help, and inlay hints:
+The standalone LSP server provides hover, completion, diagnostics, document symbols, go-to-definition, signature help, and inlay hints:
 
 ```sh
 carton exec -- perl bin/typist-lsp
@@ -426,12 +539,12 @@ carton exec -- perl example/haskell.pl
 ## Testing
 
 ```sh
-# All tests (42 files)
+# All tests (46 files)
 carton exec -- prove -l t/ t/static/ t/lsp/ t/critic/
 
 # By category
-carton exec -- prove -l t/              # Core type system (21 files)
-carton exec -- prove -l t/static/       # Static analysis (7 files)
+carton exec -- prove -l t/              # Core type system (23 files)
+carton exec -- prove -l t/static/       # Static analysis (9 files)
 carton exec -- prove -l t/lsp/          # LSP server (13 files)
 carton exec -- prove -l t/critic/       # Perl::Critic policy (1 file)
 
@@ -459,11 +572,12 @@ lib/
       Alias.pm               typedef references — lazy resolution
       Literal.pm             42, "hello" — singleton types
       Newtype.pm             Nominal wrappers — name-based identity
+      Data.pm                Tagged unions (datatype) — variant constructors
       Row.pm                 Effect rows — sorted labels + tail var
       Eff.pm                 Eff(Row) wrapper
       Fold.pm                map_type (bottom-up), walk (top-down)
     Parser.pm                Recursive-descent type expression parser
-    Registry.pm              Type/function/effect store (class + instance)
+    Registry.pm              Type/function/effect/method store (class + instance)
     Subtype.pm               Structural subtype relation + LUB
     Inference.pm             Runtime type inference + unification
     Transform.pm             Type substitution (aliases → vars)
@@ -471,8 +585,10 @@ lib/
     DSL.pm                   Type constructors (Int, Str, Func(...), ...)
     Kind.pm                  Kind system (Star, Row, Arrow)
     KindChecker.pm           Kind inference and validation
-    TypeClass.pm             Def + Inst + dispatch
+    TypeClass.pm             Def + Inst + dispatch (single + multi-parameter)
     Effect.pm                Effect definitions with typed operations
+    Handler.pm               Runtime effect handler stack (perform/handle)
+    Prelude.pm               Builtin function type annotations (20 CORE:: entries)
     Error.pm                 Error value + Collector (instance-based)
     Error/Global.pm          Singleton error buffer
     Tie/Scalar.pm            Runtime scalar type enforcement
@@ -480,9 +596,10 @@ lib/
       Analyzer.pm            Pipeline coordinator (per-file)
       Extractor.pm           PPI-based annotation extraction
       Checker.pm             Structural checks (cycles, vars, kinds)
-      TypeChecker.pm         Type mismatch detection
+      TypeChecker.pm         Type mismatch + arity + assignment + method checks
       EffectChecker.pm       Effect mismatch detection
       Infer.pm               Static type inference from PPI
+      Unify.pm               Structural type unification for generics
     LSP/
       LSP.pm                 Entry point + exit handling
       Server.pm              Lifecycle, message dispatch
@@ -498,7 +615,7 @@ script/
   lsp-replay                 JSONL trace replay tool
   lsp-verify-workspace       Workspace integration verifier
 example/                     Runnable demonstrations
-t/                           Test suite (42 files, 418+ tests)
+t/                           Test suite (46 files, 597 tests)
 ```
 
 ## License

@@ -8,6 +8,13 @@ This document describes the internal workings of Typist's static analysis pipeli
 - [Extractor: PPI-Based Annotation Extraction](#extractor-ppi-based-annotation-extraction)
 - [Checker: Structural Validation](#checker-structural-validation)
 - [TypeChecker: Type Mismatch Detection](#typechecker-type-mismatch-detection)
+- [Arity Checking](#arity-checking)
+- [Variable Reassignment Tracking](#variable-reassignment-tracking)
+- [Generic Static Type Checking](#generic-static-type-checking)
+- [Method Type Checking](#method-type-checking)
+- [Type Narrowing](#type-narrowing)
+- [Branch Return Analysis](#branch-return-analysis)
+- [Builtin Prelude](#builtin-prelude)
 - [EffectChecker: Effect Mismatch Detection](#effectchecker-effect-mismatch-detection)
 - [Infer: Static Type Inference](#infer-static-type-inference)
 - [Gradual Typing Semantics](#gradual-typing-semantics)
@@ -37,11 +44,11 @@ The static analysis pipeline processes one source file at a time, coordinated by
    | Extractor |  | Merge WS   |  | Register  |
    | (PPI)     |  | Registry   |  | extracted |
    +-----------+  +------------+  +-----------+
-          |                             |
-          v                             v
-   extracted data              local Registry
-          |                        |
-          +--------+-------+-------+
+          |              |              |
+          |              v              v
+          |        Prelude.install  local Registry
+          |              |              |
+          +--------+-----+------+------+
                    |       |       |
                    v       v       v
             +--------+ +--------+ +--------+
@@ -77,14 +84,16 @@ Both use the same `Analyzer->analyze($source, %opts)` interface.
 Extractor->extract($source)
   |
   +-> { package }        Package name (first PPI::Statement::Package)
-  +-> { typedefs }       { Name => { expr, line, col } }
-  +-> { newtypes }       { Name => { expr, line, col } }
+  +-> { aliases }        { Name => { expr, line, col } }
+  +-> { newtypes }       { Name => { inner_expr, line, col } }
+  +-> { datatypes }      { Name => { variants, line, col } }
   +-> { effects }        { Name => { line, col } }
-  +-> { typeclasses }    { Name => { var_spec, methods, line, col } }
-  +-> { declares }       { Name => { pkg, name, type_expr, line, col } }
-  +-> { variables }      { $name => { type_expr, init_node, line, col } }
+  +-> { typeclasses }    { Name => { var_spec, method_names, line, col } }
+  +-> { declares }       { Name => { pkg, func_name, type_expr, line, col } }
+  +-> { variables }      [ { name, type_expr, init_node, line, col }, ... ]
   +-> { functions }      { name => { params_expr, returns_expr, generics,
-  |                                   eff_expr, param_names, line, end_line,
+  |                                   eff_expr, param_names, is_method,
+  |                                   method_kind, line, end_line,
   |                                   col, block, unannotated } }
   +-> { ignore_lines }   { line_number => 1 }   (from @typist-ignore)
   +-> { ppi_doc }        PPI::Document object
@@ -97,6 +106,8 @@ Each extraction target has a specific PPI pattern:
 ```
 typedef:    Statement[ Word("typedef"), Word(Name), Operator("=>"), ... ]
 newtype:    Statement[ Word("newtype"), Word(Name), Operator("=>"), ... ]
+datatype:   Statement[ Word("datatype"), Word(Name), Operator("=>"),
+                       Word(Tag), Operator("=>"), Quote(spec), ... ]
 effect:     Statement[ Word("effect"), Word(Name), Operator("=>"), ... ]
 typeclass:  Statement[ Word("typeclass"), Word(Name), Operator("=>"), ... ]
 declare:    Statement[ Word("declare"), Word(Name), Operator("=>"), Quote(expr) ]
@@ -107,6 +118,9 @@ Variable:   Statement::Variable[ Symbol($x), Operator(:), Word(Type), List(...) 
 
 Function:   Statement::Sub[ Word(name), Token::Attribute("Type(...)"), Block ]
             Regex match: /\AType\((.+)\)\z/s on attribute content
+
+Method:     Function where first param_name is $self (instance) or $class (class)
+            Registered via register_method instead of register_function
 ```
 
 ### Unannotated Function Handling
@@ -121,7 +135,7 @@ Functions without `:Type()` are still extracted with:
 }
 ```
 
-This enables the effect checker to flag unannotated callees.
+This enables the effect checker to flag unannotated callees. For methods, `$self`/`$class` is excluded from the arity count.
 
 ---
 
@@ -179,7 +193,7 @@ walk(Func([Atom(Str)], Atom(Int), Eff(Row(Console))))
 
 ## TypeChecker: Type Mismatch Detection
 
-`Static::TypeChecker` uses PPI AST nodes to detect three categories of type mismatches.
+`Static::TypeChecker` uses PPI AST nodes to detect type mismatches across five categories: variable initializers, assignments, call sites (including generics and methods), and return types.
 
 ### Type Environment Construction
 
@@ -225,15 +239,22 @@ For each variable with type_expr AND init_node:
 
 ```
 For each PPI::Token::Word in document:
-  Skip if:
-    - Not followed by PPI::Structure::List (not a call)
-    - Inside a PPI::Statement::Sub (it's a declaration name)
-    - Function has generics (skip polymorphic calls)
-    - Preceded by -> operator (method call)
+  If preceded by -> operator:
+    → delegate to _check_method_call (see Method Type Checking)
+    → next
 
   Resolve function signature:
     1. Local: extracted.functions{name}
     2. Cross-package: split "Pkg::func", registry->lookup_function(pkg, func)
+    3. Builtin: registry->lookup_function('CORE', name)  (from Prelude or declare)
+
+  Skip if: sub declaration name, no following List
+
+  Arity check (see Arity Checking)
+
+  If generic function:
+    → delegate to _check_generic_call (see Generic Static Type Checking)
+    → next
 
   Build scoped env:
     env = _env_for_node(word)
@@ -256,21 +277,247 @@ For each function with returns_expr AND block:
     Find all 'return' keywords in block
     For each: infer the returned expression, check against declared
 
-  Implicit return:
+  Implicit return (see Branch Return Analysis):
+    Skip if declared return is Void
     Get last statement of block
-    Skip if: sub declaration, compound statement, or starts with 'return'
-    Infer type of last expression, check against declared
+    Recursively walk branches via _check_implicit_return_of_stmt
 ```
 
 ### Scoped Environment
 
-`_env_for_node($node)` walks up the PPI parent chain to find the enclosing function. If found, it creates a scoped environment with parameter bindings added:
+`_env_for_node($node)` walks up the PPI parent chain to find the enclosing function. If found, it creates a scoped environment with parameter bindings added. It then applies type narrowing (see Type Narrowing).
 
 ```
 Global env:  { variables: { $x => Int }, functions: { add => Int } }
                             +
 Inside add:  { variables: { $x => Int, $a => Int, $b => Int }, ... }
 ```
+
+---
+
+## Arity Checking
+
+The TypeChecker verifies that the number of arguments at each call site matches the function's declared parameter count. This applies to both regular function calls and method calls.
+
+### Algorithm
+
+```
+For each call site (function or method):
+  param_count = number of declared parameters
+  arg_count   = number of extracted arguments
+
+  If last parameter type matches /ArrayRef/:
+    → variadic function, skip arity check
+
+  If arg_count != param_count:
+    collect ArityMismatch
+      "name() expects N arguments, got M"
+```
+
+### Argument Extraction
+
+`_extract_args()` groups compound expressions as single arguments:
+
+- `Word + List` pairs are grouped as one argument (function call: `greet("hi")`)
+- `Token -> Subscript` chains are consumed as trailing dereference (e.g., `$item->{key}`)
+- Commas separate arguments
+
+This prevents `add(greet("hi"), 42)` from being counted as 3 arguments.
+
+---
+
+## Variable Reassignment Tracking
+
+The TypeChecker detects type mismatches in variable reassignment after initialization. Only **explicitly annotated** variables are checked; unannotated variables (inferred types) are not tracked.
+
+### Algorithm
+
+```
+_check_assignments():
+  annotated = { name => 1 } for variables with type_expr
+
+  For each '=' operator in document:
+    LHS must be a Symbol (variable name)
+    Skip unless annotated{var_name}
+    Skip if inside a variable declaration (handled by initializer check)
+
+    declared_type = env.variables{var_name}
+    inferred = Infer->infer_expr(RHS, env)
+
+    if !Subtype->is_subtype(inferred, declared_type):
+      collect TypeMismatch
+        "Assignment to $var: expected T, got U"
+```
+
+The annotated-only guard prevents false positives on variables whose types were inferred and may legitimately change.
+
+---
+
+## Generic Static Type Checking
+
+Generic function calls are type-checked via structural unification, implemented in `Static::Unify`.
+
+### Unification Algorithm
+
+`Unify->unify($formal, $actual, $bindings)` performs structural matching:
+
+```
+Var('T')   vs  Atom('Int')                → { T => Int }
+Param('ArrayRef', [Var('T')])
+    vs  Param('ArrayRef', [Atom('Int')])  → { T => Int }
+Atom('Int') vs  Atom('Str')              → undef (mismatch)
+Atom('Int') vs  Atom('Int')              → {} (match, no bindings)
+```
+
+When a type variable is already bound, the binding is widened via `common_super`:
+
+```
+T already bound to Int, now unifying with Num → T := Num  (LUB)
+```
+
+### Full Pipeline
+
+```
+_check_generic_call(name, fn, args, env, word):
+  1. Infer argument types (skip if any arg is Any or non-inferable)
+  2. Parse generic declarations to extract var names and bounds
+  3. Resolve formal parameter types, converting aliases to type variables
+  4. Unify: pair formal params with actual args to bind type variables
+     If unification fails → TypeMismatch at failing parameter
+  5. Bounded quantification check:
+     For each generic with bound_expr:
+       actual = bindings{name}
+       if !Subtype->is_subtype(actual, bound):
+         → TypeMismatch: "T does not satisfy bound Num"
+  6. Concrete subtype check:
+     Substitute bindings into formal types, verify each arg
+```
+
+### Alias-to-Var Conversion
+
+Generic functions use multi-character type variable names (e.g., `Elem`). Since the parser treats unknown names as aliases, `Transform->aliases_to_vars()` converts alias references back to `Var` nodes based on the known generic variable names before unification.
+
+---
+
+## Method Type Checking
+
+The TypeChecker supports `$self->method(args)` call-site checking within the same package.
+
+### Scope
+
+- **Supported**: `$self->method()` where `$self` is the receiver (same-package instance methods)
+- **Not supported**: arbitrary receiver types, cross-package method calls, class method calls
+
+### Algorithm
+
+```
+_check_method_call(word, arrow):
+  Receiver must be $self (PPI::Token::Symbol)
+  Lookup: registry->lookup_method(pkg, name)
+  Skip if method has generics
+
+  Arity check on arguments (excluding $self)
+  Type check each argument against declared param types
+```
+
+### Registration Flow
+
+Methods are distinguished from functions during extraction:
+
+```
+Extractor: first param $self → is_method=1, method_kind='instance'
+           first param $class → is_method=1, method_kind='class'
+Analyzer:  if is_method → registry->register_method(pkg, name, sig)
+           else         → registry->register_function(pkg, name, sig)
+```
+
+---
+
+## Type Narrowing
+
+The TypeChecker narrows types within control-flow guard blocks. Currently supports `defined()` guards for removing `Undef` from union types.
+
+### Algorithm
+
+```
+_narrow_env_for_block(env, node):
+  Walk up to nearest enclosing Block
+  Parent must be a Compound statement (if/elsif/unless/while)
+  Only narrow inside the first (then) block, not else
+
+  Match condition: `defined($x)` or `defined $x`
+  Lookup variable type in env
+
+  If type is Union containing Undef:
+    Remove Undef members
+    Return env with narrowed variable type
+```
+
+### Example
+
+```perl
+my $x :Type(Str | Undef) = get_value();
+if (defined($x)) {
+    # $x is narrowed to Str here
+    process($x);   # No TypeMismatch even though declared as Str | Undef
+}
+```
+
+---
+
+## Branch Return Analysis
+
+Implicit return type checking recursively walks into compound statements (if/elsif/else, while, for) to check the last expression of each branch.
+
+### Algorithm
+
+```
+_check_implicit_return_of_stmt(stmt, env, declared, name):
+  Skip nested sub definitions
+
+  If stmt is Compound (if/elsif/else/while/for):
+    For each Block child:
+      Get last statement in block
+      Recurse: _check_implicit_return_of_stmt(last_stmt, ...)
+
+  Base case (plain statement):
+    Skip if starts with 'return' (already checked)
+    Skip if declared return is Void
+    Infer type of first expression
+    Check against declared return type
+```
+
+This ensures that all branches of a conditional contribute to the return type check, not just the last top-level statement.
+
+---
+
+## Builtin Prelude
+
+`Typist::Prelude` provides standard type annotations for Perl builtins, installed into the registry under the `CORE::` namespace.
+
+### Installation
+
+The prelude is installed during `Analyzer->analyze()` and `Workspace->new()` via `Prelude->install($registry)`.
+
+### Override Semantics
+
+User `declare` statements override prelude entries. Since `register_function` uses plain assignment, a subsequent `declare say => '(Str) -> Bool !Eff(Console)'` replaces the prelude's default.
+
+### Standard Annotations
+
+```
+IO effects:     say, print, warn    → (Any) -> Bool !Eff(IO)
+                die                 → (Any) -> Never !Eff(Exn)
+                open, close         → !Eff(IO)
+
+Pure string:    length, substr, uc, lc, index → pure
+Pure numeric:   abs, int, sqrt                → pure
+Pure list:      scalar, reverse, sort         → pure
+```
+
+### Standard Effect Labels
+
+The prelude registers `IO` and `Exn` effect labels so the Checker does not report them as `UnknownEffect`.
 
 ---
 
@@ -315,13 +562,13 @@ For each annotated function (skip unannotated entirely):
 
 ### Builtin Function Set
 
-The EffectChecker maintains a hardcoded set of ~50 Perl builtins that it recognizes as potential call sites (say, print, warn, die, open, close, read, write, etc.). These are treated as unannotated unless `declare` provides an annotation.
+The EffectChecker maintains a hardcoded set of ~50 Perl builtins that it recognizes as potential call sites (say, print, warn, die, open, close, read, write, etc.). These are treated as unannotated unless the Prelude or a `declare` provides an annotation.
 
 ---
 
 ## Infer: Static Type Inference
 
-`Static::Infer` infers types from PPI elements. It is the foundation of all three TypeChecker checks.
+`Static::Infer` infers types from PPI elements. It is the foundation of all TypeChecker checks.
 
 ### Public API
 
@@ -330,7 +577,7 @@ my $type = Typist::Static::Infer->infer_expr($ppi_element, $env);
 # Returns: Type object, or undef (cannot infer)
 ```
 
-### Inference Rules
+### Expression Inference Capabilities
 
 ```
 PPI Element                    Result                    Notes
@@ -345,11 +592,38 @@ PPI::Token::Word 'undef'       Atom('Undef')
 PPI::Structure::Constructor[]  Param('ArrayRef', LUB)   _infer_array
 PPI::Structure::Constructor{}  Param('HashRef',S,LUB)   _infer_hash (needs =>)
 PPI::Token::Symbol             env.variables{content}   Needs $env
+PPI::Token::Symbol + ->[idx]   ArrayRef[T] → T          Subscript access
+PPI::Token::Symbol + ->{key}   HashRef[K,V] → V         Subscript access
+PPI::Token::Symbol + ->{key}   Struct field → type      Struct field access
 PPI::Token::Word + List        env.functions{name}      _infer_call
+PPI::Token::Word + List        CORE builtin returns     Prelude/declare fallback
 
-Word not in env.functions
-  but in env.known:            undef                    Skip (partial)
-Word not in either:            Atom('Any')              Gradual fallback
+Operator Expressions:
+$a + $b, $a - $b, ...         Atom('Num')              Arithmetic
+$a . $b                       Atom('Str')              Concatenation
+$a == $b, $a < $b, ...        Atom('Bool')             Numeric comparison
+$a eq $b, $a lt $b, ...       Atom('Bool')             String comparison
+!$x, not $x                   Atom('Bool')             Unary negation
+$a && $b, $a || $b, ...       type of LHS              Logical operators
+$x ? $a : $b                  LUB or Union             Ternary (see below)
+```
+
+### Ternary Inference
+
+When inferring `$x ? $a : $b`:
+
+1. Infer both branch types, widen literals to base atoms
+2. If same type after widening, return that type
+3. Compute LUB via `common_super`; if LUB is `Any`, use `Union` instead
+
+### Subscript Access Inference
+
+When inferring `$sym->[idx]` or `$sym->{key}`:
+
+```
+ArrayRef[T] → T               Array element access
+HashRef[K, V] → V             Hash value access
+Struct{ k => T } → T          Struct field access (bare word or quoted key)
 ```
 
 ### LUB (Least Upper Bound) for Arrays
@@ -383,7 +657,8 @@ Unannotated              sub foo ($x) { ... }                  Skipped (Any -> A
 Every check method has an `Any` guard that prevents false positives:
 
 ```perl
-# In _check_variable_initializers, _check_call_sites, _check_return_types:
+# In _check_variable_initializers, _check_assignments, _check_call_sites,
+# _check_return_types, _check_method_call, _check_generic_call:
 next if $inferred->is_atom && $inferred->name eq 'Any';
 ```
 
@@ -431,10 +706,12 @@ CHECK phase:
 Workspace.scan(root)
   |
   +-> Find all *.pm files under root
+  +-> Install Prelude into registry
   +-> For each file:
         Extractor->extract(source)
-        _register_file_types(pkg, extracted, registry)
-          +-> aliases, newtypes, effects, typeclasses, functions
+        _register_file_types(extracted)
+          +-> aliases, newtypes, datatypes, effects,
+          +-> typeclasses, declares, functions, methods
   +-> Store all extracted data for rebuild
 
 Workspace.update_file(uri, source)  [on save]
@@ -466,7 +743,6 @@ if ($name =~ /\A(.+)::(\w+)\z/) {
     kind     => 'TypeMismatch',           # Diagnostic kind
     message  => 'Expected Int, got Str',  # Human-readable
     file     => 'lib/Foo.pm',             # Source file
-    line     => 42,                       # Line number
     severity => 2,                        # 1=critical, 2=error, 3=warning, 4=info
 }
 ```
@@ -475,7 +751,8 @@ if ($name =~ /\A(.+)::(\w+)\z/) {
 
 ```
 1 (Critical)  CycleError
-2 (Error)     TypeMismatch, TypeError, ResolveError, UnknownTypeClass, EffectMismatch
+2 (Error)     TypeMismatch, ArityMismatch, TypeError, ResolveError,
+              UnknownTypeClass, EffectMismatch
 3 (Warning)   UndeclaredTypeVar, UndeclaredRowVar, UnknownEffect
 4 (Info)      UnknownType
 ```
@@ -515,10 +792,6 @@ Setting `TYPIST_CHECK_QUIET=1` skips the entire `_check_analyze()` pass in the C
 
 | Not Supported | Example | Reason |
 |---------------|---------|--------|
-| Arithmetic | `$a + $b` | No expression type rules for operators |
-| Ternary | `$x ? $a : $b` | No branch type merging |
-| Subscript | `$arr->[0]`, `$h->{k}` | No element type extraction |
-| Method calls | `$obj->method()` | No receiver type resolution (planned) |
 | String interpolation | `"Hello, $name"` | PPI represents as single token |
 | Regex | `$x =~ /pattern/` | Returns match result, not typed |
 | Dereference | `@{$arr}`, `%{$hash}` | No deref type propagation |
@@ -527,18 +800,15 @@ Setting `TYPIST_CHECK_QUIET=1` skips the entire `_check_analyze()` pass in the C
 
 | Limitation | Impact |
 |------------|--------|
-| Generic calls skipped | Functions with `<T>` get zero call-site type checking |
-| No arity checking | Wrong number of arguments not detected |
-| No mutation tracking | Variable reassignment after init not checked |
-| No control flow | if/while branches not analyzed for return types |
+| No control flow analysis | if/while branches not analyzed for variable type refinement beyond `defined()` |
 | No scope shadowing | Inner closures share parent's flat name env |
 | PPI attribute parsing fragile | Unusual spacing in `:Type(...)` may fail |
+| Method calls limited to $self | No cross-package or arbitrary receiver method checking |
+| Narrowing limited to `defined()` | Other guards (e.g., `ref`, pattern match) not handled |
 
 ### Effects
 
 | Limitation | Impact |
 |------------|--------|
 | Open rows skipped | Row polymorphic effects not verified statically |
-| No effect handlers | Effects are phantom annotations only |
 | No effect inference | Effects must be manually annotated |
-| Builtins default to `Eff(*)` | Every builtin call needs `declare` to avoid warnings |

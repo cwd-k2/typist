@@ -13,6 +13,7 @@ This document provides a comprehensive reference for all type constructs, subtyp
 - [Literal Types](#literal-types)
 - [Type Aliases](#type-aliases)
 - [Nominal Types (Newtype)](#nominal-types-newtype)
+- [Algebraic Data Types](#algebraic-data-types)
 - [Recursive Types](#recursive-types)
 - [Type Variables and Generics](#type-variables-and-generics)
 - [Bounded Quantification](#bounded-quantification)
@@ -343,6 +344,79 @@ eval { UserId("not a number") }; # Dies: validation failure
 
 ---
 
+## Algebraic Data Types
+
+`datatype Name => Tag => '(Types)', ...` creates a tagged union (sum type) with named constructors.
+
+### Definition
+
+```perl
+BEGIN {
+    datatype Shape =>
+        Circle    => '(Int)',
+        Rectangle => '(Int, Int)',
+        Point     => '';              # No-argument variant
+}
+```
+
+### Type Node
+
+The `Type::Data` node stores a name and a variant map:
+
+```
+Data("Shape", {
+    Circle    => [Atom(Int)],
+    Rectangle => [Atom(Int), Atom(Int)],
+    Point     => [],
+})
+```
+
+### Nominal Identity
+
+Data types use name-based equality, like newtypes:
+
+```
+Shape == Shape     (same data type name)
+Shape != Int       (different type)
+```
+
+### Constructor Generation
+
+Each variant produces a constructor function in the calling namespace:
+
+```perl
+my $c = Circle(5);             # Typist::Data::Shape { _tag => 'Circle', _values => [5] }
+my $r = Rectangle(3, 4);      # Typist::Data::Shape { _tag => 'Rectangle', _values => [3, 4] }
+my $p = Point();               # Typist::Data::Shape { _tag => 'Point', _values => [] }
+```
+
+Constructors perform boundary enforcement:
+- Arity check: number of arguments must match variant definition
+- Type check: each argument is validated against the declared type via `contains()`
+
+### Type Interface
+
+`Type::Data` implements the standard type interface:
+
+| Method | Behavior |
+|--------|----------|
+| `contains($val)` | Checks blessed class, tag existence, arity, and element types |
+| `free_vars()` | Collects free variables across all variant parameter types |
+| `substitute($bindings)` | Returns new Data node with substituted variant types |
+| `equals($other)` | Name-based identity (`is_data && same name`) |
+
+### Registration
+
+Data types are registered in the Registry under `datatypes`:
+
+```perl
+Registry->register_datatype($name, $data_type);
+Registry->lookup_datatype($name);
+Registry->lookup_type($name);    # Also resolves datatypes
+```
+
+---
+
 ## Recursive Types
 
 Self-referential type definitions through productive recursion:
@@ -403,7 +477,14 @@ At runtime (`-runtime` mode), generic functions use Hindley-Milner style unifica
 
 ### Static Behavior
 
-The static type checker currently **skips** generic function call sites. This is a deliberate soundness tradeoff — instantiating generics statically would require full HM inference.
+The static type checker performs full type checking of generic function call sites via `Static::Unify`:
+
+1. Infer argument types at the call site
+2. Structurally unify formal parameter types against actual argument types to extract type-variable bindings (with LUB widening for repeated variables)
+3. Check bounded quantification constraints against the inferred bindings
+4. Substitute bindings into formal types and verify concrete subtype relations
+
+This catches type errors, bound violations, and structural mismatches at compile time without requiring explicit type application.
 
 ---
 
@@ -421,6 +502,7 @@ sub max_of :Type(<T: Num>(T, T) -> T) ($a, $b) {
 ### Checking
 
 - **Runtime**: `Subtype->is_subtype($actual_type, $bound_type)` for each instantiated generic
+- **Static (TypeChecker)**: after unification, checks `is_subtype(bindings{T}, bound)` for each bounded variable
 - **Static (Checker)**: validates that bound expressions are well-formed and parseable
 
 ### Multiple Bounds
@@ -466,20 +548,26 @@ BEGIN {
 }
 ```
 
+### Type Variable Application
+
+Type constructor variables can be applied to type arguments using bracket syntax:
+
+```perl
+# F is a type constructor variable (* -> *)
+# F[A] applies F to the concrete type A
+F[A] -> F[B]    # e.g., ArrayRef[Int] -> ArrayRef[Str]
+```
+
 ### Kind Checking
 
 The `KindChecker` validates that type applications are kind-correct:
 
 ```
-ArrayRef[Int]     OK:  (* -> *) applied to *  =  *
+ArrayRef[Int]      OK:  (* -> *) applied to *  =  *
 ArrayRef[Int, Str] Error: too many arguments for * -> *
 ```
 
-### Current Limitations
-
-- Type constructor variables (`F: * -> *`) can be declared in typeclasses but cannot appear freely in function type annotations
-- No abstraction over type constructors in function signatures
-- Kind annotations are metadata — not enforced in method signatures stored as strings
+Kind checking is performed during the Checker's structural validation pass for all registered functions.
 
 ---
 
@@ -491,6 +579,28 @@ ArrayRef[Int, Str] Error: too many arguments for * -> *
 BEGIN {
     typeclass Show => T, +{
         show => Func(T, returns => Str),
+    };
+}
+```
+
+### Multi-Parameter Type Classes
+
+Type classes can have multiple type parameters for expressing relations between types:
+
+```perl
+BEGIN {
+    typeclass Convertible => 'T, U', +{
+        convert => Func(T, returns => U),
+    };
+}
+```
+
+Multi-parameter instances specify comma-separated types:
+
+```perl
+BEGIN {
+    instance Convertible => 'Int, Str', +{
+        convert => sub ($x) { "$x" },
     };
 }
 ```
@@ -511,7 +621,7 @@ BEGIN {
 
 ### Dispatch
 
-Type class methods are dispatched at runtime based on the first argument's inferred type:
+Type class methods are dispatched at runtime based on inferred argument types:
 
 ```perl
 Show::show(42);       # Dispatches to Int instance → "42"
@@ -523,12 +633,16 @@ Dispatch path:
 2. `Registry->resolve_instance(class, type)` — find matching instance
 3. Call instance method coderef
 
+For multi-parameter type classes, dispatch infers types from the first N arguments (where N is the class arity).
+
 ### Instance Resolution
 
 Resolution checks (in order):
 1. Exact match by `equals` on the type
 2. Constructor match for parameterized types (`ArrayRef` matches any `ArrayRef[T]`)
 3. Subtype inclusion (`Int` matches a `Num` instance if no `Int` instance exists)
+
+For multi-parameter resolution, each argument type is matched against the corresponding position in the comma-separated `type_expr`.
 
 ### Superclass Hierarchy
 
@@ -550,11 +664,10 @@ BEGIN {
 
 ### Current Limitations
 
-- Single type variable per typeclass (no multi-parameter type classes)
 - No default method implementations
 - No functional dependencies
 - Method signatures stored as strings, not type-checked against implementations
-- Dispatch based on first argument only
+- Dispatch based on first argument (single-param) or first N arguments (multi-param)
 
 ---
 
@@ -606,7 +719,7 @@ Unannotated functions are treated as `Eff(*)` — they may perform any effect. C
 
 ### Declare for Builtins
 
-Perl builtins (say, print, die, etc.) are unannotated by default. Use `declare` to give them precise effect annotations:
+Perl builtins (say, print, die, etc.) receive default annotations from the Prelude (see `Typist::Prelude`). Use `declare` to override with custom annotations:
 
 ```perl
 declare say    => '(Str) -> Void !Eff(Console)';
@@ -614,9 +727,42 @@ declare die    => '(Any) -> Never !Eff(Abort)';
 declare length => '(Str) -> Int';              # Pure
 ```
 
-### Nature of Effects
+### Perform and Handle
 
-Effects in Typist are **phantom types** — they exist only in the type-checking layer and do not alter runtime behavior. There are no effect handlers or continuations. The system tracks which effects a function may perform, but does not model how they are handled.
+Effects can be executed at runtime via `perform` and `handle`:
+
+```perl
+# Invoke an effect operation
+my $line = perform('Console', 'readLine');
+
+# Provide a handler in a dynamic scope
+handle {
+    my $input = perform('Console', 'readLine');
+    perform('Console', 'writeLine', "You said: $input");
+} Console => +{
+    readLine  => sub { "hello" },
+    writeLine => sub ($msg) { print $msg },
+};
+```
+
+### Handler Stack
+
+`Typist::Handler` maintains a LIFO stack of effect handlers. `handle` pushes handlers, executes the body, and pops handlers (even on exception). `perform` searches the stack from top to bottom for a matching handler.
+
+```
+handle { ... } Console => +{...}, DB => +{...};
+  → push Console handler
+  → push DB handler
+  → execute body
+  → pop DB handler
+  → pop Console handler
+```
+
+Inner handlers shadow outer ones for the same effect, enabling nested scoping.
+
+### Prelude Effects
+
+The `Typist::Prelude` pre-registers `IO` and `Exn` effect labels with default annotations for common builtins (say, print, warn, die, open, close). These coexist with user-defined effects and can be overridden via `declare`.
 
 ---
 
@@ -682,20 +828,21 @@ Complete reference of all subtyping rules implemented in `Typist::Subtype`:
 8   Intersection-sub      T&U <: S                            T<:S ∨ U<:S
 9   Intersection-super    S <: T&U                            S<:T ∧ S<:U
 10  Newtype               name equality                       nominal
-11  Literal-Literal       value= ∧ base<:base                 structural
-12  Literal-Atom          literal.base <: atom                 promotion
-13  Atom-Atom             ancestor chain via %PARENT           hierarchy
-14  Param                 same constructor ∧ covariant params  structural
-15  Func-params           contravariant                        reversed
-16  Func-return           covariant                            normal
-17  Func-effects          covariant                            normal
-18  Func-arity            must match exactly                   strict
-19  Struct-required       all super fields present in sub      width
-20  Struct-optional       required subtypes optional           width
-21  Struct-field          covariant field types                 depth
-22  Eff                   delegate to Row                      structural
-23  Row                   label set inclusion                  set theory
-24  Default               anything else                        false
+11  Data                  name equality                       nominal
+12  Literal-Literal       value= ∧ base<:base                 structural
+13  Literal-Atom          literal.base <: atom                 promotion
+14  Atom-Atom             ancestor chain via %PARENT           hierarchy
+15  Param                 same constructor ∧ covariant params  structural
+16  Func-params           contravariant                        reversed
+17  Func-return           covariant                            normal
+18  Func-effects          covariant                            normal
+19  Func-arity            must match exactly                   strict
+20  Struct-required       all super fields present in sub      width
+21  Struct-optional       required subtypes optional           width
+22  Struct-field          covariant field types                 depth
+23  Eff                   delegate to Row                      structural
+24  Row                   label set inclusion                  set theory
+25  Default               anything else                        false
 ```
 
 ---
@@ -778,7 +925,8 @@ BEGIN {
 | `Literal` | `Type::Literal` | `*` | `42`, `"hello"`, `3.14` |
 | `Alias` | `Type::Alias` | `*` | `typedef Name => Expr` |
 | `Newtype` | `Type::Newtype` | `*` | `newtype Name => Expr` |
+| `Data` | `Type::Data` | `*` | `datatype Name => Tag => '(T)', ...` |
 | `Var` | `Type::Var` | `*` or `k` | `T`, `T: Num`, `F: * -> *` |
 | `Row` | `Type::Row` | `Row` | `Row(A, B \| r)` |
 | `Eff` | `Type::Eff` | `Row` | `Eff(Row)`, `!Eff(Console \| Log)` |
-| `Fold` | `Type::Fold` | — | `map_type` (bottom-up), `walk` (top-down) |
+| `Fold` | `Type::Fold` | -- | `map_type` (bottom-up), `walk` (top-down) |
