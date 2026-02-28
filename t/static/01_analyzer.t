@@ -163,4 +163,62 @@ PERL
     ok @cycles, 'found CycleError for typeclass superclass cycle';
 };
 
+# ── Source map precision ─────────────────────────
+
+subtest 'diagnostics have precise line numbers from Checker' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', file => 'precise.pm');
+use v5.40;
+
+typedef GoodAlias => 'Int';
+
+typedef BadCycle1 => 'BadCycle2';
+typedef BadCycle2 => 'BadCycle1';
+
+sub undecl :Type((T) -> T) ($x) { $x }
+
+sub unknown :Type((MissingType) -> Str) ($x) { "hi" }
+PERL
+
+    my @diags = @{$result->{diagnostics}};
+
+    # Alias cycle: should point to the typedef lines (5 or 6)
+    my @cycles = grep { $_->{kind} eq 'CycleError' } @diags;
+    ok @cycles, 'has cycle diagnostics';
+    for my $c (@cycles) {
+        is $c->{file}, 'precise.pm', 'cycle diagnostic has correct file';
+        ok $c->{line} == 5 || $c->{line} == 6, "cycle diagnostic line ($c->{line}) points to typedef";
+    }
+
+    # Undeclared type variable: should point to the sub line (8)
+    my @undecl = grep { $_->{kind} eq 'UndeclaredTypeVar' } @diags;
+    ok @undecl, 'has undeclared type var diagnostic';
+    is $undecl[0]->{file}, 'precise.pm', 'undecl diagnostic has correct file';
+    is $undecl[0]->{line}, 8, 'undecl diagnostic points to sub declaration line';
+
+    # Unknown type: should point to the sub line (10)
+    my @unknown = grep { $_->{kind} eq 'UnknownType' } @diags;
+    ok @unknown, 'has unknown type diagnostic';
+    is $unknown[0]->{file}, 'precise.pm', 'unknown type diagnostic has correct file';
+    is $unknown[0]->{line}, 10, 'unknown type diagnostic points to sub declaration line';
+};
+
+subtest 'typeclass diagnostics have precise line numbers' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', file => 'tc.pm');
+use v5.40;
+
+typeclass Show => T, +{};
+
+typeclass BadOrd => 'T: NoSuchClass', +{
+    compare => Func(T, T, returns => Int),
+};
+PERL
+
+    my @diags = @{$result->{diagnostics}};
+
+    my @unknown_tc = grep { $_->{kind} eq 'UnknownTypeClass' } @diags;
+    ok @unknown_tc, 'has unknown typeclass diagnostic';
+    is $unknown_tc[0]->{file}, 'tc.pm', 'typeclass diagnostic has correct file';
+    is $unknown_tc[0]->{line}, 5, 'typeclass diagnostic points to typeclass definition line';
+};
+
 done_testing;

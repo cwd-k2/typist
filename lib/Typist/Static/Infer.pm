@@ -4,6 +4,7 @@ use v5.40;
 use Typist::Type::Atom;
 use Typist::Type::Param;
 use Typist::Type::Literal;
+use Typist::Type::Union;
 use Typist::Subtype;
 
 # ── Public API ───────────────────────────────────
@@ -46,7 +47,19 @@ sub infer_expr ($class, $element, $env = undef) {
     # ── Variable symbol → lookup in type env ────
     if ($element->isa('PPI::Token::Symbol')) {
         return undef unless $env;
-        return $env->{variables}{$element->content};
+        my $var_type = $env->{variables}{$element->content};
+        return undef unless $var_type;
+
+        # Subscript access: $sym->[idx] or $sym->{key}
+        my $arrow = $element->snext_sibling;
+        if ($arrow && $arrow->isa('PPI::Token::Operator') && $arrow->content eq '->') {
+            my $subscript = $arrow->snext_sibling;
+            if ($subscript && $subscript->isa('PPI::Structure::Subscript')) {
+                return _infer_subscript_access($var_type, $subscript);
+            }
+        }
+
+        return $var_type;
     }
 
     # ── Function call: Word followed by List ────
@@ -55,6 +68,18 @@ sub infer_expr ($class, $element, $env = undef) {
         if ($next && $next->isa('PPI::Structure::List')) {
             return _infer_call($element->content, $env);
         }
+    }
+
+    # ── Operator expressions (Statement-level) ────
+    if ($element->isa('PPI::Statement')
+        && !$element->isa('PPI::Statement::Sub')
+        && !$element->isa('PPI::Statement::Variable')
+        && !$element->isa('PPI::Statement::Compound')
+        && !$element->isa('PPI::Statement::Package')
+        && !$element->isa('PPI::Statement::Include')
+        && !$element->isa('PPI::Statement::Scheduled'))
+    {
+        return _infer_operator_expr($element, $env);
     }
 
     undef;
@@ -82,6 +107,14 @@ sub _infer_call ($name, $env) {
             return $sig->{returns} if $sig && $sig->{returns};
             # Registered but no return type → partially annotated
             return undef if $sig;
+        }
+    }
+
+    # Builtin fallback: CORE::name from prelude or declare
+    if (my $registry = $env->{registry}) {
+        my $core_sig = $registry->lookup_function('CORE', $name);
+        if ($core_sig && $core_sig->{returns}) {
+            return $core_sig->{returns};
         }
     }
 
@@ -177,6 +210,147 @@ sub _infer_hash ($constructor) {
     }
 
     Typist::Type::Param->new('HashRef', $str_type, $common);
+}
+
+# ── Operator Expression Inference ───────────────
+
+sub _infer_operator_expr ($stmt, $env) {
+    my @children = grep { !$_->isa('PPI::Token::Structure') } $stmt->schildren;
+
+    return undef unless @children >= 2;
+
+    # Unary: ! Expr  or  not Expr
+    if (@children == 2
+        && $children[0]->isa('PPI::Token::Operator')
+        && ($children[0]->content eq '!' || $children[0]->content eq 'not'))
+    {
+        return Typist::Type::Atom->new('Bool');
+    }
+
+    # Subscript access: $sym->[idx] or $sym->{key}
+    if (@children == 3
+        && $children[0]->isa('PPI::Token::Symbol')
+        && $children[1]->isa('PPI::Token::Operator') && $children[1]->content eq '->'
+        && $children[2]->isa('PPI::Structure::Subscript'))
+    {
+        if ($env) {
+            my $var_type = $env->{variables}{$children[0]->content};
+            return _infer_subscript_access($var_type, $children[2]) if $var_type;
+        }
+        return undef;
+    }
+
+    # Binary: Expr Op Expr  (exactly 3 significant children)
+    if (@children == 3 && $children[1]->isa('PPI::Token::Operator')) {
+        return _infer_binop($children[1]->content, $children[0], $children[2], $env);
+    }
+
+    # Ternary: Expr ? Expr : Expr  (exactly 5 significant children)
+    if (@children == 5
+        && $children[1]->isa('PPI::Token::Operator') && $children[1]->content eq '?'
+        && $children[3]->isa('PPI::Token::Operator') && $children[3]->content eq ':')
+    {
+        return _infer_ternary($children[2], $children[4], $env);
+    }
+
+    undef;
+}
+
+sub _infer_ternary ($then_expr, $else_expr, $env) {
+    my $then_type = __PACKAGE__->infer_expr($then_expr, $env);
+    my $else_type = __PACKAGE__->infer_expr($else_expr, $env);
+
+    return undef unless defined $then_type && defined $else_type;
+
+    # Widen literals to base atoms for result typing
+    my $then_w = $then_type->is_literal ? Typist::Type::Atom->new($then_type->base_type) : $then_type;
+    my $else_w = $else_type->is_literal ? Typist::Type::Atom->new($else_type->base_type) : $else_type;
+
+    # Same type → unify
+    return $then_w if $then_w->to_string eq $else_w->to_string;
+
+    # Try LUB via common_super; use Union when LUB is too coarse
+    my $lub = Typist::Subtype->common_super($then_w, $else_w);
+    return $lub if !($lub->is_atom && $lub->name eq 'Any');
+
+    Typist::Type::Union->new($then_w, $else_w);
+}
+
+sub _infer_binop ($op, $lhs, $rhs, $env) {
+    # Arithmetic → Num
+    return Typist::Type::Atom->new('Num')
+        if $op =~ /\A(?:\+|-|\*|\/|%|\*\*)\z/;
+
+    # String concatenation → Str
+    return Typist::Type::Atom->new('Str') if $op eq '.';
+
+    # Numeric comparison → Bool
+    return Typist::Type::Atom->new('Bool')
+        if $op =~ /\A(?:==|!=|<|>|<=|>=|<=>)\z/;
+
+    # String comparison → Bool
+    return Typist::Type::Atom->new('Bool')
+        if $op =~ /\A(?:eq|ne|lt|gt|le|ge|cmp)\z/;
+
+    # Logical → left operand type
+    if ($op =~ /\A(?:&&|\|\||\/\/|and|or)\z/) {
+        return __PACKAGE__->infer_expr($lhs, $env);
+    }
+
+    undef;
+}
+
+# ── Subscript Access Inference ─────────────────
+
+sub _infer_subscript_access ($var_type, $subscript) {
+    my $braces = $subscript->braces;
+
+    # Array subscript: $arr->[idx] — ArrayRef[T] → T
+    if ($braces eq '[]') {
+        if ($var_type->is_param && $var_type->base eq 'ArrayRef') {
+            return ($var_type->params)[0];
+        }
+        return undef;
+    }
+
+    # Hash/Struct subscript: $h->{key}
+    if ($braces eq '{}') {
+        # HashRef[K, V] → V
+        if ($var_type->is_param && $var_type->base eq 'HashRef') {
+            return ($var_type->params)[1];
+        }
+
+        # Struct → field type lookup
+        if ($var_type->is_struct) {
+            my $key = _extract_subscript_key($subscript);
+            return undef unless defined $key;
+
+            # Check required fields, then optional fields
+            return $var_type->required_ref->{$key} // $var_type->optional_ref->{$key};
+        }
+    }
+
+    undef;
+}
+
+sub _extract_subscript_key ($subscript) {
+    # Find the meaningful token inside { ... } or [ ... ]
+    my $inner = $subscript->find_first('PPI::Statement::Expression')
+             // $subscript->find_first('PPI::Statement');
+    return undef unless $inner;
+
+    my $token = $inner->schild(0);
+    return undef unless $token;
+
+    # Bare word: {key}
+    return $token->content if $token->isa('PPI::Token::Word');
+
+    # Quoted string: {'key'} or {"key"}
+    if ($token->isa('PPI::Token::Quote')) {
+        return $token->can('string') ? $token->string : $token->content;
+    }
+
+    undef;
 }
 
 1;

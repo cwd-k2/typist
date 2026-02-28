@@ -10,6 +10,12 @@ sub type_errors ($source) {
     [ grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@* ];
 }
 
+# Helper: analyze source, return diagnostics of kind ArityMismatch
+sub arity_errors ($source) {
+    my $result = Typist::Static::Analyzer->analyze($source);
+    [ grep { $_->{kind} eq 'ArityMismatch' } $result->{diagnostics}->@* ];
+}
+
 # ── Variable Initializer Checks ──────────────────
 
 subtest 'variable: detects type mismatch' => sub {
@@ -196,7 +202,7 @@ PERL
     is scalar @$errs, 0, 'skip function call initializer';
 };
 
-subtest 'skip: generic function call' => sub {
+subtest 'generic: detects structural mismatch' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
 sub first :Type(<T>(ArrayRef[T]) -> T) ($arr) {
@@ -205,7 +211,71 @@ sub first :Type(<T>(ArrayRef[T]) -> T) ($arr) {
 first("hello");
 PERL
 
-    is scalar @$errs, 0, 'skip generic function calls';
+    is scalar @$errs, 1, 'one error';
+    like $errs->[0]{message}, qr/Argument 1.*first.*ArrayRef/, 'structural mismatch: Str vs ArrayRef[T]';
+};
+
+# ── Generic Function Static Checks ────────────
+
+subtest 'generic: successful instantiation' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub first :Type(<T>(ArrayRef[T]) -> T) ($arr) {
+    return $arr->[0];
+}
+first([1, 2, 3]);
+PERL
+
+    is scalar @$errs, 0, 'generic call OK: T := Int from ArrayRef[Int]';
+};
+
+subtest 'generic: non-inferable argument → skip' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub first :Type(<T>(ArrayRef[T]) -> T) ($arr) {
+    return $arr->[0];
+}
+first($unknown_var);
+PERL
+
+    is scalar @$errs, 0, 'skip when argument type cannot be inferred';
+};
+
+subtest 'generic: bounded quantification OK' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub max_of :Type(<T: Num>(T, T) -> T) ($a, $b) {
+    return $a > $b ? $a : $b;
+}
+max_of(1, 2);
+PERL
+
+    is scalar @$errs, 0, 'max_of(1, 2) OK: T := Int, Int <: Num';
+};
+
+subtest 'generic: bounded quantification violation' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub max_of :Type(<T: Num>(T, T) -> T) ($a, $b) {
+    return $a > $b ? $a : $b;
+}
+max_of("a", "b");
+PERL
+
+    is scalar @$errs, 1, 'one error';
+    like $errs->[0]{message}, qr/does not satisfy bound.*Num/, 'Str does not satisfy bound Num';
+};
+
+subtest 'generic: multiple type variables' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub pair :Type(<T, U>(T, U) -> Str) ($a, $b) {
+    return "$a $b";
+}
+pair(1, "hello");
+PERL
+
+    is scalar @$errs, 0, 'pair(1, "hello") OK: T := Int, U := Str';
 };
 
 # ── Literal Type Checks ────────────────────────
@@ -639,6 +709,275 @@ my $x = add("hello", "world");
 my $y = add("oops", "bad");
 PERL
     ok scalar @$errs >= 1, 'non-ignored line still reports TypeMismatch';
+};
+
+# ── Arity Mismatch Checks ─────────────────────
+
+subtest 'arity: too few arguments' => sub {
+    my $errs = arity_errors(<<'PERL');
+use v5.40;
+sub add :Type((Int, Int) -> Int) ($a, $b) {
+    return $a + $b;
+}
+add(1);
+PERL
+
+    is scalar @$errs, 1, 'one error';
+    like $errs->[0]{message}, qr/add\(\) expects 2 arguments, got 1/, 'too few args message';
+};
+
+subtest 'arity: too many arguments' => sub {
+    my $errs = arity_errors(<<'PERL');
+use v5.40;
+sub add :Type((Int, Int) -> Int) ($a, $b) {
+    return $a + $b;
+}
+add(1, 2, 3);
+PERL
+
+    is scalar @$errs, 1, 'one error';
+    like $errs->[0]{message}, qr/add\(\) expects 2 arguments, got 3/, 'too many args message';
+};
+
+subtest 'arity: correct argument count' => sub {
+    my $errs = arity_errors(<<'PERL');
+use v5.40;
+sub add :Type((Int, Int) -> Int) ($a, $b) {
+    return $a + $b;
+}
+add(1, 2);
+PERL
+
+    is scalar @$errs, 0, 'no arity errors';
+};
+
+subtest 'arity: zero-argument function called with no args' => sub {
+    my $errs = arity_errors(<<'PERL');
+use v5.40;
+sub answer :Type(() -> Int) () {
+    return 42;
+}
+answer();
+PERL
+
+    is scalar @$errs, 0, 'no arity errors for 0-arg function';
+};
+
+subtest 'arity: zero-argument function called with args' => sub {
+    my $errs = arity_errors(<<'PERL');
+use v5.40;
+sub answer :Type(() -> Int) () {
+    return 42;
+}
+answer(1, 2);
+PERL
+
+    is scalar @$errs, 1, 'one error';
+    like $errs->[0]{message}, qr/answer\(\) expects 0 arguments, got 2/, '0-arg function called with 2 args';
+};
+
+subtest 'arity: variadic (last param ArrayRef) allows extra args' => sub {
+    my $errs = arity_errors(<<'PERL');
+use v5.40;
+sub collect :Type((Str, ArrayRef[Int]) -> Str) ($label, $nums) {
+    return $label;
+}
+collect("test", [1, 2, 3]);
+PERL
+
+    is scalar @$errs, 0, 'variadic function allows any arg count';
+};
+
+subtest 'arity: too few still caught with type mismatch on excess' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub add :Type((Int, Int) -> Int) ($a, $b) {
+    return $a + $b;
+}
+add(1);
+PERL
+
+    is scalar @$errs, 0, 'no type errors on arity mismatch (skipped)';
+};
+
+subtest 'arity: nested call counts as one argument' => sub {
+    my $errs = arity_errors(<<'PERL');
+use v5.40;
+sub double :Type((Int) -> Int) ($x) {
+    return $x * 2;
+}
+sub add :Type((Int, Int) -> Int) ($a, $b) {
+    return $a + $b;
+}
+add(double(3), 42);
+PERL
+
+    is scalar @$errs, 0, 'nested call counted as single argument';
+};
+
+# ── Variable Reassignment Checks ───────────────
+
+subtest 'assignment: detects type mismatch on reassignment' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+my $x :Type(Int) = 0;
+$x = "hello";
+PERL
+
+    is scalar @$errs, 1, 'one error';
+    like $errs->[0]{message}, qr/Assignment to \$x.*Int/, 'message mentions variable and expected type';
+};
+
+subtest 'assignment: no error on matching reassignment' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+my $x :Type(Int) = 0;
+$x = 42;
+PERL
+
+    is scalar @$errs, 0, 'no errors';
+};
+
+subtest 'assignment: does not duplicate with variable initializer' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+my $x :Type(Int) = "hello";
+PERL
+
+    is scalar @$errs, 1, 'only one error from initializer, not duplicated by assignment check';
+};
+
+subtest 'assignment: unannotated variable → skip' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+my $x = 0;
+$x = "hello";
+PERL
+
+    is scalar @$errs, 0, 'unannotated variable — skip check';
+};
+
+subtest 'assignment: subtype is allowed on reassignment' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+my $x :Type(Num) = 3.14;
+$x = 42;
+PERL
+
+    is scalar @$errs, 0, 'Int is subtype of Num — allowed';
+};
+
+subtest 'assignment: inside function body respects param env' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+my $x :Type(Int) = 0;
+sub mutate :Type(() -> Void) () {
+    $x = "oops";
+}
+PERL
+
+    is scalar @$errs, 1, 'one error';
+    like $errs->[0]{message}, qr/Assignment to \$x.*Int/, 'detects mismatch inside function body';
+};
+
+# ── Branch Implicit Return Checks ──────────────
+
+subtest 'branch return: if/else implicit — one branch mismatch' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub classify :Type((Int) -> Str) ($n) {
+    if ($n > 0) {
+        "positive"
+    } else {
+        42
+    }
+}
+PERL
+
+    is scalar @$errs, 1, 'one error in else branch';
+    like $errs->[0]{message}, qr/Implicit return.*classify.*Str/, 'implicit return mismatch in branch';
+};
+
+subtest 'branch return: if/else implicit — both branches match' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub classify :Type((Int) -> Str) ($n) {
+    if ($n > 0) {
+        "positive"
+    } else {
+        "non-positive"
+    }
+}
+PERL
+
+    is scalar @$errs, 0, 'no errors when both branches match';
+};
+
+subtest 'branch return: if only (no else) — branch matches' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub maybe :Type((Int) -> Str) ($n) {
+    if ($n > 0) {
+        "positive"
+    }
+}
+PERL
+
+    is scalar @$errs, 0, 'no error for matching if branch';
+};
+
+subtest 'branch return: if/elsif/else — last branch mismatch' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub classify :Type((Int) -> Str) ($n) {
+    if ($n > 0) {
+        "positive"
+    } elsif ($n == 0) {
+        "zero"
+    } else {
+        -1
+    }
+}
+PERL
+
+    is scalar @$errs, 1, 'one error in else branch';
+    like $errs->[0]{message}, qr/Implicit return.*classify.*Str/, 'mismatch in else branch';
+};
+
+subtest 'branch return: nested if inside else' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub deep :Type((Int) -> Str) ($n) {
+    if ($n > 0) {
+        "positive"
+    } else {
+        if ($n == 0) {
+            "zero"
+        } else {
+            99
+        }
+    }
+}
+PERL
+
+    is scalar @$errs, 1, 'one error in nested else';
+    like $errs->[0]{message}, qr/Implicit return.*deep.*Str/, 'nested branch mismatch detected';
+};
+
+subtest 'branch return: explicit return in branches already caught' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub classify :Type((Int) -> Str) ($n) {
+    if ($n > 0) {
+        return "positive";
+    } else {
+        return 42;
+    }
+}
+PERL
+
+    is scalar @$errs, 1, 'one error from explicit return in else';
+    like $errs->[0]{message}, qr/Return value.*classify.*Str/, 'explicit return mismatch detected';
 };
 
 done_testing;

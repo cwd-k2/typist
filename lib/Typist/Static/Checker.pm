@@ -13,8 +13,10 @@ use Typist::Type::Fold;
 
 sub new ($class, %args) {
     bless +{
-        registry => $args{registry} // 'Typist::Registry',
-        errors   => $args{errors}   // 'Typist::Error::Global',
+        registry  => $args{registry} // 'Typist::Registry',
+        errors    => $args{errors}   // 'Typist::Error::Global',
+        extracted => $args{extracted},
+        file      => $args{file}     // '(buffer)',
     }, $class;
 }
 
@@ -26,6 +28,27 @@ sub analyze ($self) {
     $self->_check_typeclasses;
 }
 
+# ── Source Location Helpers ─────────────────────
+
+sub _alias_line ($self, $name) {
+    my $ext = $self->{extracted} // return (0, '(alias definition)');
+    my $info = $ext->{aliases}{$name} // return (0, '(alias definition)');
+    ($info->{line}, $self->{file});
+}
+
+sub _fn_line ($self, $fqn) {
+    my $ext = $self->{extracted} // return (0, '(function signature)');
+    my $bare = $fqn =~ s/\A.*:://r;
+    my $info = $ext->{functions}{$bare} // return (0, '(function signature)');
+    ($info->{line}, $self->{file});
+}
+
+sub _tc_line ($self, $name) {
+    my $ext = $self->{extracted} // return (0, '(typeclass definition)');
+    my $info = $ext->{typeclasses}{$name} // return (0, '(typeclass definition)');
+    ($info->{line}, $self->{file});
+}
+
 # ── Alias Validation ────────────────────────────
 
 # Verify all aliases resolve without cycles.
@@ -33,21 +56,22 @@ sub _check_aliases ($self) {
     my %aliases = $self->{registry}->all_aliases;
 
     for my $name (sort keys %aliases) {
+        my ($line, $file) = $self->_alias_line($name);
         my $type = eval { $self->{registry}->lookup_type($name) };
         if ($@) {
             if ($@ =~ /cycle/) {
                 $self->{errors}->collect(
                     kind    => 'CycleError',
                     message => "Alias cycle detected involving '$name'",
-                    file    => '(alias definition)',
-                    line    => 0,
+                    file    => $file,
+                    line    => $line,
                 );
             } else {
                 $self->{errors}->collect(
                     kind    => 'ResolveError',
                     message => "Failed to resolve alias '$name': $@",
-                    file    => '(alias definition)',
-                    line    => 0,
+                    file    => $file,
+                    line    => $line,
                 );
             }
         }
@@ -62,6 +86,7 @@ sub _check_functions ($self) {
 
     for my $fqn (sort keys %functions) {
         my $sig = $functions{$fqn};
+        my ($fn_line, $fn_file) = $self->_fn_line($fqn);
         my %declared = map { $_->{name} => 1 }
                        ($sig->{generics} // [])->@*;
 
@@ -80,8 +105,8 @@ sub _check_functions ($self) {
                 $self->{errors}->collect(
                     kind    => 'UndeclaredTypeVar',
                     message => "Type variable '$var' in $fqn is not declared in generics",
-                    file    => '(function signature)',
-                    line    => 0,
+                    file    => $fn_file,
+                    line    => $fn_line,
                 );
             }
         }
@@ -99,8 +124,8 @@ sub _check_functions ($self) {
                 $self->{errors}->collect(
                     kind    => 'InvalidBound',
                     message => "Invalid bound expression '$g->{bound_expr}' for $g->{name} in $fqn: $@",
-                    file    => '(function signature)',
-                    line    => 0,
+                    file    => $fn_file,
+                    line    => $fn_line,
                 );
             } elsif ($bound_type) {
                 $self->_check_type_wellformed($bound_type, $fqn);
@@ -124,8 +149,8 @@ sub _check_functions ($self) {
                     $self->{errors}->collect(
                         kind    => 'KindError',
                         message => "Kind error in parameter of $fqn: $@",
-                        file    => '(function signature)',
-                        line    => 0,
+                        file    => $fn_file,
+                        line    => $fn_line,
                     );
                 }
             }
@@ -135,8 +160,8 @@ sub _check_functions ($self) {
                     $self->{errors}->collect(
                         kind    => 'KindError',
                         message => "Kind error in return type of $fqn: $@",
-                        file    => '(function signature)',
-                        line    => 0,
+                        file    => $fn_file,
+                        line    => $fn_line,
                     );
                 }
             }
@@ -149,6 +174,8 @@ sub _check_functions ($self) {
 sub _check_type_wellformed ($self, $type, $context) {
     return unless $type;
 
+    my ($ctx_line, $ctx_file) = $self->_fn_line($context);
+
     Typist::Type::Fold->walk($type, sub ($node) {
         if ($node->is_alias) {
             my $name = $node->alias_name;
@@ -156,8 +183,8 @@ sub _check_type_wellformed ($self, $type, $context) {
                 $self->{errors}->collect(
                     kind    => 'UnknownType',
                     message => "Type alias '$name' is not defined (in $context)",
-                    file    => '(type expression)',
-                    line    => 0,
+                    file    => $ctx_file,
+                    line    => $ctx_line,
                 );
             }
         }
@@ -170,14 +197,16 @@ sub _check_effect_wellformed ($self, $eff, $context, $declared_vars) {
     my $row = $eff->is_eff ? $eff->row : $eff;
     return unless $row->is_row;
 
+    my ($ctx_line, $ctx_file) = $self->_fn_line($context);
+
     # Check labels are registered effects
     for my $label ($row->labels) {
         unless ($self->{registry}->is_effect_label($label)) {
             $self->{errors}->collect(
                 kind    => 'UnknownEffect',
                 message => "Effect '$label' is not defined (in $context)",
-                file    => '(effect annotation)',
-                line    => 0,
+                file    => $ctx_file,
+                line    => $ctx_line,
             );
         }
     }
@@ -189,8 +218,8 @@ sub _check_effect_wellformed ($self, $eff, $context, $declared_vars) {
             $self->{errors}->collect(
                 kind    => 'UndeclaredRowVar',
                 message => "Row variable '" . $row->row_var_name . "' in $context is not declared in generics",
-                file    => '(effect annotation)',
-                line    => 0,
+                file    => $ctx_file,
+                line    => $ctx_line,
             );
         }
     }
@@ -204,13 +233,14 @@ sub _check_typeclasses ($self) {
     # Check superclass references are valid
     for my $name (sort keys %typeclasses) {
         my $def = $typeclasses{$name} // next;
+        my ($tc_line, $tc_file) = $self->_tc_line($name);
         for my $super ($def->supers) {
             unless ($self->{registry}->has_typeclass($super)) {
                 $self->{errors}->collect(
                     kind    => 'UnknownTypeClass',
                     message => "Superclass '$super' of typeclass '$name' is not defined",
-                    file    => '(typeclass definition)',
-                    line    => 0,
+                    file    => $tc_file,
+                    line    => $tc_line,
                 );
             }
         }
@@ -224,11 +254,12 @@ sub _check_typeclasses ($self) {
     $visit = sub ($tc_name) {
         return if $visited{$tc_name};
         if ($visiting{$tc_name}) {
+            my ($cyc_line, $cyc_file) = $self->_tc_line($tc_name);
             $self->{errors}->collect(
                 kind    => 'CycleError',
                 message => "Superclass cycle detected involving '$tc_name'",
-                file    => '(typeclass definition)',
-                line    => 0,
+                file    => $cyc_file,
+                line    => $cyc_line,
             );
             return;
         }

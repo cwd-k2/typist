@@ -1,6 +1,7 @@
 package Typist::Registry;
 use v5.40;
 
+use Scalar::Util 'weaken';
 use Typist::Parser;
 
 # ── Default Instance ─────────────────────────────
@@ -16,6 +17,7 @@ sub new ($class, %args) {
         resolved  => +{},
         variables => +{},
         functions => +{},
+        methods   => +{},
         packages  => +{},
         resolving  => +{},
         newtypes   => +{},
@@ -120,11 +122,17 @@ sub register_variable ($invocant, $info) {
     my $self = _self($invocant);
     my $key = $info->{ref} // die "register_variable requires ref";
     $self->{variables}{"$key"} = $info;
+    weaken($self->{variables}{"$key"}{ref});
 }
 
 sub all_variables ($invocant) {
     my $self = _self($invocant);
     values $self->{variables}->%*;
+}
+
+sub _unregister_variable ($invocant, $key) {
+    my $self = _self($invocant);
+    delete $self->{variables}{$key};
 }
 
 # ── Function Tracking ───────────────────────────
@@ -142,6 +150,23 @@ sub lookup_function ($invocant, $pkg, $name) {
 sub all_functions ($invocant) {
     my $self = _self($invocant);
     $self->{functions}->%*;
+}
+
+# ── Method Tracking ─────────────────────────────
+
+sub register_method ($invocant, $pkg, $name, $sig) {
+    my $self = _self($invocant);
+    $self->{methods}{"${pkg}::${name}"} = $sig;
+}
+
+sub lookup_method ($invocant, $pkg, $name) {
+    my $self = _self($invocant);
+    $self->{methods}{"${pkg}::${name}"};
+}
+
+sub all_methods ($invocant) {
+    my $self = _self($invocant);
+    $self->{methods}->%*;
 }
 
 # ── Package Tracking ────────────────────────────
@@ -221,6 +246,9 @@ sub merge ($self, $other) {
     for my $fqn (keys $other->{functions}->%*) {
         $self->{functions}{$fqn} //= $other->{functions}{$fqn};
     }
+    for my $fqn (keys $other->{methods}->%*) {
+        $self->{methods}{$fqn} //= $other->{methods}{$fqn};
+    }
     for my $name (keys $other->{effects}->%*) {
         $self->{effects}{$name} //= $other->{effects}{$name};
     }
@@ -247,6 +275,7 @@ sub reset ($invocant) {
         $invocant->{resolved}  = +{};
         $invocant->{variables} = +{};
         $invocant->{functions} = +{};
+        $invocant->{methods}   = +{};
         $invocant->{packages}  = +{};
         $invocant->{resolving} = +{};
         $invocant->{newtypes}   = +{};

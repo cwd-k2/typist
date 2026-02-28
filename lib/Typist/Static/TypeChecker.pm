@@ -2,8 +2,10 @@ package Typist::Static::TypeChecker;
 use v5.40;
 
 use Typist::Static::Infer;
+use Typist::Static::Unify;
 use Typist::Parser;
 use Typist::Subtype;
+use Typist::Transform;
 
 # ── Constructor ──────────────────────────────────
 
@@ -22,6 +24,7 @@ sub new ($class, %args) {
 sub analyze ($self) {
     $self->{env} = $self->_build_env;
     $self->_check_variable_initializers;
+    $self->_check_assignments;
     $self->_check_call_sites;
     $self->_check_return_types;
 }
@@ -54,6 +57,54 @@ sub _check_variable_initializers ($self) {
     }
 }
 
+# ── Assignment Check ─────────────────────────────
+
+sub _check_assignments ($self) {
+    my $ppi_doc = $self->{ppi_doc} // return;
+
+    # Only check explicitly annotated variables (not inferred ones)
+    my %annotated = map { $_->{name} => 1 }
+                    grep { $_->{type_expr} }
+                    $self->{extracted}{variables}->@*;
+
+    my $ops = $ppi_doc->find('PPI::Token::Operator') || [];
+    for my $op (@$ops) {
+        next unless $op->content eq '=';
+
+        # LHS: immediate preceding sibling must be a symbol
+        my $lhs = $op->sprevious_sibling // next;
+        next unless $lhs->isa('PPI::Token::Symbol');
+
+        my $var_name = $lhs->content;
+        next unless $annotated{$var_name};
+
+        # Skip variable declarations — _check_variable_initializers handles those
+        my $stmt = $op->parent;
+        next if $stmt && $stmt->isa('PPI::Statement::Variable');
+
+        # Look up the declared type (already resolved by _build_env)
+        my $env = $self->_env_for_node($op);
+        my $declared_type = $env->{variables}{$var_name} // next;
+
+        next if $self->_has_type_var($declared_type);
+
+        # Infer the RHS expression type
+        my $rhs = $op->snext_sibling // next;
+        my $inferred = Typist::Static::Infer->infer_expr($rhs, $env);
+        next unless defined $inferred;
+        next if $inferred->is_atom && $inferred->name eq 'Any';
+
+        unless (Typist::Subtype->is_subtype($inferred, $declared_type)) {
+            $self->{errors}->collect(
+                kind    => 'TypeMismatch',
+                message => "Assignment to $var_name: expected ${\$declared_type->to_string}, got ${\$inferred->to_string}",
+                file    => $self->{file},
+                line    => $op->line_number,
+            );
+        }
+    }
+}
+
 # ── Call Site Check ──────────────────────────────
 
 sub _check_call_sites ($self) {
@@ -63,7 +114,15 @@ sub _check_call_sites ($self) {
     for my $word (@$words) {
         my $name = $word->content;
 
-        # Try local extraction first, then registry for cross-package calls (Pkg::func)
+        # Method call: ->name
+        my $prev = $word->sprevious_sibling;
+        if ($prev && ref $prev && $prev->isa('PPI::Token::Operator') && $prev->content eq '->') {
+            $self->_check_method_call($word, $prev);
+            next;
+        }
+
+        # Try local extraction first, then registry for cross-package calls (Pkg::func),
+        # then CORE:: fallback for builtin functions.
         my $fn = $self->{extracted}{functions}{$name};
         my $cross_pkg;
         unless ($fn) {
@@ -80,6 +139,19 @@ sub _check_call_sites ($self) {
                     }
                 }
             }
+
+            # Fallback: builtin (CORE::name) from prelude or declare
+            unless ($cross_pkg) {
+                my $core_sig = $self->{registry}->lookup_function('CORE', $name);
+                if ($core_sig) {
+                    $cross_pkg = +{
+                        params_expr => $core_sig->{params_expr}
+                            // [map { $_->to_string } ($core_sig->{params} // [])->@*],
+                        generics    => $core_sig->{generics},
+                    };
+                }
+            }
+
             next unless $cross_pkg;
             $fn = $cross_pkg;
         }
@@ -92,17 +164,43 @@ sub _check_call_sites ($self) {
         my $next = $word->snext_sibling // next;
         next unless $next->isa('PPI::Structure::List');
 
-        # Skip generic functions (type variables can't be resolved statically)
-        next if $fn->{generics} && $fn->{generics}->@*;
-
         my @param_exprs = $fn->{params_expr}->@*;
-        next unless @param_exprs;
 
         # Determine the env: use function-scoped env if call is inside a function body
         my $env = $self->_env_for_node($word);
 
         # Extract argument expressions from the list
         my @args = $self->_extract_args($next);
+
+        # ── Arity check ──────────────────────────────
+        my $is_variadic = @param_exprs && $param_exprs[-1] =~ /ArrayRef/;
+
+        if (@args < @param_exprs && !$is_variadic) {
+            $self->{errors}->collect(
+                kind    => 'ArityMismatch',
+                message => "$name() expects ${\scalar @param_exprs} arguments, got ${\scalar @args}",
+                file    => $self->{file},
+                line    => $word->line_number,
+            );
+            next;
+        }
+
+        if (@args > @param_exprs && !$is_variadic) {
+            $self->{errors}->collect(
+                kind    => 'ArityMismatch',
+                message => "$name() expects ${\scalar @param_exprs} arguments, got ${\scalar @args}",
+                file    => $self->{file},
+                line    => $word->line_number,
+            );
+        }
+
+        next unless @param_exprs;
+
+        # ── Generic function: instantiate via unification ──
+        if ($fn->{generics} && $fn->{generics}->@*) {
+            $self->_check_generic_call($name, $fn, \@args, $env, $word);
+            next;
+        }
 
         my $n = @param_exprs < @args ? @param_exprs : @args;
         for my $i (0 .. $n - 1) {
@@ -123,6 +221,73 @@ sub _check_call_sites ($self) {
                     line    => $word->line_number,
                 );
             }
+        }
+    }
+}
+
+# ── Method Call Check ────────────────────────────
+
+# Check a single method call: $self->method(args)
+# Phase 2: only $self receivers within the same package.
+sub _check_method_call ($self, $word, $arrow) {
+    my $name = $word->content;
+
+    # Only handle $self->method() pattern (same-package instance methods)
+    my $receiver = $arrow->sprevious_sibling // return;
+    return unless $receiver->isa('PPI::Token::Symbol') && $receiver->content eq '$self';
+
+    # Look up the method in the current package's registry
+    my $pkg = $self->{extracted}{package};
+    my $method_sig = $self->{registry}->lookup_method($pkg, $name);
+    return unless $method_sig;
+
+    # Skip generic methods (type variables can't be resolved statically)
+    return if $method_sig->{generics} && $method_sig->{generics}->@*;
+
+    # The argument list must follow the method name
+    my $arg_list = $word->snext_sibling // return;
+    return unless $arg_list->isa('PPI::Structure::List');
+
+    my @param_types = ($method_sig->{params} // [])->@*;
+    my @param_exprs = map { $_->to_string } @param_types;
+
+    my $env = $self->_env_for_node($word);
+    my @args = $self->_extract_args($arg_list);
+    my $display = "\$self->${name}";
+
+    # ── Arity check ──────────────────────────────
+    my $is_variadic = @param_exprs && $param_exprs[-1] =~ /ArrayRef/;
+
+    if (@args != @param_exprs && !$is_variadic) {
+        $self->{errors}->collect(
+            kind    => 'ArityMismatch',
+            message => "$display() expects ${\scalar @param_exprs} arguments, got ${\scalar @args}",
+            file    => $self->{file},
+            line    => $word->line_number,
+        );
+        return if @args < @param_exprs;
+    }
+
+    return unless @param_exprs;
+
+    # ── Type check each argument ─────────────────
+    my $n = @param_exprs < @args ? @param_exprs : @args;
+    for my $i (0 .. $n - 1) {
+        my $inferred = Typist::Static::Infer->infer_expr($args[$i], $env);
+        next unless defined $inferred;
+        next if $inferred->is_atom && $inferred->name eq 'Any';
+
+        my $declared = $self->_resolve_type($param_exprs[$i]);
+        next unless defined $declared;
+        next if $self->_has_type_var($declared);
+
+        unless (Typist::Subtype->is_subtype($inferred, $declared)) {
+            $self->{errors}->collect(
+                kind    => 'TypeMismatch',
+                message => "Argument " . ($i + 1) . " of $display(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
+                file    => $self->{file},
+                line    => $word->line_number,
+            );
         }
     }
 }
@@ -173,31 +338,140 @@ sub _check_return_types ($self) {
         next unless @children;
 
         my $last_stmt = $children[-1];
+        $self->_check_implicit_return_of_stmt($last_stmt, $env, $declared, $name);
+    }
+}
 
-        # Skip nested sub definitions
-        next if $last_stmt->isa('PPI::Statement::Sub');
+# ── Implicit Return: Recursive Branch Walker ───
 
-        # Skip control structures (if/while/for — too complex to infer)
-        next if $last_stmt->isa('PPI::Statement::Compound');
+sub _check_implicit_return_of_stmt ($self, $stmt, $env, $declared, $name) {
+    # Skip nested sub definitions
+    return if $stmt->isa('PPI::Statement::Sub');
 
-        my $first = $last_stmt->schild(0) // next;
+    # Recurse into compound (if/elsif/else/while/for)
+    if ($stmt->isa('PPI::Statement::Compound')) {
+        my @blocks = grep { $_->isa('PPI::Structure::Block') } $stmt->schildren;
+        for my $inner_block (@blocks) {
+            my @stmts = grep { $_->isa('PPI::Statement') } $inner_block->schildren;
+            next unless @stmts;
+            $self->_check_implicit_return_of_stmt($stmts[-1], $env, $declared, $name);
+        }
+        return;
+    }
 
-        # Skip if starts with 'return' — already checked in explicit path
-        next if $first->isa('PPI::Token::Word') && $first->content eq 'return';
+    # Base case: check expression as implicit return
+    my $first = $stmt->schild(0) // return;
 
-        my $inferred = Typist::Static::Infer->infer_expr($first, $env);
-        next unless defined $inferred;
-        next if $inferred->is_atom && $inferred->name eq 'Any';
+    # Skip if starts with 'return' — already checked in explicit path
+    return if $first->isa('PPI::Token::Word') && $first->content eq 'return';
 
-        unless (Typist::Subtype->is_subtype($inferred, $declared)) {
+    my $inferred = Typist::Static::Infer->infer_expr($first, $env);
+    return unless defined $inferred;
+    return if $inferred->is_atom && $inferred->name eq 'Any';
+
+    unless (Typist::Subtype->is_subtype($inferred, $declared)) {
+        $self->{errors}->collect(
+            kind    => 'TypeMismatch',
+            message => "Implicit return of $name(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
+            file    => $self->{file},
+            line    => $first->line_number,
+        );
+    }
+}
+
+# ── Generic Call Check ──────────────────────────
+
+sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
+    # 1. Infer argument types (gradual: skip if any arg is non-inferable)
+    my @arg_types;
+    for my $arg (@$args) {
+        my $inferred = Typist::Static::Infer->infer_expr($arg, $env);
+        return unless defined $inferred;
+        return if $inferred->is_atom && $inferred->name eq 'Any';
+        push @arg_types, $inferred;
+    }
+
+    # 2. Parse generic declarations to extract var names and bounds
+    my @generics = $self->_parse_generics($fn->{generics});
+    my %var_names = map { $_->{name} => 1 } @generics;
+
+    # 3. Resolve formal parameter types, converting aliases to type variables
+    my @param_types;
+    for my $expr ($fn->{params_expr}->@*) {
+        my $t = $self->_resolve_type($expr) // return;
+        $t = Typist::Transform->aliases_to_vars($t, \%var_names);
+        push @param_types, $t;
+    }
+
+    # 4. Unify: pair formal params with actual args to bind type variables
+    my $bindings = +{};
+    my $n = @param_types < @arg_types ? @param_types : @arg_types;
+    my $failed_at = -1;
+    for my $i (0 .. $n - 1) {
+        $bindings = Typist::Static::Unify->unify($param_types[$i], $arg_types[$i], $bindings);
+        unless ($bindings) {
+            $failed_at = $i;
+            last;
+        }
+    }
+
+    # Unification failure → structural mismatch at the failing parameter
+    unless ($bindings) {
+        $self->{errors}->collect(
+            kind    => 'TypeMismatch',
+            message => "Argument " . ($failed_at + 1) . " of $name(): expected ${\$param_types[$failed_at]->to_string}, got ${\$arg_types[$failed_at]->to_string}",
+            file    => $self->{file},
+            line    => $word->line_number,
+        );
+        return;
+    }
+
+    # 5. Bounded quantification check
+    for my $g (@generics) {
+        next unless $g->{bound_expr};
+        my $actual = $bindings->{$g->{name}} // next;
+        my $bound = $self->_resolve_type($g->{bound_expr}) // next;
+        unless (Typist::Subtype->is_subtype($actual, $bound)) {
             $self->{errors}->collect(
                 kind    => 'TypeMismatch',
-                message => "Implicit return of $name(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
+                message => "Argument of $name(): ${\$actual->to_string} does not satisfy bound ${\$bound->to_string} for type variable $g->{name}",
                 file    => $self->{file},
-                line    => $first->line_number,
+                line    => $word->line_number,
             );
         }
     }
+
+    # 6. Concrete subtype check: substitute bindings and verify each arg
+    for my $i (0 .. $n - 1) {
+        my $concrete = Typist::Static::Unify->substitute($param_types[$i], $bindings);
+        next if $self->_has_type_var($concrete);
+        next if $arg_types[$i]->is_atom && $arg_types[$i]->name eq 'Any';
+        unless (Typist::Subtype->is_subtype($arg_types[$i], $concrete)) {
+            $self->{errors}->collect(
+                kind    => 'TypeMismatch',
+                message => "Argument " . ($i + 1) . " of $name(): expected ${\$concrete->to_string}, got ${\$arg_types[$i]->to_string}",
+                file    => $self->{file},
+                line    => $word->line_number,
+            );
+        }
+    }
+}
+
+# Parse generics_raw strings into structured declarations.
+# Each entry is like "T", "T: Num", "r: Row".
+sub _parse_generics ($self, $generics_raw) {
+    my @result;
+    for my $g ($generics_raw->@*) {
+        my $trimmed = $g;
+        $trimmed =~ s/\A\s+//;
+        $trimmed =~ s/\s+\z//;
+        if ($trimmed =~ /\A(\w+)\s*:\s*(.+)\z/) {
+            push @result, +{ name => $1, bound_expr => $2 };
+        } else {
+            push @result, +{ name => $trimmed, bound_expr => undef };
+        }
+    }
+    @result;
 }
 
 # ── Helpers ──────────────────────────────────────
@@ -314,7 +588,9 @@ sub _extract_args ($self, $list) {
             // $list->find_first('PPI::Statement');
     return () unless $expr;
 
-    # Group Word+List pairs as a single function-call argument
+    # Group compound expressions as single arguments:
+    #   Word + List       → function call   (e.g. greet("hi"))
+    #   Token + -> + Sub  → dereference chain (e.g. $item->{key}, $arr->[0])
     my @children = $expr->schildren;
     my @args;
     my $i = 0;
@@ -338,6 +614,16 @@ sub _extract_args ($self, $list) {
         else {
             push @args, $child;
             $i++;
+        }
+
+        # Consume trailing dereference chain: -> followed by Subscript/List
+        while ($i + 1 < @children
+            && $children[$i]->isa('PPI::Token::Operator')
+            && $children[$i]->content eq '->'
+            && ($children[$i + 1]->isa('PPI::Structure::Subscript')
+                || $children[$i + 1]->isa('PPI::Structure::List')))
+        {
+            $i += 2;    # skip -> and the subscript/list
         }
     }
 

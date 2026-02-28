@@ -328,6 +328,16 @@ sub _extract_functions ($class, $doc, $result) {
     for my $sub_stmt (@$subs) {
         my $name = $sub_stmt->name // next;
 
+        # Detect method: first parameter is $self or $class
+        my $param_names = $class->_extract_sig_params($sub_stmt);
+        my ($is_method, $method_kind) = (0, undef);
+        if (@$param_names && $param_names->[0] eq '$self') {
+            ($is_method, $method_kind) = (1, 'instance');
+        }
+        elsif (@$param_names && $param_names->[0] eq '$class') {
+            ($is_method, $method_kind) = (1, 'class');
+        }
+
         my $attrs = $sub_stmt->find('PPI::Token::Attribute') || [];
 
         if (@$attrs) {
@@ -365,7 +375,9 @@ sub _extract_functions ($class, $doc, $result) {
                     returns_expr => $returns_expr,
                     generics     => $ann->{generics_raw},
                     eff_expr     => $eff_expr,
-                    param_names  => $class->_extract_sig_params($sub_stmt),
+                    param_names  => $param_names,
+                    is_method    => $is_method,
+                    method_kind  => $method_kind,
                     line         => $sub_stmt->line_number,
                     end_line     => $class->_end_line($sub_stmt),
                     col          => $sub_stmt->column_number,
@@ -376,7 +388,9 @@ sub _extract_functions ($class, $doc, $result) {
         }
         else {
             # Unannotated function: count signature params for Any... -> Any !Eff(*)
-            my $arity = $class->_count_sig_params($sub_stmt);
+            # For methods, exclude $self/$class from the parameter count
+            my $arity = scalar @$param_names;
+            $arity -= 1 if $is_method && $arity > 0;
 
             $result->{functions}{$name} = +{
                 params_expr  => [('Any') x $arity],
@@ -384,7 +398,9 @@ sub _extract_functions ($class, $doc, $result) {
                 generics     => [],
                 eff_expr     => undef,
                 unannotated  => 1,
-                param_names  => $class->_extract_sig_params($sub_stmt),
+                param_names  => $param_names,
+                is_method    => $is_method,
+                method_kind  => $method_kind,
                 line         => $sub_stmt->line_number,
                 end_line     => $class->_end_line($sub_stmt),
                 col          => $sub_stmt->column_number,

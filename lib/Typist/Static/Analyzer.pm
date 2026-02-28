@@ -14,6 +14,7 @@ use Typist::Attribute;
 use Typist::Type::Newtype;
 use Typist::Effect;
 use Typist::TypeClass;
+use Typist::Prelude;
 
 # ── Severity Mapping ─────────────────────────────
 
@@ -21,6 +22,7 @@ my %SEVERITY = (
     CycleError       => 1,  # critical — breaks resolution
     TypeError        => 2,
     TypeMismatch     => 2,
+    ArityMismatch    => 2,
     ResolveError     => 2,
     UndeclaredTypeVar => 3,
     EffectMismatch   => 2,
@@ -46,6 +48,9 @@ sub analyze ($class, $source, %opts) {
     if ($opts{workspace_registry}) {
         $registry->merge($opts{workspace_registry});
     }
+
+    # 1b. Install builtin type prelude (CORE:: defaults)
+    Typist::Prelude->install($registry);
 
     # 2. Register this file's typedefs
     for my $name (sort keys $extracted->{aliases}->%*) {
@@ -200,16 +205,27 @@ sub analyze ($class, $source, %opts) {
             @generics = Typist::Attribute->parse_generic_decl($spec, registry => $registry);
         }
 
-        $registry->register_function($pkg, $name, +{
+        my $sig = +{
             params   => \@param_types,
             returns  => $return_type,
             generics => \@generics,
             effects  => $effects,
-        });
+        };
+
+        if ($fn->{is_method}) {
+            $registry->register_method($pkg, $name, $sig);
+        } else {
+            $registry->register_function($pkg, $name, $sig);
+        }
     }
 
     # 4. Run Checker
-    my $checker = Typist::Static::Checker->new(registry => $registry, errors => $errors);
+    my $checker = Typist::Static::Checker->new(
+        registry  => $registry,
+        errors    => $errors,
+        extracted => $extracted,
+        file      => $file,
+    );
     $checker->analyze;
 
     # 4.5. Run TypeChecker (static type mismatch detection)
@@ -251,8 +267,11 @@ sub _to_diagnostics ($errors, $default_file, $extracted) {
         my $line = $err->line;
         my $file = $err->file;
 
-        # Enrich with location from extracted data when possible
-        if ($file eq '(alias definition)' || $file eq '(type expression)') {
+        # Regex fallback: enrich with location from extracted data
+        # when the error lacks a resolved source position.
+        my $needs_enrich = $line == 0 || $file =~ /\A\(/;
+
+        if ($needs_enrich && ($file eq '(alias definition)' || $file eq '(type expression)')) {
             if ($err->message =~ /'(\w+)'/) {
                 my $name = $1;
                 if (my $info = $extracted->{aliases}{$name}) {
@@ -261,7 +280,7 @@ sub _to_diagnostics ($errors, $default_file, $extracted) {
                 }
             }
         }
-        if ($file eq '(function signature)' || $file eq '(effect annotation)') {
+        if ($needs_enrich && ($file eq '(function signature)' || $file eq '(effect annotation)')) {
             if ($err->message =~ /in (?:\w+::)*(\w+)/) {
                 my $fn_name = $1;
                 if (my $info = $extracted->{functions}{$fn_name}) {
@@ -271,7 +290,7 @@ sub _to_diagnostics ($errors, $default_file, $extracted) {
             }
         }
 
-        if ($file eq '(typeclass definition)') {
+        if ($needs_enrich && $file eq '(typeclass definition)') {
             if ($err->message =~ /'(\w+)'/) {
                 my $name = $1;
                 if (my $info = $extracted->{typeclasses}{$name}) {
@@ -282,7 +301,7 @@ sub _to_diagnostics ($errors, $default_file, $extracted) {
         }
 
         # (type expression) errors: try alias first, then function context
-        if ($file eq '(type expression)' && $line == 0) {
+        if ($needs_enrich && $file eq '(type expression)' && $line == 0) {
             if ($err->message =~ /in (?:\w+::)*(\w+)/) {
                 my $fn_name = $1;
                 if (my $info = $extracted->{functions}{$fn_name}) {
