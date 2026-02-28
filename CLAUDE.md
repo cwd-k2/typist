@@ -92,10 +92,17 @@ mise run test:lsp          # LSP server tests
 mise run test:critic       # Perl::Critic policy tests
 mise run test:e2e          # LSP E2E smoke test (subprocess)
 mise run test:workspace    # Verify LSP workspace on realworld example
-mise run example           # Run all examples
-mise run example:basics    # Run basics example
-mise run example:generics  # Run generics example
-mise run example:gradual   # Run gradual typing example
+mise run example              # Run all examples
+mise run example:foundations  # Types, aliases, functions
+mise run example:composite   # Struct, Union, Maybe, etc.
+mise run example:generics    # Generics, bounded quantification
+mise run example:nominal     # Newtype, literals, recursive types
+mise run example:algebraic   # Datatype/ADT
+mise run example:typeclasses # Type classes, HKT, Functor
+mise run example:effects     # Effect system, perform/handle
+mise run example:gradual     # Gradual typing, flow typing
+mise run example:dsl         # DSL operators, constructors
+mise run example:realworld   # Multi-file shop example
 ```
 
 ## Test Structure
