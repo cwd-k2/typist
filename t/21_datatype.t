@@ -606,4 +606,68 @@ PERL
         'multi type_params extracted';
 };
 
+# ── match expression ─────────────────────────────
+
+subtest 'match dispatches on tag' => sub {
+    # Use Typist's _match directly
+    require Typist;
+
+    my $circle = bless +{ _tag => 'Circle', _values => [5] }, 'Typist::Data::Shape';
+    my $rect   = bless +{ _tag => 'Rectangle', _values => [3, 4] }, 'Typist::Data::Shape';
+    my $point  = bless +{ _tag => 'Point', _values => [] }, 'Typist::Data::Shape';
+
+    my $r1 = Typist::_match($circle,
+        Circle    => sub ($r)     { 3.14 * $r ** 2 },
+        Rectangle => sub ($w, $h) { $w * $h },
+        Point     => sub          { 0 },
+    );
+    is $r1, 3.14 * 25, 'match Circle dispatches correctly';
+
+    my $r2 = Typist::_match($rect,
+        Circle    => sub ($r)     { 3.14 * $r ** 2 },
+        Rectangle => sub ($w, $h) { $w * $h },
+        Point     => sub          { 0 },
+    );
+    is $r2, 12, 'match Rectangle dispatches correctly';
+
+    my $r3 = Typist::_match($point,
+        Circle    => sub ($r)     { 3.14 * $r ** 2 },
+        Rectangle => sub ($w, $h) { $w * $h },
+        Point     => sub          { 0 },
+    );
+    is $r3, 0, 'match Point dispatches correctly';
+};
+
+subtest 'match fallback arm' => sub {
+    require Typist;
+
+    my $circle = bless +{ _tag => 'Circle', _values => [5] }, 'Typist::Data::Shape';
+
+    my $r = Typist::_match($circle,
+        Rectangle => sub ($w, $h) { 'rect' },
+        _         => sub          { 'other' },
+    );
+    is $r, 'other', 'fallback _ arm used for unmatched tag';
+};
+
+subtest 'match dies on missing arm' => sub {
+    require Typist;
+
+    my $circle = bless +{ _tag => 'Circle', _values => [5] }, 'Typist::Data::Shape';
+
+    eval {
+        Typist::_match($circle,
+            Rectangle => sub { 'rect' },
+        );
+    };
+    like $@, qr/no arm for tag 'Circle'/, 'dies when no matching arm and no fallback';
+};
+
+subtest 'match dies on non-tagged value' => sub {
+    require Typist;
+
+    eval { Typist::_match(+{}, Point => sub { 0 }) };
+    like $@, qr/no _tag/, 'dies when value has no _tag';
+};
+
 done_testing;

@@ -58,6 +58,7 @@ sub import ($class, @args) {
     *{"${caller}::datatype"}  = \&_datatype;
     *{"${caller}::perform"}   = \&_perform;
     *{"${caller}::handle"}    = \&_handle;
+    *{"${caller}::match"}     = \&_match;
 }
 
 # ── Newtype Support ─────────────────────────────
@@ -177,6 +178,25 @@ sub _handle :prototype(&@) {
     die $err unless $ok;
 
     wantarray ? @result : $result[0];
+}
+
+# ── Match Support (ADT pattern dispatch) ─────────
+#
+#   match $value,
+#       Tag1 => sub ($a, $b) { ... },
+#       Tag2 => sub ($x)     { ... },
+#       _    => sub           { ... };   # optional fallback
+#
+# Dispatches on _tag, splats _values into the handler.
+
+sub _match ($value, %arms) {
+    my $tag = $value->{_tag}
+        // die "Typist: match — value has no _tag\n";
+
+    my $handler = $arms{$tag} // $arms{_}
+        // die "Typist: match — no arm for tag '$tag' and no fallback '_'\n";
+
+    $handler->($value->{_values} ? $value->{_values}->@* : ());
 }
 
 # ── Declare Support (external function annotations) ──

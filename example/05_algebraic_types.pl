@@ -38,20 +38,29 @@ say "Circle('big'):      $@" if $@;
 eval { Rectangle(3, "four") };
 say "Rectangle(3,'four'): $@" if $@;
 
-# ── Pattern Matching (via _tag) ───────────────────────────
+# ── Pattern Matching (match expression) ──────────────────
 #
-# Perl doesn't have built-in pattern matching, but _tag
-# enables clean dispatch with given/when or if/elsif.
+# `match` dispatches on _tag and splats _values into the
+# handler. Use _ as the fallback arm.
 
 sub area ($shape) {
-    my ($tag, $vals) = ($shape->{_tag}, $shape->{_values});
-    if    ($tag eq 'Circle')    { 3.14159 * $vals->[0] ** 2 }
-    elsif ($tag eq 'Rectangle') { $vals->[0] * $vals->[1] }
-    else                        { die "Unknown shape: $tag" }
+    match $shape,
+        Circle    => sub ($r)     { 3.14159 * $r ** 2 },
+        Rectangle => sub ($w, $h) { $w * $h };
 }
 
 say "area(Circle(5)):      ", area(Circle(5));
 say "area(Rectangle(3,4)): ", area(Rectangle(3, 4));
+
+# Fallback arm
+sub describe ($shape) {
+    match $shape,
+        Circle => sub ($r) { "circle with radius $r" },
+        _      => sub      { "some other shape" };
+}
+
+say "describe(Circle(5)):      ", describe(Circle(5));
+say "describe(Rectangle(3,4)): ", describe(Rectangle(3, 4));
 
 # ── ADT with Multiple Types ──────────────────────────────
 
@@ -66,11 +75,10 @@ BEGIN {
 my $expr = Add(Lit(2), Mul(Lit(3), Lit(4)));
 
 sub eval_expr ($e) {
-    my ($tag, $v) = ($e->{_tag}, $e->{_values});
-    if    ($tag eq 'Lit') { $v->[0] }
-    elsif ($tag eq 'Add') { eval_expr($v->[0]) + eval_expr($v->[1]) }
-    elsif ($tag eq 'Mul') { eval_expr($v->[0]) * eval_expr($v->[1]) }
-    else                  { die "Unknown expr: $tag" }
+    match $e,
+        Lit => sub ($n)      { $n },
+        Add => sub ($l, $r)  { eval_expr($l) + eval_expr($r) },
+        Mul => sub ($l, $r)  { eval_expr($l) * eval_expr($r) };
 }
 
 say "2 + 3 * 4 = ", eval_expr($expr);
@@ -89,11 +97,10 @@ sub parse_int ($s) {
 
 for my $input ("42", "abc") {
     my $r = parse_int($input);
-    if ($r->{_tag} eq 'Ok') {
-        say "parse_int('$input'): Ok($r->{_values}[0])";
-    } else {
-        say "parse_int('$input'): Err($r->{_values}[0])";
-    }
+    my $msg = match $r,
+        Ok  => sub ($v) { "Ok($v)" },
+        Err => sub ($v) { "Err($v)" };
+    say "parse_int('$input'): $msg";
 }
 
 # ── Parameterized ADTs ──────────────────────────────────
@@ -139,8 +146,9 @@ my $ok  = Right(200);
 my $err = Left("not found");
 
 sub describe_either ($e) {
-    if ($e->{_tag} eq 'Right') { "success: $e->{_values}[0]" }
-    else                       { "error: $e->{_values}[0]" }
+    match $e,
+        Right => sub ($v) { "success: $v" },
+        Left  => sub ($v) { "error: $v" };
 }
 
 say "Right(200):         ", describe_either($ok);
