@@ -32,35 +32,43 @@ run = "carton exec -- perl script/lsp-verify-workspace"
 
 [tasks.example]
 description = "Run all examples"
-depends = ["example:basics", "example:generics", "example:effects", "example:gradual", "example:haskell", "example:errors_basic", "example:errors_advanced", "example:realworld"]
+depends = ["example:foundations", "example:composite", "example:generics", "example:nominal", "example:algebraic", "example:typeclasses", "example:effects", "example:gradual", "example:dsl", "example:realworld"]
 
-[tasks."example:basics"]
-description = "Run basics example"
-run = "carton exec -- perl example/basics.pl"
+[tasks."example:foundations"]
+description = "Run foundations example (types, aliases, functions)"
+run = "carton exec -- perl example/01_foundations.pl"
+
+[tasks."example:composite"]
+description = "Run composite types example (Struct, Union, Maybe, etc.)"
+run = "carton exec -- perl example/02_composite_types.pl"
 
 [tasks."example:generics"]
-description = "Run generics example"
-run = "carton exec -- perl example/generics.pl"
+description = "Run generics example (type params, bounded quantification)"
+run = "carton exec -- perl example/03_generics.pl"
+
+[tasks."example:nominal"]
+description = "Run nominal types example (newtype, literals, recursive)"
+run = "carton exec -- perl example/04_nominal_types.pl"
+
+[tasks."example:algebraic"]
+description = "Run algebraic types example (datatype, ADT)"
+run = "carton exec -- perl example/05_algebraic_types.pl"
+
+[tasks."example:typeclasses"]
+description = "Run type classes example (dispatch, HKT, Functor)"
+run = "carton exec -- perl example/06_typeclasses.pl"
 
 [tasks."example:effects"]
-description = "Run effects example"
-run = "carton exec -- perl example/effects.pl"
+description = "Run effects example (perform, handle, row polymorphism)"
+run = "carton exec -- perl example/07_effects.pl"
 
 [tasks."example:gradual"]
-description = "Run gradual typing example"
-run = "carton exec -- perl example/gradual.pl"
+description = "Run gradual typing example (flow typing, inference)"
+run = "carton exec -- perl example/08_gradual_typing.pl"
 
-[tasks."example:haskell"]
-description = "Run Haskell-like type system example"
-run = "carton exec -- perl example/haskell.pl"
-
-[tasks."example:errors_basic"]
-description = "Run basic type error examples"
-run = "carton exec -- perl example/errors_basic.pl"
-
-[tasks."example:errors_advanced"]
-description = "Run advanced type error examples"
-run = "carton exec -- perl example/errors_advanced.pl"
+[tasks."example:dsl"]
+description = "Run DSL example (type constructors, operators)"
+run = "carton exec -- perl example/09_dsl.pl"
 
 [tasks."example:realworld"]
 description = "Run realworld multi-file shop example"

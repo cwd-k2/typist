@@ -1,0 +1,147 @@
+#!/usr/bin/env perl
+use v5.40;
+use lib 'lib';
+use Typist;
+use Typist::DSL;
+
+# ═══════════════════════════════════════════════════════════
+#  08 — Gradual Typing
+#
+#  Typist uses gradual typing: the density of annotations
+#  determines how strictly static checks are enforced.
+#
+#    Fully annotated    → all checks (types + effects)
+#    Partially annotated → only checkable parts verified
+#    Unannotated         → treated as (Any...) -> Any !Eff(*)
+#
+#  This lets you incrementally adopt types in an existing
+#  codebase — annotate what matters, leave the rest.
+#
+#  Note: this example uses static-only mode (no -runtime)
+#  to focus on CHECK-phase behavior.
+# ═══════════════════════════════════════════════════════════
+
+# ── 1. Fully Annotated ────────────────────────────────────
+#
+# All params and return type known → full checking.
+
+sub greet :Type((Str) -> Str) ($name) {
+    "Hello, $name!";
+}
+
+sub add :Type((Int, Int) -> Int) ($a, $b) {
+    $a + $b;
+}
+
+# Return type propagates into variable initialization:
+# greet() returns Str, so $msg is typed as Str at the call site.
+my $msg :Type(Str) = greet("Alice");
+say $msg;
+
+# ── 2. Variable Symbol Resolution ────────────────────────
+#
+# Static checker resolves annotated variable types at call sites.
+
+sub loud :Type((Str) -> Str) ($s) {
+    uc($s);
+}
+
+# $msg was declared :Type(Str), loud() accepts Str → OK
+say loud($msg);
+
+# ── 3. Nested Calls ──────────────────────────────────────
+#
+# Return types chain through call nesting.
+
+sub double :Type((Int) -> Int) ($x) {
+    $x * 2;
+}
+
+# double(3) → Int, add(Int, Int) → Int — all resolved statically
+say "3*2 + 10 = ", add(double(3), 10);
+
+# ── 4. Partially Annotated ────────────────────────────────
+#
+# Only some params annotated, or return type unknown.
+# The known parts are checked; the unknown parts are skipped.
+
+# Any return type — params are still checked, but return
+# type is unknown to callers.
+sub compute :Type((Int) -> Any) ($n) {
+    $n * $n;
+}
+
+# Return type Any → assignment check skipped (no false positive)
+my $result :Type(Int) = compute(5);
+say "5^2 = $result";
+
+# ── 5. Unannotated Functions ─────────────────────────────
+#
+# No annotations at all → (Any...) -> Any ! Eff(*)
+# Type checks skip; effect checks flag annotated callers
+# that call this function (as it may perform any effect).
+
+sub helper ($x) {
+    $x;
+}
+
+# Return type is Any → assignment check skipped
+my $val :Type(Int) = helper(42);
+say "helper: $val";
+
+# ── 6. Flow Typing (Inferred Variables) ──────────────────
+#
+# When a fully-annotated function's return type is known,
+# Typist infers the type of the variable it flows into —
+# even without an explicit :Type annotation.
+
+sub format_name :Type((Str) -> Str) ($name) {
+    "[$name]";
+}
+
+# $formatted has no :Type, but Typist infers Str from
+# format_name's return type. Hover shows: $formatted: Str
+my $formatted = format_name("Alice");
+
+# loud() accepts Str, $formatted is inferred as Str → OK
+say loud($formatted);
+
+# Literal initializers also infer types:
+my $count = 42;        # inferred as Int
+my $label = "hello";   # inferred as Str
+
+# $count can be passed to Int-expecting functions
+say "doubled: ", add(double($count), $count);
+
+# ── 7. Type Narrowing ────────────────────────────────────
+#
+# defined($x) in an if-condition narrows Maybe[T] to T.
+
+sub safe_length :Type((Maybe[Str]) -> Int) ($s) {
+    if (defined($s)) {
+        # Inside: $s narrowed from Maybe[Str] to Str
+        length($s);
+    } else {
+        0;
+    }
+}
+
+say "safe_length('hi'):   ", safe_length("hi");
+say "safe_length(undef):  ", safe_length(undef);
+
+# ── Summary ───────────────────────────────────────────────
+#
+# ┌─────────────────────┬──────────────────┬──────────────────┐
+# │ Annotation Level    │ Type Checking    │ Effect Checking  │
+# ├─────────────────────┼──────────────────┼──────────────────┤
+# │ Fully annotated     │ All checks       │ Effects verified │
+# │ Any return type     │ Params checked   │ Pure (no effects)│
+# │ Completely unannot. │ Any (skip)       │ Eff(*) (any)     │
+# └─────────────────────┴──────────────────┴──────────────────┘
+#
+# Flow Typing:
+#   my $r = f("str")  → $r inferred as Str (if f :: Str -> Str)
+#   my $x = 42        → $x inferred as Int from literal
+#
+# Type Narrowing:
+#   if (defined($x))  → $x narrowed from Maybe[T] to T
