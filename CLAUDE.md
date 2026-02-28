@@ -62,7 +62,7 @@ Runtime (opt-in)| Generic instantiation      | die           | -runtime flag
 - Hashref literals always use `+{}` to disambiguate from blocks.
 - No source filters or external preprocessors.
 - Static-first: `use Typist;` = static-only (default). Runtime enforcement via `use Typist -runtime;` or `TYPIST_RUNTIME=1`. Newtype constructors and `unwrap` always validate (boundary enforcement).
-- CHECK phase runs both structural checks (Checker) and full static analysis (Analyzer with TypeChecker + EffectChecker) per loaded package. Diagnostics surface as `warn` → perlnavigator picks these up.
+- CHECK phase runs both structural checks (Checker) and full static analysis (Analyzer with TypeChecker + EffectChecker) per loaded package. Diagnostics surface as `warn` → perlnavigator picks these up. Suppress with `TYPIST_CHECK_QUIET=1` when using typist-lsp.
 - Gradual typing: fully annotated → all checks enforced; partially annotated (some attrs, no `:Eff`) → pure, return type unknown if no `:Returns`; completely unannotated → `(Any...) -> Any ! Eff(*)`, type checks skip, effect checks flag.
 
 ## Commands

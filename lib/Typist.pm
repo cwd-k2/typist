@@ -2,7 +2,8 @@ package Typist;
 use v5.40;
 
 our $VERSION = '0.01';
-our $RUNTIME = $ENV{TYPIST_RUNTIME} ? 1 : 0;
+our $RUNTIME     = $ENV{TYPIST_RUNTIME}     ? 1 : 0;
+our $CHECK_QUIET = $ENV{TYPIST_CHECK_QUIET} ? 1 : 0;
 
 use Typist::Type;
 use Typist::Type::Atom;
@@ -192,9 +193,10 @@ CHECK {
     Typist::Static::Checker->new->analyze;
 
     # 2. Full static analysis per loaded file (TypeChecker + EffectChecker)
-    _check_analyze();
+    #    Skipped when CHECK_QUIET — typist-lsp provides the same diagnostics.
+    _check_analyze() unless $CHECK_QUIET;
 
-    if (Typist::Error::Global->has_errors) {
+    if (Typist::Error::Global->has_errors && !$CHECK_QUIET) {
         warn Typist::Error::Global->report;
     }
 }

@@ -111,6 +111,27 @@ PERL
     like $out_runtime->{stdout}, qr/DIED/, 'runtime: tie enforces';
 };
 
+# ── TYPIST_CHECK_QUIET suppresses CHECK output ──
+
+subtest 'CHECK_QUIET suppresses warn and skips Analyzer' => sub {
+    my $code = <<'PERL';
+use v5.40;
+use Typist;
+
+sub greet :Type((Str) -> Str) ($name) { "Hello, $name!" }
+
+greet(42);
+print "DONE";
+PERL
+
+    my $out_normal = _run_perl_code($code);
+    my $out_quiet  = _run_perl_code($code, env => +{ TYPIST_CHECK_QUIET => 1 });
+
+    like   $out_normal->{stderr}, qr/TypeMismatch/, 'normal: CHECK warns';
+    unlike $out_quiet->{stderr},  qr/TypeMismatch/, 'quiet: CHECK silent';
+    like   $out_quiet->{stdout},  qr/DONE/,         'quiet: script runs normally';
+};
+
 done_testing;
 
 # ── Helper ────────────────────────────────────────
