@@ -9,7 +9,7 @@ use Test::Typist::LSP qw(run_session lsp_request lsp_notification init_shutdown_
 subtest 'hover returns function signature' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub add :Params(Int, Int) :Returns(Int) ($a, $b) { $a + $b }
+sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
 PERL
 
     my @results = run_session(init_shutdown_wrap(
@@ -58,8 +58,8 @@ PERL
 subtest 'hover on function call site' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub greet :Params(Str) :Returns(Str) ($name) { "Hello, $name" }
-sub add :Params(Int, Int) :Returns(Int) ($a, $b) { $a + $b }
+sub greet :Type((Str) -> Str) ($name) { "Hello, $name" }
+sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
 say greet("Bob");
 PERL
 
@@ -85,8 +85,8 @@ PERL
 subtest 'hover distinguishes between multiple functions' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub greet :Params(Str) :Returns(Str) ($name) { "Hello, $name" }
-sub add :Params(Int, Int) :Returns(Int) ($a, $b) { $a + $b }
+sub greet :Type((Str) -> Str) ($name) { "Hello, $name" }
+sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
 my $result = add(1, 2);
 PERL
 
@@ -160,7 +160,7 @@ PERL
 subtest 'hover shows generics and effects on function' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub fetch :Generic(T) :Params(Str) :Returns(T) :Eff(Console) ($url) { }
+sub fetch :Type(<T>(Str) -> T ! Console) ($url) { }
 PERL
 
     my @results = run_session(init_shutdown_wrap(
@@ -211,7 +211,7 @@ PERL
 subtest 'hover shows inferred variable type' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub greet :Params(Str) :Returns(Str) ($name) { "Hello, $name" }
+sub greet :Type((Str) -> Str) ($name) { "Hello, $name" }
 my $result = greet("Alice");
 PERL
 
@@ -265,7 +265,7 @@ PERL
 subtest 'hover shows parameter type inside function' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+sub add :Type((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 PERL

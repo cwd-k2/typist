@@ -127,7 +127,7 @@ typeclass Printable => T, +{
     display => Func(T, returns => Str),
 };
 
-sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+sub add :Type((Int, Int) -> Int) ($a, $b) {
     $a + $b;
 }
 

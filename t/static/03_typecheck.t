@@ -82,7 +82,7 @@ PERL
 subtest 'call: detects argument mismatch' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+sub add :Type((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 add("hello", 2);
@@ -95,7 +95,7 @@ PERL
 subtest 'call: no error on matching args' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+sub add :Type((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 add(3, 4);
@@ -107,7 +107,7 @@ PERL
 subtest 'call: subtype arg is allowed' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub process :Params(Num) :Returns(Num) ($x) {
+sub process :Type((Num) -> Num) ($x) {
     return $x;
 }
 process(42);
@@ -121,7 +121,7 @@ PERL
 subtest 'return: detects mismatch' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Params(Str) :Returns(Int) ($name) {
+sub greet :Type((Str) -> Int) ($name) {
     return "hello";
 }
 PERL
@@ -133,7 +133,7 @@ PERL
 subtest 'return: no error on matching type' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub double :Params(Int) :Returns(Int) ($x) {
+sub double :Type((Int) -> Int) ($x) {
     return 42;
 }
 PERL
@@ -141,15 +141,15 @@ PERL
     is scalar @$errs, 0, 'no errors';
 };
 
-subtest 'return: no :Returns → skip' => sub {
+subtest 'return: Any return type → skip' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub foo :Params(Int) ($x) {
+sub foo :Type((Int) -> Any) ($x) {
     return "anything";
 }
 PERL
 
-    is scalar @$errs, 0, 'no errors without :Returns';
+    is scalar @$errs, 0, 'no errors with Any return type';
 };
 
 # ── Typedef Resolution ──────────────────────────
@@ -199,7 +199,7 @@ PERL
 subtest 'skip: generic function call' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub first :Generic(T) :Params(ArrayRef[T]) :Returns(T) ($arr) {
+sub first :Type(<T>(ArrayRef[T]) -> T) ($arr) {
     return $arr->[0];
 }
 first("hello");
@@ -253,7 +253,7 @@ PERL
 subtest 'call: infers return type of called function' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Params(Str) :Returns(Str) ($name) {
+sub greet :Type((Str) -> Str) ($name) {
     return "hello $name";
 }
 my $x :Type(Str) = greet("world");
@@ -265,7 +265,7 @@ PERL
 subtest 'call: detects return-type vs variable-type mismatch' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Params(Str) :Returns(Str) ($name) {
+sub greet :Type((Str) -> Str) ($name) {
     return "hello $name";
 }
 my $x :Type(Int) = greet("world");
@@ -278,10 +278,10 @@ PERL
 subtest 'call: nested call type propagation' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Params(Str) :Returns(Str) ($name) {
+sub greet :Type((Str) -> Str) ($name) {
     return "hello $name";
 }
-sub loud :Params(Str) :Returns(Str) ($s) {
+sub loud :Type((Str) -> Str) ($s) {
     return $s;
 }
 loud(greet("world"));
@@ -293,10 +293,10 @@ PERL
 subtest 'call: nested call type mismatch' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Params(Str) :Returns(Str) ($name) {
+sub greet :Type((Str) -> Str) ($name) {
     return "hello $name";
 }
-sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+sub add :Type((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 add(greet("world"), 42);
@@ -309,10 +309,10 @@ PERL
 subtest 'call: nested call with correct arg count' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub double :Params(Int) :Returns(Int) ($x) {
+sub double :Type((Int) -> Int) ($x) {
     return $x * 2;
 }
-sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+sub add :Type((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 add(double(3), 42);
@@ -326,7 +326,7 @@ PERL
 subtest 'variable: symbol resolves to declared type' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub loud :Params(Str) :Returns(Str) ($s) {
+sub loud :Type((Str) -> Str) ($s) {
     return $s;
 }
 my $x :Type(Str) = "hi";
@@ -339,7 +339,7 @@ PERL
 subtest 'variable: symbol type mismatch at call site' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+sub add :Type((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 my $name :Type(Str) = "alice";
@@ -353,7 +353,7 @@ PERL
 subtest 'variable: unannotated variable → skip' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+sub add :Type((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 my $x = 42;
@@ -383,7 +383,7 @@ use v5.40;
 sub make_thing ($x) {
     return $x;
 }
-sub process :Params(Int) :Returns(Int) ($n) {
+sub process :Type((Int) -> Int) ($n) {
     return $n;
 }
 process(make_thing(42));
@@ -392,16 +392,16 @@ PERL
     is scalar @$errs, 0, 'unannotated function as arg → skip check';
 };
 
-subtest 'skip: partially annotated function (Params only, no Returns)' => sub {
+subtest 'skip: partially annotated function (no return type in annotation)' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub compute :Params(Int) ($n) {
+sub compute :Type((Int) -> Any) ($n) {
     return $n * 2;
 }
 my $x :Type(Int) = compute(42);
 PERL
 
-    is scalar @$errs, 0, 'Params-only function → return type unknown, skip';
+    is scalar @$errs, 0, 'Any return type → return type unknown, skip';
 };
 
 # ── Flow Typing (unannotated variable inference) ─
@@ -409,10 +409,10 @@ PERL
 subtest 'flow: inferred variable from function call' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Params(Str) :Returns(Str) ($name) {
+sub greet :Type((Str) -> Str) ($name) {
     return "hello $name";
 }
-sub loud :Params(Str) :Returns(Str) ($s) {
+sub loud :Type((Str) -> Str) ($s) {
     return uc($s);
 }
 my $result = greet("Alice");
@@ -425,10 +425,10 @@ PERL
 subtest 'flow: inferred variable type mismatch' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Params(Str) :Returns(Str) ($name) {
+sub greet :Type((Str) -> Str) ($name) {
     return "hello $name";
 }
-sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+sub add :Type((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 my $result = greet("Alice");
@@ -442,7 +442,7 @@ PERL
 subtest 'flow: inferred variable from literal' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+sub add :Type((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 my $x = 42;
@@ -455,7 +455,7 @@ PERL
 subtest 'flow: inferred variable literal mismatch' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+sub add :Type((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 my $name = "hello";
@@ -469,7 +469,7 @@ PERL
 subtest 'flow: inferred variable used in typed init' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Params(Str) :Returns(Str) ($name) {
+sub greet :Type((Str) -> Str) ($name) {
     return "hello $name";
 }
 my $result = greet("Alice");
@@ -488,7 +488,7 @@ PERL
 subtest 'symbols: inferred variable type appears in symbol index' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 use v5.40;
-sub greet :Params(Str) :Returns(Str) ($name) {
+sub greet :Type((Str) -> Str) ($name) {
     return "hello $name";
 }
 my $result = greet("Alice");
@@ -520,7 +520,7 @@ PERL
 subtest 'return: param type enables return type mismatch detection' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Params(Str) :Returns(Int) ($name) {
+sub greet :Type((Str) -> Int) ($name) {
     return $name;
 }
 PERL
@@ -532,7 +532,7 @@ PERL
 subtest 'return: param type matches return type' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub identity :Params(Int) :Returns(Int) ($x) {
+sub identity :Type((Int) -> Int) ($x) {
     return $x;
 }
 PERL
@@ -543,10 +543,10 @@ PERL
 subtest 'call: param type used in inner call site check' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+sub add :Type((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
-sub wrong :Params(Str) :Returns(Int) ($s) {
+sub wrong :Type((Str) -> Int) ($s) {
     return add($s, 1);
 }
 PERL

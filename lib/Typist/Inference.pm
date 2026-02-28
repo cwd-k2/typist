@@ -110,6 +110,10 @@ sub _unify ($formal, $actual, $bindings) {
         my $n  = @fp < @ap ? @fp : @ap;
         _unify($fp[$_], $ap[$_], $bindings) for 0 .. $n - 1;
         _unify($formal->returns, $actual->returns, $bindings);
+        # Unify effects if both present
+        if ($formal->effects && $actual->effects) {
+            _unify_rows($formal->effects, $actual->effects, $bindings);
+        }
         return;
     }
 
@@ -166,8 +170,8 @@ sub _unify_rows ($formal, $actual, $bindings) {
     my @actual_excess = sort keys %al;
 
     # Bind formal's row_var to actual's excess labels + actual's tail
-    if (defined $formal->row_var) {
-        my $name = $formal->row_var;
+    if (defined $formal->row_var_name) {
+        my $name = $formal->row_var_name;
         my $bound = Typist::Type::Row->new(
             labels  => \@actual_excess,
             row_var => $actual->row_var,
@@ -176,8 +180,8 @@ sub _unify_rows ($formal, $actual, $bindings) {
     }
 
     # Bind actual's row_var to formal's excess labels + formal's tail
-    if (defined $actual->row_var) {
-        my $name = $actual->row_var;
+    if (defined $actual->row_var_name) {
+        my $name = $actual->row_var_name;
         my $bound = Typist::Type::Row->new(
             labels  => \@formal_excess,
             row_var => $formal->row_var,

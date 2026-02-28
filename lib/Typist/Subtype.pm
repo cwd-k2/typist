@@ -128,15 +128,21 @@ sub _check ($sub, $super) {
         return all { _check($sp[$_], $pp[$_]) } 0 .. $#sp;
     }
 
-    # ── Function types (contravariant params, covariant return) ──
+    # ── Function types (contravariant params, covariant return, covariant effects) ──
     if ($sub->is_func && $super->is_func) {
         my @sp = $sub->params;
         my @pp = $super->params;
         return 0 unless @sp == @pp;
         # Contravariant in parameter types
-        my $params_ok = all { _check($pp[$_], $sp[$_]) } 0 .. $#sp;
+        return 0 unless all { _check($pp[$_], $sp[$_]) } 0 .. $#sp;
         # Covariant in return type
-        return $params_ok && _check($sub->returns, $super->returns);
+        return 0 unless _check($sub->returns, $super->returns);
+        # Covariant in effects
+        my $se = $sub->effects;
+        my $pe = $super->effects;
+        return 1 if !$se && !$pe;     # both pure
+        return 0 if !$se != !$pe;     # one pure, one effectful
+        return _check($se, $pe);      # delegate to Row subtyping
     }
 
     # ── Struct width subtyping ───────────────────

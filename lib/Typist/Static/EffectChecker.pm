@@ -106,7 +106,7 @@ sub _collect_called_effects ($self, $block, $pkg) {
         # Detect unannotated function: open row with row_var '*'
         my $eff = $callee_sig->{effects};
         my $row = $eff->is_eff ? $eff->row : $eff;
-        my $is_unannotated = $row->is_row && ($row->row_var // '') eq '*';
+        my $is_unannotated = $row->is_row && ($row->row_var_name // '') eq '*';
 
         push @calls, +{
             name        => $callee_name,

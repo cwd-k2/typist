@@ -93,7 +93,7 @@ say "Person name=Int:      $@" if $@;
 say "";
 say "── Function Param Violations ─────────────────";
 
-sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+sub add :Type((Int, Int) -> Int) ($a, $b) {
     $a + $b;
 }
 
@@ -108,14 +108,14 @@ say "add(1, []):   $@" if $@;
 say "";
 say "── Function Return Violations ────────────────";
 
-sub bad_return :Params(Int) :Returns(Int) ($x) {
+sub bad_return :Type((Int) -> Int) ($x) {
     "not_a_number";
 }
 
 eval { bad_return(42) };
 say "Returns(Int) -> Str:  $@" if $@;
 
-sub returns_undef :Params(Str) :Returns(Str) ($x) {
+sub returns_undef :Type((Str) -> Str) ($x) {
     undef;
 }
 
@@ -125,7 +125,7 @@ say "Returns(Str) -> undef:  $@" if $@;
 say "";
 say "── Combined Param + Return ───────────────────";
 
-sub format_age :Params(Int) :Returns(Str) ($age) {
+sub format_age :Type((Int) -> Str) ($age) {
     "Age: $age";
 }
 

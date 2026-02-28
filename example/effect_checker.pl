@@ -11,11 +11,11 @@ use Typist::Effect;
 # The static analyzer enforces that a function can only call
 # functions whose effects are a subset of its own declared effects.
 #
-#   caller :Eff(A)       can call   callee :Eff(A)       ✓
-#   caller :Eff(A | B)   can call   callee :Eff(A)       ✓  (superset)
-#   caller :Eff(A)       cannot call callee :Eff(A | B)  ✗  (missing B)
-#   caller (pure)        cannot call callee :Eff(A)       ✗  (no effects)
-#   caller (annotated)   cannot call unannotated callee   ✗  (Eff(*))
+#   caller ! A         can call   callee ! A         (match)
+#   caller ! A | B     can call   callee ! A         (superset)
+#   caller ! A         cannot call callee ! A | B    (missing B)
+#   caller (pure)      cannot call callee ! A        (no effects)
+#   caller (annotated) cannot call unannotated callee (Eff(*))
 
 my $sep = '─' x 60;
 
@@ -65,11 +65,11 @@ analyze_and_show('1. Caller has Console, calls Console callee → OK', <<'PERL')
 package Case1;
 use v5.40;
 
-sub write_msg :Params(Str) :Returns(Str) :Eff(Console) ($s) {
+sub write_msg :Type((Str) -> Str ! Console) ($s) {
     return $s;
 }
 
-sub main :Returns(Void) :Eff(Console) () {
+sub main :Type(() -> Void ! Console) () {
     write_msg("hello");
 }
 PERL
@@ -80,11 +80,11 @@ analyze_and_show('2. Caller has Console|State|Log, calls Console callee → OK (
 package Case2;
 use v5.40;
 
-sub write_msg :Params(Str) :Returns(Str) :Eff(Console) ($s) {
+sub write_msg :Type((Str) -> Str ! Console) ($s) {
     return $s;
 }
 
-sub main :Returns(Void) :Eff(Console | State | Log) () {
+sub main :Type(() -> Void ! Console | State | Log) () {
     write_msg("hello");
 }
 PERL
@@ -95,26 +95,26 @@ analyze_and_show('3. Caller has Console, calls Console|State callee → NG (miss
 package Case3;
 use v5.40;
 
-sub stateful :Params(Str) :Returns(Str) :Eff(Console | State) ($x) {
+sub stateful :Type((Str) -> Str ! Console | State) ($x) {
     return $x;
 }
 
-sub caller_fn :Returns(Str) :Eff(Console) () {
+sub caller_fn :Type(() -> Str ! Console) () {
     stateful("hello");
 }
 PERL
 
 # ── 4. NG: pure caller calls effectful callee ───
 
-analyze_and_show('4. Pure caller (no :Eff) calls Console callee → NG', <<'PERL');
+analyze_and_show('4. Pure caller (no effect) calls Console callee → NG', <<'PERL');
 package Case4;
 use v5.40;
 
-sub io_fn :Params(Str) :Returns(Str) :Eff(Console) ($x) {
+sub io_fn :Type((Str) -> Str ! Console) ($x) {
     return $x;
 }
 
-sub pure_fn :Params(Str) :Returns(Str) ($x) {
+sub pure_fn :Type((Str) -> Str) ($x) {
     io_fn($x);
 }
 PERL
@@ -129,7 +129,7 @@ sub helper ($x) {
     return $x;
 }
 
-sub safe_fn :Params(Str) :Returns(Str) :Eff(Console) ($s) {
+sub safe_fn :Type((Str) -> Str ! Console) ($s) {
     helper($s);
 }
 PERL
@@ -140,7 +140,7 @@ analyze_and_show('6. Unannotated caller calls anything → no check (gradual)', 
 package Case6;
 use v5.40;
 
-sub io_fn :Params(Str) :Returns(Str) :Eff(Console) ($x) {
+sub io_fn :Type((Str) -> Str ! Console) ($x) {
     return $x;
 }
 

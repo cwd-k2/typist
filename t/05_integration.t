@@ -20,11 +20,11 @@ subtest 'typed scalar lifecycle' => sub {
 # ── End-to-end: typed functions ──────────────────
 
 subtest 'typed function pipeline' => sub {
-    sub double :Params(Int) :Returns(Int) ($n) {
+    sub double :Type((Int) -> Int) ($n) {
         return $n * 2;
     }
 
-    sub to_greeting :Params(Str) :Returns(Str) ($name) {
+    sub to_greeting :Type((Str) -> Str) ($name) {
         return "Hello, $name!";
     }
 
@@ -53,7 +53,7 @@ subtest 'typedef integration' => sub {
 # ── End-to-end: parameterized + functions ────────
 
 subtest 'parameterized function' => sub {
-    sub sum_list :Params(ArrayRef[Int]) :Returns(Int) ($list) {
+    sub sum_list :Type((ArrayRef[Int]) -> Int) ($list) {
         my $sum = 0;
         $sum += $_ for @$list;
         return $sum;
@@ -69,7 +69,7 @@ subtest 'parameterized function' => sub {
 # ── End-to-end: generic function ─────────────────
 
 subtest 'generic function' => sub {
-    sub first :Generic(T) :Params(ArrayRef[T]) :Returns(T) ($arr) {
+    sub first :Type(<T>(ArrayRef[T]) -> T) ($arr) {
         return $arr->[0];
     }
 

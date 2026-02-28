@@ -6,11 +6,11 @@ use Typist::DSL;
 
 # ── Generic Functions ─────────────────────────────
 
-sub first :Generic(T) :Params(ArrayRef[T]) :Returns(T) ($arr) {
+sub first :Type(<T>(ArrayRef[T]) -> T) ($arr) {
     $arr->[0];
 }
 
-sub pair :Generic(T, U) :Params(T, U) :Returns(ArrayRef[Any]) ($a, $b) {
+sub pair :Type(<T, U>(T, U) -> ArrayRef[Any]) ($a, $b) {
     [$a, $b];
 }
 

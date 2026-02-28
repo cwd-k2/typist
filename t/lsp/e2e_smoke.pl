@@ -86,7 +86,7 @@ send_msg($to_srv, +{
     params  => +{
         textDocument => +{
             uri     => 'file:///e2e/clean.pm',
-            text    => "use v5.40;\nsub inc :Params(Int) :Returns(Int) (\$x) { \$x + 1 }\n",
+            text    => "use v5.40;\nsub inc :Type((Int) -> Int) (\$x) { \$x + 1 }\n",
             version => 1,
         },
     },
@@ -148,7 +148,7 @@ send_msg($to_srv, +{
     params  => +{
         textDocument => +{
             uri     => 'file:///e2e/comp.pm',
-            text    => "use v5.40;\nsub foo :Params(",
+            text    => "use v5.40;\nsub foo :Type(",
             version => 1,
         },
     },
@@ -160,7 +160,7 @@ send_msg($to_srv, +{
     method  => 'textDocument/completion',
     params  => +{
         textDocument => +{ uri => 'file:///e2e/comp.pm' },
-        position     => +{ line => 1, character => length('sub foo :Params(') },
+        position     => +{ line => 1, character => length('sub foo :Type(') },
     },
 });
 my $comp = read_response($from_srv);

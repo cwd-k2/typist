@@ -113,62 +113,57 @@ sub parse_generic_decl ($class, $spec, %opts) {
 
 sub _handle_code_attrs ($pkg, $coderef, @attrs) {
     my @unhandled;
-    my (@params_expr, $returns_expr, @generics, $eff_expr);
 
     for my $attr (@attrs) {
-        if ($attr =~ /\AParams\((.+)\)\z/) {
-            @params_expr = split /\s*,\s*/, $1;
-        }
-        elsif ($attr =~ /\AReturns\((.+)\)\z/) {
-            $returns_expr = $1;
-        }
-        elsif ($attr =~ /\AEff\((.+)\)\z/) {
-            $eff_expr = $1;
-        }
-        elsif ($attr =~ /\AGeneric\((.+)\)\z/) {
-            @generics = __PACKAGE__->parse_generic_decl($1);
-        }
-        else {
+        if ($attr =~ /\AType\((.+)\)\z/s) {
+            my $ann = Typist::Parser->parse_annotation($1);
+            my $type = $ann->{type};
+
+            unless ($type->is_func) {
+                push @unhandled, $attr;
+                next;
+            }
+
+            # Parse generic declarations
+            my @generics;
+            if (@{$ann->{generics_raw}}) {
+                @generics = __PACKAGE__->parse_generic_decl(
+                    join(', ', @{$ann->{generics_raw}})
+                );
+            }
+
+            # Extract components from the Func type
+            my @param_types = $type->params;
+            my $return_type = $type->returns;
+            my $effects     = $type->effects
+                ? Typist::Type::Eff->new($type->effects) : undef;
+
+            # Multi-char type variable support: transform aliases → vars
+            if (@generics) {
+                my %var_names = map { $_->{name} => 1 } @generics;
+                @param_types = map {
+                    Typist::Transform->aliases_to_vars($_, \%var_names)
+                } @param_types;
+                $return_type = Typist::Transform->aliases_to_vars(
+                    $return_type, \%var_names
+                );
+                $effects = Typist::Transform->aliases_to_vars($effects, \%var_names)
+                    if $effects;
+            }
+
+            my $sig = +{
+                params   => \@param_types,
+                returns  => $return_type,
+                generics => \@generics,
+                effects  => $effects,
+            };
+
+            my $sub_name = _recover_name($coderef) // '(anonymous)';
+            Typist::Registry->register_function($pkg, $sub_name, $sig);
+            _wrap_sub($coderef, $sig, $pkg, $sub_name);
+        } else {
             push @unhandled, $attr;
         }
-    }
-
-    # Only proceed if we have type annotations
-    if (@params_expr || $returns_expr || $eff_expr) {
-        my @param_types  = map { Typist::Parser->parse($_) } @params_expr;
-        my $return_type  = $returns_expr ? Typist::Parser->parse($returns_expr) : undef;
-
-        # Parse effect annotation
-        my $effects;
-        if ($eff_expr) {
-            my $row = Typist::Parser->parse_row($eff_expr);
-            $effects = Typist::Type::Eff->new($row);
-        }
-
-        # Multi-char type variable support: transform aliases → vars
-        if (@generics) {
-            my %var_names = map { $_->{name} => 1 } @generics;
-            @param_types = map { Typist::Transform->aliases_to_vars($_, \%var_names) } @param_types;
-            $return_type = Typist::Transform->aliases_to_vars($return_type, \%var_names)
-                if $return_type;
-            $effects = Typist::Transform->aliases_to_vars($effects, \%var_names)
-                if $effects;
-        }
-
-        my $sig = +{
-            params   => \@param_types,
-            returns  => $return_type,
-            generics => \@generics,
-            effects  => $effects,
-        };
-
-        # Recover the subroutine name via B introspection
-        my $sub_name = _recover_name($coderef) // '(anonymous)';
-
-        Typist::Registry->register_function($pkg, $sub_name, $sig);
-
-        # Wrap the original sub with type-checking via glob replacement
-        _wrap_sub($coderef, $sig, $pkg, $sub_name);
     }
 
     @unhandled;

@@ -19,7 +19,7 @@ BEGIN {
 
 # ── Single Effect ───────────────────────────────
 
-sub greet :Params(Str) :Returns(Str) :Eff(Console) ($name) {
+sub greet :Type((Str) -> Str ! Console) ($name) {
     "Hello, $name!";
 }
 
@@ -27,7 +27,7 @@ say greet("Alice");
 
 # ── Multiple Effects ────────────────────────────
 
-sub greet_logged :Params(Str) :Returns(Str) :Eff(Console | Log) ($name) {
+sub greet_logged :Type((Str) -> Str ! Console | Log) ($name) {
     "Hello, $name! (logged)";
 }
 
@@ -35,11 +35,11 @@ say greet_logged("Bob");
 
 # ── Row Polymorphism ────────────────────────────
 
-# :Generic(r: Row) declares r as a row variable.
-# :Eff(Log | r) means "at least Log, plus whatever r adds."
+# <r: Row> declares r as a row variable.
+# ! Log | r means "at least Log, plus whatever r adds."
 # Callers can supply any additional effects through r.
 
-sub with_log :Generic(r: Row) :Params(Str) :Returns(Str) :Eff(Log | r) ($msg) {
+sub with_log :Type(<r: Row>(Str) -> Str ! Log | r) ($msg) {
     $msg;
 }
 
@@ -58,10 +58,10 @@ say "with_log    : ", $sig->{effects}->to_string;
 
 # ── Phantom: Types Enforce, Runtime Flows ───────
 
-# :Eff is phantom — it annotates but does not alter runtime behavior.
+# Effects are phantom — they annotate but do not alter runtime behavior.
 # Static analysis catches effect mismatches; runtime runs freely.
 
-sub pure_add :Params(Int, Int) :Returns(Int) ($a, $b) {
+sub pure_add :Type((Int, Int) -> Int) ($a, $b) {
     $a + $b;
 }
 

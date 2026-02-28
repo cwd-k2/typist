@@ -71,10 +71,10 @@ subtest 'scalar :Type(Maybe[Str])' => sub {
     like $@, qr/type error/, 'Maybe[Str] rejected arrayref';
 };
 
-# ── :Params and :Returns on subs ─────────────────
+# ── :Type on subs ────────────────────────────────
 
-subtest 'sub :Params :Returns' => sub {
-    sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+subtest 'sub :Type function annotation' => sub {
+    sub add :Type((Int, Int) -> Int) ($a, $b) {
         return $a + $b;
     }
 
@@ -88,7 +88,7 @@ subtest 'sub :Params :Returns' => sub {
 };
 
 subtest 'sub with return type violation' => sub {
-    sub bad_return :Params(Int) :Returns(Int) ($n) {
+    sub bad_return :Type((Int) -> Int) ($n) {
         return "not a number";
     }
 

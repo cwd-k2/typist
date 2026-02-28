@@ -7,6 +7,7 @@ use Typist::Error;
 use Typist::Error::Global;
 use Typist::Kind;
 use Typist::KindChecker;
+use Typist::Type::Fold;
 
 # ── Constructor ──────────────────────────────────
 
@@ -78,7 +79,7 @@ sub _check_functions ($self) {
             unless ($declared{$var}) {
                 $self->{errors}->collect(
                     kind    => 'UndeclaredTypeVar',
-                    message => "Type variable '$var' in $fqn is not declared in :Generic",
+                    message => "Type variable '$var' in $fqn is not declared in generics",
                     file    => '(function signature)',
                     line    => 0,
                 );
@@ -148,40 +149,19 @@ sub _check_functions ($self) {
 sub _check_type_wellformed ($self, $type, $context) {
     return unless $type;
 
-    if ($type->is_alias) {
-        my $name = $type->alias_name;
-        unless ($self->{registry}->has_alias($name) || $self->{registry}->has_typeclass($name)) {
-            $self->{errors}->collect(
-                kind    => 'UnknownType',
-                message => "Type alias '$name' is not defined (in $context)",
-                file    => '(type expression)',
-                line    => 0,
-            );
+    Typist::Type::Fold->walk($type, sub ($node) {
+        if ($node->is_alias) {
+            my $name = $node->alias_name;
+            unless ($self->{registry}->has_alias($name) || $self->{registry}->has_typeclass($name)) {
+                $self->{errors}->collect(
+                    kind    => 'UnknownType',
+                    message => "Type alias '$name' is not defined (in $context)",
+                    file    => '(type expression)',
+                    line    => 0,
+                );
+            }
         }
-    }
-
-    if ($type->is_param) {
-        $self->_check_type_wellformed($_, $context) for $type->params;
-    }
-    if ($type->is_union) {
-        $self->_check_type_wellformed($_, $context) for $type->members;
-    }
-    if ($type->is_intersection) {
-        $self->_check_type_wellformed($_, $context) for $type->members;
-    }
-    if ($type->is_func) {
-        $self->_check_type_wellformed($_, $context) for $type->params;
-        $self->_check_type_wellformed($type->returns, $context);
-    }
-    if ($type->is_struct) {
-        my %r = $type->required_fields;
-        my %o = $type->optional_fields;
-        $self->_check_type_wellformed($_, $context) for values %r, values %o;
-    }
-
-    if ($type->is_eff) {
-        $self->_check_type_wellformed($type->row, $context);
-    }
+    });
 }
 
 # ── Effect Well-formedness ────────────────────────
@@ -204,11 +184,11 @@ sub _check_effect_wellformed ($self, $eff, $context, $declared_vars) {
 
     # Check row variable is declared in :Generic
     # '*' is an internal marker for unannotated functions (any effect)
-    if (defined $row->row_var && $row->row_var ne '*') {
-        unless ($declared_vars->{$row->row_var}) {
+    if (defined $row->row_var_name && $row->row_var_name ne '*') {
+        unless ($declared_vars->{$row->row_var_name}) {
             $self->{errors}->collect(
                 kind    => 'UndeclaredRowVar',
-                message => "Row variable '" . $row->row_var . "' in $context is not declared in :Generic",
+                message => "Row variable '" . $row->row_var_name . "' in $context is not declared in generics",
                 file    => '(effect annotation)',
                 line    => 0,
             );

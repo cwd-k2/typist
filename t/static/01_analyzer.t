@@ -14,7 +14,7 @@ use v5.40;
 
 typedef Age => 'Int';
 
-sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+sub add :Type((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 PERL
@@ -41,7 +41,7 @@ PERL
 subtest 'detects undeclared type variables' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 use v5.40;
-sub bad :Params(T) :Returns(T) ($x) { $x }
+sub bad :Type((T) -> T) ($x) { $x }
 PERL
 
     my @undecl = grep { $_->{kind} eq 'UndeclaredTypeVar' } @{$result->{diagnostics}};
@@ -51,7 +51,7 @@ PERL
 subtest 'declared generics are clean' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 use v5.40;
-sub identity :Generic(T) :Params(T) :Returns(T) ($x) { $x }
+sub identity :Type(<T>(T) -> T) ($x) { $x }
 PERL
 
     my @undecl = grep { $_->{kind} eq 'UndeclaredTypeVar' } @{$result->{diagnostics}};
@@ -63,7 +63,7 @@ PERL
 subtest 'detects unknown type aliases in functions' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 use v5.40;
-sub greet :Params(Username) :Returns(Str) ($name) { "Hi $name" }
+sub greet :Type((Username) -> Str) ($name) { "Hi $name" }
 PERL
 
     my @unknown = grep { $_->{kind} eq 'UnknownType' } @{$result->{diagnostics}};
@@ -80,7 +80,7 @@ use v5.40;
 
 typedef Score => 'Int';
 my $val :Type(Str);
-sub calc :Params(Int) :Returns(Int) ($n) { $n * 2 }
+sub calc :Type((Int) -> Int) ($n) { $n * 2 }
 PERL
 
     my @syms = @{$result->{symbols}};
@@ -100,7 +100,7 @@ subtest 'workspace registry provides cross-file aliases' => sub {
 
     my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws);
 use v5.40;
-sub find_user :Params(UserId) :Returns(Str) ($id) { "user_$id" }
+sub find_user :Type((UserId) -> Str) ($id) { "user_$id" }
 PERL
 
     my @unknown = grep { $_->{kind} eq 'UnknownType' } @{$result->{diagnostics}};

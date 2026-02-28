@@ -2,25 +2,35 @@ package Typist::Type::Row;
 use v5.40;
 use parent 'Typist::Type';
 use List::Util 'uniq', 'all';
+use Typist::Type::Var;
 
 # Effect row type: an ordered set of effect labels with an optional tail variable.
-#   { labels => ['Console', 'State'], row_var => 'r' }
+#   { labels => ['Console', 'State'], row_var => Var('r') }
 #
 # Labels are sorted and deduplicated at construction (Union normalization pattern).
 # A closed row has no row_var; an open row carries a tail variable for polymorphism.
+# row_var is stored as a Typist::Type::Var (strings are normalized at construction).
 # contains() always returns 1 — rows are phantom types.
 
 sub new ($class, %args) {
     my @labels = sort(uniq(($args{labels} // [])->@*));
+    my $rv = $args{row_var};
+    $rv = Typist::Type::Var->new($rv) if defined $rv && !ref $rv;
     bless +{
         labels  => \@labels,
-        row_var => $args{row_var},
+        row_var => $rv,
     }, $class;
 }
 
 sub labels  ($self) { $self->{labels}->@* }
 sub row_var ($self) { $self->{row_var} }
 sub is_row  ($self) { 1 }
+
+# String name of the row variable (works both before and after Var normalization).
+sub row_var_name ($self) {
+    return undef unless defined $self->{row_var};
+    ref $self->{row_var} ? $self->{row_var}->name : $self->{row_var};
+}
 
 sub is_closed ($self) { !defined $self->{row_var} }
 sub is_empty  ($self) { !@{$self->{labels}} && !defined $self->{row_var} }
@@ -29,7 +39,7 @@ sub name ($self) { $self->to_string }
 
 sub to_string ($self) {
     my @parts = $self->{labels}->@*;
-    push @parts, $self->{row_var} if defined $self->{row_var};
+    push @parts, $self->{row_var}->name if defined $self->{row_var};
     join ' | ', @parts;
 }
 
@@ -41,8 +51,8 @@ sub equals ($self, $other) {
     return 0 unless @sl == @ol;
     return 0 unless all { $sl[$_] eq $ol[$_] } 0 .. $#sl;
 
-    my $sv = $self->{row_var}  // '';
-    my $ov = $other->row_var // '';
+    my $sv = $self->row_var_name  // '';
+    my $ov = $other->row_var_name // '';
     $sv eq $ov;
 }
 
@@ -50,14 +60,16 @@ sub equals ($self, $other) {
 sub contains ($self, $) { 1 }
 
 sub free_vars ($self) {
-    defined $self->{row_var} ? ($self->{row_var}) : ();
+    defined $self->{row_var} ? ($self->{row_var}->name) : ();
 }
 
 sub substitute ($self, $bindings) {
     my $var = $self->{row_var};
-    return $self unless defined $var && exists $bindings->{$var};
+    return $self unless defined $var;
+    my $name = $var->name;
+    return $self unless exists $bindings->{$name};
 
-    my $bound = $bindings->{$var};
+    my $bound = $bindings->{$name};
 
     # Binding is a Row — merge labels and inherit tail
     if ($bound->is_row) {

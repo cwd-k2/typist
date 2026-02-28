@@ -51,7 +51,7 @@ sub _tokenize ($input) {
         elsif ($input =~ /\G('(?:[^'\\]|\\.)*')/gc) { push @tokens, $1 }
         elsif ($input =~ /\G(-?\d+(?:\.\d+)?)/gc)   { push @tokens, $1 }
         elsif ($input =~ /\G([A-Za-z_]\w*)/gc)    { push @tokens, $1 }
-        elsif ($input =~ /\G([\[\]{}(),|&?])/gc)  { push @tokens, $1 }
+        elsif ($input =~ /\G([\[\]{}(),|&?!])/gc)  { push @tokens, $1 }
         else {
             my $ch = substr($input, pos($input), 1);
             die "Typist::Parser: unexpected character '$ch' in '$input'";
@@ -116,52 +116,43 @@ sub _parse_named ($tokens, $pos) {
 
     # Consume '['
     $$pos++;
-
-    my @params;
-    my $return_type;
-
-    unless ($$pos < @$tokens && $tokens->[$$pos] eq ']') {
-        push @params, _parse_union($tokens, $pos);
-
-        while ($$pos < @$tokens && $tokens->[$$pos] eq ',') {
-            $$pos++;
-            push @params, _parse_union($tokens, $pos);
-        }
-
-        if ($$pos < @$tokens && $tokens->[$$pos] eq '->') {
-            $$pos++;
-            $return_type = _parse_union($tokens, $pos);
-        }
-    }
-
+    my ($params, $return_type, $effect_row) = _parse_param_list($tokens, $pos, ']');
     die "Typist::Parser: expected ']' after parameter list"
         unless $$pos < @$tokens && $tokens->[$$pos] eq ']';
     $$pos++;
 
-    # Maybe[T] desugars to T | Undef
-    if ($name eq 'Maybe' && @params == 1 && !$return_type) {
-        return Typist::Type::Union->new(
-            $params[0],
-            Typist::Type::Atom->new('Undef'),
-        );
-    }
-
-    # CodeRef[Args -> Return]
-    if ($name eq 'CodeRef' && $return_type) {
-        return Typist::Type::Func->new(\@params, $return_type);
-    }
-
-    Typist::Type::Param->new($name, @params);
+    _resolve_param_constructor($name, $params, $return_type, $effect_row);
 }
 
-# struct ::= '{' (IDENT '?'? '=>' type_expr (',' IDENT '?'? '=>' type_expr)*)? '}'
+# struct ::= '{' struct_fields '}'
 sub _parse_struct ($tokens, $pos) {
     $$pos++; # consume '{'
+    my %fields = _parse_struct_fields($tokens, $pos, '}');
+    die "Typist::Parser: expected '}'"
+        unless $$pos < @$tokens && $tokens->[$$pos] eq '}';
+    $$pos++;
+    Typist::Type::Struct->new(%fields);
+}
 
+# Common struct field parser: IDENT '?'? '=>' type_expr (',' ...)*
+sub _parse_struct_fields ($tokens, $pos, $close) {
     my %fields;
-    unless ($$pos < @$tokens && $tokens->[$$pos] eq '}') {
-        my $key = $tokens->[$$pos++];
-        # Optional marker: key followed by '?'
+    return %fields if $$pos < @$tokens && $tokens->[$$pos] eq $close;
+
+    my $key = $tokens->[$$pos++];
+    if ($$pos < @$tokens && $tokens->[$$pos] eq '?') {
+        $key .= '?';
+        $$pos++;
+    }
+    die "Typist::Parser: expected '=>' after struct key"
+        unless $$pos < @$tokens && $tokens->[$$pos] eq '=>';
+    $$pos++;
+    $fields{$key} = _parse_union($tokens, $pos);
+
+    while ($$pos < @$tokens && $tokens->[$$pos] eq ',') {
+        $$pos++;
+        last if $$pos < @$tokens && $tokens->[$$pos] eq $close;
+        $key = $tokens->[$$pos++];
         if ($$pos < @$tokens && $tokens->[$$pos] eq '?') {
             $key .= '?';
             $$pos++;
@@ -170,31 +161,29 @@ sub _parse_struct ($tokens, $pos) {
             unless $$pos < @$tokens && $tokens->[$$pos] eq '=>';
         $$pos++;
         $fields{$key} = _parse_union($tokens, $pos);
+    }
 
-        while ($$pos < @$tokens && $tokens->[$$pos] eq ',') {
-            $$pos++;
-            last if $$pos < @$tokens && $tokens->[$$pos] eq '}';
-            $key = $tokens->[$$pos++];
-            if ($$pos < @$tokens && $tokens->[$$pos] eq '?') {
-                $key .= '?';
-                $$pos++;
-            }
-            die "Typist::Parser: expected '=>' after struct key"
-                unless $$pos < @$tokens && $tokens->[$$pos] eq '=>';
-            $$pos++;
-            $fields{$key} = _parse_union($tokens, $pos);
+    %fields;
+}
+
+# grouped ::= '(' type_expr ')' | func_type
+# func_type ::= '(' param_list? ')' '->' return_type ('!' effect_row)?
+sub _parse_grouped ($tokens, $pos) {
+    # Look ahead: if matching ')' is followed by '->', it's a function type
+    my $depth = 0;
+    my $close_pos;
+    for my $i ($$pos .. $#$tokens) {
+        $depth++ if $tokens->[$i] eq '(';
+        if ($tokens->[$i] eq ')') {
+            $depth--;
+            if ($depth == 0) { $close_pos = $i; last; }
         }
     }
 
-    die "Typist::Parser: expected '}'"
-        unless $$pos < @$tokens && $tokens->[$$pos] eq '}';
-    $$pos++;
+    if (defined $close_pos && $close_pos + 1 < @$tokens && $tokens->[$close_pos + 1] eq '->') {
+        return _parse_func_type($tokens, $pos);
+    }
 
-    Typist::Type::Struct->new(%fields);
-}
-
-# grouped ::= '(' type_expr ')'
-sub _parse_grouped ($tokens, $pos) {
     $$pos++; # consume '('
     my $inner = _parse_union($tokens, $pos);
 
@@ -205,43 +194,47 @@ sub _parse_grouped ($tokens, $pos) {
     $inner;
 }
 
+# func_type ::= '(' param_list? ')' '->' return_type ('!' effect_row)?
+sub _parse_func_type ($tokens, $pos) {
+    $$pos++; # consume '('
+
+    my @params;
+    unless ($$pos < @$tokens && $tokens->[$$pos] eq ')') {
+        push @params, _parse_union($tokens, $pos);
+        while ($$pos < @$tokens && $tokens->[$$pos] eq ',') {
+            $$pos++;
+            push @params, _parse_union($tokens, $pos);
+        }
+    }
+
+    die "Typist::Parser: expected ')' in function type"
+        unless $$pos < @$tokens && $tokens->[$$pos] eq ')';
+    $$pos++;
+
+    die "Typist::Parser: expected '->' in function type"
+        unless $$pos < @$tokens && $tokens->[$$pos] eq '->';
+    $$pos++;
+
+    my $return_type = _parse_union($tokens, $pos);
+
+    my $effects;
+    if ($$pos < @$tokens && $tokens->[$$pos] eq '!') {
+        $$pos++;
+        $effects = _parse_effect_row($tokens, $pos);
+    }
+
+    Typist::Type::Func->new(\@params, $return_type, $effects);
+}
+
 # ── DSL Constructors ─────────────────────────────
 
 # Struct(k => V, ...) → Type::Struct
 sub _parse_dsl_struct ($name, $tokens, $pos) {
     $$pos++; # consume '('
-
-    my %fields;
-    unless ($$pos < @$tokens && $tokens->[$$pos] eq ')') {
-        my $key = $tokens->[$$pos++];
-        if ($$pos < @$tokens && $tokens->[$$pos] eq '?') {
-            $key .= '?';
-            $$pos++;
-        }
-        die "Typist::Parser: expected '=>' after struct key"
-            unless $$pos < @$tokens && $tokens->[$$pos] eq '=>';
-        $$pos++;
-        $fields{$key} = _parse_union($tokens, $pos);
-
-        while ($$pos < @$tokens && $tokens->[$$pos] eq ',') {
-            $$pos++;
-            last if $$pos < @$tokens && $tokens->[$$pos] eq ')';
-            $key = $tokens->[$$pos++];
-            if ($$pos < @$tokens && $tokens->[$$pos] eq '?') {
-                $key .= '?';
-                $$pos++;
-            }
-            die "Typist::Parser: expected '=>' after struct key"
-                unless $$pos < @$tokens && $tokens->[$$pos] eq '=>';
-            $$pos++;
-            $fields{$key} = _parse_union($tokens, $pos);
-        }
-    }
-
+    my %fields = _parse_struct_fields($tokens, $pos, ')');
     die "Typist::Parser: expected ')' after Struct(...)"
         unless $$pos < @$tokens && $tokens->[$$pos] eq ')';
     $$pos++;
-
     Typist::Type::Struct->new(%fields);
 }
 
@@ -273,6 +266,13 @@ sub _parse_dsl_func ($name, $tokens, $pos) {
         }
     }
 
+    # Parse optional effect row: ! Label | Label | var
+    my $effect_row;
+    if ($$pos < @$tokens && $tokens->[$$pos] eq '!') {
+        $$pos++;
+        $effect_row = _parse_effect_row($tokens, $pos, ')');
+    }
+
     die "Typist::Parser: expected ')' after Func(...)"
         unless $$pos < @$tokens && $tokens->[$$pos] eq ')';
     $$pos++;
@@ -280,7 +280,7 @@ sub _parse_dsl_func ($name, $tokens, $pos) {
     die "Typist::Parser: Func() requires 'returns => Type'"
         unless $return_type;
 
-    Typist::Type::Func->new(\@params, $return_type);
+    Typist::Type::Func->new(\@params, $return_type, $effect_row);
 }
 
 # Alias('Name') → resolve as _resolve_name
@@ -308,42 +308,58 @@ sub _parse_dsl_alias ($name, $tokens, $pos) {
 # ArrayRef(T), HashRef(K,V), Maybe(T), etc. → same as bracket form
 sub _parse_dsl_param ($name, $tokens, $pos) {
     $$pos++; # consume '('
+    my ($params, $return_type, $effect_row) = _parse_param_list($tokens, $pos, ')');
+    die "Typist::Parser: expected ')' after $name(...)"
+        unless $$pos < @$tokens && $tokens->[$$pos] eq ')';
+    $$pos++;
+    _resolve_param_constructor($name, $params, $return_type, $effect_row);
+}
 
+# ── Common Param List / Constructor ──────────────
+
+# Parse a parametric argument list: type_expr (',' type_expr)* ('->' return)? ('!' effects)?
+# Returns ($params_aref, $return_type_or_undef, $effect_row_or_undef).
+sub _parse_param_list ($tokens, $pos, $close) {
     my @params;
     my $return_type;
 
-    unless ($$pos < @$tokens && $tokens->[$$pos] eq ')') {
+    unless ($$pos < @$tokens && $tokens->[$$pos] eq $close) {
         push @params, _parse_union($tokens, $pos);
-
         while ($$pos < @$tokens && $tokens->[$$pos] eq ',') {
             $$pos++;
             push @params, _parse_union($tokens, $pos);
         }
-
         if ($$pos < @$tokens && $tokens->[$$pos] eq '->') {
             $$pos++;
             $return_type = _parse_union($tokens, $pos);
         }
     }
 
-    die "Typist::Parser: expected ')' after $name(...)"
-        unless $$pos < @$tokens && $tokens->[$$pos] eq ')';
-    $$pos++;
+    my $effect_row;
+    if ($$pos < @$tokens && $tokens->[$$pos] eq '!') {
+        $$pos++;
+        $effect_row = _parse_effect_row($tokens, $pos, $close);
+    }
 
-    # Maybe(T) desugars to T | Undef
-    if ($name eq 'Maybe' && @params == 1 && !$return_type) {
+    (\@params, $return_type, $effect_row);
+}
+
+# Resolve a parametric constructor with Maybe/CodeRef desugaring.
+sub _resolve_param_constructor ($name, $params, $return_type, $effect_row) {
+    # Maybe[T] / Maybe(T) → T | Undef
+    if ($name eq 'Maybe' && @$params == 1 && !$return_type) {
         return Typist::Type::Union->new(
-            $params[0],
+            $params->[0],
             Typist::Type::Atom->new('Undef'),
         );
     }
 
-    # CodeRef(Args -> Return)
+    # CodeRef[A -> B ! E] / CodeRef(A -> B ! E) → Func
     if ($name eq 'CodeRef' && $return_type) {
-        return Typist::Type::Func->new(\@params, $return_type);
+        return Typist::Type::Func->new($params, $return_type, $effect_row);
     }
 
-    Typist::Type::Param->new($name, @params);
+    Typist::Type::Param->new($name, @$params);
 }
 
 # ── Literal Types ────────────────────────────────
@@ -370,6 +386,28 @@ sub _resolve_name ($name) {
     Typist::Type::Alias->new($name);
 }
 
+# ── Effect Row (inline) ─────────────────────────
+
+# Parse an effect row within a function type: labels and optional row variable
+# separated by '|', stopping at $close token (']' or ')').
+sub _parse_effect_row ($tokens, $pos, $close = undef) {
+    my @labels;
+    my $row_var;
+
+    while ($$pos < @$tokens && (!defined $close || $tokens->[$$pos] ne $close)) {
+        my $tok = $tokens->[$$pos++];
+        if ($tok =~ /\A[a-z]/) {
+            $row_var = $tok;
+        } else {
+            push @labels, $tok;
+        }
+        last unless $$pos < @$tokens && $tokens->[$$pos] eq '|';
+        $$pos++;  # consume '|'
+    }
+
+    Typist::Type::Row->new(labels => \@labels, row_var => $row_var);
+}
+
 # ── Row Parsing ──────────────────────────────────
 
 # Parse a row expression: "Console | State | r"
@@ -393,6 +431,94 @@ sub parse_row ($class, $expr) {
     }
 
     Typist::Type::Row->new(labels => \@labels, row_var => $row_var);
+}
+
+# ── Unified Annotation Parsing ──────────────────
+
+# Parse a :Type(...) annotation string.
+# Supports: simple types, function types, and generic declarations.
+#   "Int"                              → { generics_raw => [], type => Atom(Int) }
+#   "(Int, Str) -> Bool"               → { generics_raw => [], type => Func }
+#   "<T: Num>(T, T) -> T"              → { generics_raw => ["T: Num"], type => Func }
+#   "<T, r: Row>(T) -> Str ! Console | r"
+sub parse_annotation ($class, $input) {
+    my @generics_raw;
+    my $trimmed = $input;
+    $trimmed =~ s/\A\s+//;
+    $trimmed =~ s/\s+\z//;
+
+    # Leading <...> → extract generics at string level
+    if ($trimmed =~ /\A</) {
+        my $depth = 0;
+        my $end;
+        for my $i (0 .. length($trimmed) - 1) {
+            my $ch = substr($trimmed, $i, 1);
+            $depth++ if $ch eq '<';
+            if ($ch eq '>') {
+                $depth--;
+                if ($depth == 0) { $end = $i; last; }
+            }
+        }
+        die "Typist::Parser: unbalanced '<' in annotation '$input'" unless defined $end;
+        my $gen_str = substr($trimmed, 1, $end - 1);
+        @generics_raw = _split_generics_str($gen_str);
+        $trimmed = substr($trimmed, $end + 1);
+        $trimmed =~ s/\A\s+//;
+    }
+
+    # Tokenize and parse the type expression
+    my @tokens = _tokenize($trimmed);
+    my $pos = 0;
+    my $type;
+
+    # Detect function type: starts with '(' and has '->' after matching ')'
+    if (@tokens && $tokens[0] eq '(') {
+        my $depth = 0;
+        my $close_pos;
+        for my $i (0 .. $#tokens) {
+            $depth++ if $tokens[$i] eq '(';
+            if ($tokens[$i] eq ')') {
+                $depth--;
+                if ($depth == 0) { $close_pos = $i; last; }
+            }
+        }
+        if (defined $close_pos && $close_pos + 1 < @tokens && $tokens[$close_pos + 1] eq '->') {
+            $type = _parse_func_type(\@tokens, \$pos);
+        }
+    }
+
+    $type //= _parse_union(\@tokens, \$pos);
+
+    die "Typist::Parser: unexpected token '$tokens[$pos]' in annotation '$input'"
+        if $pos < @tokens;
+
+    +{ generics_raw => \@generics_raw, type => $type };
+}
+
+# Split generic declaration string on commas, respecting <> and () nesting.
+sub _split_generics_str ($str) {
+    my @result;
+    my $current = '';
+    my $depth = 0;
+
+    for my $ch (split //, $str) {
+        if ($ch eq '<' || $ch eq '(') { $depth++ }
+        elsif ($ch eq '>' || $ch eq ')') { $depth-- }
+
+        if ($ch eq ',' && $depth == 0) {
+            $current =~ s/\A\s+//;
+            $current =~ s/\s+\z//;
+            push @result, $current if length $current;
+            $current = '';
+        } else {
+            $current .= $ch;
+        }
+    }
+
+    $current =~ s/\A\s+//;
+    $current =~ s/\s+\z//;
+    push @result, $current if length $current;
+    @result;
 }
 
 1;

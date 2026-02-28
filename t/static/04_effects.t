@@ -6,18 +6,18 @@ use Typist::Static::Analyzer;
 use Typist::Static::Extractor;
 use Typist::Registry;
 
-# ── Extractor captures :Eff ─────────────────────
+# ── Extractor captures :Type with effects ────────
 
 subtest 'Extractor captures eff_expr' => sub {
     my $result = Typist::Static::Extractor->extract(<<'PERL');
 package EffTest;
 use v5.40;
 
-sub greet :Params(Str) :Returns(Str) :Eff(Console) ($name) {
+sub greet :Type((Str) -> Str ! Console) ($name) {
     return "Hello, $name!";
 }
 
-sub main :Returns(Void) :Eff(Console | State) () {
+sub main :Type(() -> Void ! Console | State) () {
     greet("world");
 }
 PERL
@@ -29,12 +29,12 @@ PERL
     is $result->{functions}{main}{eff_expr}, 'Console | State', 'eff_expr for main';
 };
 
-subtest 'Extractor: function with only :Eff' => sub {
+subtest 'Extractor: function with effect only' => sub {
     my $result = Typist::Static::Extractor->extract(<<'PERL');
 package EffOnly;
 use v5.40;
 
-sub doIO :Eff(IO) () {
+sub doIO :Type(() -> Any ! IO) () {
     42;
 }
 PERL
@@ -57,11 +57,11 @@ subtest 'Analyzer: clean code with effects — no diagnostics' => sub {
 package Clean;
 use v5.40;
 
-sub greet :Params(Str) :Returns(Str) :Eff(Console) ($name) {
+sub greet :Type((Str) -> Str ! Console) ($name) {
     return "Hello, $name!";
 }
 
-sub main :Returns(Void) :Eff(Console) () {
+sub main :Type(() -> Void ! Console) () {
     greet("world");
 }
 PERL
@@ -84,11 +84,11 @@ subtest 'Analyzer: caller missing callee effect' => sub {
 package Missing;
 use v5.40;
 
-sub effectful :Params(Str) :Returns(Str) :Eff(Console | State) ($x) {
+sub effectful :Type((Str) -> Str ! Console | State) ($x) {
     return $x;
 }
 
-sub caller_fn :Returns(Str) :Eff(Console) () {
+sub caller_fn :Type(() -> Str ! Console) () {
     effectful("hello");
 }
 PERL
@@ -98,7 +98,7 @@ PERL
     like $eff_diags[0]{message}, qr/State/, 'missing State effect reported';
 };
 
-subtest 'Analyzer: caller has no :Eff but callee does' => sub {
+subtest 'Analyzer: caller has no effect but callee does' => sub {
     my $ws_reg = Typist::Registry->new;
     require Typist::Effect;
     $ws_reg->register_effect('IO', Typist::Effect->new(
@@ -109,11 +109,11 @@ subtest 'Analyzer: caller has no :Eff but callee does' => sub {
 package NoEff;
 use v5.40;
 
-sub io_fn :Params(Str) :Returns(Str) :Eff(IO) ($x) {
+sub io_fn :Type((Str) -> Str ! IO) ($x) {
     return $x;
 }
 
-sub pure_fn :Params(Str) :Returns(Str) ($x) {
+sub pure_fn :Type((Str) -> Str) ($x) {
     io_fn($x);
 }
 PERL
@@ -134,9 +134,9 @@ subtest 'Analyzer: effect superset is OK' => sub {
 package Superset;
 use v5.40;
 
-sub needs_a :Returns(Void) :Eff(A) () { }
+sub needs_a :Type(() -> Void ! A) () { }
 
-sub has_abc :Returns(Void) :Eff(A | B | C) () {
+sub has_abc :Type(() -> Void ! A | B | C) () {
     needs_a();
 }
 PERL
@@ -152,7 +152,7 @@ subtest 'Analyzer: unknown effect label' => sub {
 package Unknown;
 use v5.40;
 
-sub bad :Returns(Void) :Eff(Nonexistent) () { }
+sub bad :Type(() -> Void ! Nonexistent) () { }
 PERL
 
     my @unknown = grep { $_->{kind} eq 'UnknownEffect' } @{$result->{diagnostics}};
@@ -171,7 +171,7 @@ subtest 'Analyzer: undeclared row variable' => sub {
 package BadRow;
 use v5.40;
 
-sub logged :Returns(Void) :Eff(Log | r) () { }
+sub logged :Type(() -> Void ! Log | r) () { }
 PERL
 
     my @undecl = grep { $_->{kind} eq 'UndeclaredRowVar' } @{$result->{diagnostics}};
@@ -196,7 +196,7 @@ sub helper ($x) {
     return $x;
 }
 
-sub main_fn :Params(Str) :Returns(Str) :Eff(Console) ($s) {
+sub main_fn :Type((Str) -> Str ! Console) ($s) {
     helper($s);
 }
 PERL
@@ -215,7 +215,7 @@ sub helper ($x) {
     return $x;
 }
 
-sub pure_fn :Params(Str) :Returns(Str) ($s) {
+sub pure_fn :Type((Str) -> Str) ($s) {
     helper($s);
 }
 PERL
@@ -225,22 +225,22 @@ PERL
     like $eff_diags[0]{message}, qr/unannotated.*helper/, 'reports unannotated callee';
 };
 
-subtest 'Analyzer: annotated callee with Params but no Eff is pure' => sub {
+subtest 'Analyzer: annotated callee without effect is pure' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 package PartiallyAnnotated;
 use v5.40;
 
-sub helper :Params(Str) :Returns(Str) ($x) {
+sub helper :Type((Str) -> Str) ($x) {
     return $x;
 }
 
-sub caller_fn :Params(Str) :Returns(Str) ($s) {
+sub caller_fn :Type((Str) -> Str) ($s) {
     helper($s);
 }
 PERL
 
     my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
-    is scalar @eff_diags, 0, 'partially annotated function (no Eff) is pure — no error';
+    is scalar @eff_diags, 0, 'annotated function without effect is pure — no error';
 };
 
 done_testing;

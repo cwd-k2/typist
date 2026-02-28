@@ -8,7 +8,7 @@ use Shop::Inventory;
 
 # ── Order Processing ───────────────────────────
 
-sub order_total :Params(ArrayRef[OrderItem]) :Returns(Price) ($items) {
+sub order_total :Type((ArrayRef[OrderItem]) -> Price) ($items) {
     my $total = 0;
     for my $item (@$items) {
         my $product = Shop::Inventory::find_product($item->{product_id});
@@ -17,7 +17,7 @@ sub order_total :Params(ArrayRef[OrderItem]) :Returns(Price) ($items) {
     $total;
 }
 
-sub create_order :Params(OrderId, ArrayRef[OrderItem]) :Returns(Order) :Eff(Logger) ($id, $items) {
+sub create_order :Type((OrderId, ArrayRef[OrderItem]) -> Order ! Logger) ($id, $items) {
     my $total = order_total($items);
     +{
         id    => $id,

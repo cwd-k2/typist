@@ -10,32 +10,33 @@ use v5.40;
 #   { class => 'Eq', type_expr => 'Int', methods => { eq => coderef, neq => coderef } }
 
 sub new_class ($class, %args) {
+    require Typist::Kind;
+
     my $var_spec = $args{var} // 'T';
-    my ($var_name, $var_kind_str, @supers);
+    my ($var_name, $var_kind, @supers);
 
     # Parse "T: constraint" — distinguish HKT kind from superclass constraint
     if ($var_spec =~ /\A(\w+)\s*:\s*(.+)\z/) {
         my ($vn, $constraint) = ($1, $2);
         if ($constraint =~ /\A[\s\*\-\>]+\z/) {
             # HKT kind syntax: "F: * -> *"
-            $var_name     = $vn;
-            $var_kind_str = $constraint;
+            $var_name = $vn;
+            $var_kind = Typist::Kind->parse($constraint);
         } else {
             # Superclass constraint: "T: Eq" or "T: Show + Eq"
             $var_name = $vn;
             @supers   = split /\s*\+\s*/, $constraint;
         }
     } else {
-        $var_name     = $var_spec;
-        $var_kind_str = undef;
+        $var_name = $var_spec;
     }
 
     bless +{
-        name         => ($args{name}    // die("TypeClass requires name\n")),
-        var          => $var_name,
-        var_kind_str => $var_kind_str,
-        methods      => ($args{methods} // +{}),
-        supers       => ($args{supers}  // \@supers),
+        name     => ($args{name}    // die("TypeClass requires name\n")),
+        var      => $var_name,
+        var_kind => $var_kind,
+        methods  => ($args{methods} // +{}),
+        supers   => ($args{supers}  // \@supers),
     }, "${class}::Def";
 }
 
@@ -52,11 +53,16 @@ sub new_instance ($class, %args) {
 package Typist::TypeClass::Def;
 use v5.40;
 
-sub name         ($self) { $self->{name} }
-sub var          ($self) { $self->{var} }
-sub var_kind_str ($self) { $self->{var_kind_str} }
-sub methods      ($self) { $self->{methods}->%* }
-sub supers       ($self) { $self->{supers}->@* }
+sub name     ($self) { $self->{name} }
+sub var      ($self) { $self->{var} }
+sub var_kind ($self) { $self->{var_kind} }
+sub methods  ($self) { $self->{methods}->%* }
+sub supers   ($self) { $self->{supers}->@* }
+
+# Compatibility: returns the kind as a string, or undef.
+sub var_kind_str ($self) {
+    $self->{var_kind} ? $self->{var_kind}->to_string : undef;
+}
 
 sub method_names ($self) { sort keys $self->{methods}->%* }
 

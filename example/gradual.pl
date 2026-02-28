@@ -15,7 +15,7 @@ use Typist::DSL;
 
 # ── 1. Fully Annotated: Return Type Propagation ─
 
-sub greet :Params(Str) :Returns(Str) ($name) {
+sub greet :Type((Str) -> Str) ($name) {
     "Hello, $name!";
 }
 
@@ -25,7 +25,7 @@ say $msg;
 
 # ── 2. Variable Symbol Resolution ───────────────
 
-sub loud :Params(Str) :Returns(Str) ($s) {
+sub loud :Type((Str) -> Str) ($s) {
     uc($s);
 }
 
@@ -34,26 +34,26 @@ say loud($msg);
 
 # ── 3. Nested Function Calls ────────────────────
 
-sub double :Params(Int) :Returns(Int) ($x) {
+sub double :Type((Int) -> Int) ($x) {
     $x * 2;
 }
 
-sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+sub add :Type((Int, Int) -> Int) ($a, $b) {
     $a + $b;
 }
 
 # double(3) returns Int, add(Int, Int) → OK
 say "3*2 + 10 = ", add(double(3), 10);
 
-# ── 4. Partially Annotated (Params only) ────────
+# ── 4. Partially Annotated (Any return type) ────
 
-# :Params but no :Returns → return type is unknown, not Any.
+# :Type((Int) -> Any) → return type is Any, effectively unknown.
 # The function is still tracked for param checking.
-sub compute :Params(Int) ($n) {
+sub compute :Type((Int) -> Any) ($n) {
     $n * $n;
 }
 
-# Return type unknown → skipped (no false positive)
+# Return type Any → skipped (no false positive)
 my $result :Type(Int) = compute(5);
 say "5^2 = $result";
 
@@ -75,7 +75,7 @@ say "helper: $val";
 # When f :: Str -> Str, my $result = f("str") infers $result as Str
 # without any explicit type annotation.
 
-sub format_name :Params(Str) :Returns(Str) ($name) {
+sub format_name :Type((Str) -> Str) ($name) {
     "[$name]";
 }
 
@@ -101,14 +101,15 @@ BEGIN {
     };
 }
 
-# Annotated with :Eff(Console) — effect is tracked
-sub print_msg :Params(Str) :Eff(Console) ($s) {
+# Annotated with effect — effect is tracked
+# Return type is Any (not Void) since say returns 1; Void would reject it.
+sub print_msg :Type((Str) -> Any ! Console) ($s) {
     say $s;
 }
 
-# Annotated function (:Params/:Returns) with no :Eff → pure.
+# Annotated function without effect → pure.
 # Calling another pure annotated function is fine.
-sub format_msg :Params(Str) :Returns(Str) ($s) {
+sub format_msg :Type((Str) -> Str) ($s) {
     ">> $s <<";
 }
 
@@ -120,7 +121,7 @@ print_msg("effectful function");
 # | Annotation Level       | Type Checking        | Effect Checking        |
 # |------------------------|----------------------|------------------------|
 # | Fully annotated        | All checks enforced  | Effects verified       |
-# | Params only (no Ret)   | Params checked       | Pure (no effects)      |
+# | Any return type        | Params checked       | Pure (no effects)      |
 # | Completely unannotated | Any (skip)           | Eff(*) (any effect)    |
 #
 # Flow Typing:

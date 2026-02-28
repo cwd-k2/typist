@@ -11,18 +11,18 @@ my %products;
 
 # ── Public API ─────────────────────────────────
 
-sub add_product :Params(Product) :Returns(Bool) ($product) {
+sub add_product :Type((Product) -> Bool) ($product) {
     my $id = unwrap($product->{id});
     $products{$id} = $product;
     1;
 }
 
-sub find_product :Params(ProductId) :Returns(Product) ($id) {
+sub find_product :Type((ProductId) -> Product) ($id) {
     my $key = unwrap($id);
     $products{$key} // die "Typist: product not found: $key\n";
 }
 
-sub in_stock :Params(ProductId, Quantity) :Returns(Bool) ($id, $qty) {
+sub in_stock :Type((ProductId, Quantity) -> Bool) ($id, $qty) {
     my $key = unwrap($id);
     my $product = $products{$key} // return 0;
     $product->{stock} >= $qty ? 1 : 0;

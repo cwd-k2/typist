@@ -60,9 +60,9 @@ say "Caught: $@" if $@;
 
 # ── Bounded Quantification ──────────────────────
 
-# :Generic(T: Num) means T must be <: Num.
+# <T: Num> means T must be <: Num.
 
-sub add_num :Generic(T: Num) :Params(T, T) :Returns(T) ($a, $b) {
+sub add_num :Type(<T: Num>(T, T) -> T) ($a, $b) {
     $a + $b;
 }
 

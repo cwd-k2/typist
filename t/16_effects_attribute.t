@@ -20,21 +20,21 @@ BEGIN {
     };
 }
 
-# ── Functions with :Eff (compiled after effects are registered) ──
+# ── Functions with :Type (compiled after effects are registered) ──
 
-sub greet :Params(Str) :Returns(Str) :Eff(Console) ($name) {
+sub greet :Type((Str) -> Str ! Console) ($name) {
     "Hello, $name!";
 }
 
-sub main_fn :Returns(Void) :Eff(Console | State) () {
+sub main_fn :Type(() -> Void ! Console | State) () {
     undef;
 }
 
-sub logged :Generic(a, r: Row) :Params(Str) :Returns(Str) :Eff(Log | r) ($msg) {
+sub logged :Type(<a, r: Row>(Str) -> Str ! Log | r) ($msg) {
     $msg;
 }
 
-sub pure_effect :Eff(Console) () {
+sub pure_effect :Type(() -> Any ! Console) () {
     42;
 }
 
@@ -52,7 +52,7 @@ subtest 'multiple effects registered' => sub {
     ok Typist::Registry->is_effect_label('Log'),   'Log registered';
 };
 
-subtest 'function with :Eff registers effects in sig' => sub {
+subtest 'function with :Type registers effects in sig' => sub {
     my $sig = Typist::Registry->lookup_function('main', 'greet');
     ok $sig, 'sig registered';
     ok $sig->{effects}, 'effects present';
@@ -66,7 +66,7 @@ subtest 'function with multiple effects' => sub {
     is $sig->{effects}->to_string, 'Eff(Console | State)', 'multi-effect';
 };
 
-subtest 'function with :Eff and :Generic(r: Row)' => sub {
+subtest 'function with :Type and generics(r: Row)' => sub {
     my $sig = Typist::Registry->lookup_function('main', 'logged');
     ok $sig->{effects}, 'effects present';
     is $sig->{effects}->to_string, 'Eff(Log | r)', 'open row with row_var';
@@ -80,10 +80,10 @@ subtest 'function with :Eff and :Generic(r: Row)' => sub {
 
 subtest 'Eff does not affect runtime behavior (phantom)' => sub {
     my $result = greet("world");
-    is $result, "Hello, world!", 'function works normally despite :Eff';
+    is $result, "Hello, world!", 'function works normally despite effects';
 };
 
-subtest 'function with only :Eff (no :Params/:Returns)' => sub {
+subtest 'function with only effect annotation' => sub {
     my $sig = Typist::Registry->lookup_function('main', 'pure_effect');
     ok $sig, 'sig registered for eff-only function';
     ok $sig->{effects}, 'effects present';

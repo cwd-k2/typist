@@ -140,24 +140,24 @@ sub _find_best_symbol ($self, $symbols, $name, $line) {
 }
 
 # Determine completion context at a given position.
-# Returns: 'type_expr' | 'generic' | undef
+# Returns: 'type_expr' | 'generic' | 'effect' | 'constraint' | undef
 sub completion_context ($self, $line, $col) {
     my $lines = $self->_lines;
     return undef unless $line < @$lines;
 
     my $text = substr($lines->[$line], 0, $col);
 
-    # Inside :Generic(...) after "T: " — constraint context for typeclass names
-    return 'constraint' if $text =~ /:Generic\([^)]*\w+\s*:\s*(?:\w+\s*\+\s*)*\z/;
+    # Inside :Type(<...>) generics — constraint context after "T: "
+    return 'constraint' if $text =~ /:Type\(<[^>]*\w+\s*:\s*(?:\w+\s*\+\s*)*\z/;
 
-    # Inside :Generic(...)
-    return 'generic' if $text =~ /:Generic\([^)]*\z/;
+    # Inside :Type(<...>) generics
+    return 'generic' if $text =~ /:Type\(<[^>]*\z/;
 
-    # Inside :Eff(...)
-    return 'effect' if $text =~ /:Eff\([^)]*\z/;
+    # Inside :Type(...) after "!" — effect context
+    return 'effect' if $text =~ /:Type\([^)]*!\s*(?:\w+\s*\|\s*)*\z/;
 
-    # Inside :Type(...), :Params(...), :Returns(...)
-    return 'type_expr' if $text =~ /:(?:Type|Params|Returns)\([^)]*\z/;
+    # Inside :Type(...)
+    return 'type_expr' if $text =~ /:Type\([^)]*\z/;
 
     # After typedef Name =>
     return 'type_expr' if $text =~ /typedef\s+\w+\s*=>\s*['"]?\s*\z/;

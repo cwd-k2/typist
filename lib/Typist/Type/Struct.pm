@@ -19,6 +19,14 @@ sub new ($class, %all_fields) {
     bless +{ required => \%required, optional => \%optional }, $class;
 }
 
+# Named constructor: bypass key? encoding when required/optional are pre-separated.
+sub from_parts ($class, %parts) {
+    bless +{
+        required => $parts{required} // +{},
+        optional => $parts{optional} // +{},
+    }, $class;
+}
+
 sub fields ($self) {
     # Backward compat: return all fields (required + optional with '?' suffix)
     my %all;
@@ -93,14 +101,11 @@ sub free_vars ($self) {
 }
 
 sub substitute ($self, $bindings) {
-    my %new;
-    for my $key (keys %{$self->{required}}) {
-        $new{$key} = $self->{required}{$key}->substitute($bindings);
-    }
-    for my $key (keys %{$self->{optional}}) {
-        $new{"${key}?"} = $self->{optional}{$key}->substitute($bindings);
-    }
-    __PACKAGE__->new(%new);
+    my %new_req = map { $_ => $self->{required}{$_}->substitute($bindings) }
+                  keys %{$self->{required}};
+    my %new_opt = map { $_ => $self->{optional}{$_}->substitute($bindings) }
+                  keys %{$self->{optional}};
+    __PACKAGE__->from_parts(required => \%new_req, optional => \%new_opt);
 }
 
 1;

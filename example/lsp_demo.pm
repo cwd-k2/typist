@@ -5,7 +5,7 @@ use Typist;
 
 # This file demonstrates features visible via the Typist LSP server:
 #   - Hover shows type signatures
-#   - Completion suggests type names inside :Type(), :Params(), :Returns()
+#   - Completion suggests type names inside :Type()
 #   - Diagnostics flag type errors (alias cycles, undeclared type vars)
 #   - Gradual typing: return type propagation, variable symbol resolution
 
@@ -21,15 +21,15 @@ BEGIN {
 my $user_id :Type(UserId) = 1001;
 my $email   :Type(Email)  = 'alice@example.com';
 
-# ── Typed function — hover shows: sub find_email(UserId) -> Email
+# ── Typed function — hover shows: sub find_email(UserId -> Email)
 
-sub find_email :Params(UserId) :Returns(Email) ($id) {
+sub find_email :Type((UserId) -> Email) ($id) {
     "user_${id}\@example.com";
 }
 
-# ── Generic function — hover shows: sub identity<T>(T) -> T
+# ── Generic function — hover shows: sub identity<T>(T -> T)
 
-sub identity :Generic(T) :Params(T) :Returns(T) ($x) {
+sub identity :Type(<T>(T) -> T) ($x) {
     $x;
 }
 

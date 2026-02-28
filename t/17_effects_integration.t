@@ -23,20 +23,20 @@ BEGIN {
 
 # ── Effectful functions ──────────────────────────
 
-sub greet :Params(Str) :Returns(Str) :Eff(Console) ($name) {
+sub greet :Type((Str) -> Str ! Console) ($name) {
     "Hello, $name!";
 }
 
-sub main_app :Eff(Console | State) () {
+sub main_app :Type(() -> Any ! Console | State) () {
     greet("world");
     undef;
 }
 
-sub logged :Generic(a, r: Row) :Params(Str) :Returns(Str) :Eff(Log | r) ($msg) {
+sub logged :Type(<a, r: Row>(Str) -> Str ! Log | r) ($msg) {
     $msg;
 }
 
-sub pure_fn :Params(Int, Int) :Returns(Int) ($a, $b) {
+sub pure_fn :Type((Int, Int) -> Int) ($a, $b) {
     $a + $b;
 }
 
@@ -51,12 +51,12 @@ subtest 'effectful functions execute normally' => sub {
 
 # ── E2E: Type checking still enforced ───────────
 
-subtest 'type checking works alongside :Eff' => sub {
+subtest 'type checking works alongside effects' => sub {
     eval { greet([1,2,3]) };
-    like $@, qr/param 1 expected Str/, ':Params still enforced with :Eff';
+    like $@, qr/param 1 expected Str/, 'param types still enforced with effects';
 };
 
-subtest 'return type checking works alongside :Eff' => sub {
+subtest 'return type checking works alongside effects' => sub {
     # greet returns Str, so it should enforce
     my $result = greet("ok");
     is $result, "Hello, ok!", 'return type valid';
@@ -150,11 +150,11 @@ subtest 'Analyzer detects effect mismatch' => sub {
 package IntegTest;
 use v5.40;
 
-sub db_op :Params(Str) :Returns(Str) :Eff(DB) ($q) {
+sub db_op :Type((Str) -> Str ! DB) ($q) {
     return $q;
 }
 
-sub handler :Returns(Str) :Eff(Console) () {
+sub handler :Type(() -> Str ! Console) () {
     db_op("SELECT 1");
 }
 PERL

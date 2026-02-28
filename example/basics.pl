@@ -26,11 +26,11 @@ say "score: $score";
 
 # ── Typed Subroutines ────────────────────────────
 
-sub greet :Params(Name) :Returns(Str) ($who) {
+sub greet :Type((Name) -> Str) ($who) {
     "Hello, $who!";
 }
 
-sub add :Params(Int, Int) :Returns(Int) ($a, $b) {
+sub add :Type((Int, Int) -> Int) ($a, $b) {
     $a + $b;
 }
 

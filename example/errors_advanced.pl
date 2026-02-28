@@ -53,7 +53,7 @@ say "unwrap(UserId(42)): ", unwrap(UserId(42));
 say "";
 say "── Bounded Quantification Violations ─────────";
 
-sub double :Generic(T: Num) :Params(T) :Returns(T) ($x) {
+sub double :Type(<T: Num>(T) -> T) ($x) {
     $x * 2;
 }
 
@@ -68,7 +68,7 @@ say "double('five'):  $@" if $@;
 eval { double([10]) };
 say "double([10]):    $@" if $@;
 
-sub clamp :Generic(T: Int) :Params(T, T, T) :Returns(T) ($val, $lo, $hi) {
+sub clamp :Type(<T: Int>(T, T, T) -> T) ($val, $lo, $hi) {
     $val < $lo ? $lo : $val > $hi ? $hi : $val;
 }
 
@@ -106,7 +106,7 @@ say "";
 say "── Generic + TypeClass Constraint Violations ─";
 
 # T must have an Eq instance
-sub all_equal :Generic(T: Eq) :Params(T, T) :Returns(Bool) ($a, $b) {
+sub all_equal :Type(<T: Eq>(T, T) -> Bool) ($a, $b) {
     Eq::eq($a, $b);
 }
 

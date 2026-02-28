@@ -4,10 +4,10 @@ use lib 'lib', 't/lib';
 
 use Test::Typist::LSP qw(run_session lsp_request lsp_notification init_shutdown_wrap);
 
-# ── Completion inside :Params(──────────────────
+# ── Completion inside :Type( ─────────────────────
 
-subtest 'completion inside :Params(' => sub {
-    my $source = "use v5.40;\nsub foo :Params(";
+subtest 'completion inside :Type(' => sub {
+    my $source = "use v5.40;\nsub foo :Type(";
 
     my @results = run_session(init_shutdown_wrap(
         lsp_notification('textDocument/didOpen', +{
@@ -15,7 +15,7 @@ subtest 'completion inside :Params(' => sub {
         }),
         lsp_request(2, 'textDocument/completion', +{
             textDocument => +{ uri => 'file:///test.pm' },
-            position => +{ line => 1, character => length('sub foo :Params(') },
+            position => +{ line => 1, character => length('sub foo :Type(') },
         }),
     ));
 
@@ -29,10 +29,10 @@ subtest 'completion inside :Params(' => sub {
     ok((grep { $_ eq 'ArrayRef' } @labels), 'ArrayRef in completions');
 };
 
-# ── Completion inside :Generic( ─────────────────
+# ── Completion inside :Type(< ─────────────────
 
-subtest 'completion inside :Generic(' => sub {
-    my $source = "use v5.40;\nsub foo :Generic(";
+subtest 'completion inside :Type(<' => sub {
+    my $source = "use v5.40;\nsub foo :Type(<";
 
     my @results = run_session(init_shutdown_wrap(
         lsp_notification('textDocument/didOpen', +{
@@ -40,7 +40,7 @@ subtest 'completion inside :Generic(' => sub {
         }),
         lsp_request(2, 'textDocument/completion', +{
             textDocument => +{ uri => 'file:///test.pm' },
-            position => +{ line => 1, character => length('sub foo :Generic(') },
+            position => +{ line => 1, character => length('sub foo :Type(<') },
         }),
     ));
 
@@ -75,10 +75,10 @@ subtest 'no completion outside type context' => sub {
     is scalar @{$comp->{result}{items}}, 0, 'no completions outside type context';
 };
 
-# ── Completion inside :Eff( ─────────────────────
+# ── Completion inside :Type(... ! ────────────────
 
-subtest 'completion inside :Eff(' => sub {
-    my $source = "use v5.40;\nsub foo :Eff(";
+subtest 'completion inside :Type(... !' => sub {
+    my $source = "use v5.40;\nsub foo :Type(() -> Void ! ";
 
     my @results = run_session(init_shutdown_wrap(
         lsp_notification('textDocument/didOpen', +{
@@ -86,7 +86,7 @@ subtest 'completion inside :Eff(' => sub {
         }),
         lsp_request(2, 'textDocument/completion', +{
             textDocument => +{ uri => 'file:///test.pm' },
-            position => +{ line => 1, character => length('sub foo :Eff(') },
+            position => +{ line => 1, character => length('sub foo :Type(() -> Void ! ') },
         }),
     ));
 
@@ -100,10 +100,10 @@ subtest 'completion inside :Eff(' => sub {
     ok(!(grep { $_ eq 'Str' } @labels), 'Str not in effect completions');
 };
 
-# ── Completion inside :Generic(T: — constraint context ──
+# ── Completion inside :Type(<T: — constraint context ──
 
-subtest 'completion inside :Generic(T: ' => sub {
-    my $source = "use v5.40;\nsub foo :Generic(T: ";
+subtest 'completion inside :Type(<T: ' => sub {
+    my $source = "use v5.40;\nsub foo :Type(<T: ";
 
     my @results = run_session(init_shutdown_wrap(
         lsp_notification('textDocument/didOpen', +{
@@ -111,7 +111,7 @@ subtest 'completion inside :Generic(T: ' => sub {
         }),
         lsp_request(2, 'textDocument/completion', +{
             textDocument => +{ uri => 'file:///test.pm' },
-            position => +{ line => 1, character => length('sub foo :Generic(T: ') },
+            position => +{ line => 1, character => length('sub foo :Type(<T: ') },
         }),
     ));
 

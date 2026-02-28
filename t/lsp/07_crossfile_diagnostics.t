@@ -43,7 +43,7 @@ subtest 'didSave triggers re-diagnosis of all open docs' => sub {
     $server->_handle_did_open(+{
         textDocument => +{
             uri     => 'file:///doc_a.pm',
-            text    => "package A;\nuse v5.40;\nsub foo :Params(Int) :Returns(Int) (\$x) { \$x }\n",
+            text    => "package A;\nuse v5.40;\nsub foo :Type((Int) -> Int) (\$x) { \$x }\n",
             version => 1,
         },
     });
@@ -51,7 +51,7 @@ subtest 'didSave triggers re-diagnosis of all open docs' => sub {
     $server->_handle_did_open(+{
         textDocument => +{
             uri     => 'file:///doc_b.pm',
-            text    => "package B;\nuse v5.40;\nsub bar :Params(Str) :Returns(Str) (\$x) { \$x }\n",
+            text    => "package B;\nuse v5.40;\nsub bar :Type((Str) -> Str) (\$x) { \$x }\n",
             version => 1,
         },
     });
@@ -61,7 +61,7 @@ subtest 'didSave triggers re-diagnosis of all open docs' => sub {
     # Save doc_a — should re-diagnose both docs
     $server->_handle_did_save(+{
         textDocument => +{ uri => 'file:///doc_a.pm' },
-        text => "package A;\nuse v5.40;\nsub foo :Params(Int) :Returns(Int) (\$x) { \$x }\n",
+        text => "package A;\nuse v5.40;\nsub foo :Type((Int) -> Int) (\$x) { \$x }\n",
     });
 
     # Should have published diagnostics for both documents

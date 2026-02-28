@@ -276,39 +276,48 @@ sub _extract_functions ($class, $doc, $result) {
         my $attrs = $sub_stmt->find('PPI::Token::Attribute') || [];
 
         if (@$attrs) {
-            # Annotated function: extract type metadata from attributes
-            my (@params_expr, $returns_expr, @generics, $eff_expr);
-
+            # Look for :Type(...) annotation
+            my $type_ann;
             for my $attr (@$attrs) {
                 my $content = $attr->content;
-
-                if ($content =~ /\AParams\((.+)\)\z/) {
-                    @params_expr = split /\s*,\s*/, $1;
-                }
-                elsif ($content =~ /\AReturns\((.+)\)\z/) {
-                    $returns_expr = $1;
-                }
-                elsif ($content =~ /\AEff\((.+)\)\z/) {
-                    $eff_expr = $1;
-                }
-                elsif ($content =~ /\AGeneric\((.+)\)\z/) {
-                    @generics = split /\s*,\s*/, $1;
+                if ($content =~ /\AType\((.+)\)\z/s) {
+                    $type_ann = $1;
+                    last;
                 }
             }
 
-            next unless @params_expr || $returns_expr || $eff_expr;
+            if ($type_ann) {
+                my $ann = eval {
+                    require Typist::Parser;
+                    Typist::Parser->parse_annotation($type_ann);
+                };
+                next if $@;
 
-            $result->{functions}{$name} = +{
-                params_expr  => \@params_expr,
-                returns_expr => $returns_expr,
-                generics     => \@generics,
-                eff_expr     => $eff_expr,
-                param_names  => $class->_extract_sig_params($sub_stmt),
-                line         => $sub_stmt->line_number,
-                end_line     => $class->_end_line($sub_stmt),
-                col          => $sub_stmt->column_number,
-                block        => $sub_stmt->block,
-            };
+                my $type = $ann->{type};
+                my (@params_expr, $returns_expr, $eff_expr);
+
+                if ($type->is_func) {
+                    @params_expr = map { $_->to_string } $type->params;
+                    $returns_expr = $type->returns->to_string;
+                    $eff_expr = $type->effects
+                        ? $type->effects->to_string : undef;
+                } else {
+                    $returns_expr = $type->to_string;
+                }
+
+                $result->{functions}{$name} = +{
+                    params_expr  => \@params_expr,
+                    returns_expr => $returns_expr,
+                    generics     => $ann->{generics_raw},
+                    eff_expr     => $eff_expr,
+                    param_names  => $class->_extract_sig_params($sub_stmt),
+                    line         => $sub_stmt->line_number,
+                    end_line     => $class->_end_line($sub_stmt),
+                    col          => $sub_stmt->column_number,
+                    block        => $sub_stmt->block,
+                };
+            }
+            # No :Type annotation — skip
         }
         else {
             # Unannotated function: count signature params for Any... -> Any !Eff(*)

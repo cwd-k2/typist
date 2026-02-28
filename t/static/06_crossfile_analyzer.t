@@ -19,7 +19,7 @@ subtest 'analyzer resolves workspace typedefs' => sub {
 package Consumer;
 use v5.40;
 
-sub get_user :Params(UserId) :Returns(Email) ($id) {
+sub get_user :Type((UserId) -> Email) ($id) {
     return "user\@example.com";
 }
 PERL
@@ -63,7 +63,7 @@ subtest 'analyzer checks cross-package function calls' => sub {
 package Consumer;
 use v5.40;
 
-sub caller_ok :Params(Int) :Returns(Int) ($x) {
+sub caller_ok :Type((Int) -> Int) ($x) {
     return Helper::add($x, 1);
 }
 PERL
@@ -84,7 +84,7 @@ subtest 'analyzer detects cross-package type mismatch' => sub {
 package Consumer;
 use v5.40;
 
-sub caller_bad :Params(Str) :Returns(Int) ($x) {
+sub caller_bad :Type((Str) -> Int) ($x) {
     return Helper::add("hello", "world");
 }
 PERL
@@ -118,7 +118,7 @@ subtest 'analyzer checks cross-package effect requirements' => sub {
 package App;
 use v5.40;
 
-sub safe :Params(Str) :Returns(Void) :Eff(Console) ($msg) {
+sub safe :Type((Str) -> Void ! Console) ($msg) {
     IO::print_line($msg);
 }
 PERL
