@@ -59,13 +59,23 @@ sub contains ($self, $value) {
     $ok;
 }
 
+my %_free_vars_guard;
+
 sub free_vars ($self) {
     my $r = $self->_resolve // return ();
+    my $name = $self->{name};
+    return () if $_free_vars_guard{$name};
+    local $_free_vars_guard{$name} = 1;
     $r->free_vars;
 }
 
+my %_substitute_guard;
+
 sub substitute ($self, $bindings) {
     my $r = $self->_resolve // return $self;
+    my $name = $self->{name};
+    return $self if $_substitute_guard{$name};
+    local $_substitute_guard{$name} = 1;
     $r->substitute($bindings);
 }
 
