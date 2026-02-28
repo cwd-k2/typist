@@ -7,6 +7,7 @@ use Typist::Type::Intersection;
 use Typist::Type::Func;
 use Typist::Type::Struct;
 use Typist::Type::Eff;
+use Typist::Type::Data;
 
 # ── Bottom-up Map ───────────────────────────────
 
@@ -15,8 +16,12 @@ use Typist::Type::Eff;
 # $cb receives the (possibly rebuilt) node and returns a Type.
 sub map_type ($class, $type, $cb) {
     if ($type->is_param) {
+        my $new_base = $type->base;
+        if (ref $new_base && $new_base->isa('Typist::Type')) {
+            $new_base = $class->map_type($new_base, $cb);
+        }
         my @new = map { $class->map_type($_, $cb) } $type->params;
-        return $cb->(Typist::Type::Param->new($type->base, @new));
+        return $cb->(Typist::Type::Param->new($new_base, @new));
     }
     if ($type->is_union) {
         my @new = map { $class->map_type($_, $cb) } $type->members;
@@ -46,6 +51,15 @@ sub map_type ($class, $type, $cb) {
         my $new_row = $class->map_type($type->row, $cb);
         return $cb->(Typist::Type::Eff->new($new_row));
     }
+    if ($type->is_data) {
+        my %new_variants;
+        for my $tag (keys $type->variants->%*) {
+            $new_variants{$tag} = [
+                map { $class->map_type($_, $cb) } $type->variants->{$tag}->@*
+            ];
+        }
+        return $cb->(Typist::Type::Data->new($type->name, \%new_variants));
+    }
 
     # Leaf nodes: Atom, Var, Alias, Literal, Newtype, Row
     $cb->($type);
@@ -58,7 +72,11 @@ sub map_type ($class, $type, $cb) {
 sub walk ($class, $type, $cb) {
     $cb->($type);
 
-    if    ($type->is_param)        { $class->walk($_, $cb) for $type->params }
+    if ($type->is_param) {
+        my $base = $type->base;
+        $class->walk($base, $cb) if ref $base && $base->isa('Typist::Type');
+        $class->walk($_, $cb) for $type->params;
+    }
     elsif ($type->is_union)        { $class->walk($_, $cb) for $type->members }
     elsif ($type->is_intersection) { $class->walk($_, $cb) for $type->members }
     elsif ($type->is_func) {
@@ -73,6 +91,11 @@ sub walk ($class, $type, $cb) {
     }
     elsif ($type->is_eff) {
         $class->walk($type->row, $cb);
+    }
+    elsif ($type->is_data) {
+        for my $types (values $type->variants->%*) {
+            $class->walk($_, $cb) for @$types;
+        }
     }
 
     return;

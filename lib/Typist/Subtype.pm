@@ -99,6 +99,13 @@ sub _check ($sub, $super) {
             && $sub->name eq $super->name;
     }
 
+    # ── Data type (nominal identity) ──────────────
+    # Tagged union only subtypes itself (same name)
+    if ($sub->is_data || $super->is_data) {
+        return $sub->is_data && $super->is_data
+            && $sub->name eq $super->name;
+    }
+
     # ── Literal types ─────────────────────────────
     # Literal(v1, B1) <: Literal(v2, B2) iff same value AND base subtype
     if ($sub->is_literal && $super->is_literal) {

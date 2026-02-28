@@ -30,6 +30,7 @@ sub is_literal      { 0 }
 sub is_newtype      { 0 }
 sub is_row          { 0 }
 sub is_eff          { 0 }
+sub is_data         { 0 }
 
 # Coerce a value into a Type object: blessed Types pass through, strings are parsed.
 sub coerce ($class, $expr) {

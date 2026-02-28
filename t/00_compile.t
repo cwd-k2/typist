@@ -14,6 +14,7 @@ my @modules = qw(
     Typist::Type::Alias
     Typist::Type::Literal
     Typist::Type::Newtype
+    Typist::Type::Data
     Typist::Type::Row
     Typist::Type::Eff
     Typist::Effect

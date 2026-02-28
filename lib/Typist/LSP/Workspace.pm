@@ -6,6 +6,7 @@ use Typist::Registry;
 use Typist::Static::Extractor;
 use Typist::Parser;
 use Typist::Type::Newtype;
+use Typist::Type::Data;
 use Typist::Type::Eff;
 use Typist::Effect;
 use Typist::Attribute;
@@ -63,6 +64,7 @@ sub _index_file ($self, $path) {
         aliases     => $extracted->{aliases},
         functions   => $extracted->{functions},
         newtypes    => $extracted->{newtypes},
+        datatypes   => $extracted->{datatypes},
         effects     => $extracted->{effects},
         typeclasses => $extracted->{typeclasses},
         declares    => $extracted->{declares},
@@ -87,6 +89,7 @@ sub update_file ($self, $path, $source) {
         aliases     => $extracted->{aliases},
         functions   => $extracted->{functions},
         newtypes    => $extracted->{newtypes},
+        datatypes   => $extracted->{datatypes},
         effects     => $extracted->{effects},
         typeclasses => $extracted->{typeclasses},
         declares    => $extracted->{declares},
@@ -109,6 +112,26 @@ sub _register_file_types ($self, $extracted) {
         next if $@;
         my $type = Typist::Type::Newtype->new($name, $inner);
         $reg->register_newtype($name, $type);
+    }
+
+    my $datatypes = $extracted->{datatypes} // +{};
+    for my $name (keys $datatypes->%*) {
+        my $info = $extracted->{datatypes}{$name};
+        my %parsed_variants;
+        for my $tag (keys $info->{variants}->%*) {
+            my $spec = $info->{variants}{$tag};
+            my @types;
+            if (defined $spec && $spec =~ /\S/) {
+                my $inner = $spec;
+                $inner =~ s/\A\(\s*//;
+                $inner =~ s/\s*\)\z//;
+                @types = map { eval { Typist::Parser->parse($_) } }
+                         split /\s*,\s*/, $inner;
+            }
+            $parsed_variants{$tag} = \@types;
+        }
+        my $type = Typist::Type::Data->new($name, \%parsed_variants);
+        $reg->register_datatype($name, $type);
     }
 
     for my $name (keys $extracted->{effects}->%*) {
@@ -219,6 +242,7 @@ sub _rebuild_registry ($self) {
             aliases     => $info->{aliases}     // +{},
             functions   => $info->{functions}   // +{},
             newtypes    => $info->{newtypes}    // +{},
+            datatypes   => $info->{datatypes}   // +{},
             effects     => $info->{effects}     // +{},
             typeclasses => $info->{typeclasses} // +{},
             declares    => $info->{declares}    // +{},
@@ -233,7 +257,7 @@ sub find_definition ($self, $name) {
     for my $path (sort keys $self->{files}->%*) {
         my $info = $self->{files}{$path};
 
-        for my $section (qw(aliases newtypes effects typeclasses)) {
+        for my $section (qw(aliases newtypes datatypes effects typeclasses)) {
             my $entries = $info->{$section} // next;
             if (my $entry = $entries->{$name}) {
                 return +{
@@ -264,6 +288,7 @@ sub all_typedef_names ($self) {
     for my $info (values $self->{files}->%*) {
         $seen{$_} = 1 for keys($info->{aliases}->%*);
         $seen{$_} = 1 for keys($info->{newtypes}->%*);
+        $seen{$_} = 1 for keys(($info->{datatypes} // +{})->%*);
     }
     sort keys %seen;
 }

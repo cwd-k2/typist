@@ -16,6 +16,7 @@ sub extract ($class, $source) {
         variables   => [],
         functions   => +{},
         newtypes    => +{},
+        datatypes   => +{},
         effects     => +{},
         typeclasses => +{},
         declares    => +{},
@@ -30,6 +31,7 @@ sub extract ($class, $source) {
 
     $class->_extract_typedefs($doc, $result);
     $class->_extract_newtypes($doc, $result);
+    $class->_extract_datatypes($doc, $result);
     $class->_extract_effects($doc, $result);
     $class->_extract_typeclasses($doc, $result);
     $class->_extract_declares($doc, $result);
@@ -94,6 +96,68 @@ sub _extract_newtypes ($class, $doc, $result) {
             inner_expr => $expr,
             line       => $stmt->line_number,
             col        => $stmt->column_number,
+        };
+    }
+}
+
+# ── Datatype Extraction ────────────────────────
+
+sub _extract_datatypes ($class, $doc, $result) {
+    my $statements = $doc->find('PPI::Statement') || [];
+
+    for my $stmt (@$statements) {
+        my @children = $stmt->schildren;
+        next unless @children >= 4;
+
+        # datatype Name => Tag1 => '(Type, ...)', Tag2 => '(Type)', ...
+        next unless $children[0]->isa('PPI::Token::Word')
+                 && $children[0]->content eq 'datatype';
+
+        my $name = $children[1]->content;
+        next unless $children[2]->isa('PPI::Token::Operator')
+                 && $children[2]->content eq '=>';
+
+        # Parse variant pairs from remaining children
+        my @rest = @children[3 .. $#children];
+        my %variants;
+        my $i = 0;
+        while ($i < @rest) {
+            last if $rest[$i]->isa('PPI::Token::Structure')
+                 && $rest[$i]->content eq ';';
+
+            # Skip commas
+            if ($rest[$i]->isa('PPI::Token::Operator')
+                && $rest[$i]->content eq ',')
+            {
+                $i++;
+                next;
+            }
+
+            # Expect a tag name (Word)
+            last unless $rest[$i]->isa('PPI::Token::Word');
+            my $tag = $rest[$i]->content;
+            $i++;
+
+            # Expect =>
+            last unless $i < @rest
+                     && $rest[$i]->isa('PPI::Token::Operator')
+                     && $rest[$i]->content eq '=>';
+            $i++;
+
+            # Expect a spec (quoted string)
+            last unless $i < @rest;
+            my $spec_tok = $rest[$i];
+            my $spec = $spec_tok->isa('PPI::Token::Quote')
+                ? $spec_tok->string
+                : $spec_tok->content;
+            $variants{$tag} = $spec;
+            $i++;
+        }
+
+        $result->{datatypes}{$name} = +{
+            variants => \%variants,
+            line     => $stmt->line_number,
+            col      => $stmt->column_number,
         };
     }
 }

@@ -20,6 +20,7 @@ use Typist::Type::Literal;
 use Typist::Type::Newtype;
 use Typist::Type::Row;
 use Typist::Type::Eff;
+use Typist::Type::Data;
 use Typist::Effect;
 use Typist::TypeClass;
 use Typist::Kind;
@@ -53,6 +54,7 @@ sub import ($class, @args) {
     *{"${caller}::instance"}  = \&_instance;
     *{"${caller}::effect"}    = \&_effect;
     *{"${caller}::declare"}   = \&_declare;
+    *{"${caller}::datatype"}  = \&_datatype;
 }
 
 # ── Newtype Support ─────────────────────────────
@@ -165,6 +167,50 @@ sub _declare ($name, $type_expr_str) {
         generics => \@generics,
         effects  => $effects,
     });
+}
+
+# ── Datatype Support (Tagged Union / ADT) ──────
+
+sub _datatype ($name, %variants) {
+    my $caller = caller;
+    my %parsed_variants;
+
+    for my $tag (keys %variants) {
+        my $spec = $variants{$tag};
+        my @types;
+        if (defined $spec && $spec =~ /\S/) {
+            my $inner = $spec;
+            $inner =~ s/\A\(\s*//;
+            $inner =~ s/\s*\)\z//;
+            @types = map { Typist::Parser->parse($_) } split /\s*,\s*/, $inner;
+        }
+        $parsed_variants{$tag} = \@types;
+
+        # Install constructor function into caller's namespace
+        my @captured_types = @types;
+        my $tag_copy  = $tag;
+        my $data_class = "Typist::Data::${name}";
+        no strict 'refs';
+        *{"${caller}::${tag_copy}"} = sub (@args) {
+            die("${tag_copy}(): expected "
+                . scalar(@captured_types)
+                . " arguments, got "
+                . scalar(@args) . "\n")
+                unless @args == @captured_types;
+            for my $i (0 .. $#captured_types) {
+                die("${tag_copy}(): argument "
+                    . ($i + 1)
+                    . " expected "
+                    . $captured_types[$i]->to_string
+                    . ", got $args[$i]\n")
+                    unless $captured_types[$i]->contains($args[$i]);
+            }
+            bless +{ _tag => $tag_copy, _values => \@args }, $data_class;
+        };
+    }
+
+    my $data_type = Typist::Type::Data->new($name, \%parsed_variants);
+    Typist::Registry->register_datatype($name, $data_type);
 }
 
 sub _instance ($class_name, $type_expr_arg, $methods_ref) {
