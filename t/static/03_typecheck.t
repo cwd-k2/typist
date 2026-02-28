@@ -980,4 +980,80 @@ PERL
     like $errs->[0]{message}, qr/Return value.*classify.*Str/, 'explicit return mismatch detected';
 };
 
+# ── Type Narrowing (defined) ───────────────────
+
+subtest 'narrowing: Maybe[Str] narrowed to Str inside defined guard' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub greet :Type((Str) -> Str) ($name) {
+    return "hello $name";
+}
+my $x :Type(Maybe[Str]) = "alice";
+if (defined $x) {
+    greet($x);
+}
+PERL
+
+    is scalar @$errs, 0, 'no error: $x narrowed to Str inside defined guard';
+};
+
+subtest 'narrowing: Maybe[Str] not narrowed outside defined guard' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub greet :Type((Str) -> Str) ($name) {
+    return "hello $name";
+}
+my $x :Type(Maybe[Str]) = "alice";
+greet($x);
+PERL
+
+    is scalar @$errs, 1, 'one error: $x is Str | Undef outside guard';
+    like $errs->[0]{message}, qr/Argument 1.*greet.*Str/, 'type mismatch with union type';
+};
+
+subtest 'narrowing: non-defined condition does not narrow' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub greet :Type((Str) -> Str) ($name) {
+    return "hello $name";
+}
+my $x :Type(Maybe[Str]) = "alice";
+if ($x) {
+    greet($x);
+}
+PERL
+
+    is scalar @$errs, 1, 'one error: truthiness check does not narrow';
+};
+
+subtest 'narrowing: Union(Int, Str, Undef) narrowed to Union(Int, Str)' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub process :Type((Int | Str) -> Str) ($v) {
+    return "$v";
+}
+my $x :Type(Int | Str | Undef) = 42;
+if (defined $x) {
+    process($x);
+}
+PERL
+
+    is scalar @$errs, 0, 'no error: Undef removed, Int | Str remains';
+};
+
+subtest 'narrowing: defined $x (space-separated form)' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub greet :Type((Str) -> Str) ($name) {
+    return "hello $name";
+}
+my $x :Type(Maybe[Str]) = "alice";
+if (defined $x) {
+    greet($x);
+}
+PERL
+
+    is scalar @$errs, 0, 'no error: defined($x) with parens narrows';
+};
+
 done_testing;

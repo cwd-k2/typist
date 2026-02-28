@@ -6,6 +6,7 @@ use Typist::Static::Unify;
 use Typist::Parser;
 use Typist::Subtype;
 use Typist::Transform;
+use Typist::Type::Union;
 
 # ── Constructor ──────────────────────────────────
 
@@ -563,7 +564,9 @@ sub _has_type_var ($self, $type) {
 
 # Determine the appropriate env for a PPI node.
 # If the node is inside a function body, return fn_env with parameter bindings.
+# Additionally, narrow the env based on control flow (e.g. `defined` guards).
 sub _env_for_node ($self, $node) {
+    my $env;
     my $ancestor = $node->parent;
     while ($ancestor) {
         if ($ancestor->isa('PPI::Structure::Block')) {
@@ -573,13 +576,93 @@ sub _env_for_node ($self, $node) {
                 my $fn_name = $sub_stmt->name;
                 if ($fn_name && $self->{extracted}{functions}{$fn_name}) {
                     my $fn = $self->{extracted}{functions}{$fn_name};
-                    return $self->_fn_env($fn) if $fn->{block} && $fn->{block} == $ancestor;
+                    if ($fn->{block} && $fn->{block} == $ancestor) {
+                        $env = $self->_fn_env($fn);
+                        last;
+                    }
                 }
             }
         }
         $ancestor = $ancestor->parent;
     }
-    $self->{env};
+    $env //= $self->{env};
+
+    $self->_narrow_env_for_block($env, $node);
+}
+
+# Narrow the env based on control flow guards surrounding $node.
+# Phase B-2a: `defined($var)` in an if-condition removes Undef from
+# the variable's Union type within the then-block.
+sub _narrow_env_for_block ($self, $env, $node) {
+    # Walk up to the nearest enclosing Block
+    my $block = $node;
+    while ($block && !$block->isa('PPI::Structure::Block')) {
+        $block = $block->parent;
+    }
+    return $env unless $block;
+
+    # The block's parent must be a Compound statement (if/elsif/unless/while)
+    my $compound = $block->parent;
+    return $env unless $compound && $compound->isa('PPI::Statement::Compound');
+
+    # Only narrow inside the first (then) block of the compound — not else
+    my @blocks = grep { $_->isa('PPI::Structure::Block') } $compound->schildren;
+    return $env unless @blocks && $blocks[0] == $block;
+
+    # Extract the condition
+    my ($condition) = grep { $_->isa('PPI::Structure::Condition') } $compound->schildren;
+    return $env unless $condition;
+
+    # Unwrap: Condition → Expression → children
+    my @cond_children = $condition->schildren;
+    my $expr = $cond_children[0];
+    if ($expr && $expr->isa('PPI::Statement::Expression')) {
+        @cond_children = $expr->schildren;
+    }
+
+    # Match `defined($x)` or `defined $x`
+    return $env unless @cond_children >= 2;
+    return $env unless $cond_children[0]->isa('PPI::Token::Word')
+                    && $cond_children[0]->content eq 'defined';
+
+    my $var_symbol;
+    my $list = $cond_children[1];
+
+    if ($list->isa('PPI::Structure::List')) {
+        # defined($x) — Symbol inside List > Expression
+        my @list_children = grep { $_->isa('PPI::Statement::Expression') } $list->schildren;
+        if (@list_children) {
+            my @exprs = $list_children[0]->schildren;
+            $var_symbol = $exprs[0] if @exprs && $exprs[0]->isa('PPI::Token::Symbol');
+        }
+    } elsif ($list->isa('PPI::Token::Symbol')) {
+        # defined $x — space-separated form
+        $var_symbol = $list;
+    }
+
+    return $env unless $var_symbol;
+
+    my $var_name = $var_symbol->content;
+    my $var_type = $env->{variables}{$var_name};
+
+    # Only narrow Union types that contain Undef
+    return $env unless $var_type && $var_type->is_union;
+
+    my @non_undef = grep {
+        !($_->is_atom && $_->name eq 'Undef')
+    } $var_type->members;
+
+    # If nothing was removed, no narrowing needed
+    return $env if @non_undef == scalar($var_type->members);
+
+    my $narrowed = @non_undef == 1
+        ? $non_undef[0]
+        : Typist::Type::Union->new(@non_undef);
+
+    my %new_vars = $env->{variables}->%*;
+    $new_vars{$var_name} = $narrowed;
+
+    +{ %$env, variables => \%new_vars };
 }
 
 sub _extract_args ($self, $list) {
