@@ -364,4 +364,51 @@ PERL
     is scalar @eff, 0, '@typist-ignore suppresses EffectMismatch';
 };
 
+# ── Column Precision ────────────────────────────
+
+subtest 'diagnostic: col on EffectMismatch' => sub {
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Effect;
+    $ws_reg->register_effect('Console', Typist::Effect->new(
+        name => 'Console', operations => +{},
+    ));
+    $ws_reg->register_effect('State', Typist::Effect->new(
+        name => 'State', operations => +{},
+    ));
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws_reg);
+package ColTest;
+use v5.40;
+
+sub effectful :Type((Str) -> Str !Eff(Console | State)) ($x) {
+    return $x;
+}
+
+sub caller_fn :Type(() -> Str !Eff(Console)) () {
+    effectful("hello");
+}
+PERL
+
+    my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
+    ok @eff_diags > 0, 'effect mismatch detected';
+    ok $eff_diags[0]{col} > 0, 'col is set on EffectMismatch';
+};
+
+subtest 'diagnostic: col on unannotated callee EffectMismatch' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package ColUnannotated;
+use v5.40;
+
+sub helper ($x) { $x }
+
+sub main_fn :Type((Str) -> Str) ($s) {
+    helper($s);
+}
+PERL
+
+    my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
+    ok @eff_diags > 0, 'unannotated callee mismatch detected';
+    ok $eff_diags[0]{col} > 0, 'col is set on unannotated callee EffectMismatch';
+};
+
 done_testing;

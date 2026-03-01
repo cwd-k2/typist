@@ -1355,4 +1355,89 @@ PERL
     is scalar @$errs, 0, 'no errors: T:Num in arithmetic context';
 };
 
+# ── Column Precision and Structured Fields ──────
+
+subtest 'diagnostic: col and expected/actual_type on variable mismatch' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+my $x :Type(Int) = "hello";
+PERL
+
+    my @errs = grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@*;
+    is scalar @errs, 1, 'one TypeMismatch error';
+    ok $errs[0]{col} > 0, 'col is set (greater than 0)';
+    is $errs[0]{expected_type}, 'Int', 'expected_type is Int';
+    like $errs[0]{actual_type}, qr/hello/, 'actual_type contains the inferred type';
+};
+
+subtest 'diagnostic: col on call site argument mismatch' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+add("hello", 2);
+PERL
+
+    my @errs = grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@*;
+    is scalar @errs, 1, 'one TypeMismatch error';
+    ok $errs[0]{col} > 0, 'col is set on call site mismatch';
+    is $errs[0]{expected_type}, 'Int', 'expected_type is Int';
+    like $errs[0]{actual_type}, qr/hello/, 'actual_type contains the inferred type';
+};
+
+subtest 'diagnostic: col on arity mismatch' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+add(1);
+PERL
+
+    my @errs = grep { $_->{kind} eq 'ArityMismatch' } $result->{diagnostics}->@*;
+    is scalar @errs, 1, 'one ArityMismatch error';
+    ok $errs[0]{col} > 0, 'col is set on arity mismatch';
+};
+
+subtest 'diagnostic: col and expected/actual_type on return mismatch' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+sub greet :Type((Str) -> Int) ($name) {
+    return "hello";
+}
+PERL
+
+    my @errs = grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@*;
+    is scalar @errs, 1, 'one TypeMismatch error';
+    ok $errs[0]{col} > 0, 'col is set on return mismatch';
+    is $errs[0]{expected_type}, 'Int', 'expected_type is Int';
+    like $errs[0]{actual_type}, qr/hello/, 'actual_type contains the inferred type';
+};
+
+subtest 'diagnostic: col and expected/actual_type on implicit return mismatch' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+sub greet :Type((Str) -> Int) ($name) {
+    "hello"
+}
+PERL
+
+    my @errs = grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@*;
+    is scalar @errs, 1, 'one TypeMismatch error';
+    ok $errs[0]{col} > 0, 'col is set on implicit return mismatch';
+    is $errs[0]{expected_type}, 'Int', 'expected_type is Int';
+    like $errs[0]{actual_type}, qr/hello/, 'actual_type contains the inferred type';
+};
+
+subtest 'diagnostic: col on assignment mismatch' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+my $x :Type(Int) = 0;
+$x = "hello";
+PERL
+
+    my @errs = grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@*;
+    is scalar @errs, 1, 'one TypeMismatch error';
+    ok $errs[0]{col} > 0, 'col is set on assignment mismatch';
+    is $errs[0]{expected_type}, 'Int', 'expected_type is Int';
+    like $errs[0]{actual_type}, qr/hello/, 'actual_type contains the inferred type';
+};
+
 done_testing;

@@ -51,10 +51,13 @@ sub _check_variable_initializers ($self) {
 
         unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
             $self->{errors}->collect(
-                kind    => 'TypeMismatch',
-                message => "Variable $var->{name}: expected ${\$declared->to_string}, got ${\$inferred->to_string}",
-                file    => $self->{file},
-                line    => $var->{line},
+                kind          => 'TypeMismatch',
+                message       => "Variable $var->{name}: expected ${\$declared->to_string}, got ${\$inferred->to_string}",
+                file          => $self->{file},
+                line          => $var->{line},
+                col           => $var->{col} // 0,
+                expected_type => $declared->to_string,
+                actual_type   => $inferred->to_string,
             );
         }
     }
@@ -99,10 +102,13 @@ sub _check_assignments ($self) {
 
         unless (Typist::Subtype->is_subtype($inferred, $declared_type, registry => $self->{registry})) {
             $self->{errors}->collect(
-                kind    => 'TypeMismatch',
-                message => "Assignment to $var_name: expected ${\$declared_type->to_string}, got ${\$inferred->to_string}",
-                file    => $self->{file},
-                line    => $op->line_number,
+                kind          => 'TypeMismatch',
+                message       => "Assignment to $var_name: expected ${\$declared_type->to_string}, got ${\$inferred->to_string}",
+                file          => $self->{file},
+                line          => $op->line_number,
+                col           => $op->column_number,
+                expected_type => $declared_type->to_string,
+                actual_type   => $inferred->to_string,
             );
         }
     }
@@ -202,6 +208,7 @@ sub _check_call_sites ($self) {
                 message => "$name() expects $expect arguments, got ${\scalar @args}",
                 file    => $self->{file},
                 line    => $word->line_number,
+                col     => $word->column_number,
             );
             next;
         }
@@ -212,6 +219,7 @@ sub _check_call_sites ($self) {
                 message => "$name() expects ${\scalar @param_exprs} arguments, got ${\scalar @args}",
                 file    => $self->{file},
                 line    => $word->line_number,
+                col     => $word->column_number,
             );
         }
 
@@ -236,10 +244,13 @@ sub _check_call_sites ($self) {
 
             unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
                 $self->{errors}->collect(
-                    kind    => 'TypeMismatch',
-                    message => "Argument " . ($i + 1) . " of $name(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
-                    file    => $self->{file},
-                    line    => $word->line_number,
+                    kind          => 'TypeMismatch',
+                    message       => "Argument " . ($i + 1) . " of $name(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
+                    file          => $self->{file},
+                    line          => $word->line_number,
+                    col           => $word->column_number,
+                    expected_type => $declared->to_string,
+                    actual_type   => $inferred->to_string,
                 );
             }
         }
@@ -287,6 +298,7 @@ sub _check_method_call ($self, $word, $arrow) {
             message => "$display() expects $expect arguments, got ${\scalar @args}",
             file    => $self->{file},
             line    => $word->line_number,
+            col     => $word->column_number,
         );
         return if @args < $min_args;
     }
@@ -306,10 +318,13 @@ sub _check_method_call ($self, $word, $arrow) {
 
         unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
             $self->{errors}->collect(
-                kind    => 'TypeMismatch',
-                message => "Argument " . ($i + 1) . " of $display(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
-                file    => $self->{file},
-                line    => $word->line_number,
+                kind          => 'TypeMismatch',
+                message       => "Argument " . ($i + 1) . " of $display(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
+                file          => $self->{file},
+                line          => $word->line_number,
+                col           => $word->column_number,
+                expected_type => $declared->to_string,
+                actual_type   => $inferred->to_string,
             );
         }
     }
@@ -345,10 +360,13 @@ sub _check_return_types ($self) {
 
             unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
                 $self->{errors}->collect(
-                    kind    => 'TypeMismatch',
-                    message => "Return value of $name(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
-                    file    => $self->{file},
-                    line    => $ret->line_number,
+                    kind          => 'TypeMismatch',
+                    message       => "Return value of $name(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
+                    file          => $self->{file},
+                    line          => $ret->line_number,
+                    col           => $ret->column_number,
+                    expected_type => $declared->to_string,
+                    actual_type   => $inferred->to_string,
                 );
             }
         }
@@ -394,10 +412,13 @@ sub _check_implicit_return_of_stmt ($self, $stmt, $env, $declared, $name) {
 
     unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
         $self->{errors}->collect(
-            kind    => 'TypeMismatch',
-            message => "Implicit return of $name(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
-            file    => $self->{file},
-            line    => $first->line_number,
+            kind          => 'TypeMismatch',
+            message       => "Implicit return of $name(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
+            file          => $self->{file},
+            line          => $first->line_number,
+            col           => $first->column_number,
+            expected_type => $declared->to_string,
+            actual_type   => $inferred->to_string,
         );
     }
 }
@@ -441,10 +462,13 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
     # Unification failure → structural mismatch at the failing parameter
     unless ($bindings) {
         $self->{errors}->collect(
-            kind    => 'TypeMismatch',
-            message => "Argument " . ($failed_at + 1) . " of $name(): expected ${\$param_types[$failed_at]->to_string}, got ${\$arg_types[$failed_at]->to_string}",
-            file    => $self->{file},
-            line    => $word->line_number,
+            kind          => 'TypeMismatch',
+            message       => "Argument " . ($failed_at + 1) . " of $name(): expected ${\$param_types[$failed_at]->to_string}, got ${\$arg_types[$failed_at]->to_string}",
+            file          => $self->{file},
+            line          => $word->line_number,
+            col           => $word->column_number,
+            expected_type => $param_types[$failed_at]->to_string,
+            actual_type   => $arg_types[$failed_at]->to_string,
         );
         return;
     }
@@ -456,10 +480,13 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
         my $bound = $self->_resolve_type($g->{bound_expr}) // next;
         unless (Typist::Subtype->is_subtype($actual, $bound, registry => $self->{registry})) {
             $self->{errors}->collect(
-                kind    => 'TypeMismatch',
-                message => "Argument of $name(): ${\$actual->to_string} does not satisfy bound ${\$bound->to_string} for type variable $g->{name}",
-                file    => $self->{file},
-                line    => $word->line_number,
+                kind          => 'TypeMismatch',
+                message       => "Argument of $name(): ${\$actual->to_string} does not satisfy bound ${\$bound->to_string} for type variable $g->{name}",
+                file          => $self->{file},
+                line          => $word->line_number,
+                col           => $word->column_number,
+                expected_type => $bound->to_string,
+                actual_type   => $actual->to_string,
             );
         }
     }
@@ -471,10 +498,13 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
         next if $arg_types[$i]->is_atom && $arg_types[$i]->name eq 'Any';
         unless (Typist::Subtype->is_subtype($arg_types[$i], $concrete, registry => $self->{registry})) {
             $self->{errors}->collect(
-                kind    => 'TypeMismatch',
-                message => "Argument " . ($i + 1) . " of $name(): expected ${\$concrete->to_string}, got ${\$arg_types[$i]->to_string}",
-                file    => $self->{file},
-                line    => $word->line_number,
+                kind          => 'TypeMismatch',
+                message       => "Argument " . ($i + 1) . " of $name(): expected ${\$concrete->to_string}, got ${\$arg_types[$i]->to_string}",
+                file          => $self->{file},
+                line          => $word->line_number,
+                col           => $word->column_number,
+                expected_type => $concrete->to_string,
+                actual_type   => $arg_types[$i]->to_string,
             );
         }
     }

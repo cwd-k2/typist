@@ -69,6 +69,7 @@ sub analyze ($self) {
                              . " which may perform any effect",
                     file    => $self->{file},
                     line    => $call->{line},
+                    col     => $call->{col} // 0,
                 );
                 next;
             }
@@ -82,6 +83,7 @@ sub analyze ($self) {
                              . ", but $name() has no :Eff annotation",
                     file    => $self->{file},
                     line    => $call->{line},
+                    col     => $call->{col} // 0,
                 );
                 next;
             }
@@ -89,7 +91,7 @@ sub analyze ($self) {
             # Check effect inclusion: callee's labels ⊆ caller's labels
             $self->_check_effect_inclusion(
                 $caller_eff, $callee_eff,
-                $name, $call->{name}, $call->{line},
+                $name, $call->{name}, $call->{line}, $call->{col} // 0,
             );
         }
     }
@@ -132,6 +134,7 @@ sub _collect_called_effects ($self, $block, $pkg) {
                     effects     => $eff,
                     unannotated => $is_unannotated,
                     line        => $word->line_number,
+                    col         => $word->column_number,
                 };
             } elsif (!$declared_sig) {
                 # No declaration → original behavior: unannotated Eff(*)
@@ -140,6 +143,7 @@ sub _collect_called_effects ($self, $block, $pkg) {
                     effects     => 1,  # sentinel; unannotated branch does not inspect
                     unannotated => 1,
                     line        => $word->line_number,
+                    col         => $word->column_number,
                 };
             }
             # else: declared pure (no effects) → skip
@@ -170,13 +174,14 @@ sub _collect_called_effects ($self, $block, $pkg) {
             effects     => $eff,
             unannotated => $is_unannotated,
             line        => $word->line_number,
+            col         => $word->column_number,
         };
     }
 
     @calls;
 }
 
-sub _check_effect_inclusion ($self, $caller_eff, $callee_eff, $caller_name, $callee_name, $line) {
+sub _check_effect_inclusion ($self, $caller_eff, $callee_eff, $caller_name, $callee_name, $line, $col = 0) {
     my $caller_row = $caller_eff->is_eff ? $caller_eff->row : $caller_eff;
     my $callee_row = $callee_eff->is_eff ? $callee_eff->row : $callee_eff;
 
@@ -193,6 +198,7 @@ sub _check_effect_inclusion ($self, $caller_eff, $callee_eff, $caller_name, $cal
                          . "effect '$label', but $caller_name() does not declare it",
                 file    => $self->{file},
                 line    => $line,
+                col     => $col,
             );
         }
     }
