@@ -572,3 +572,159 @@ sub _synthesize_function_symbol ($name, $sig) {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Typist::LSP::Document - Per-file analysis cache and query interface
+
+=head1 SYNOPSIS
+
+    use Typist::LSP::Document;
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///path/to/file.pm',
+        content => $source_text,
+        version => 1,
+    );
+
+    $doc->analyze(workspace_registry => $registry);
+
+    my $sym = $doc->symbol_at($line, $col);
+    my $def = $doc->definition_at($line, $col);
+
+=head1 DESCRIPTION
+
+Typist::LSP::Document holds the content and analysis results for a single
+open file. Analysis is performed lazily on first access and cached until
+the content changes or the document is explicitly invalidated.
+
+=head1 CONSTRUCTOR
+
+=head2 new
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => $uri,
+        content => $text,
+        version => $version,
+    );
+
+=head1 METHODS
+
+=head2 uri
+
+    my $uri = $doc->uri;
+
+Returns the document URI.
+
+=head2 content
+
+    my $text = $doc->content;
+
+Returns the current document content.
+
+=head2 version
+
+    my $ver = $doc->version;
+
+Returns the document version number.
+
+=head2 update
+
+    $doc->update($new_content, $new_version);
+
+Replace document content and clear the analysis cache.
+
+=head2 invalidate
+
+    $doc->invalidate;
+
+Clear the analysis cache without changing content. Called when
+workspace-level types change (e.g., after a file save).
+
+=head2 analyze
+
+    my $result = $doc->analyze(workspace_registry => $registry);
+
+Run static analysis via L<Typist::Static::Analyzer>. Results are cached
+until the next C<update> or C<invalidate>. Returns a hashref with
+C<diagnostics>, C<symbols>, C<extracted>, and C<registry> keys.
+
+=head2 symbol_at
+
+    my $sym = $doc->symbol_at($line, $col);
+
+Find the symbol at the given 0-indexed position. Searches local symbols
+first, then falls back to Perl builtins and the workspace registry for
+cross-package resolution.
+
+=head2 word_at
+
+    my $word = $doc->word_at($line, $col);
+
+Extract the word under the cursor at the given 0-indexed position,
+including sigils for variables (C<$foo>, C<@bar>).
+
+=head2 definition_at
+
+    my $def = $doc->definition_at($line, $col);
+
+Look up the definition location for the symbol under the cursor.
+Returns a hashref with C<uri>, C<line>, C<col>, C<name> or C<undef>.
+
+=head2 find_function_symbol
+
+    my $sym = $doc->find_function_symbol($name);
+
+Find a function symbol by name in the analysis results.
+
+=head2 find_references
+
+    my $refs = $doc->find_references($name);
+
+Find all word-boundary occurrences of C<$name> in this document.
+Returns an arrayref of C<< +{ uri, line, col, len } >>.
+
+=head2 inlay_hints
+
+    my $hints = $doc->inlay_hints($start_line, $end_line);
+
+Generate inlay hints for inferred variable types within the given
+line range. Returns an arrayref of LSP InlayHint objects.
+
+=head2 signature_context
+
+    my $ctx = $doc->signature_context($line, $col);
+
+Determine the signature help context at the given position.
+Returns C<< +{ name => $fn_name, active_parameter => $index } >>
+or C<undef> if not inside a function call.
+
+=head2 document_symbols
+
+    my $symbols = $doc->document_symbols;
+
+Generate the LSP DocumentSymbol array for the document outline.
+
+=head2 completion_context
+
+    my $ctx = $doc->completion_context($line, $col);
+
+Detect type annotation completion context at the given position.
+Returns C<'type_expr'>, C<'generic'>, C<'effect'>, C<'constraint'>,
+or C<undef>.
+
+=head2 code_completion_at
+
+    my $ctx = $doc->code_completion_at($line, $col);
+
+Detect code-level completion context at the given position. Returns a
+hashref describing the context kind (C<struct_field>, C<method>, or
+C<effect_op>) or C<undef>.
+
+=head1 SEE ALSO
+
+L<Typist::LSP::Server>, L<Typist::Static::Analyzer>
+
+=cut

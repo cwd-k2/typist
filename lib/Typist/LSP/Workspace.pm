@@ -495,3 +495,112 @@ sub all_constructor_names ($self) {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Typist::LSP::Workspace - Cross-file type registry and workspace management
+
+=head1 SYNOPSIS
+
+    use Typist::LSP::Workspace;
+
+    my $ws = Typist::LSP::Workspace->new(root => '/path/to/lib');
+
+    my $registry = $ws->registry;
+    $ws->update_file($path, $source);
+
+    my $def = $ws->find_definition('MyType');
+    my @names = $ws->all_typedef_names;
+
+=head1 DESCRIPTION
+
+Typist::LSP::Workspace scans a project directory for C<.pm> files,
+extracts type definitions using L<Typist::Static::Extractor>, and
+maintains a shared L<Typist::Registry> for cross-file type resolution.
+It also supports incremental updates when files are saved.
+
+The workspace registry includes builtin function types from
+L<Typist::Prelude> and registers all discovered aliases, newtypes,
+datatypes, effects, typeclasses, and function signatures.
+
+=head1 CONSTRUCTOR
+
+=head2 new
+
+    my $ws = Typist::LSP::Workspace->new(root => $lib_dir);
+
+Create a workspace rooted at the given directory. If C<root> is provided
+and is a valid directory, the workspace scans it immediately for C<.pm>
+files and populates the registry.
+
+=head1 METHODS
+
+=head2 registry
+
+    my $reg = $ws->registry;
+
+Returns the shared L<Typist::Registry> containing all workspace-level
+type definitions and function signatures.
+
+=head2 scan
+
+    $ws->scan;
+
+Recursively scan the workspace root for C<.pm> files and index their
+type definitions. Called automatically by the constructor when a root
+directory is provided.
+
+=head2 update_file
+
+    $ws->update_file($path, $source);
+
+Incrementally update the workspace index for a single file. Removes
+the old entry, rebuilds the registry, and re-indexes the file with
+the new source content.
+
+=head2 find_definition
+
+    my $def = $ws->find_definition($name);
+
+Search the workspace for the definition of a named symbol (alias,
+newtype, datatype, effect, typeclass, function, or datatype constructor).
+Returns C<< +{ uri, line, col, name } >> or C<undef>.
+
+=head2 find_all_references
+
+    my $refs = $ws->find_all_references($name, \%open_documents);
+
+Find all word-boundary occurrences of C<$name> across open documents
+and workspace files. Returns an arrayref of C<< +{ uri, line, col, len } >>.
+
+=head2 all_typedef_names
+
+    my @names = $ws->all_typedef_names;
+
+Returns a sorted list of all alias, newtype, and datatype names.
+
+=head2 all_effect_names
+
+    my @names = $ws->all_effect_names;
+
+Returns a sorted list of all effect names.
+
+=head2 all_typeclass_names
+
+    my @names = $ws->all_typeclass_names;
+
+Returns a sorted list of all typeclass names.
+
+=head2 all_constructor_names
+
+    my @names = $ws->all_constructor_names;
+
+Returns a sorted list of all datatype constructor (variant) names.
+
+=head1 SEE ALSO
+
+L<Typist::LSP::Server>, L<Typist::Registry>, L<Typist::Static::Extractor>
+
+=cut

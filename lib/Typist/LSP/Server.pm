@@ -560,3 +560,84 @@ sub _uri_to_path ($uri) {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Typist::LSP::Server - Language Server Protocol implementation for Typist
+
+=head1 SYNOPSIS
+
+    use Typist::LSP::Server;
+
+    my $server = Typist::LSP::Server->new;
+    $server->run;
+
+=head1 DESCRIPTION
+
+Typist::LSP::Server implements the Language Server Protocol message
+dispatch loop for the Typist type system. It manages document lifecycle,
+delegates analysis to L<Typist::LSP::Document>, and coordinates
+workspace-level features through L<Typist::LSP::Workspace>.
+
+=head1 CAPABILITIES
+
+The server advertises the following LSP capabilities:
+
+=over 4
+
+=item B<textDocumentSync> - Full content synchronization (open/change/save/close)
+
+=item B<hoverProvider> - Type signature display on hover
+
+=item B<completionProvider> - Type annotation and code completion (triggers: C<(>, C<[>, C<,>, C<|>, C<&>, C<E<gt>>, C<{>, C<:>)
+
+=item B<documentSymbolProvider> - Document symbol outline
+
+=item B<definitionProvider> - Go to definition (same-file and cross-file)
+
+=item B<signatureHelpProvider> - Function signature help (triggers: C<(>, C<,>)
+
+=item B<referencesProvider> - Find all references
+
+=item B<renameProvider> - Symbol rename across workspace
+
+=item B<inlayHintProvider> - Inferred type hints for variables
+
+=item B<codeActionProvider> - Quick-fix code actions (effect mismatch, type suggestions)
+
+=item B<semanticTokensProvider> - Semantic token classification for syntax highlighting
+
+=back
+
+=head1 CONSTRUCTOR
+
+=head2 new
+
+    my $server = Typist::LSP::Server->new(
+        transport => $transport,   # optional, defaults to Typist::LSP::Transport->new
+        logger    => $logger,      # optional, defaults to Typist::LSP::Logger->new
+    );
+
+=head1 METHODS
+
+=head2 run
+
+    $server->run;
+
+Enter the main message loop. Reads JSON-RPC messages from transport,
+dispatches to handlers, and sends responses. Returns when the client
+sends an C<exit> notification.
+
+=head2 did_shutdown
+
+    my $bool = $server->did_shutdown;
+
+Returns true if the server has received a C<shutdown> request.
+
+=head1 SEE ALSO
+
+L<Typist::LSP::Document>, L<Typist::LSP::Workspace>, L<Typist::LSP::Transport>
+
+=cut

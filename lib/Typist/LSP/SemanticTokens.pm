@@ -202,3 +202,86 @@ sub _word_pos ($text, $word) {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Typist::LSP::SemanticTokens - Semantic token classification for syntax highlighting
+
+=head1 SYNOPSIS
+
+    use Typist::LSP::SemanticTokens;
+
+    # Get the token legend for LSP registration
+    my $legend = Typist::LSP::SemanticTokens->legend;
+
+    # Compute semantic tokens for an analyzed document
+    my $result = Typist::LSP::SemanticTokens->compute($doc);
+    # $result->{data} is the delta-encoded integer array
+
+=head1 DESCRIPTION
+
+Typist::LSP::SemanticTokens provides semantic token classification for
+Typist-specific syntax elements. It processes analyzed documents and
+produces the delta-encoded integer arrays required by the LSP semantic
+tokens protocol.
+
+=head1 TOKEN TYPES
+
+The following token types are registered:
+
+=over 4
+
+=item C<type> - Type names in typedef/newtype/datatype declarations
+
+=item C<typeParameter> - Type variable names in generic declarations
+
+=item C<variable> - Annotated variable declarations
+
+=item C<function> - Function name definitions
+
+=item C<keyword> - Keywords (C<sub>, C<typedef>, C<newtype>, C<effect>, C<typeclass>, C<datatype>, C<enum>)
+
+=item C<class> - Typeclass names
+
+=item C<enum> - Effect names
+
+=item C<enumMember> - Datatype variant (constructor) names
+
+=back
+
+=head1 TOKEN MODIFIERS
+
+=over 4
+
+=item C<declaration> - Annotated variable declarations
+
+=item C<definition> - Function and type name definitions
+
+=item C<readonly> - (reserved)
+
+=back
+
+=head1 CLASS METHODS
+
+=head2 legend
+
+    my $legend = Typist::LSP::SemanticTokens->legend;
+
+Returns the semantic tokens legend hashref with C<tokenTypes> and
+C<tokenModifiers> arrays, suitable for the LSP C<initialize> response.
+
+=head2 compute
+
+    my $result = Typist::LSP::SemanticTokens->compute($doc);
+
+Compute semantic tokens for the given analyzed L<Typist::LSP::Document>.
+Returns C<< +{ data =E<gt> \@integers } >> where C<data> contains the
+delta-encoded token array per the LSP specification.
+
+=head1 SEE ALSO
+
+L<Typist::LSP::Server>, L<Typist::LSP::Document>
+
+=cut

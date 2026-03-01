@@ -624,3 +624,119 @@ sub _split_generics_str ($str) {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Typist::Parser - Recursive-descent parser for type expressions
+
+=head1 SYNOPSIS
+
+    use Typist::Parser;
+
+    # Parse a type expression
+    my $type = Typist::Parser->parse('Int');
+    my $func = Typist::Parser->parse('(Int, Str) -> Bool');
+    my $param = Typist::Parser->parse('ArrayRef[Int]');
+    my $union = Typist::Parser->parse('Str | Undef');
+    my $struct = Typist::Parser->parse('{ name => Str, age? => Int }');
+    my $forall = Typist::Parser->parse('forall A. A -> A');
+
+    # Parse a :Type() annotation string
+    my $ann = Typist::Parser->parse_annotation('<T: Num>(T, T) -> T ! Eff(Console)');
+    # Returns: { generics_raw => ["T: Num"], type => Func(...) }
+
+    # Parse an effect row expression
+    my $row = Typist::Parser->parse_row('Console | State | r');
+
+=head1 DESCRIPTION
+
+Typist::Parser implements a recursive-descent parser for the Typist type
+expression language. It tokenizes input strings and produces immutable type
+objects from the C<Typist::Type::*> hierarchy.
+
+=head1 CLASS METHODS
+
+=head2 parse
+
+    my $type = Typist::Parser->parse($expr);
+
+Parse a type expression string into a type object. Supported syntax:
+
+=over 4
+
+=item Primitives: C<Int>, C<Str>, C<Num>, C<Bool>, C<Any>, C<Void>, C<Never>, C<Undef>
+
+=item Type variables: single uppercase letters (C<T>, C<U>, C<V>, ...)
+
+=item Parameterized types: C<ArrayRef[Int]>, C<HashRef[Str, Int]>, C<Maybe[Str]>
+
+=item Union types: C<Int | Str>
+
+=item Intersection types: C<Readable & Writable>
+
+=item Function types: C<(Int, Str) -E<gt> Bool>
+
+=item Function types with effects: C<(Str) -E<gt> Void !Eff(Console)>
+
+=item Variadic functions: C<(Int, ...Str) -E<gt> Void>
+
+=item Struct types: C<{ name =E<gt> Str, age? =E<gt> Int }>
+
+=item Literal types: C<42>, C<"hello">, C<3.14>
+
+=item Quantified types: C<forall A. A -E<gt> A>, C<forall A: Num. A -E<gt> A>
+
+=item DSL constructors: C<Struct(...)>, C<Func(... returns =E<gt> R)>
+
+=back
+
+Dies on malformed input with a diagnostic message.
+
+=head2 parse_annotation
+
+    my $ann = Typist::Parser->parse_annotation($input);
+
+Parse a C<:Type(...)> annotation string. Handles optional leading generic
+declarations in angle brackets.
+
+Returns a hashref:
+
+    {
+        generics_raw => \@generics,   # e.g. ["T: Num", "r: Row"]
+        type         => $type_object, # parsed Type
+    }
+
+Examples:
+
+    "Int"                          # simple type
+    "(Int, Str) -> Bool"           # function type
+    "<T: Num>(T, T) -> T"         # generics + function
+    "<T, r: Row>(T) -> Str !Eff(Console | r)"
+
+=head2 parse_row
+
+    my $row = Typist::Parser->parse_row($expr);
+
+Parse an effect row expression of the form C<"Console | State | r">.
+Labels are uppercase-initial identifiers; a trailing lowercase identifier
+is a row variable. Returns a L<Typist::Type::Row> object.
+
+=head1 TYPE EXPRESSION GRAMMAR
+
+    union      ::= inter ('|' inter)*
+    inter      ::= primary ('&' primary)*
+    primary    ::= named | struct | literal | quantified | '(' grouped ')'
+    named      ::= IDENT ('[' param_list ']')? | DSL_NAME '(' ... ')'
+    struct     ::= '{' (key '=>' type (',' key '=>' type)*)? '}'
+    func       ::= '(' param_list? ')' '->' return ('!' effect_row)?
+    quantified ::= 'forall' var+ '.' body
+    literal    ::= NUMBER | STRING
+    effect_row ::= 'Eff(' (LABEL ('|' LABEL)* ('|' var)?)? ')'
+
+=head1 SEE ALSO
+
+L<Typist>, L<Typist::Type>, L<Typist::DSL>
+
+=cut

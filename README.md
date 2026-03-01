@@ -95,16 +95,17 @@ sub with_log :Type(<r: Row>(Str) -> Str !Eff(Log | r)) ($msg) {
 | Feature | Description |
 |---------|-------------|
 | CHECK-phase analysis | Type/effect errors detected at compile time via `warn` |
-| LSP server | Hover, completion, diagnostics, document symbols, go-to-definition, signature help, inlay hints |
-| Perl::Critic policy | Integration with PerlNavigator |
+| LSP server | Hover, completion, diagnostics, document symbols, go-to-definition, signature help, inlay hints, find references, rename, code actions, semantic tokens |
+| Perl::Critic policy | `Typist::TypeCheck` policy bridges static analysis into PerlNavigator |
 | Cross-file checking | Workspace-level type resolution across modules |
 | Gradual typing | Annotation density determines check strictness |
+| Bidirectional type inference | Expected types propagated downward to guide inference of literals and expressions |
+| Control flow narrowing | `defined($x)` narrows `Maybe[T]` to `T`; truthiness narrows to non-`Undef`; `isa` narrows to the tested class; early `return` narrows the else branch |
 | Arity checking | Argument count mismatch detected as ArityMismatch |
 | Expression type inference | Arithmetic (`Num`), comparison (`Bool`), string concat (`Str`), subscript access, ternary (Union/LUB) |
 | Variable reassignment tracking | Type mismatch on re-assignment to `:Type`-annotated variables |
 | Method type checking | `$self->method()` argument types and arity checked within the same package |
 | Generic static type checking | Type variables instantiated from call-site arguments for concrete type verification |
-| Type narrowing | `Maybe[T]` narrowed to `T` inside `if (defined $x)` blocks |
 | Builtin prelude | 83 builtins (74 Perl core + 9 Typist) with pre-installed type annotations |
 
 ### Architecture
@@ -356,17 +357,34 @@ BEGIN {
 }
 ```
 
-### Type Narrowing
+### Control Flow Narrowing
 
-Inside `if (defined ...)` blocks, `Maybe[T]` is automatically narrowed to `T`:
+Typist narrows types inside conditional branches based on the guard expression:
 
 ```perl
+# defined() narrows Maybe[T] to T
 sub safe_length :Type((Maybe[Str]) -> Int) ($s) {
     if (defined $s) {
-        # Here $s is narrowed from Str | Undef to Str
-        return length($s);  # No type error
+        # $s narrowed from Str | Undef to Str
+        return length($s);
     }
     return 0;
+}
+
+# Truthiness narrows union types by removing Undef
+sub process :Type((Str | Undef) -> Str) ($s) {
+    if ($s) {
+        # $s narrowed to Str
+        return $s;
+    }
+    return "default";
+}
+
+# Early return narrows the else branch
+sub require_str :Type((Maybe[Str]) -> Str) ($s) {
+    return "" unless defined $s;
+    # $s is Str here (Undef eliminated by early return)
+    $s;
 }
 ```
 
@@ -462,7 +480,23 @@ Runtime mode adds `tie` to typed scalars and wraps typed subs with validation cl
 
 ### LSP Server
 
-The standalone LSP server provides hover, completion, diagnostics, document symbols, go-to-definition, signature help, and inlay hints:
+The standalone LSP server provides a comprehensive editing experience:
+
+| Capability | Description |
+|------------|-------------|
+| Diagnostics | Type mismatch, arity mismatch, effect mismatch, alias cycles |
+| Hover | Type signatures for functions, variables, constructors, typedefs |
+| Completion | Type annotation completion and type-aware code completion (struct fields, methods, effect operations) |
+| Go to Definition | Same-file and cross-file definition lookup |
+| Find References | Word-boundary search across open documents and workspace |
+| Rename | Symbol rename across all workspace files |
+| Signature Help | Function parameter hints with active parameter tracking |
+| Document Symbols | Outline of functions, variables, typedefs, newtypes, datatypes, effects, typeclasses |
+| Inlay Hints | Inferred types shown inline for unannotated variables |
+| Code Actions | Quick-fix suggestions for effect mismatches and type errors |
+| Semantic Tokens | Syntax highlighting for Typist keywords, type names, constructors, and type parameters |
+
+Launch the server:
 
 ```sh
 typist-lsp                            # After make install
@@ -597,14 +631,14 @@ carton exec -- perl example/07_effects.pl
 ## Testing
 
 ```sh
-# All tests (49 files, 720 tests)
+# All tests (56 files)
 carton exec -- prove -l t/ t/static/ t/lsp/ t/critic/
 
 # By category
 carton exec -- prove -l t/              # Core type system (25 files)
 carton exec -- prove -l t/static/       # Static analysis (11 files)
-carton exec -- prove -l t/lsp/          # LSP server (12 files)
-carton exec -- prove -l t/critic/       # Perl::Critic policy (1 file)
+carton exec -- prove -l t/lsp/          # LSP server (16 files)
+carton exec -- prove -l t/critic/       # Perl::Critic policy (4 files)
 
 # Integration tests
 carton exec -- perl t/lsp/e2e_smoke.pl                     # LSP E2E smoke test
@@ -663,10 +697,12 @@ lib/
       LSP.pm                 Entry point + exit handling
       Server.pm              Lifecycle, message dispatch
       Transport.pm           JSON-RPC with Content-Length framing
-      Document.pm            Per-file analysis cache
+      Document.pm            Per-file analysis cache + query interface
       Workspace.pm           Cross-file registry + scanning
       Hover.pm               Type signature display
-      Completion.pm          Type name suggestions
+      Completion.pm          Type annotation + code completion
+      CodeAction.pm          Quick-fix code action generation
+      SemanticTokens.pm      Semantic token classification
       Logger.pm              Configurable stderr logging
 bin/
   typist-lsp                 LSP server executable
@@ -674,7 +710,7 @@ script/
   lsp-replay                 JSONL trace replay tool
   lsp-verify-workspace       Workspace integration verifier
 example/                     Runnable demonstrations
-t/                           Test suite (49 files, 720 tests)
+t/                           Test suite (56 files)
 docs/                        Architecture and type system reference
 ```
 

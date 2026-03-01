@@ -236,3 +236,73 @@ sub _kind_number ($kind) {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Typist::LSP::Completion - Completion providers for type annotations and code
+
+=head1 SYNOPSIS
+
+    use Typist::LSP::Completion;
+
+    # Type annotation completion
+    my $items = Typist::LSP::Completion->complete(
+        'type_expr', \@typedefs, \@effects, \@typeclasses,
+    );
+
+    # Code-level completion
+    my $items = Typist::LSP::Completion->complete_code($context, $doc, $registry);
+
+=head1 DESCRIPTION
+
+Typist::LSP::Completion generates completion items for both type
+annotation contexts (inside C<:Type(...)>) and code-level contexts
+(struct field access, method calls, effect operations).
+
+=head1 CLASS METHODS
+
+=head2 complete
+
+    my $items = Typist::LSP::Completion->complete(
+        $context, \@typedefs, \@effects, \@typeclasses,
+    );
+
+Generate completion items for type annotation contexts. The C<$context>
+parameter is one of:
+
+=over 4
+
+=item C<type_expr> - Primitive types, parametric types (with snippet insertion), and workspace typedefs
+
+=item C<generic> - Type variable suggestions (C<T>, C<U>, C<V>, C<K>)
+
+=item C<effect> - Effect names from the workspace
+
+=item C<constraint> - Typeclass names for bounded quantification
+
+=back
+
+=head2 complete_code
+
+    my $items = Typist::LSP::Completion->complete_code($context, $doc, $registry);
+
+Generate code-level completion items. The C<$context> hashref (from
+C<Document-E<gt>code_completion_at>) determines the completion kind:
+
+=over 4
+
+=item C<struct_field> - Struct field names based on the variable's type
+
+=item C<method> - Method names for C<$self-E<gt>> calls within the same package
+
+=item C<effect_op> - Effect operation names for C<Effect::> qualified calls
+
+=back
+
+=head1 SEE ALSO
+
+L<Typist::LSP::Server>, L<Typist::LSP::Document>
+
+=cut

@@ -59,3 +59,76 @@ sub _op_intersection {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Typist::Type - Abstract base class for all type objects
+
+=head1 SYNOPSIS
+
+    use Typist::Type;
+
+    # Coerce a string into a type object
+    my $type = Typist::Type->coerce('Int | Str');
+
+    # Operator overloading (via Typist::DSL)
+    use Typist::DSL;
+    my $union = Int | Str;          # Union type
+    my $inter = Readable & Writable; # Intersection type
+    say "$union";                    # Stringify: "Int | Str"
+
+=head1 DESCRIPTION
+
+Typist::Type is the abstract base class for all type objects in the
+Typist type system. Every type node is an immutable value object that
+implements a common interface for structural operations.
+
+The class provides operator overloading for concise type construction:
+C<|> produces union types, C<&> produces intersection types, and C<"">
+invokes C<to_string>.
+
+=head1 ABSTRACT INTERFACE
+
+Subclasses must implement all of the following methods:
+
+=over 4
+
+=item B<name> - Returns the type name
+
+=item B<to_string> - Returns a human-readable string representation
+
+=item B<equals>($other) - Structural equality comparison
+
+=item B<contains>($value) - Runtime value membership test
+
+=item B<free_vars> - Returns a list of unbound type variable names
+
+=item B<substitute>(\%bindings) - Returns a new type with variables substituted
+
+=back
+
+=head1 TYPE PREDICATES
+
+Each predicate returns false by default; the corresponding subclass
+overrides it to return true:
+
+    is_atom  is_param  is_union  is_intersection  is_func
+    is_struct  is_var  is_alias  is_literal  is_newtype
+    is_row  is_eff  is_data  is_quantified
+
+=head1 CLASS METHODS
+
+=head2 coerce
+
+    my $type = Typist::Type->coerce($expr);
+
+Coerce a value into a type object. Blessed L<Typist::Type> objects pass
+through unchanged; strings are parsed via L<Typist::Parser>.
+
+=head1 SEE ALSO
+
+L<Typist::Parser>, L<Typist::DSL>, L<Typist::Subtype>
+
+=cut

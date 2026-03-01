@@ -333,3 +333,158 @@ sub typedef ($name, $expr) {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Typist::Registry - Type, function, and effect registration store
+
+=head1 SYNOPSIS
+
+    use Typist::Registry;
+
+    # Class-level (singleton) usage
+    Typist::Registry->define_alias('Name', 'Str');
+    my $type = Typist::Registry->lookup_type('Name');
+    Typist::Registry->register_function('main', 'add', $sig);
+
+    # Instance-level usage (for LSP workspace isolation)
+    my $reg = Typist::Registry->new;
+    $reg->define_alias('Price', 'Int');
+    $reg->register_newtype('UserId', $newtype_obj);
+
+=head1 DESCRIPTION
+
+Typist::Registry is the central store for type aliases, newtypes,
+datatypes, functions, methods, effects, typeclasses, and instances.
+It supports both class-level (singleton) and instance-level usage
+through invocant dispatch: class method calls operate on a shared
+default instance, while object method calls operate on the receiver.
+
+Alias resolution is lazy with cycle detection. Newtypes and datatypes
+take precedence over aliases during lookup. The resolution cache is
+cleared on merge to accommodate new definitions.
+
+=head1 CONSTRUCTOR
+
+=head2 new
+
+    my $reg = Typist::Registry->new;
+
+Create a fresh registry instance. All internal stores are initialized
+to empty hashes.
+
+=head1 ALIAS MANAGEMENT
+
+=head2 define_alias
+
+    $reg->define_alias($name, $expr);
+
+Register a type alias. Accepts both type expression strings and
+L<Typist::Type> objects.
+
+=head2 lookup_type
+
+    my $type = $reg->lookup_type($name);
+
+Resolve a type alias by name. Handles recursive aliases through
+lazy resolution with cycle detection. Returns a type object or C<undef>.
+
+=head2 has_alias
+
+    my $bool = $reg->has_alias($name);
+
+Returns true if the name is registered as an alias, newtype, or datatype.
+
+=head2 all_aliases
+
+    my %aliases = $reg->all_aliases;
+
+Returns all raw alias definitions as name-expression pairs.
+
+=head1 NEWTYPE MANAGEMENT
+
+=head2 register_newtype / lookup_newtype / all_newtypes
+
+Register, look up, or list all nominal types.
+
+=head1 DATATYPE MANAGEMENT
+
+=head2 register_datatype / lookup_datatype / all_datatypes
+
+Register, look up, or list all algebraic data types.
+
+=head1 FUNCTION TRACKING
+
+=head2 register_function
+
+    $reg->register_function($package, $name, $signature);
+
+Register a function signature. The signature is a hashref with C<params>,
+C<returns>, C<generics>, and C<effects> keys.
+
+=head2 lookup_function
+
+    my $sig = $reg->lookup_function($package, $name);
+
+Look up a function signature by package and name.
+
+=head2 search_function_by_name
+
+    my $sig = $reg->search_function_by_name($name);
+
+Search all packages for a function matching the given bare name.
+Used for cross-package resolution of imported or constructor functions.
+
+=head2 all_functions
+
+    my %fns = $reg->all_functions;
+
+Returns all registered function signatures keyed by qualified name.
+
+=head1 METHOD TRACKING
+
+=head2 register_method / lookup_method / all_methods
+
+Register, look up, or list all method signatures. Methods are stored
+separately from functions for C<$self-E<gt>method()> resolution.
+
+=head1 TYPECLASS MANAGEMENT
+
+=head2 register_typeclass / lookup_typeclass / has_typeclass / all_typeclasses
+
+Register, look up, check existence, or list all typeclass definitions.
+
+=head2 register_instance / resolve_instance
+
+Register a typeclass instance or resolve an instance by class name and
+type expression.
+
+=head1 EFFECT MANAGEMENT
+
+=head2 register_effect / lookup_effect / all_effects / is_effect_label
+
+Register, look up, list, or check existence of effect definitions.
+
+=head1 UTILITY
+
+=head2 merge
+
+    $reg->merge($other_registry);
+
+Merge another registry's contents into this one. Existing entries are
+not overwritten. Clears the resolution cache.
+
+=head2 reset
+
+    $reg->reset;
+
+Clear all stored definitions. On instances, resets all hashes. On the
+class, resets the default singleton.
+
+=head1 SEE ALSO
+
+L<Typist>, L<Typist::Parser>, L<Typist::LSP::Workspace>
+
+=cut

@@ -102,3 +102,57 @@ sub _strip_internal ($class, $diag) {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Typist::LSP::CodeAction - Quick-fix code action generation
+
+=head1 SYNOPSIS
+
+    use Typist::LSP::CodeAction;
+
+    my $actions = Typist::LSP::CodeAction->actions_for_diagnostics(
+        \@diagnostics, $doc, $registry,
+    );
+
+=head1 DESCRIPTION
+
+Typist::LSP::CodeAction generates LSP code actions (quick-fixes) from
+diagnostics produced by the Typist static analyzer. It inspects the
+internal metadata attached to each diagnostic to determine which
+actions are applicable.
+
+=head1 CLASS METHODS
+
+=head2 actions_for_diagnostics
+
+    my $actions = Typist::LSP::CodeAction->actions_for_diagnostics(
+        \@diagnostics, $doc, $registry,
+    );
+
+Generate code actions for the given diagnostics. Currently supports:
+
+=over 4
+
+=item B<EffectMismatch> - Suggests adding the missing effect to the caller's annotation
+
+=item B<TypeMismatch with suggestions> - Generates quick-fix actions from attached suggestion strings
+
+=back
+
+Returns an arrayref of LSP CodeAction objects with C<kind =E<gt> 'quickfix'>.
+
+=head2 suggest_annotations
+
+    my $actions = Typist::LSP::CodeAction->suggest_annotations($doc, $registry);
+
+Suggest type annotations for partially annotated functions that lack
+a return type. Returns an arrayref of code action objects.
+
+=head1 SEE ALSO
+
+L<Typist::LSP::Server>, L<Typist::LSP::Document>
+
+=cut
