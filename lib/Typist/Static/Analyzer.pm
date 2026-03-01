@@ -454,14 +454,25 @@ sub _to_diagnostics ($errors, $default_file, $extracted) {
         # @typist-ignore: suppress diagnostics on ignored lines
         next if $ignore->{$line};
 
-        push @diags, +{
+        my $col = $err->col > 0 ? $err->col : 1;
+
+        my %diag = (
             line     => $line,
-            col      => 1,
+            col      => $col,
             message  => $err->message,
             kind     => $err->kind,
             severity => $SEVERITY{$err->kind} // 3,
             file     => $file,
-        };
+        );
+
+        $diag{end_line}      = $err->end_line      if defined $err->end_line;
+        $diag{end_col}       = $err->end_col        if defined $err->end_col;
+        $diag{expected_type} = $err->expected_type   if defined $err->expected_type;
+        $diag{actual_type}   = $err->actual_type     if defined $err->actual_type;
+        $diag{related}       = $err->related         if defined $err->related;
+        $diag{suggestions}   = $err->suggestions     if defined $err->suggestions;
+
+        push @diags, \%diag;
     }
 
     \@diags;

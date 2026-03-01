@@ -7,21 +7,37 @@ our $VERSION = '0.01';
 
 sub new ($class, %args) {
     bless +{
-        kind    => $args{kind}    // 'TypeError',
-        message => $args{message} // 'unknown error',
-        file    => $args{file}    // '(unknown)',
-        line    => $args{line}    // 0,
+        kind          => $args{kind}          // 'TypeError',
+        message       => $args{message}       // 'unknown error',
+        file          => $args{file}          // '(unknown)',
+        line          => $args{line}          // 0,
+        col           => $args{col}           // 0,
+        end_line      => $args{end_line},
+        end_col       => $args{end_col},
+        expected_type => $args{expected_type},
+        actual_type   => $args{actual_type},
+        related       => $args{related},
+        suggestions   => $args{suggestions},
     }, $class;
 }
 
-sub kind    ($self) { $self->{kind} }
-sub message ($self) { $self->{message} }
-sub file    ($self) { $self->{file} }
-sub line    ($self) { $self->{line} }
+sub kind          ($self) { $self->{kind} }
+sub message       ($self) { $self->{message} }
+sub file          ($self) { $self->{file} }
+sub line          ($self) { $self->{line} }
+sub col           ($self) { $self->{col} }
+sub end_line      ($self) { $self->{end_line} }
+sub end_col       ($self) { $self->{end_col} }
+sub expected_type ($self) { $self->{expected_type} }
+sub actual_type   ($self) { $self->{actual_type} }
+sub related       ($self) { $self->{related} }
+sub suggestions   ($self) { $self->{suggestions} }
 
 sub to_string ($self) {
-    sprintf "  - [%s] %s\n      at %s line %d",
-        $self->{kind}, $self->{message}, $self->{file}, $self->{line};
+    my $loc = $self->{col} > 0
+        ? sprintf("at %s line %d col %d", $self->{file}, $self->{line}, $self->{col})
+        : sprintf("at %s line %d",        $self->{file}, $self->{line});
+    sprintf "  - [%s] %s\n      %s", $self->{kind}, $self->{message}, $loc;
 }
 
 # ── Collector ────────────────────────────────────
