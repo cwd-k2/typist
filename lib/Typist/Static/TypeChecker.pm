@@ -690,14 +690,15 @@ sub _narrow_env_for_block ($self, $env, $node) {
 }
 
 sub _extract_args ($self, $list) {
-    # List contains an Expression with comma-separated args
-    my $expr = $list->find_first('PPI::Statement::Expression')
-            // $list->find_first('PPI::Statement');
-    return () unless $expr;
+    # Use direct child — not recursive find — to avoid matching nested Statements
+    # inside anonymous sub signatures, constructors, etc.
+    my $expr = $list->schild(0);
+    return () unless $expr && $expr->isa('PPI::Statement');
 
     # Group compound expressions as single arguments:
-    #   Word + List       → function call   (e.g. greet("hi"))
-    #   Token + -> + Sub  → dereference chain (e.g. $item->{key}, $arr->[0])
+    #   sub [+ sig] + Block → anonymous sub  (e.g. sub ($x) { ... })
+    #   Word + List         → function call   (e.g. greet("hi"))
+    #   Token + -> + Sub   → dereference chain (e.g. $item->{key}, $arr->[0])
     my @children = $expr->schildren;
     my @args;
     my $i = 0;
@@ -710,8 +711,26 @@ sub _extract_args ($self, $list) {
             next;
         }
 
+        # Anonymous sub: sub [prototype/signature] { body }
+        if ($child->isa('PPI::Token::Word') && $child->content eq 'sub') {
+            push @args, $child;
+            $i++;
+
+            # Skip optional signature (List) or prototype (Prototype)
+            if ($i < @children
+                && ($children[$i]->isa('PPI::Structure::List')
+                    || $children[$i]->isa('PPI::Token::Prototype')))
+            {
+                $i++;
+            }
+
+            # Skip block body
+            if ($i < @children && $children[$i]->isa('PPI::Structure::Block')) {
+                $i++;
+            }
+        }
         # Word followed by List → function call (count as one arg)
-        if ($i + 1 < @children
+        elsif ($i + 1 < @children
             && $child->isa('PPI::Token::Word')
             && $children[$i + 1]->isa('PPI::Structure::List'))
         {
