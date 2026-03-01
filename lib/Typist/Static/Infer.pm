@@ -62,6 +62,19 @@ sub infer_expr ($class, $element, $env = undef) {
         return $var_type;
     }
 
+    # ── handle expression: Word("handle") + Block ──
+    if ($element->isa('PPI::Token::Word') && $element->content eq 'handle') {
+        my $next = $element->snext_sibling;
+        if ($next && $next->isa('PPI::Structure::Block')) {
+            return _infer_block_return($next, $env);
+        }
+    }
+
+    # ── match expression: Word("match") + value ────
+    if ($element->isa('PPI::Token::Word') && $element->content eq 'match') {
+        return _infer_match_return($element, $env);
+    }
+
     # ── Function call: Word followed by List ────
     if ($element->isa('PPI::Token::Word')) {
         my $next = $element->snext_sibling;
@@ -120,6 +133,83 @@ sub _infer_call ($name, $env) {
 
     # Completely unannotated → Any (gradual typing)
     Typist::Type::Atom->new('Any');
+}
+
+# ── Block Return Type Inference ─────────────────
+#
+# Infers the return type of a PPI::Structure::Block by examining
+# its last statement.  Used by handle inference.
+
+sub _infer_block_return ($block, $env) {
+    my @stmts = grep { $_->isa('PPI::Statement') } $block->schildren;
+    return Typist::Type::Atom->new('Void') unless @stmts;
+
+    my $last  = $stmts[-1];
+    my $first = $last->schild(0);
+
+    # Explicit return: infer the expression after 'return'
+    if ($first && $first->isa('PPI::Token::Word') && $first->content eq 'return') {
+        my $val = $first->snext_sibling;
+        return Typist::Type::Atom->new('Void')
+            unless $val && !($val->isa('PPI::Token::Structure') && $val->content eq ';');
+        return __PACKAGE__->infer_expr($val, $env);
+    }
+
+    # Implicit return: infer from the last statement's first child
+    __PACKAGE__->infer_expr($first, $env) // __PACKAGE__->infer_expr($last, $env);
+}
+
+# ── Match Return Type Inference ──────────────────
+#
+# Walks siblings after `match` to find all handler blocks
+# (sub { ... }), infers each handler's return type, then
+# computes the union/LUB.
+
+sub _infer_match_return ($match_word, $env) {
+    my @arm_types;
+    my $sib = $match_word->snext_sibling;
+
+    while ($sib) {
+        last if $sib->isa('PPI::Token::Structure') && $sib->content eq ';';
+
+        # Look for Word("sub") followed by optional Prototype then Block
+        if ($sib->isa('PPI::Token::Word') && $sib->content eq 'sub') {
+            my $after = $sib->snext_sibling;
+            # Skip prototype: sub (...) { ... }
+            if ($after && $after->isa('PPI::Token::Prototype')) {
+                $after = $after->snext_sibling;
+            }
+            if ($after && $after->isa('PPI::Structure::Block')) {
+                my $arm_type = _infer_block_return($after, $env);
+                push @arm_types, $arm_type if defined $arm_type;
+            }
+        }
+
+        $sib = $sib->snext_sibling;
+    }
+
+    return undef unless @arm_types;
+    return $arm_types[0] if @arm_types == 1;
+
+    # Widen literals to base atoms (consistent with _infer_ternary)
+    my @widened = map {
+        $_->is_literal ? Typist::Type::Atom->new($_->base_type) : $_
+    } @arm_types;
+
+    # LUB
+    my $result = $widened[0];
+    for my $i (1 .. $#widened) {
+        $result = Typist::Subtype->common_super($result, $widened[$i]);
+    }
+
+    # If LUB is too coarse (Any), try Union instead
+    if ($result->is_atom && $result->name eq 'Any' && @widened <= 4) {
+        my %seen;
+        my @unique = grep { !$seen{$_->to_string}++ } @widened;
+        return @unique == 1 ? $unique[0] : Typist::Type::Union->new(@unique);
+    }
+
+    $result;
 }
 
 # ── Number Inference ─────────────────────────────

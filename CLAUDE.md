@@ -49,11 +49,11 @@ Runtime (opt-in)| Generic instantiation      | die           | -runtime flag
 - `Typist::Type` — Abstract base with `|` (union), `&` (intersection), `""` (stringify) overloads. `coerce($expr)` accepts both Type objects and strings.
 - `Typist::Error` — Value class + Collector (instance-based). `Typist::Error::Global` provides the global singleton buffer.
 - `Typist::Static::Checker` — CHECK-phase validation (alias cycles, undeclared vars, bound/kind/effect well-formedness).
-- `Typist::Prelude` — Builtin function type annotations for Perl core functions (say, print, die, length, substr, abs, sqrt, open, close, etc. — 74 functions). Installed into CORE:: namespace via `install($registry)`. Auto-loaded by Analyzer and Workspace. User `declare` overrides entries.
+- `Typist::Prelude` — Builtin function type annotations for Perl core functions and Typist builtins (say, print, die, length, typedef, perform, unwrap, etc. — 84 functions). Installed into CORE:: namespace via `install($registry)`. Auto-loaded by Analyzer and Workspace. User `declare` overrides entries.
 - `Typist::Static::Unify` — Type-based unification. Pairs formal (annotated) types against actual (inferred) types, extracting type-variable bindings. Used by TypeChecker for generic function instantiation.
-- `Typist::Static::Infer` — Static type inference from PPI elements (literals, variable symbols, function calls, operator expressions). Infers arithmetic/comparison/logical/concatenation operators, subscript access (`$a->[0]`, `$h->{k}`), and ternary expressions. Accepts optional `$env` for gradual typing.
+- `Typist::Static::Infer` — Static type inference from PPI elements (literals, variable symbols, function calls, operator expressions). Infers arithmetic/comparison/logical/concatenation operators, subscript access (`$a->[0]`, `$h->{k}`), ternary expressions, `handle { BLOCK }` return types, and `match` arm union/LUB types. Accepts optional `$env` for gradual typing.
 - `Typist::Static::TypeChecker` — Static type mismatch detection (variable initializers, assignments, call site args, return types). Arity checking (ArityMismatch), variable reassignment checking (annotated-only), method type checking (`$self->method()`), generic instantiation via Unify, and type narrowing (`defined($x)` guard narrows `Maybe[T]` to `T`). Builds type environment for function return type propagation and variable symbol resolution.
-- `Typist::Static::EffectChecker` — PPI-based static effect checker (call graph + label inclusion, cross-package support, unannotated function detection, builtin function effect tracking via CORE:: registry).
+- `Typist::Static::EffectChecker` — PPI-based static effect checker (call graph + label inclusion, cross-package support, unannotated function detection, builtin function effect tracking via CORE:: registry). Keywords `handle`, `match`, `enum` are skipped as non-function calls.
 - `Typist::Handler` — Runtime effect handler stack (LIFO). `perform` dispatches to the nearest handler; `handle { BODY } Effect => { handlers }` provides scoped effect processing with automatic cleanup.
 - `Typist::Type::Data` — Algebraic data type (tagged union). Supports parameterized types via `datatype 'Option[T]' => Some => '(T)', None => '()'` with covariant type arguments, type inference in constructors, and `instantiate` for concrete types. Values are blessed with `_tag`, `_values`, and optional `_type_args` fields.
 - `Typist::Type::Fold` — Type tree traversal utilities. `map_type($type, $cb)` rebuilds bottom-up; `walk($type, $cb)` visits top-down. Handles all type nodes including Data.
@@ -79,7 +79,8 @@ Runtime (opt-in)| Generic instantiation      | die           | -runtime flag
 - Variadic function types: `(Int, ...Str) -> Void` — rest parameter with `...Type` syntax. Arity checking uses minimum args for variadic functions.
 - `perform Effect => op => @args` dispatches an effect operation to the nearest handler on the runtime stack.
 - `handle { BODY } Effect => { op => sub { ... } }` installs scoped effect handlers, executes BODY, and guarantees cleanup (even on exception).
-- Prelude: builtin functions are registered under the CORE:: namespace by `Typist::Prelude->install`. User `declare` statements override prelude entries.
+- Prelude: builtin functions are registered under the CORE:: namespace by `Typist::Prelude->install`. Includes Typist builtins (typedef, newtype, perform, unwrap, etc.) in addition to Perl core functions. User `declare` statements override prelude entries.
+- `handle`/`match` return type inference: `handle { BLOCK }` infers from the block's last expression; `match` collects arm return types and computes union/LUB. These bypass the `Word + List` call pattern used for normal function inference.
 - Type Narrowing: `defined($x)` in an if-condition narrows `Maybe[T]` (i.e., `T | Undef`) to `T` within the then-block.
 - Variable reassignment: `:Type` annotated variables are checked on reassignment (`$x = expr`); unannotated variables are not checked.
 - Method calls: `$self->method()` is type-checked within the same package via registry lookup; cross-package method calls are gradual-skipped.
@@ -143,6 +144,7 @@ Tests are numbered and ordered by dependency:
 - `t/static/06_crossfile_analyzer.t` — Cross-file type resolution via workspace registry
 - `t/static/07_method_typecheck.t` — Method type checking (is_method, -> guard, $self->method())
 - `t/static/08_prelude.t` — Builtin prelude (type checking, effect detection, user override)
+- `t/static/09_builtins_infer.t` — Typist builtin inference (handle/match return types, perform/unwrap CORE registration)
 - `t/lsp/00_transport.t` — JSON-RPC transport
 - `t/lsp/01_server.t` — LSP server lifecycle
 - `t/lsp/02_diagnostics.t` — Diagnostics publishing

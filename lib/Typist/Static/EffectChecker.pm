@@ -101,7 +101,7 @@ sub _collect_called_effects ($self, $block, $pkg) {
         my $callee_name = $word->content;
 
         # Skip keywords
-        next if $callee_name =~ /\A(?:my|our|local|return|if|unless|for|foreach|while|until|do|eval|sub|use|no)\z/;
+        next if $callee_name =~ /\A(?:my|our|local|return|if|unless|for|foreach|while|until|do|eval|sub|use|no|handle|match|enum)\z/;
 
         # Skip if it's a sub declaration
         my $parent = $word->parent;

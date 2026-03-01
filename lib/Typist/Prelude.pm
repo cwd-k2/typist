@@ -98,6 +98,18 @@ my %BUILTINS = (
     time    => '() -> Int',
     localtime => '(...Int) -> Any',
     gmtime  => '(...Int) -> Any',
+
+    # ── Typist builtins ──────────────────────────
+    typedef   => '(...Any) -> Void',
+    newtype   => '(...Any) -> Void',
+    effect    => '(...Any) -> Void',
+    typeclass => '(...Any) -> Void',
+    instance  => '(...Any) -> Void',
+    declare   => '(Str, Str) -> Void',
+    datatype  => '(...Any) -> Void',
+    enum      => '(...Any) -> Void',
+    perform   => '(...Any) -> Any',
+    unwrap    => '(Any) -> Any',
 );
 
 # ── Standard Effect Labels ───────────────────────
