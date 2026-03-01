@@ -28,6 +28,8 @@ my %DISPATCH = (
     'textDocument/definition'     => \&_handle_definition,
     'textDocument/signatureHelp'  => \&_handle_signature_help,
     'textDocument/inlayHint'              => \&_handle_inlay_hint,
+    'textDocument/references'             => \&_handle_references,
+    'textDocument/rename'                 => \&_handle_rename,
     'textDocument/semanticTokens/full'    => \&_handle_semantic_tokens,
 );
 
@@ -118,6 +120,8 @@ sub _handle_initialize ($self, $params) {
             signatureHelpProvider  => +{
                 triggerCharacters => ['(', ','],
             },
+            referencesProvider     => \1,
+            renameProvider         => \1,
             inlayHintProvider      => \1,
             completionProvider => +{
                 triggerCharacters => ['(', '[', ',', '|', '&', '>', '{', ':'],
@@ -391,6 +395,64 @@ sub _handle_document_symbol ($self, $params) {
 
     $doc->analyze(workspace_registry => $self->{workspace} && $self->{workspace}->registry);
     $doc->document_symbols;
+}
+
+# ── References Handler ──────────────────────────
+
+sub _handle_references ($self, $params) {
+    my $uri  = $params->{textDocument}{uri};
+    my $doc  = $self->{documents}{$uri} // return undef;
+    my $line = $params->{position}{line};
+    my $col  = $params->{position}{character};
+
+    my $word = $doc->word_at($line, $col) // return undef;
+    (my $bare = $word) =~ s/^[\$\@%]//;
+
+    my $refs = $self->{workspace}
+        ? $self->{workspace}->find_all_references($bare, $self->{documents})
+        : $doc->find_references($bare);
+
+    my @locations = map {
+        +{
+            uri   => $_->{uri},
+            range => +{
+                start => +{ line => $_->{line}, character => $_->{col} },
+                end   => +{ line => $_->{line}, character => $_->{col} + $_->{len} },
+            },
+        }
+    } @$refs;
+
+    \@locations;
+}
+
+# ── Rename Handler ──────────────────────────────
+
+sub _handle_rename ($self, $params) {
+    my $uri      = $params->{textDocument}{uri};
+    my $doc      = $self->{documents}{$uri} // return undef;
+    my $line     = $params->{position}{line};
+    my $col      = $params->{position}{character};
+    my $new_name = $params->{newName};
+
+    my $word = $doc->word_at($line, $col) // return undef;
+    (my $bare = $word) =~ s/^[\$\@%]//;
+
+    my $refs = $self->{workspace}
+        ? $self->{workspace}->find_all_references($bare, $self->{documents})
+        : $doc->find_references($bare);
+
+    my %changes;
+    for my $ref (@$refs) {
+        push @{$changes{$ref->{uri}}}, +{
+            range => +{
+                start => +{ line => $ref->{line}, character => $ref->{col} },
+                end   => +{ line => $ref->{line}, character => $ref->{col} + $ref->{len} },
+            },
+            newText => $new_name,
+        };
+    }
+
+    +{ changes => \%changes };
 }
 
 # ── Diagnostics Publishing ──────────────────────

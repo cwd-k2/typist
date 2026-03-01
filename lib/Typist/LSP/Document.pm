@@ -299,6 +299,40 @@ sub find_function_symbol ($self, $name) {
     undef;
 }
 
+# ── Find References ─────────────────────────────
+
+# Find all occurrences of $name in this document (word-boundary matching).
+# Returns arrayref of +{ uri, line, col, len }.
+sub find_references ($self, $name) {
+    my $lines = $self->_lines;
+    my @refs;
+
+    for my $i (0 .. $#$lines) {
+        my $text = $lines->[$i];
+        my $offset = 0;
+        while ((my $pos = index($text, $name, $offset)) >= 0) {
+            my $before = $pos > 0 ? substr($text, $pos - 1, 1) : '';
+            my $after_pos = $pos + length($name);
+            my $after = $after_pos < length($text) ? substr($text, $after_pos, 1) : '';
+
+            my $is_boundary = ($before eq '' || $before =~ /[^a-zA-Z0-9_]/)
+                           && ($after  eq '' || $after  =~ /[^a-zA-Z0-9_]/);
+
+            if ($is_boundary) {
+                push @refs, +{
+                    uri  => $self->{uri},
+                    line => $i,
+                    col  => $pos,
+                    len  => length($name),
+                };
+            }
+            $offset = $pos + 1;
+        }
+    }
+
+    \@refs;
+}
+
 # ── Inlay Hints ─────────────────────────────────
 
 sub inlay_hints ($self, $start_line, $end_line) {

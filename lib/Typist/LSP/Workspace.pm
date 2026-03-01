@@ -428,6 +428,62 @@ sub all_typeclass_names ($self) {
     sort keys %seen;
 }
 
+# ── Find References ──────────────────────────────
+
+# Find all word-boundary occurrences of $name across open documents and workspace files.
+# $open_documents: hashref of uri => Document (already searched in-memory).
+sub find_all_references ($self, $name, $open_documents = +{}) {
+    my @all_refs;
+
+    # Search in open documents (they have up-to-date content in memory)
+    for my $uri (sort keys %$open_documents) {
+        my $doc = $open_documents->{$uri};
+        push @all_refs, @{$doc->find_references($name)};
+    }
+
+    # Search in workspace files not currently open
+    for my $path (sort keys $self->{files}->%*) {
+        my $uri = "file://$path";
+        next if $open_documents->{$uri};  # already searched above
+
+        my $content = eval { _read_file($path) } // next;
+        my @lines = split /\n/, $content, -1;
+
+        for my $i (0 .. $#lines) {
+            my $text = $lines[$i];
+            my $offset = 0;
+            while ((my $pos = index($text, $name, $offset)) >= 0) {
+                my $before = $pos > 0 ? substr($text, $pos - 1, 1) : '';
+                my $after_pos = $pos + length($name);
+                my $after = $after_pos < length($text) ? substr($text, $after_pos, 1) : '';
+
+                my $is_boundary = ($before eq '' || $before =~ /[^a-zA-Z0-9_]/)
+                               && ($after  eq '' || $after  =~ /[^a-zA-Z0-9_]/);
+
+                if ($is_boundary) {
+                    push @all_refs, +{
+                        uri  => $uri,
+                        line => $i,
+                        col  => $pos,
+                        len  => length($name),
+                    };
+                }
+                $offset = $pos + 1;
+            }
+        }
+    }
+
+    \@all_refs;
+}
+
+sub _read_file ($path) {
+    open my $fh, '<:encoding(UTF-8)', $path or die "Cannot read $path: $!";
+    local $/;
+    <$fh>;
+}
+
+# ── Query (names) ────────────────────────────────
+
 sub all_constructor_names ($self) {
     my %seen;
     for my $info (values $self->{files}->%*) {
