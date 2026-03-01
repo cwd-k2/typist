@@ -417,4 +417,77 @@ PERL
     like $hover->{result}{contents}{value}, qr/-> Str/, 'shows return type Str';
 };
 
+# ── Hover on cross-package imported constructor ──
+
+subtest 'hover resolves cross-package bare constructor via workspace' => sub {
+    require File::Temp;
+    require File::Path;
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib");
+
+    # Types package with exported constructors
+    open my $fh1, '>', "$dir/lib/Types.pm" or die;
+    print $fh1 <<'PERL';
+package Types;
+use v5.40;
+newtype UserId => 'Int';
+datatype Result =>
+    Ok  => '(Int)',
+    Err => '(Str)';
+1;
+PERL
+    close $fh1;
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    # Simulate a file that uses bare Ok(...) constructor
+    my $source = <<'PERL';
+package Consumer;
+use v5.40;
+use Types;
+my $val = Ok(42);
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///test.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Hover on 'Ok' at line 3, col ~10
+    my $sym = $doc->symbol_at(3, 10);
+    ok $sym, 'found symbol for bare Ok constructor';
+    is $sym->{kind}, 'function', 'Ok is a function';
+    like join(', ', ($sym->{params_expr} // [])->@*), qr/Int/, 'Ok param is Int';
+    like $sym->{returns_expr} // '', qr/Result/, 'Ok returns Result';
+
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'hover response for cross-package constructor';
+    like $hover->{contents}{value}, qr/sub Ok/, 'hover shows sub Ok';
+
+    # Hover on 'UserId' — should resolve as newtype constructor
+    my $source2 = <<'PERL';
+package Consumer;
+use v5.40;
+use Types;
+my $uid = UserId(42);
+PERL
+    my $doc2 = Typist::LSP::Document->new(
+        uri     => 'file:///test2.pm',
+        content => $source2,
+        version => 1,
+    );
+    $doc2->analyze(workspace_registry => $ws->registry);
+
+    my $sym2 = $doc2->symbol_at(3, 10);
+    ok $sym2, 'found symbol for bare UserId constructor';
+    is $sym2->{kind}, 'function', 'UserId is a function';
+    like $sym2->{returns_expr} // '', qr/UserId/, 'UserId returns UserId';
+};
+
 done_testing;

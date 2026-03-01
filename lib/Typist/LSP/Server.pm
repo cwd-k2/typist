@@ -279,7 +279,19 @@ sub _handle_signature_help ($self, $params) {
     $doc->analyze(workspace_registry => $self->{workspace} && $self->{workspace}->registry);
 
     my $ctx = $doc->signature_context($line, $col) // return undef;
-    my $sym = $doc->find_function_symbol($ctx->{name}) // return undef;
+    my $sym = $doc->find_function_symbol($ctx->{name});
+
+    # Fallback: search workspace registry for imported/cross-package functions
+    if (!$sym && $self->{workspace}) {
+        my $reg = $self->{workspace}->registry;
+        my $sig = $reg->search_function_by_name($ctx->{name});
+        if ($sig) {
+            $sym = Typist::LSP::Document::_synthesize_function_symbol($ctx->{name}, $sig);
+        }
+    }
+
+    return undef unless $sym;
+    return undef unless ($sym->{kind} // '') eq 'function';
 
     my $params_expr  = $sym->{params_expr} // [];
     my $returns_expr = $sym->{returns_expr};

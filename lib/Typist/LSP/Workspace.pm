@@ -109,12 +109,23 @@ sub _register_file_types ($self, $extracted) {
         $reg->define_alias($name, $extracted->{aliases}{$name}{expr});
     }
 
+    my $pkg = $extracted->{package} // 'main';
+
     for my $name (keys $extracted->{newtypes}->%*) {
         my $info = $extracted->{newtypes}{$name};
         my $inner = eval { Typist::Parser->parse($info->{inner_expr}) };
         next if $@;
         my $type = Typist::Type::Newtype->new($name, $inner);
         $reg->register_newtype($name, $type);
+
+        # Register newtype constructor as a function: Name(Inner) -> Name
+        $reg->register_function($pkg, $name, +{
+            params       => [$inner],
+            returns      => $type,
+            generics     => [],
+            params_expr  => [$inner->to_string],
+            returns_expr => $name,
+        });
     }
 
     my $datatypes = $extracted->{datatypes} // +{};
@@ -142,7 +153,6 @@ sub _register_file_types ($self, $extracted) {
         $reg->register_datatype($name, $type);
 
         # Register datatype constructors as functions
-        my $pkg = $extracted->{package} // 'main';
         for my $tag (keys %parsed_variants) {
             my $param_types = $parsed_variants{$tag};
             my $return_type;
@@ -280,7 +290,6 @@ sub _register_file_types ($self, $extracted) {
     }
 
     # Register functions for cross-file type checking
-    my $pkg = $extracted->{package} // 'main';
     my $fns = $extracted->{functions} // +{};
     for my $name (keys $fns->%*) {
         my $fn = $extracted->{functions}{$name};
@@ -372,6 +381,19 @@ sub find_definition ($self, $name) {
                 col  => ($fn->{col}  // 1) - 1,
                 name => $name,
             };
+        }
+
+        # Datatype constructor → jump to the owning datatype definition
+        for my $dt_name (keys(($info->{datatypes} // +{})->%*)) {
+            my $dt = $info->{datatypes}{$dt_name};
+            if (exists $dt->{variants}{$name}) {
+                return +{
+                    uri  => "file://$path",
+                    line => ($dt->{line} // 1) - 1,
+                    col  => ($dt->{col}  // 1) - 1,
+                    name => $name,
+                };
+            }
         }
     }
 

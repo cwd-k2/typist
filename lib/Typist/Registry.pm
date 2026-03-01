@@ -171,6 +171,19 @@ sub all_functions ($invocant) {
     $self->{functions}->%*;
 }
 
+# Search all packages for a function matching a bare name.
+# Returns ($sig) or undef.
+sub search_function_by_name ($invocant, $name) {
+    my $self = _self($invocant);
+    my $suffix = "::${name}";
+    for my $fqn (keys $self->{functions}->%*) {
+        if (substr($fqn, -length($suffix)) eq $suffix) {
+            return $self->{functions}{$fqn};
+        }
+    }
+    undef;
+}
+
 # ── Method Tracking ─────────────────────────────
 
 sub register_method ($invocant, $pkg, $name, $sig) {

@@ -159,6 +159,8 @@ sub symbol_at ($self, $line, $col) {
 
         # Fallback: registry lookup for cross-package or constructor symbols
         if (my $registry = $result->{registry}) {
+            my $lookup_name = $bare // $word;
+
             if ($word =~ /::/) {
                 # Qualified name: Pkg::func
                 my ($pkg, $fname) = $word =~ /\A(.+)::(\w+)\z/;
@@ -168,12 +170,54 @@ sub symbol_at ($self, $line, $col) {
                     }
                 }
             } else {
-                # Unqualified: try current package
+                # Unqualified: try current package first
                 my $pkg = $result->{extracted}{package} // 'main';
-                my $lookup_name = $bare // $word;
                 if (my $sig = $registry->lookup_function($pkg, $lookup_name)) {
                     return _synthesize_function_symbol($lookup_name, $sig);
                 }
+
+                # Then search all packages (Exporter-imported constructors, etc.)
+                if (my $sig = $registry->search_function_by_name($lookup_name)) {
+                    return _synthesize_function_symbol($lookup_name, $sig);
+                }
+            }
+
+            # Type-level symbols: newtype, typedef, datatype, effect, typeclass
+            if (my $nt = $registry->lookup_newtype($lookup_name)) {
+                return +{
+                    name => $lookup_name,
+                    kind => 'newtype',
+                    type => $nt->inner->to_string,
+                };
+            }
+            if ($registry->has_alias($lookup_name)) {
+                my $resolved = eval { $registry->lookup_type($lookup_name) };
+                if ($resolved && !$resolved->is_alias) {
+                    return +{
+                        name => $lookup_name,
+                        kind => 'typedef',
+                        type => $resolved->to_string,
+                    };
+                }
+            }
+            if (my $dt = $registry->lookup_datatype($lookup_name)) {
+                return +{
+                    name => $lookup_name,
+                    kind => 'datatype',
+                    type => $dt->to_string,
+                };
+            }
+            if (my $eff = $registry->lookup_effect($lookup_name)) {
+                return +{
+                    name => $lookup_name,
+                    kind => 'effect',
+                };
+            }
+            if ($registry->has_typeclass($lookup_name)) {
+                return +{
+                    name => $lookup_name,
+                    kind => 'typeclass',
+                };
             }
         }
     }
