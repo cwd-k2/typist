@@ -303,33 +303,31 @@ sub _datatype ($name_spec, %variants) {
     }
 
     my %var_names = map { $_ => 1 } @type_params;
-    my %parsed_variants;
+    my (%parsed_variants, %return_types);
 
     for my $tag (keys %variants) {
-        my $spec = $variants{$tag};
-        my @types;
-        if (defined $spec && $spec =~ /\S/) {
-            my $inner = $spec;
-            $inner =~ s/\A\(\s*//;
-            $inner =~ s/\s*\)\z//;
-            @types = map { Typist::Parser->parse($_) } split /\s*,\s*/, $inner;
+        my ($types, $ret_expr) = Typist::Type::Data->parse_constructor_spec(
+            $variants{$tag}, type_params => \@type_params,
+        );
+        $parsed_variants{$tag} = $types;
 
-            # Promote aliases matching type param names to Var objects
-            if (@type_params) {
-                @types = map {
-                    $_->is_alias && $var_names{$_->alias_name}
-                        ? Typist::Type::Var->new($_->alias_name)
-                        : $_
-                } @types;
+        # GADT: parse and record per-constructor return type
+        my $forced_args;  # arrayref of forced type args for GADT, undef for normal
+        if (defined $ret_expr) {
+            my $ret_type = Typist::Parser->parse($ret_expr);
+            $return_types{$tag} = $ret_type;
+            # Extract forced type arguments from return type (e.g., Expr[Int] → [Int])
+            if ($ret_type->is_param) {
+                $forced_args = [$ret_type->params];
             }
         }
-        $parsed_variants{$tag} = \@types;
 
         # Install constructor function into caller's namespace
-        my @captured_types = @types;
+        my @captured_types = @$types;
         my $tag_copy   = $tag;
         my $data_class = "Typist::Data::${name}";
         my @tp = @type_params;
+        my $fa = $forced_args;
         no strict 'refs';
         *{"${caller}::${tag_copy}"} = sub (@args) {
             die("${tag_copy}(): expected "
@@ -363,9 +361,25 @@ sub _datatype ($name_spec, %variants) {
                             . $exp->to_string . ", got $args[$i]\n");
                     }
                 }
-                my @type_args = map {
-                    $bindings{$_} // Typist::Type::Atom->new('Any')
-                } @tp;
+
+                # GADT: forced type args override inferred ones
+                my @type_args;
+                if ($fa) {
+                    for my $i (0 .. $#tp) {
+                        my $f = $fa->[$i];
+                        if ($f && !$f->is_var) {
+                            push @type_args, $f;  # forced by GADT constraint
+                        } else {
+                            push @type_args,
+                                $bindings{$tp[$i]} // Typist::Type::Atom->new('Any');
+                        }
+                    }
+                } else {
+                    @type_args = map {
+                        $bindings{$_} // Typist::Type::Atom->new('Any')
+                    } @tp;
+                }
+
                 bless +{
                     _tag       => $tag_copy,
                     _values    => \@args,
@@ -387,7 +401,8 @@ sub _datatype ($name_spec, %variants) {
     }
 
     my $data_type = Typist::Type::Data->new($name, \%parsed_variants,
-        type_params => \@type_params,
+        type_params  => \@type_params,
+        return_types => (%return_types ? \%return_types : +{}),
     );
     Typist::Registry->register_datatype($name, $data_type);
 }

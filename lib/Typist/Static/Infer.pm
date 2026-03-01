@@ -79,7 +79,7 @@ sub infer_expr ($class, $element, $env = undef) {
     if ($element->isa('PPI::Token::Word')) {
         my $next = $element->snext_sibling;
         if ($next && $next->isa('PPI::Structure::List')) {
-            return _infer_call($element->content, $env);
+            return _infer_call($element->content, $env, $next);
         }
     }
 
@@ -100,7 +100,7 @@ sub infer_expr ($class, $element, $env = undef) {
 
 # ── Function Call Inference ──────────────────────
 
-sub _infer_call ($name, $env) {
+sub _infer_call ($name, $env, $list_element = undef) {
     return undef unless $env;
 
     # Local function with known return type
@@ -117,7 +117,9 @@ sub _infer_call ($name, $env) {
         my $registry = $env->{registry};
         if ($registry) {
             my $sig = $registry->lookup_function($pkg, $fname);
-            return $sig->{returns} if $sig && $sig->{returns};
+            if ($sig && $sig->{returns}) {
+                return _maybe_instantiate_return($sig, $env, $list_element);
+            }
             # Registered but no return type → partially annotated
             return undef if $sig;
         }
@@ -131,8 +133,71 @@ sub _infer_call ($name, $env) {
         }
     }
 
+    # Current-package function (e.g., ADT constructor registered by Analyzer)
+    if (my $registry = $env->{registry}) {
+        my $pkg = $env->{package} // 'main';
+        my $pkg_sig = $registry->lookup_function($pkg, $name);
+        if ($pkg_sig && $pkg_sig->{returns}) {
+            return _maybe_instantiate_return($pkg_sig, $env, $list_element);
+        }
+    }
+
     # Completely unannotated → Any (gradual typing)
     Typist::Type::Atom->new('Any');
+}
+
+# For generic functions (incl. GADT constructors), resolve type variables
+# in the return type by unifying formal param types against inferred arg types.
+sub _maybe_instantiate_return ($sig, $env, $list_element) {
+    my $ret = $sig->{returns};
+    my $generics = $sig->{generics};
+
+    # No generics or no argument list → return as-is
+    return $ret unless $generics && @$generics && $list_element;
+    return $ret unless $sig->{params} && @{$sig->{params}};
+
+    # Infer argument types from PPI List
+    my @arg_types;
+    my $expr = $list_element->schild(0);
+    if ($expr && $expr->isa('PPI::Statement::Expression')) {
+        for my $child ($expr->schildren) {
+            next if $child->isa('PPI::Token::Operator') && $child->content eq ',';
+            my $t = __PACKAGE__->infer_expr($child, $env);
+            push @arg_types, $t if $t;
+        }
+    }
+    return $ret unless @arg_types;
+
+    # Build bindings by matching formal params against actual arg types
+    my %bindings;
+    my @params = @{$sig->{params}};
+    for my $i (0 .. $#params) {
+        last if $i > $#arg_types;
+        _collect_bindings($params[$i], $arg_types[$i], \%bindings);
+    }
+    return $ret unless %bindings;
+
+    # Substitute bindings into return type
+    $ret->substitute(\%bindings);
+}
+
+# Recursively collect type variable bindings by matching formal vs actual types.
+sub _collect_bindings ($formal, $actual, $bindings) {
+    if ($formal->is_var) {
+        $bindings->{$formal->name} //= $actual;
+        return;
+    }
+    # Param[X] vs Param[Int] → recurse into type args
+    if ($formal->is_param && $actual->is_param
+        && $formal->base eq $actual->base)
+    {
+        my @fp = $formal->params;
+        my @ap = $actual->params;
+        for my $i (0 .. $#fp) {
+            last if $i > $#ap;
+            _collect_bindings($fp[$i], $ap[$i], $bindings);
+        }
+    }
 }
 
 # ── Block Return Type Inference ─────────────────

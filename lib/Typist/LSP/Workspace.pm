@@ -12,6 +12,7 @@ use Typist::Effect;
 use Typist::Attribute;
 use Typist::TypeClass;
 use Typist::Prelude;
+use Typist::Type::Var;
 
 # ── Constructor ──────────────────────────────────
 
@@ -117,20 +118,25 @@ sub _register_file_types ($self, $extracted) {
     my $datatypes = $extracted->{datatypes} // +{};
     for my $name (keys $datatypes->%*) {
         my $info = $extracted->{datatypes}{$name};
-        my %parsed_variants;
+        my @tp = ($info->{type_params} // [])->@*;
+        my (%parsed_variants, %return_types);
+
         for my $tag (keys $info->{variants}->%*) {
-            my $spec = $info->{variants}{$tag};
-            my @types;
-            if (defined $spec && $spec =~ /\S/) {
-                my $inner = $spec;
-                $inner =~ s/\A\(\s*//;
-                $inner =~ s/\s*\)\z//;
-                @types = map { eval { Typist::Parser->parse($_) } }
-                         split /\s*,\s*/, $inner;
+            my ($types, $ret_expr) = Typist::Type::Data->parse_constructor_spec(
+                $info->{variants}{$tag}, type_params => \@tp,
+            );
+            $parsed_variants{$tag} = $types;
+
+            if (defined $ret_expr) {
+                my $ret_type = eval { Typist::Parser->parse($ret_expr) };
+                $return_types{$tag} = $ret_type if $ret_type;
             }
-            $parsed_variants{$tag} = \@types;
         }
-        my $type = Typist::Type::Data->new($name, \%parsed_variants);
+
+        my $type = Typist::Type::Data->new($name, \%parsed_variants,
+            type_params  => \@tp,
+            return_types => (%return_types ? \%return_types : +{}),
+        );
         $reg->register_datatype($name, $type);
     }
 

@@ -1106,4 +1106,195 @@ PERL
     is scalar @$errs, 0, 'no error: correct variadic arg types';
 };
 
+# ── Datatype Constructor Checks ─────────────────
+
+subtest 'datatype: constructor return type inferred as Data type' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+datatype Shape => Circle => '(Int)', Rect => '(Int, Int)';
+sub take_int :Type((Int) -> Int) ($x) { $x }
+my $r = take_int(Circle(5));
+PERL
+
+    ok @$errs > 0, 'Shape is not subtype of Int';
+    like $errs->[0]{message}, qr/Shape/, 'mentions Shape in error';
+};
+
+subtest 'datatype: constructor arg type checked' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+datatype Shape => Circle => '(Int)', Rect => '(Int, Int)';
+Circle("hello");
+PERL
+
+    ok @$errs > 0, 'Str arg to Circle(Int) detected';
+};
+
+subtest 'datatype: Shape accepted where Shape expected' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+datatype Shape => Circle => '(Int)', Rect => '(Int, Int)';
+sub area :Type((Shape) -> Int) ($s) { 42 }
+my $r = area(Circle(5));
+PERL
+
+    my @all_errs = grep { $_->{kind} =~ /Mismatch/ } @$errs;
+    is scalar @all_errs, 0, 'no mismatch when Shape matches Shape';
+};
+
+subtest 'datatype: variable init type checked against constructor' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+datatype Shape => Circle => '(Int)', Rect => '(Int, Int)';
+my $c :Type(Int) = Circle(5);
+PERL
+
+    ok @$errs > 0, 'Shape is not subtype of Int in variable init';
+};
+
+# ── Typeclass Method Checks ─────────────────────
+
+subtest 'typeclass: method called correctly' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+typeclass Eq => T => (
+    eq => '(T, T) -> Bool',
+);
+sub check :Type(() -> Bool) () {
+    Eq::eq(1, 2);
+}
+PERL
+    my @errs = grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@*;
+    is scalar @errs, 0, 'no mismatch for Eq::eq(Int, Int)';
+};
+
+subtest 'typeclass: method arity checked' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+typeclass Eq => T => (
+    eq => '(T, T) -> Bool',
+);
+sub check :Type(() -> Bool) () {
+    Eq::eq(1);
+}
+PERL
+    my @errs = grep { $_->{kind} eq 'ArityMismatch' } $result->{diagnostics}->@*;
+    ok @errs > 0, 'arity mismatch for Eq::eq with 1 arg';
+};
+
+subtest 'typeclass: method structural mismatch detected' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+typeclass Showable => T => (
+    show => '(ArrayRef[T]) -> Str',
+);
+sub test :Type(() -> Str) () {
+    Showable::show("not_array");
+}
+PERL
+    my @errs = grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@*;
+    ok @errs > 0, 'structural mismatch: Str vs ArrayRef[T]';
+};
+
+subtest 'typeclass: method with () syntax extracted' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+typeclass Show => T => (
+    show => '(T) -> Str',
+);
+PERL
+    my $sig = $result->{registry}->lookup_function('Show', 'show');
+    ok $sig, 'Show::show registered in registry';
+    ok $sig->{returns} && $sig->{returns}->to_string eq 'Str', 'return type is Str';
+};
+
+# ── Newtype Constructor Checks ──────────────────
+
+subtest 'newtype: constructor return type is nominal' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+newtype UserId => 'Int';
+sub take_str :Type((Str) -> Str) ($x) { $x }
+my $r = take_str(UserId(42));
+PERL
+
+    ok @$errs > 0, 'UserId is not Str';
+};
+
+subtest 'newtype: constructor arg type checked' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+newtype UserId => 'Int';
+UserId("hello");
+PERL
+
+    ok @$errs > 0, 'Str arg to UserId(Int) detected';
+};
+
+subtest 'newtype: correct usage produces no error' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+newtype UserId => 'Int';
+sub take_id :Type((UserId) -> Int) ($id) { 0 }
+my $r = take_id(UserId(42));
+PERL
+
+    is scalar @$errs, 0, 'UserId matches UserId param';
+};
+
+# ── GADT Static Analysis ────────────────────────
+
+subtest 'GADT: constructor return type inferred as specific type' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+use Typist;
+datatype 'Expr[A]' =>
+    IntLit  => '(Int) -> Expr[Int]',
+    BoolLit => '(Bool) -> Expr[Bool]';
+sub take_str :Type((Str) -> Str) ($x) { $x }
+my $r = take_str(IntLit(42));
+PERL
+    my @errs = grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@*;
+    ok @errs > 0, 'Expr[Int] is not subtype of Str';
+};
+
+subtest 'GADT: constructor arg type still checked' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+use Typist;
+datatype 'Expr[A]' =>
+    IntLit => '(Int) -> Expr[Int]';
+IntLit("hello");
+PERL
+    my @errs = grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@*;
+    ok @errs > 0, 'Str arg to IntLit(Int) detected';
+};
+
+subtest 'GADT: is_gadt in registry' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+use Typist;
+datatype 'Expr[A]' =>
+    IntLit => '(Int) -> Expr[Int]';
+PERL
+    # Just verify no crashes; the GADT data type was registered
+    my @errs = grep { $_->{kind} =~ /Mismatch|Error/ } $result->{diagnostics}->@*;
+    is scalar @errs, 0, 'GADT registration produces no errors';
+};
+
+subtest 'GADT: mixed GADT and normal constructors' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+use Typist;
+datatype 'Expr[A]' =>
+    IntLit  => '(Int) -> Expr[Int]',
+    BoolLit => '(Bool) -> Expr[Bool]',
+    Var     => '(Str)';
+sub take_int :Type((Int) -> Int) ($x) { $x }
+my $r = take_int(Var("x"));
+PERL
+    my @errs = grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@*;
+    ok @errs > 0, 'Expr[A] (generic Var) is not Int';
+};
+
 done_testing;

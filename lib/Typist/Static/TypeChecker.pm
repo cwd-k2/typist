@@ -153,6 +153,19 @@ sub _check_call_sites ($self) {
                 }
             }
 
+            # Current-package function (e.g., ADT constructor registered by Analyzer)
+            unless ($cross_pkg) {
+                my $pkg = $self->{extracted}{package} // 'main';
+                my $pkg_sig = $self->{registry}->lookup_function($pkg, $name);
+                if ($pkg_sig) {
+                    $cross_pkg = +{
+                        params_expr => $pkg_sig->{params_expr}
+                            // [map { $_->to_string } ($pkg_sig->{params} // [])->@*],
+                        generics    => $pkg_sig->{generics},
+                    };
+                }
+            }
+
             next unless $cross_pkg;
             $fn = $cross_pkg;
         }
@@ -467,6 +480,11 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
 sub _parse_generics ($self, $generics_raw) {
     my @result;
     for my $g ($generics_raw->@*) {
+        # Already structured (from registry): { name => ..., bound_expr => ... }
+        if (ref $g eq 'HASH' && exists $g->{name}) {
+            push @result, $g;
+            next;
+        }
         my $trimmed = $g;
         $trimmed =~ s/\A\s+//;
         $trimmed =~ s/\s+\z//;
@@ -502,6 +520,7 @@ sub _fn_env ($self, $fn) {
         functions => $base->{functions},
         known     => $base->{known},
         registry  => $base->{registry},
+        package   => $base->{package},
     };
 }
 
@@ -530,6 +549,7 @@ sub _build_env ($self) {
         functions => \%functions,
         known     => \%known,
         registry  => $self->{registry},
+        package   => $self->{extracted}{package} // 'main',
     };
 
     for my $var ($self->{extracted}{variables}->@*) {

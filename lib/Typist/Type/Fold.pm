@@ -58,7 +58,15 @@ sub map_type ($class, $type, $cb) {
                 map { $class->map_type($_, $cb) } $type->variants->{$tag}->@*
             ];
         }
-        return $cb->(Typist::Type::Data->new($type->name, \%new_variants));
+        my %new_rt;
+        for my $tag (keys $type->return_types->%*) {
+            $new_rt{$tag} = $class->map_type($type->return_types->{$tag}, $cb);
+        }
+        return $cb->(Typist::Type::Data->new($type->name, \%new_variants,
+            type_params  => [$type->type_params],
+            type_args    => [map { $class->map_type($_, $cb) } $type->type_args],
+            return_types => \%new_rt,
+        ));
     }
 
     # Leaf nodes: Atom, Var, Alias, Literal, Newtype, Row
@@ -96,6 +104,8 @@ sub walk ($class, $type, $cb) {
         for my $types (values $type->variants->%*) {
             $class->walk($_, $cb) for @$types;
         }
+        $class->walk($_, $cb) for $type->type_args;
+        $class->walk($_, $cb) for values $type->return_types->%*;
     }
 
     return;

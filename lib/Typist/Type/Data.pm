@@ -15,18 +15,39 @@ use Scalar::Util 'blessed';
 
 sub new ($class, $name, $variants, %opts) {
     bless +{
-        name        => $name,
-        variants    => $variants,
-        type_params => $opts{type_params} // [],
-        type_args   => $opts{type_args}   // [],   # concrete args for instantiated type
+        name         => $name,
+        variants     => $variants,
+        type_params  => $opts{type_params}  // [],
+        type_args    => $opts{type_args}    // [],   # concrete args for instantiated type
+        return_types => $opts{return_types} // +{},  # GADT: { Tag => Type } per-constructor return
     }, $class;
 }
 
-sub name        ($self) { $self->{name} }
-sub variants    ($self) { $self->{variants} }
-sub type_params ($self) { $self->{type_params}->@* }
-sub type_args   ($self) { $self->{type_args}->@* }
-sub is_data     ($self) { 1 }
+sub name         ($self) { $self->{name} }
+sub variants     ($self) { $self->{variants} }
+sub type_params  ($self) { $self->{type_params}->@* }
+sub type_args    ($self) { $self->{type_args}->@* }
+sub return_types ($self) { $self->{return_types} }
+sub is_data      ($self) { 1 }
+sub is_gadt      ($self) { scalar keys $self->{return_types}->%* > 0 }
+
+# Return type for a specific constructor tag.
+# GADT: returns the explicit per-constructor type.
+# Non-GADT: returns the generic Data[Var(P1), Var(P2), ...].
+sub constructor_return_type ($self, $tag) {
+    return $self->{return_types}{$tag} if exists $self->{return_types}{$tag};
+    # Default: generic type with Var args
+    if ($self->{type_params}->@*) {
+        require Typist::Type::Var;
+        my @params = map { Typist::Type::Var->new($_) } $self->{type_params}->@*;
+        return __PACKAGE__->new($self->{name}, $self->{variants},
+            type_params  => [$self->{type_params}->@*],
+            type_args    => \@params,
+            return_types => $self->{return_types},
+        );
+    }
+    $self;
+}
 
 sub to_string ($self) {
     my $base = $self->{name};
@@ -43,9 +64,14 @@ sub to_string_full ($self) {
     my @parts;
     for my $tag (sort keys $self->{variants}->%*) {
         my @types = $self->{variants}{$tag}->@*;
-        push @parts, @types
+        my $part = @types
             ? "$tag(" . join(', ', map { $_->to_string } @types) . ")"
             : $tag;
+        # GADT: show per-constructor return type
+        if (exists $self->{return_types}{$tag}) {
+            $part .= ' -> ' . $self->{return_types}{$tag}->to_string;
+        }
+        push @parts, $part;
     }
     my $variants = join ' | ', @parts;
     my $name = $self->to_string;
@@ -58,10 +84,20 @@ sub equals ($self, $other) {
     # Compare type_args if present
     my @sa = $self->{type_args}->@*;
     my @oa = $other->type_args;
-    return 1 if !@sa && !@oa;
     return 0 if @sa != @oa;
     for my $i (0 .. $#sa) {
         return 0 unless $sa[$i]->equals($oa[$i]);
+    }
+
+    # Compare return_types (GADT)
+    my $srt = $self->{return_types};
+    my $ort = $other->return_types;
+    my @sk = sort keys %$srt;
+    my @ok = sort keys %$ort;
+    return 0 if @sk != @ok;
+    for my $i (0 .. $#sk) {
+        return 0 unless $sk[$i] eq $ok[$i];
+        return 0 unless $srt->{$sk[$i]}->equals($ort->{$ok[$i]});
     }
     1;
 }
@@ -100,6 +136,9 @@ sub free_vars ($self) {
     for my $arg ($self->{type_args}->@*) {
         $seen{$_} = 1 for $arg->free_vars;
     }
+    for my $rt (values $self->{return_types}->%*) {
+        $seen{$_} = 1 for $rt->free_vars;
+    }
     # Type params are bound by this declaration, not free
     delete $seen{$_} for $self->{type_params}->@*;
     keys %seen;
@@ -113,18 +152,63 @@ sub substitute ($self, $bindings) {
         ];
     }
     my @new_args = map { $_->substitute($bindings) } $self->{type_args}->@*;
+    my %new_rt;
+    for my $tag (keys $self->{return_types}->%*) {
+        $new_rt{$tag} = $self->{return_types}{$tag}->substitute($bindings);
+    }
     __PACKAGE__->new($self->{name}, \%new_variants,
-        type_params => [$self->{type_params}->@*],
-        type_args   => \@new_args,
+        type_params  => [$self->{type_params}->@*],
+        type_args    => \@new_args,
+        return_types => \%new_rt,
     );
 }
 
 # Create an instantiated copy with concrete type arguments
 sub instantiate ($self, @args) {
     __PACKAGE__->new($self->{name}, $self->{variants},
-        type_params => [$self->{type_params}->@*],
-        type_args   => \@args,
+        type_params  => [$self->{type_params}->@*],
+        type_args    => \@args,
+        return_types => $self->{return_types},
     );
+}
+
+# Parse a constructor spec string into (param_types, return_type_expr).
+# Normal ADT: '(Int, Str)' => ([Int, Str], undef)
+# GADT:       '(Int) -> Expr[Int]' => ([Int], 'Expr[Int]')
+sub parse_constructor_spec ($class, $spec, %opts) {
+    return ([], undef) unless defined $spec && $spec =~ /\S/;
+
+    my $inner = $spec;
+    $inner =~ s/\A\(\s*//;
+
+    # GADT: check for ') -> ReturnType' pattern
+    my ($params_str, $return_expr);
+    if ($inner =~ /\)\s*->\s*(.+)\z/) {
+        $return_expr = $1;
+        $inner =~ s/\)\s*->.*\z//;
+        $params_str = $inner;
+    } else {
+        $inner =~ s/\s*\)\z//;
+        $params_str = $inner;
+    }
+
+    require Typist::Parser;
+    my @types;
+    if ($params_str =~ /\S/) {
+        @types = map { Typist::Parser->parse($_) } split /\s*,\s*/, $params_str;
+    }
+
+    # Alias→Var promotion for type parameter names
+    if ($opts{type_params} && $opts{type_params}->@*) {
+        require Typist::Type::Var;
+        my %vn = map { $_ => 1 } $opts{type_params}->@*;
+        @types = map {
+            $_->is_alias && $vn{$_->alias_name}
+                ? Typist::Type::Var->new($_->alias_name) : $_
+        } @types;
+    }
+
+    return (\@types, $return_expr);
 }
 
 1;

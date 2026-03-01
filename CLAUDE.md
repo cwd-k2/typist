@@ -55,8 +55,8 @@ Runtime (opt-in)| Generic instantiation      | die           | -runtime flag
 - `Typist::Static::TypeChecker` — Static type mismatch detection (variable initializers, assignments, call site args, return types). Arity checking (ArityMismatch), variable reassignment checking (annotated-only), method type checking (`$self->method()`), generic instantiation via Unify, and type narrowing (`defined($x)` guard narrows `Maybe[T]` to `T`). Builds type environment for function return type propagation and variable symbol resolution.
 - `Typist::Static::EffectChecker` — PPI-based static effect checker (call graph + label inclusion, cross-package support, unannotated function detection, builtin function effect tracking via CORE:: registry). Keywords `handle`, `match`, `enum` are skipped as non-function calls.
 - `Typist::Handler` — Runtime effect handler stack (LIFO). `perform` dispatches to the nearest handler; `handle { BODY } Effect => { handlers }` provides scoped effect processing with automatic cleanup.
-- `Typist::Type::Data` — Algebraic data type (tagged union). Supports parameterized types via `datatype 'Option[T]' => Some => '(T)', None => '()'` with covariant type arguments, type inference in constructors, and `instantiate` for concrete types. Values are blessed with `_tag`, `_values`, and optional `_type_args` fields.
-- `Typist::Type::Fold` — Type tree traversal utilities. `map_type($type, $cb)` rebuilds bottom-up; `walk($type, $cb)` visits top-down. Handles all type nodes including Data.
+- `Typist::Type::Data` — Algebraic data type (tagged union). Supports parameterized types via `datatype 'Option[T]' => Some => '(T)', None => '()'` with covariant type arguments, type inference in constructors, and `instantiate` for concrete types. Values are blessed with `_tag`, `_values`, and optional `_type_args` fields. GADT support via `return_types` field: `is_gadt`, `constructor_return_type($tag)`, `parse_constructor_spec($spec, %opts)`.
+- `Typist::Type::Fold` — Type tree traversal utilities. `map_type($type, $cb)` rebuilds bottom-up; `walk($type, $cb)` visits top-down. Handles all type nodes including Data (variants, type_args, return_types).
 - `Typist::Subtype` — Structural subtype relation + `common_super` (LUB for atom types).
 - `Typist::Attribute` — Attribute handlers + `parse_generic_decl` (shared between runtime and static paths).
 - `Typist::TypeClass` — Type class Def (with `install_dispatch`, `check_instance_completeness`, `resolve`) and Inst structures.
@@ -74,6 +74,7 @@ Runtime (opt-in)| Generic instantiation      | die           | -runtime flag
 - CHECK phase runs both structural checks (Checker) and full static analysis (Analyzer with TypeChecker + EffectChecker) per loaded package. Diagnostics surface as `warn` → perlnavigator picks these up. Suppress with `TYPIST_CHECK_QUIET=1` when using typist-lsp.
 - Gradual typing: fully annotated → all checks enforced; partially annotated (some attrs, no `:Eff`) → pure, return type unknown if no `:Returns`; completely unannotated → `(Any...) -> Any ! Eff(*)`, type checks skip, effect checks flag.
 - `datatype Shape => Circle => '(Int)', Rectangle => '(Int, Int)'` defines ADTs (tagged unions). Constructors are installed into the caller's namespace. Parameterized ADTs via `datatype 'Option[T]' => Some => '(T)', None => '()'` — type params are promoted from aliases to Var objects, constructors infer type arguments via `Inference->infer_value`, subtyping is covariant in type arguments.
+- GADT (Generalized Algebraic Data Types): `datatype 'Expr[A]' => IntLit => '(Int) -> Expr[Int]', BoolLit => '(Bool) -> Expr[Bool]'` — constructors with `->` specify per-constructor return types. `is_gadt` predicate, `constructor_return_type($tag)` accessor. `parse_constructor_spec` shared helper parses both ADT and GADT specs. GADT constructors force type_args at runtime; static analysis infers concrete return types via argument unification.
 - `enum Color => qw(Red Green Blue)` defines nullary-only ADTs (pure enumerations). Sugar for `datatype` with all zero-argument variants.
 - `match $value, Tag => sub (...) { ... }, _ => sub { ... }` dispatches on `_tag`, splats `_values` into handlers. `_` is the optional fallback arm. Emits exhaustiveness warnings for registered ADTs when arms are incomplete and no fallback is given.
 - Variadic function types: `(Int, ...Str) -> Void` — rest parameter with `...Type` syntax. Arity checking uses minimum args for variadic functions.
@@ -135,6 +136,7 @@ Tests are numbered and ordered by dependency:
 - `t/20_check_diagnostics.t` — CHECK-phase static analysis (subprocess-based, TypeMismatch/EffectMismatch detection, -runtime flag, TYPIST_RUNTIME env)
 - `t/21_datatype.t` — Algebraic data types (constructors, contains, subtype)
 - `t/22_effects_handler.t` — Effect handlers (perform, handle, handler stack)
+- `t/23_gadt.t` — GADT (Generalized Algebraic Data Types: construction, forced type_args, is_gadt, match, return_types)
 - `t/static/00_extractor.t` — PPI-based type extraction
 - `t/static/01_analyzer.t` — Static analysis pipeline
 - `t/static/02_infer.t` — Static type inference

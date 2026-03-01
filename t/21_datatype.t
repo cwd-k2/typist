@@ -804,4 +804,237 @@ PERL
     is $info->{variants}{Red}, '', 'enum variants are nullary';
 };
 
+# ── GADT type representation ──────────────────────
+
+subtest 'GADT: is_gadt predicate' => sub {
+    my $int  = Typist::Type::Atom->new('Int');
+    my $bool = Typist::Type::Atom->new('Bool');
+    my $var_a = Typist::Type::Var->new('A');
+
+    # Non-GADT
+    my $dt = Typist::Type::Data->new('Shape', +{
+        Circle => [$int],
+        Point  => [],
+    });
+    ok !$dt->is_gadt, 'Shape is not GADT';
+
+    # GADT with return_types
+    require Typist::Type::Param;
+    my $gadt = Typist::Type::Data->new('Expr', +{
+        IntLit  => [$int],
+        BoolLit => [$bool],
+    },
+        type_params  => ['A'],
+        return_types => +{
+            IntLit  => Typist::Type::Param->new('Expr', $int),
+            BoolLit => Typist::Type::Param->new('Expr', $bool),
+        },
+    );
+    ok $gadt->is_gadt, 'Expr is GADT';
+};
+
+subtest 'GADT: constructor_return_type' => sub {
+    my $int  = Typist::Type::Atom->new('Int');
+    my $bool = Typist::Type::Atom->new('Bool');
+    require Typist::Type::Param;
+
+    my $gadt = Typist::Type::Data->new('Expr', +{
+        IntLit  => [$int],
+        BoolLit => [$bool],
+        Var     => [Typist::Type::Var->new('A')],
+    },
+        type_params  => ['A'],
+        return_types => +{
+            IntLit  => Typist::Type::Param->new('Expr', $int),
+            BoolLit => Typist::Type::Param->new('Expr', $bool),
+        },
+    );
+
+    # Explicit return types
+    my $intlit_ret = $gadt->constructor_return_type('IntLit');
+    ok $intlit_ret->is_param, 'IntLit return is Param';
+    is $intlit_ret->to_string, 'Expr[Int]', 'IntLit returns Expr[Int]';
+
+    my $boollit_ret = $gadt->constructor_return_type('BoolLit');
+    is $boollit_ret->to_string, 'Expr[Bool]', 'BoolLit returns Expr[Bool]';
+
+    # Var has no explicit return type — gets generic default
+    my $var_ret = $gadt->constructor_return_type('Var');
+    ok $var_ret->is_data, 'Var return is Data';
+    my @ta = $var_ret->type_args;
+    is scalar @ta, 1, 'one type arg';
+    ok $ta[0]->is_var && $ta[0]->name eq 'A', 'generic default Expr[A]';
+};
+
+subtest 'GADT: return_types preserved through substitute' => sub {
+    my $int  = Typist::Type::Atom->new('Int');
+    my $var_a = Typist::Type::Var->new('A');
+    require Typist::Type::Param;
+
+    my $gadt = Typist::Type::Data->new('Expr', +{
+        IntLit => [$int],
+        Var    => [$var_a],
+    },
+        type_params  => ['A'],
+        return_types => +{
+            IntLit => Typist::Type::Param->new('Expr', $int),
+        },
+    );
+
+    my $subst = $gadt->substitute(+{ A => $int });
+    ok $subst->is_gadt, 'substituted is still GADT';
+    my $rt = $subst->return_types;
+    ok exists $rt->{IntLit}, 'IntLit return_type preserved after substitute';
+};
+
+subtest 'GADT: return_types preserved through instantiate' => sub {
+    my $int  = Typist::Type::Atom->new('Int');
+    my $bool = Typist::Type::Atom->new('Bool');
+    require Typist::Type::Param;
+
+    my $gadt = Typist::Type::Data->new('Expr', +{
+        IntLit  => [$int],
+        BoolLit => [$bool],
+    },
+        type_params  => ['A'],
+        return_types => +{
+            IntLit  => Typist::Type::Param->new('Expr', $int),
+            BoolLit => Typist::Type::Param->new('Expr', $bool),
+        },
+    );
+
+    my $inst = $gadt->instantiate($int);
+    ok $inst->is_gadt, 'instantiated is still GADT';
+    is $inst->to_string, 'Expr[Int]', 'instantiated to_string';
+};
+
+subtest 'GADT: to_string_full shows return types' => sub {
+    my $int  = Typist::Type::Atom->new('Int');
+    my $bool = Typist::Type::Atom->new('Bool');
+    require Typist::Type::Param;
+
+    my $gadt = Typist::Type::Data->new('Expr', +{
+        IntLit  => [$int],
+        BoolLit => [$bool],
+    },
+        type_params  => ['A'],
+        return_types => +{
+            IntLit  => Typist::Type::Param->new('Expr', $int),
+            BoolLit => Typist::Type::Param->new('Expr', $bool),
+        },
+    );
+
+    my $str = $gadt->to_string_full;
+    like $str, qr/IntLit\(Int\) -> Expr\[Int\]/, 'GADT IntLit shows return type';
+    like $str, qr/BoolLit\(Bool\) -> Expr\[Bool\]/, 'GADT BoolLit shows return type';
+};
+
+subtest 'GADT: equals compares return_types' => sub {
+    my $int  = Typist::Type::Atom->new('Int');
+    my $bool = Typist::Type::Atom->new('Bool');
+    require Typist::Type::Param;
+
+    my $gadt1 = Typist::Type::Data->new('Expr', +{
+        IntLit => [$int],
+    },
+        type_params  => ['A'],
+        return_types => +{
+            IntLit => Typist::Type::Param->new('Expr', $int),
+        },
+    );
+
+    my $gadt2 = Typist::Type::Data->new('Expr', +{
+        IntLit => [$int],
+    },
+        type_params  => ['A'],
+        return_types => +{
+            IntLit => Typist::Type::Param->new('Expr', $int),
+        },
+    );
+
+    my $gadt3 = Typist::Type::Data->new('Expr', +{
+        IntLit => [$int],
+    },
+        type_params  => ['A'],
+        return_types => +{
+            IntLit => Typist::Type::Param->new('Expr', $bool),
+        },
+    );
+
+    ok  $gadt1->equals($gadt2), 'same return_types are equal';
+    ok !$gadt1->equals($gadt3), 'different return_types are not equal';
+};
+
+subtest 'GADT: free_vars includes return_types' => sub {
+    my $var_a = Typist::Type::Var->new('A');
+    my $var_b = Typist::Type::Var->new('B');
+    my $int   = Typist::Type::Atom->new('Int');
+    require Typist::Type::Param;
+
+    my $gadt = Typist::Type::Data->new('Expr', +{
+        Lit => [$int],
+    },
+        type_params  => ['A'],
+        return_types => +{
+            Lit => Typist::Type::Param->new('Expr', $var_b),
+        },
+    );
+
+    my @fv = sort $gadt->free_vars;
+    is_deeply \@fv, ['B'], 'B is free (from return_types), A is bound';
+};
+
+# ── parse_constructor_spec ────────────────────────
+
+subtest 'parse_constructor_spec: normal ADT' => sub {
+    my ($types, $ret) = Typist::Type::Data->parse_constructor_spec('(Int, Str)');
+    is scalar @$types, 2, 'two param types';
+    ok $types->[0]->is_atom && $types->[0]->name eq 'Int', 'first is Int';
+    ok $types->[1]->is_atom && $types->[1]->name eq 'Str', 'second is Str';
+    ok !defined $ret, 'no return expr';
+};
+
+subtest 'parse_constructor_spec: GADT' => sub {
+    my ($types, $ret) = Typist::Type::Data->parse_constructor_spec(
+        '(Int) -> Expr[Int]'
+    );
+    is scalar @$types, 1, 'one param type';
+    ok $types->[0]->is_atom && $types->[0]->name eq 'Int', 'param is Int';
+    is $ret, 'Expr[Int]', 'return expr captured';
+};
+
+subtest 'parse_constructor_spec: empty args' => sub {
+    my ($types, $ret) = Typist::Type::Data->parse_constructor_spec('()');
+    is scalar @$types, 0, 'no param types';
+    ok !defined $ret, 'no return expr';
+};
+
+subtest 'parse_constructor_spec: alias→Var promotion' => sub {
+    my ($types, $ret) = Typist::Type::Data->parse_constructor_spec(
+        '(T)', type_params => ['T']
+    );
+    is scalar @$types, 1, 'one param type';
+    ok $types->[0]->is_var && $types->[0]->name eq 'T', 'T promoted to Var';
+};
+
+subtest 'parse_constructor_spec: GADT with type param' => sub {
+    my ($types, $ret) = Typist::Type::Data->parse_constructor_spec(
+        '(Expr[Bool], Expr[A], Expr[A]) -> Expr[A]',
+        type_params => ['A'],
+    );
+    is scalar @$types, 3, 'three param types';
+    is $ret, 'Expr[A]', 'return expr is Expr[A]';
+    # Second param should have A promoted to Var inside the Param
+    # (but parse_constructor_spec only promotes top-level aliases)
+};
+
+subtest 'parse_constructor_spec: blank spec' => sub {
+    my ($types, $ret) = Typist::Type::Data->parse_constructor_spec('');
+    is scalar @$types, 0, 'no types';
+    ok !defined $ret, 'no return';
+
+    ($types, $ret) = Typist::Type::Data->parse_constructor_spec(undef);
+    is scalar @$types, 0, 'undef → no types';
+};
+
 done_testing;

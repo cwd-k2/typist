@@ -15,6 +15,11 @@ use Typist::Type::Newtype;
 use Typist::Effect;
 use Typist::TypeClass;
 use Typist::Prelude;
+use Typist::Type::Data;
+use Typist::Type::Var;
+use Typist::Type::Param;
+use Typist::Type::Atom;
+use Typist::Type::Alias;
 
 # ── Severity Mapping ─────────────────────────────
 
@@ -84,6 +89,20 @@ sub analyze ($class, $source, %opts) {
         $registry->register_newtype($name, Typist::Type::Newtype->new($name, $inner));
     }
 
+    # 2b-b. Register newtype constructors as functions
+    for my $name (sort keys $extracted->{newtypes}->%*) {
+        my $info = $extracted->{newtypes}{$name};
+        my $inner = eval { Typist::Parser->parse($info->{inner_expr}) };
+        next unless $inner;
+        $registry->register_function($extracted->{package}, $name, +{
+            params       => [$inner],
+            returns      => Typist::Type::Newtype->new($name, $inner),
+            generics     => [],
+            params_expr  => [$inner->to_string],
+            returns_expr => $name,
+        });
+    }
+
     # 2c. Register this file's effects
     for my $name (sort keys $extracted->{effects}->%*) {
         $registry->register_effect($name, Typist::Effect->new(name => $name, operations => +{}));
@@ -100,6 +119,35 @@ sub analyze ($class, $source, %opts) {
             );
         };
         $registry->register_typeclass($name, $def // undef);
+    }
+
+    # 2d-b. Register typeclass methods as functions
+    for my $tc_name (sort keys $extracted->{typeclasses}->%*) {
+        my $tc_info = $extracted->{typeclasses}{$tc_name};
+        my $methods = $tc_info->{methods} // +{};
+        my $var_spec = $tc_info->{var_spec} // 'T';
+        my @generics = (+{ name => $var_spec, bound_expr => undef });
+
+        for my $method_name (sort keys %$methods) {
+            my $sig_str = $methods->{$method_name};
+            my $ann = eval { Typist::Parser->parse_annotation($sig_str) };
+            next unless $ann;
+            my $type = $ann->{type};
+            my (@params, $returns);
+            if ($type->is_func) {
+                @params  = $type->params;
+                $returns = $type->returns;
+            } else {
+                $returns = $type;
+            }
+            $registry->register_function($tc_name, $method_name, +{
+                params       => \@params,
+                returns      => $returns,
+                generics     => \@generics,
+                params_expr  => [map { $_->to_string } @params],
+                returns_expr => $returns->to_string,
+            });
+        }
     }
 
     # 2e. Register this file's declares (external function annotations)
@@ -140,6 +188,56 @@ sub analyze ($class, $source, %opts) {
             generics => \@generics,
             effects  => $effects,
         });
+    }
+
+    # 2f. Register this file's datatypes
+    for my $name (sort keys(($extracted->{datatypes} // +{})->%*)) {
+        my $info = $extracted->{datatypes}{$name};
+        my @tp = ($info->{type_params} // [])->@*;
+        my (%parsed_variants, %return_types);
+
+        for my $tag (keys $info->{variants}->%*) {
+            my ($types, $ret_expr) = Typist::Type::Data->parse_constructor_spec(
+                $info->{variants}{$tag}, type_params => \@tp,
+            );
+            $parsed_variants{$tag} = $types;
+
+            # GADT: record per-constructor return type
+            if (defined $ret_expr) {
+                my $ret_type = eval { Typist::Parser->parse($ret_expr) };
+                $return_types{$tag} = $ret_type if $ret_type;
+            }
+        }
+
+        my $dt = Typist::Type::Data->new($name, \%parsed_variants,
+            type_params  => \@tp,
+            return_types => (%return_types ? \%return_types : +{}),
+        );
+        $registry->register_datatype($name, $dt);
+
+        # 2g. Register datatype constructors as functions
+        for my $tag (keys %parsed_variants) {
+            my $param_types = $parsed_variants{$tag};
+            my $return_type;
+
+            if (exists $return_types{$tag}) {
+                # GADT: use the explicit per-constructor return type
+                $return_type = $return_types{$tag};
+            } elsif (@tp) {
+                my @vars = map { Typist::Type::Var->new($_) } @tp;
+                $return_type = Typist::Type::Param->new($name, @vars);
+            } else {
+                $return_type = $dt;
+            }
+            my @generics = map { +{ name => $_, bound_expr => undef } } @tp;
+            $registry->register_function($extracted->{package}, $tag, +{
+                params       => $param_types,
+                returns      => $return_type,
+                generics     => \@generics,
+                params_expr  => [map { $_->to_string } @$param_types],
+                returns_expr => $return_type->to_string,
+            });
+        }
     }
 
     # 3. Register this file's functions
@@ -474,6 +572,23 @@ sub _build_symbol_index ($extracted, $env = undef) {
             method_names => $info->{method_names},
             line         => $info->{line},
             col          => $info->{col},
+        };
+    }
+
+    # Datatypes (ADT/GADT)
+    for my $name (sort keys(($extracted->{datatypes} // +{})->%*)) {
+        my $info = $extracted->{datatypes}{$name};
+        my @parts;
+        for my $tag (sort keys $info->{variants}->%*) {
+            my $spec = $info->{variants}{$tag};
+            push @parts, ($spec && $spec =~ /\S/) ? "$tag$spec" : $tag;
+        }
+        push @symbols, +{
+            name => $name,
+            kind => 'datatype',
+            type => join(' | ', @parts),
+            line => $info->{line},
+            col  => $info->{col},
         };
     }
 

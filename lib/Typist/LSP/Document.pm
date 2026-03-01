@@ -299,6 +299,7 @@ my %SYMBOL_KIND = (
     newtype   => 5,   # Class (nominal type)
     effect    => 14,  # Namespace
     typeclass => 11,  # Interface
+    datatype  => 10,  # Enum (algebraic data type)
 );
 
 sub document_symbols ($self) {

@@ -84,6 +84,12 @@ sub _format ($class, $sym) {
         return "```perl\n$display\n```";
     }
 
+    if ($kind eq 'datatype') {
+        my $display = "datatype $sym->{name}";
+        $display .= " = $sym->{type}" if $sym->{type};
+        return "```perl\n$display\n```";
+    }
+
     undef;
 }
 

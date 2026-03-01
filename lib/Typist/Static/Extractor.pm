@@ -272,12 +272,12 @@ sub _extract_typeclasses ($class, $doc, $result) {
                 : $vs_tok->content;
         }
 
-        # Extract method names from the hashref constructor (top-level keys only)
-        my @method_names;
+        # Extract method names and signatures from the structure
+        my (@method_names, %method_sigs);
         for my $child (@children) {
             next unless $child->isa('PPI::Structure::Constructor')
-                     || $child->isa('PPI::Structure::Block');
-            # Constructor wraps a single Expression; scan its schildren for Word => patterns
+                     || $child->isa('PPI::Structure::Block')
+                     || $child->isa('PPI::Structure::List');
             for my $expr ($child->schildren) {
                 next unless $expr->isa('PPI::Statement') || $expr->isa('PPI::Statement::Expression');
                 my @sc = $expr->schildren;
@@ -286,7 +286,12 @@ sub _extract_typeclasses ($class, $doc, $result) {
                         && $sc[$i + 1]->isa('PPI::Token::Operator')
                         && $sc[$i + 1]->content eq '=>')
                     {
-                        push @method_names, $sc[$i]->content;
+                        my $mname = $sc[$i]->content;
+                        push @method_names, $mname;
+                        # Capture signature from the following QuotedString
+                        if ($i + 2 <= $#sc && $sc[$i + 2]->isa('PPI::Token::Quote')) {
+                            $method_sigs{$mname} = $sc[$i + 2]->string;
+                        }
                     }
                 }
             }
@@ -296,6 +301,7 @@ sub _extract_typeclasses ($class, $doc, $result) {
         $result->{typeclasses}{$name} = +{
             var_spec     => $var_spec,
             method_names => \@method_names,
+            methods      => \%method_sigs,
             line         => $stmt->line_number,
             col          => $stmt->column_number,
         };
