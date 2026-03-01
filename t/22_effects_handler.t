@@ -7,7 +7,8 @@ use Typist -runtime;
 
 BEGIN {
     effect Console => +{
-        log => '(Str) -> Void',
+        log       => '(Str) -> Void',
+        writeLine => '(Str) -> Void',
     };
 
     effect State => +{
@@ -20,19 +21,19 @@ BEGIN {
 
 sub reset_handlers { Typist::Handler->reset }
 
-# ── perform with no handler → die ────────────────
+# ── Effect::op with no handler → die ────────────────
 
-subtest 'perform without handler dies' => sub {
+subtest 'Effect::op without handler dies' => sub {
     reset_handlers();
 
-    eval { perform Console => log => "hello" };
+    eval { Console::log("hello") };
     like $@, qr/No handler for effect Console::log/,
         'die message names effect and operation';
 };
 
-# ── perform with handler → dispatch ──────────────
+# ── Effect::op with handler → dispatch ──────────────
 
-subtest 'perform dispatches to registered handler' => sub {
+subtest 'Effect::op dispatches to registered handler' => sub {
     reset_handlers();
 
     my @captured;
@@ -40,8 +41,8 @@ subtest 'perform dispatches to registered handler' => sub {
         log => sub ($msg) { push @captured, $msg },
     });
 
-    perform Console => log => "hello";
-    perform Console => log => "world";
+    Console::log("hello");
+    Console::log("world");
 
     is_deeply \@captured, ["hello", "world"],
         'handler receives arguments';
@@ -49,9 +50,9 @@ subtest 'perform dispatches to registered handler' => sub {
     Typist::Handler->pop_handler;
 };
 
-# ── perform returns handler result ───────────────
+# ── Effect::op returns handler result ───────────────
 
-subtest 'perform returns handler return value' => sub {
+subtest 'Effect::op returns handler return value' => sub {
     reset_handlers();
 
     Typist::Handler->push_handler('State', +{
@@ -59,8 +60,8 @@ subtest 'perform returns handler return value' => sub {
         put => sub ($v) { undef },
     });
 
-    my $val = perform State => get =>;
-    is $val, 42, 'perform returns handler result';
+    my $val = State::get();
+    is $val, 42, 'Effect::op returns handler result';
 
     Typist::Handler->pop_handler;
 };
@@ -81,14 +82,14 @@ subtest 'nested handlers: inner shadows outer' => sub {
         log => sub ($msg) { push @inner_log, "inner:$msg" },
     });
 
-    perform Console => log => "test";
+    Console::log("test");
     is_deeply \@outer_log, [], 'outer handler not called';
     is_deeply \@inner_log, ["inner:test"], 'inner handler called';
 
     # Pop inner → outer becomes active
     Typist::Handler->pop_handler;
 
-    perform Console => log => "test2";
+    Console::log("test2");
     is_deeply \@outer_log, ["outer:test2"], 'outer handler now active';
 
     Typist::Handler->pop_handler;
@@ -111,10 +112,10 @@ subtest 'multiple effects coexist independently' => sub {
         put => sub ($v) { $state_val = $v },
     });
 
-    perform Console => log => "start";
-    perform State => put => 10;
-    my $v = perform State => get =>;
-    perform Console => log => "val=$v";
+    Console::log("start");
+    State::put(10);
+    my $v = State::get();
+    Console::log("val=$v");
 
     is_deeply \@log_out, ["start", "val=10"], 'Console handler works';
     is $state_val, 10, 'State handler works';
@@ -133,15 +134,15 @@ subtest 'pop_handler removes handler' => sub {
     });
 
     # Works while handler is registered
-    eval { perform Console => log => "ok" };
-    is $@, '', 'perform succeeds with handler';
+    eval { Console::log("ok") };
+    is $@, '', 'Effect::op succeeds with handler';
 
     Typist::Handler->pop_handler;
 
     # After pop, no handler → die
-    eval { perform Console => log => "fail" };
+    eval { Console::log("fail") };
     like $@, qr/No handler for effect Console::log/,
-        'perform dies after handler removed';
+        'Effect::op dies after handler removed';
 };
 
 # ── Undefined operation → die ────────────────────
@@ -154,21 +155,21 @@ subtest 'undefined operation in handler dies' => sub {
         # 'writeLine' not defined in handler
     });
 
-    eval { perform Console => writeLine => "fail" };
+    eval { Console::writeLine("fail") };
     like $@, qr/No handler for effect Console::writeLine/,
         'missing operation in handler raises error';
 
     Typist::Handler->pop_handler;
 };
 
-# ── perform inside annotated function ────────────
+# ── Effect::op inside annotated function ────────────
 
 sub greet :Type((Str) -> Str !Eff(Console)) ($name) {
-    perform Console => log => "Hello, $name!";
+    Console::log("Hello, $name!");
     "greeted $name";
 }
 
-subtest 'perform inside annotated function' => sub {
+subtest 'Effect::op inside annotated function' => sub {
     reset_handlers();
 
     my @log_out;
@@ -195,11 +196,11 @@ subtest 'handler with multiple operations' => sub {
         put => sub ($v) { $counter = $v },
     });
 
-    perform State => put => 5;
-    is((perform State => get =>), 5, 'get after put');
+    State::put(5);
+    is(State::get(), 5, 'get after put');
 
-    perform State => put => (perform State => get =>) + 1;
-    is((perform State => get =>), 6, 'increment via get+put');
+    State::put(State::get() + 1);
+    is(State::get(), 6, 'increment via get+put');
 
     Typist::Handler->pop_handler;
 };
@@ -229,15 +230,15 @@ subtest 'handle dispatches effect operations' => sub {
 
     my @captured;
     my $result = handle {
-        perform Console => log => "hello";
-        perform Console => log => "world";
+        Console::log("hello");
+        Console::log("world");
         "done";
     } Console => +{
         log => sub ($msg) { push @captured, $msg },
     };
 
     is_deeply \@captured, ["hello", "world"],
-        'handler received all perform calls';
+        'handler received all Effect::op calls';
     is $result, "done", 'body return value propagated';
 };
 
@@ -247,13 +248,13 @@ subtest 'handle pops handler after body completes' => sub {
     reset_handlers();
 
     handle {
-        perform Console => log => "inside";
+        Console::log("inside");
     } Console => +{
         log => sub ($msg) { },
     };
 
     # After handle returns, handler is gone
-    eval { perform Console => log => "outside" };
+    eval { Console::log("outside") };
     like $@, qr/No handler for effect Console::log/,
         'handler is inactive after handle scope';
 };
@@ -265,7 +266,7 @@ subtest 'handle pops handler on exception' => sub {
 
     eval {
         handle {
-            perform Console => log => "before die";
+            Console::log("before die");
             die "boom\n";
         } Console => +{
             log => sub ($msg) { },
@@ -274,7 +275,7 @@ subtest 'handle pops handler on exception' => sub {
     like $@, qr/boom/, 'exception propagated from handle body';
 
     # Handler must be popped even after exception
-    eval { perform Console => log => "after" };
+    eval { Console::log("after") };
     like $@, qr/No handler for effect Console::log/,
         'handler popped despite exception';
 };
@@ -286,10 +287,10 @@ subtest 'handle multiple effects simultaneously' => sub {
 
     my @logs;
     my $result = handle {
-        perform Console => log => "start";
-        perform State => put => 10;
-        my $v = perform State => get =>;
-        perform Console => log => "val=$v";
+        Console::log("start");
+        State::put(10);
+        my $v = State::get();
+        Console::log("val=$v");
         $v;
     } Console => +{
         log => sub ($msg) { push @logs, $msg },
@@ -312,26 +313,26 @@ subtest 'nested handle: inner shadows outer' => sub {
     my @inner_log;
 
     my $result = handle {
-        perform Console => log => "outer-scope";
+        Console::log("outer-scope");
 
         my $inner = handle {
-            perform Console => log => "inner-scope";
+            Console::log("inner-scope");
             "inner-result";
         } Console => +{
             log => sub ($msg) { push @inner_log, $msg },
         };
 
         # After inner handle returns, outer handler is active again
-        perform Console => log => "outer-again";
+        Console::log("outer-again");
         $inner;
     } Console => +{
         log => sub ($msg) { push @outer_log, $msg },
     };
 
     is_deeply \@inner_log, ["inner-scope"],
-        'inner handler captured inner perform';
+        'inner handler captured inner Effect::op';
     is_deeply \@outer_log, ["outer-scope", "outer-again"],
-        'outer handler captured outer performs';
+        'outer handler captured outer calls';
     is $result, "inner-result",
         'nested handle return value propagated';
 };
@@ -343,11 +344,11 @@ subtest 'State effect counter via handle' => sub {
 
     my $state = 0;
     my $result = handle {
-        my $n = perform State => get =>;
-        perform State => put => $n + 1;
-        my $n2 = perform State => get =>;
-        perform State => put => $n2 + 1;
-        perform State => get =>;
+        my $n = State::get();
+        State::put($n + 1);
+        my $n2 = State::get();
+        State::put($n2 + 1);
+        State::get();
     } State => +{
         get => sub () { $state },
         put => sub ($n) { $state = $n; undef },
@@ -357,9 +358,9 @@ subtest 'State effect counter via handle' => sub {
     is $state, 2, 'state variable was mutated by handler';
 };
 
-# ── handle with no perform in body ──────────────────
+# ── handle with no Effect::op in body ──────────────────
 
-subtest 'handle with no perform in body' => sub {
+subtest 'handle with no Effect::op in body' => sub {
     reset_handlers();
 
     my $result = handle {
@@ -390,11 +391,11 @@ subtest 'multiple handlers all popped on exception' => sub {
     like $@, qr/multi-boom/, 'exception propagated';
 
     # Both handlers must be gone
-    eval { perform Console => log => "test" };
+    eval { Console::log("test") };
     like $@, qr/No handler for effect Console::log/,
         'Console handler popped after exception';
 
-    eval { perform State => get => };
+    eval { State::get() };
     like $@, qr/No handler for effect State::get/,
         'State handler popped after exception';
 };

@@ -108,7 +108,6 @@ my %BUILTINS = (
     declare   => '(Str, Str) -> Void',
     datatype  => '(...Any) -> Void',
     enum      => '(...Any) -> Void',
-    perform   => '(...Any) -> Any',
     unwrap    => '(Any) -> Any',
 );
 

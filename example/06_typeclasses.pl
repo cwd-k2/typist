@@ -17,14 +17,14 @@ use Typist::DSL;
 
 # ── Basic Type Class ──────────────────────────────────────
 #
-# typeclass Name => TypeVar, +{ method => Func(...) }
+# typeclass Name => TypeVar, +{ method => '(T) -> ReturnType' }
 # instance Name => ConcreteType, +{ method => sub { ... } }
 #
 # Dispatch namespace: Name::method(value)
 
 BEGIN {
     typeclass Show => T, +{
-        show => Func(T, returns => Str),
+        show => '(T) -> Str',
     };
 
     instance Show => Int, +{
@@ -52,8 +52,8 @@ say "Show::show([]):  $@" if $@;
 
 BEGIN {
     typeclass Eq => T, +{
-        eq  => Func(T, T, returns => Bool),
-        neq => Func(T, T, returns => Bool),
+        eq  => '(T, T) -> Bool',
+        neq => '(T, T) -> Bool',
     };
 
     instance Eq => Int, +{
@@ -78,7 +78,7 @@ say "Eq::neq(1, 2):     ", Eq::neq(1, 2);      # 1
 
 BEGIN {
     typeclass Ord => 'T: Eq', +{
-        compare => Func(T, T, returns => Int),
+        compare => '(T, T) -> Int',
     };
 
     instance Ord => Int, +{
@@ -100,7 +100,7 @@ say "Ord::compare('b', 'a'): ", Ord::compare("b", "a");  # 1
 
 BEGIN {
     typeclass Serialize => 'T, U', +{
-        serialize => Func(T, U, returns => Str),
+        serialize => '(T, U) -> Str',
     };
 
     instance Serialize => 'Int, Str', +{

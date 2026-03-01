@@ -128,7 +128,7 @@ subtest 'detects unknown superclass in typeclass' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL', file => 'test.pm');
 use v5.40;
 typeclass Ord => 'T: NonExistent', +{
-    compare => Func(T, T, returns => Int),
+    compare => '(T, T) -> Int',
 };
 PERL
 
@@ -141,10 +141,10 @@ subtest 'valid superclass produces no error' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 use v5.40;
 typeclass Eq => T, +{
-    eq => Func(T, T, returns => Bool),
+    eq => '(T, T) -> Bool',
 };
 typeclass Ord => 'T: Eq', +{
-    compare => Func(T, T, returns => Int),
+    compare => '(T, T) -> Int',
 };
 PERL
 
@@ -209,7 +209,7 @@ use v5.40;
 typeclass Show => T, +{};
 
 typeclass BadOrd => 'T: NoSuchClass', +{
-    compare => Func(T, T, returns => Int),
+    compare => '(T, T) -> Int',
 };
 PERL
 

@@ -30,7 +30,7 @@ BEGIN {
 
 BEGIN {
     effect Logger => +{
-        log => Func(Str, returns => Void),
+        log => '(Str) -> Void',
     };
 
 }
@@ -39,7 +39,7 @@ BEGIN {
 
 BEGIN {
     typeclass Printable => T, +{
-        display => Func(T, returns => Str),
+        display => '(T) -> Str',
     };
 
     instance Printable => Int, +{

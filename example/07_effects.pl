@@ -9,33 +9,34 @@ use Typist::DSL;
 #
 #  Effect system for tracking and handling side effects:
 #
-#    effect Console => +{ writeLine => Func(Str, returns => Void) };
-#    perform Console => writeLine => "hello";
+#    effect Console => +{ writeLine => '(Str) -> Void' };
+#    Console::writeLine("hello");
 #    handle { ... } Console => +{ writeLine => sub ($msg) { ... } };
 #
 #  Effects are phantom in the type annotations — they track
 #  what a function MAY do, without runtime overhead in the
-#  annotation itself.  Runtime execution uses perform/handle.
+#  annotation itself.  Runtime execution uses Effect::op/handle.
 # ═══════════════════════════════════════════════════════════
 
 # ── Effect Definitions ────────────────────────────────────
 #
-# effect Name => +{ op => Func(Params, returns => ReturnType) }
+# effect Name => +{ op => '(Params) -> ReturnType' }
 # Defines an effect with named operations and their signatures.
+# Operations are auto-installed as qualified subs (e.g., Console::writeLine).
 
 BEGIN {
     effect Console => +{
-        readLine  => Func(returns => Str),
-        writeLine => Func(Str, returns => Void),
+        readLine  => '() -> Str',
+        writeLine => '(Str) -> Void',
     };
 
     effect Logger => +{
-        log => Func(Str, returns => Void),
+        log => '(Str) -> Void',
     };
 
     effect State => +{
-        get => Func(returns => Int),
-        put => Func(Int, returns => Void),
+        get => '() -> Int',
+        put => '(Int) -> Void',
     };
 }
 
@@ -44,12 +45,12 @@ BEGIN {
 # !Eff(Name) declares that a function may perform an effect.
 
 sub greet :Type((Str) -> Str !Eff(Console)) ($name) {
-    perform Console => writeLine => "Hello, $name!";
+    Console::writeLine("Hello, $name!");
     "greeted $name";
 }
 
 sub log_msg :Type((Str) -> Str !Eff(Logger)) ($msg) {
-    perform Logger => log => "[LOG] $msg";
+    Logger::log("[LOG] $msg");
     $msg;
 }
 
@@ -58,7 +59,7 @@ sub log_msg :Type((Str) -> Str !Eff(Logger)) ($msg) {
 # handle { BODY } Effect => +{ op => sub { ... } }
 #
 # Installs scoped handlers, executes BODY, auto-cleans up.
-# The handler receives the arguments from perform and
+# The handler receives the arguments from the effect call and
 # provides the implementation.
 
 say "── Console handler ────────────────────────────";
@@ -107,8 +108,8 @@ say "  collected: ", join(", ", @logs);
 # handle blocks can compose.
 
 sub greet_logged :Type((Str) -> Str !Eff(Console | Logger)) ($name) {
-    perform Logger  => log       => "greeting $name";
-    perform Console => writeLine => "Hello, $name!";
+    Logger::log("greeting $name");
+    Console::writeLine("Hello, $name!");
     "greeted $name";
 }
 
@@ -131,10 +132,10 @@ handle {
 # Effects can model mutable state with get/put.
 
 sub counter :Type(() -> Int !Eff(State)) () {
-    my $n = perform State => get =>;
-    perform State => put => $n + 1;
-    perform State => put => (perform State => get =>) + 1;
-    perform State => get =>;
+    my $n = State::get();
+    State::put($n + 1);
+    State::put(State::get() + 1);
+    State::get();
 }
 
 say "";
@@ -158,7 +159,7 @@ say "  final state: $final";
 # additional effects.
 
 sub with_log :Type(<r: Row>(Str) -> Str !Eff(Logger | r)) ($msg) {
-    perform Logger => log => $msg;
+    Logger::log($msg);
     $msg;
 }
 
@@ -169,7 +170,7 @@ say "── Row polymorphism ─────────────────
 handle {
     handle {
         my $x = with_log("hello from row-poly");
-        perform Console => writeLine => "result: $x";
+        Console::writeLine("result: $x");
     } Console => +{
         writeLine => sub ($msg) { say "  [out] $msg" },
         readLine  => sub        { "" },

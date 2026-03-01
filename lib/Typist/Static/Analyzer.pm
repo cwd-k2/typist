@@ -105,7 +105,41 @@ sub analyze ($class, $source, %opts) {
 
     # 2c. Register this file's effects
     for my $name (sort keys $extracted->{effects}->%*) {
-        $registry->register_effect($name, Typist::Effect->new(name => $name, operations => +{}));
+        my $eff_info = $extracted->{effects}{$name};
+        my $ops = $eff_info->{operations} // +{};
+        $registry->register_effect($name, Typist::Effect->new(name => $name, operations => $ops));
+    }
+
+    # 2c-b. Register effect operations as functions
+    for my $eff_name (sort keys $extracted->{effects}->%*) {
+        my $eff_info = $extracted->{effects}{$eff_name};
+        my $ops = $eff_info->{operations} // +{};
+
+        for my $op_name (sort keys %$ops) {
+            my $sig_str = $ops->{$op_name};
+            my $ann = eval { Typist::Parser->parse_annotation($sig_str) };
+            next unless $ann;
+            my $type = $ann->{type};
+            my (@params, $returns);
+            if ($type->is_func) {
+                @params  = $type->params;
+                $returns = $type->returns;
+            } else {
+                $returns = $type;
+            }
+
+            my $eff_row = Typist::Type::Row->new(labels => [$eff_name]);
+            my $effects = Typist::Type::Eff->new($eff_row);
+
+            $registry->register_function($eff_name, $op_name, +{
+                params       => \@params,
+                returns      => $returns,
+                generics     => [],
+                effects      => $effects,
+                params_expr  => [map { $_->to_string } @params],
+                returns_expr => $returns->to_string,
+            });
+        }
     }
 
     # 2d. Register this file's typeclasses with full Def (parses superclass from var_spec)

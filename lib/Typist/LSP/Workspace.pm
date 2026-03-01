@@ -8,6 +8,7 @@ use Typist::Parser;
 use Typist::Type::Newtype;
 use Typist::Type::Data;
 use Typist::Type::Eff;
+use Typist::Type::Row;
 use Typist::Effect;
 use Typist::Attribute;
 use Typist::TypeClass;
@@ -166,8 +167,37 @@ sub _register_file_types ($self, $extracted) {
     }
 
     for my $name (keys $extracted->{effects}->%*) {
-        my $eff = Typist::Effect->new(name => $name, operations => +{});
+        my $eff_info = $extracted->{effects}{$name};
+        my $ops = $eff_info->{operations} // +{};
+        my $eff = Typist::Effect->new(name => $name, operations => $ops);
         $reg->register_effect($name, $eff);
+
+        # Register effect operations as functions
+        for my $op_name (keys %$ops) {
+            eval {
+                my $ann = Typist::Parser->parse_annotation($ops->{$op_name});
+                my $type = $ann->{type};
+                my (@params, $returns);
+                if ($type->is_func) {
+                    @params  = $type->params;
+                    $returns = $type->returns;
+                } else {
+                    $returns = $type;
+                }
+
+                my $eff_row = Typist::Type::Row->new(labels => [$name]);
+                my $effects = Typist::Type::Eff->new($eff_row);
+
+                $reg->register_function($name, $op_name, +{
+                    params       => \@params,
+                    returns      => $returns,
+                    generics     => [],
+                    effects      => $effects,
+                    params_expr  => [map { $_->to_string } @params],
+                    returns_expr => $returns->to_string,
+                });
+            };
+        }
     }
 
     for my $name (keys $extracted->{typeclasses}->%*) {

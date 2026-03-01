@@ -32,7 +32,7 @@ Typist operates across three phases of a Perl program's lifecycle:
 |    -> import(): register package,        |
 |       install attribute handlers,        |
 |       export typedef/newtype/effect/     |
-|       datatype/perform/handle/...        |
+|       datatype/handle/...                |
 |                                          |
 |  :Type(...) attributes processed:        |
 |    -> Parser->parse_annotation()         |
@@ -92,7 +92,7 @@ Typist operates across three phases of a Perl program's lifecycle:
 |    Newtype constructors validate.        |
 |    Datatype constructors validate.       |
 |    unwrap() validates blessed ref.       |
-|    perform() dispatches effect ops.      |
+|    Effect::op() dispatches effect ops.      |
 |    handle { } scoped handler blocks.     |
 +==========================================+
 ```
@@ -787,7 +787,7 @@ push_handler(effect, handlers):
 find_handler(effect):
   reverse search stack for matching effect name
 
-perform(effect, op, @args):
+Effect::op(@args):
   find_handler(effect) -> call handlers->{op}->(@args)
   die if no handler found
 
@@ -810,7 +810,7 @@ Per generic call    0              N * infer_value + instantiate +
                                    N * parse(bound) + N * is_subtype
 Newtype construct   contains()     contains()         (always active)
 Datatype construct  arity+types    arity+types        (always active)
-perform/handle      stack ops      stack ops          (always active)
+Effect::op/handle   stack ops      stack ops          (always active)
 ```
 
 ---
@@ -859,4 +859,4 @@ The eagerly-loaded modules are lightweight: they define type node classes (small
 7. **Gradual typing**: annotation density determines check strictness; `Any` bypasses checks
 8. **Boundary enforcement**: newtype and datatype constructors always validate, independent of mode
 9. **No source filters**: standard Perl attributes + PPI parsing for static analysis
-10. **Effect handlers**: `perform`/`handle` provide dynamic-scope effect dispatch at runtime
+10. **Effect handlers**: `Effect::op(...)`/`handle` provide dynamic-scope effect dispatch at runtime

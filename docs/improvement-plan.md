@@ -635,9 +635,9 @@ sub _datatype ($name, %variants) {
 
 ### C-2: エフェクトハンドラ
 
-**✅ 完了** (C-2a + C-2b) — `perform`、`handle`、Handler.pm
+**✅ 完了** (C-2a + C-2b) — `Effect::op()` 直接呼び出し、`handle`、Handler.pm
 
-> **Implementation note:** Phase C-2a (`perform` キーワード) と C-2b (`handle` ブロック) を実装。`Typist::Handler` を新設し、動的ディスパッチベースのエフェクトハンドリングを提供。Phase C-2c (delimited continuation) は将来課題。
+> **Implementation note:** Phase C-2a (エフェクト操作の直接呼び出し) と C-2b (`handle` ブロック) を実装。`Typist::Handler` を新設し、動的ディスパッチベースのエフェクトハンドリングを提供。`effect` 定義時に `Effect::op` 形式の qualified sub を自動インストール。Phase C-2c (delimited continuation) は将来課題。
 
 **優先度**: 中 — エフェクトシステムの実用性を大幅に向上
 
@@ -649,15 +649,15 @@ sub _datatype ($name, %variants) {
 # エフェクトの定義
 BEGIN {
     effect State => +{
-        get => Func(returns => Int),
-        put => Func(Int, returns => Void),
+        get => '() -> Int',
+        put => '(Int) -> Void',
     };
 }
 
-# エフェクトの使用
+# エフェクトの使用（直接 qualified call）
 sub counter :Type(() -> Int !Eff(State)) () {
-    my $n = perform State::get();
-    perform State::put($n + 1);
+    my $n = State::get();
+    State::put($n + 1);
     $n;
 }
 
@@ -672,9 +672,9 @@ my $result = handle {
 
 **これは最も大規模な変更**。段階的に実装:
 
-**Phase C-2a: `perform` キーワード**
+**Phase C-2a: エフェクト操作の直接呼び出し**
 
-`perform Effect::operation(args)` を導入。compile time ではエフェクト使用の記録に、runtime では（ハンドラなしの場合）直接実行に使う。
+`Effect::operation(@args)` 形式の直接呼び出しを導入。`effect` 定義時に qualified sub を自動インストールし、`Typist::Handler` スタックからハンドラをディスパッチする。
 
 **Phase C-2b: `handle` ブロック**
 
@@ -745,7 +745,7 @@ KindChecker で `Param(Var(F), [Atom(Int)])` のカインド検査:
 ```perl
 BEGIN {
     typeclass Convertible => 'T, U', +{
-        convert => Func(T, returns => U),
+        convert => '(T) -> U',
     };
 
     instance Convertible => 'Int, Str', +{

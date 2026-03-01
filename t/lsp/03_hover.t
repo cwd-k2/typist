@@ -235,7 +235,7 @@ subtest 'hover shows typeclass with var_spec and methods' => sub {
     my $source = <<'PERL';
 use v5.40;
 typeclass Ord => 'T: Eq', +{
-    compare => Func(T, T, returns => Int),
+    compare => '(T, T) -> Int',
 };
 PERL
 

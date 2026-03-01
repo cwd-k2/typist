@@ -235,9 +235,36 @@ sub _extract_effects ($class, $doc, $result) {
 
         my $name = $children[1]->content;
 
+        # Extract operation names and signatures from the structure
+        my (@op_names, %op_sigs);
+        for my $child (@children) {
+            next unless $child->isa('PPI::Structure::Constructor')
+                     || $child->isa('PPI::Structure::Block')
+                     || $child->isa('PPI::Structure::List');
+            for my $expr ($child->schildren) {
+                next unless $expr->isa('PPI::Statement') || $expr->isa('PPI::Statement::Expression');
+                my @sc = $expr->schildren;
+                for my $i (0 .. $#sc - 1) {
+                    if ($sc[$i]->isa('PPI::Token::Word')
+                        && $sc[$i + 1]->isa('PPI::Token::Operator')
+                        && $sc[$i + 1]->content eq '=>')
+                    {
+                        my $op_name = $sc[$i]->content;
+                        push @op_names, $op_name;
+                        if ($i + 2 <= $#sc && $sc[$i + 2]->isa('PPI::Token::Quote')) {
+                            $op_sigs{$op_name} = $sc[$i + 2]->string;
+                        }
+                    }
+                }
+            }
+            last;
+        }
+
         $result->{effects}{$name} = +{
-            line => $stmt->line_number,
-            col  => $stmt->column_number,
+            op_names   => \@op_names,
+            operations => \%op_sigs,
+            line       => $stmt->line_number,
+            col        => $stmt->column_number,
         };
     }
 }

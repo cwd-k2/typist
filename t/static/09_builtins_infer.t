@@ -79,16 +79,7 @@ PERL
     is scalar @$errs, 0, 'mixed arms (Int | Str) assigned to Int | Str — no error';
 };
 
-# ── perform/unwrap CORE registration ─────────────
-
-subtest 'perform: registered as CORE builtin (returns Any)' => sub {
-    my $errs = diags_of(<<'PERL', 'TypeMismatch');
-use v5.40;
-my $x :Type(Int) = perform(Console => 'read');
-PERL
-
-    is scalar @$errs, 0, 'perform returns Any — gradual skip, no error';
-};
+# ── unwrap CORE registration ─────────────
 
 subtest 'unwrap: registered as CORE builtin (returns Any)' => sub {
     my $errs = diags_of(<<'PERL', 'TypeMismatch');

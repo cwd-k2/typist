@@ -59,11 +59,11 @@ subtest 'extracts typeclasses with var_spec and method_names' => sub {
 package MyApp;
 use v5.40;
 typeclass Show => T, +{
-    show => Func(T, returns => Str),
+    show => '(T) -> Str',
 };
 
 typeclass Eq => T, +{
-    eq => Func(T, T, returns => Bool),
+    eq => '(T, T) -> Bool',
 };
 PERL
 
@@ -82,7 +82,7 @@ subtest 'extracts typeclass with superclass constraint' => sub {
     my $result = Typist::Static::Extractor->extract(<<'PERL');
 use v5.40;
 typeclass Ord => 'T: Eq', +{
-    compare => Func(T, T, returns => Int),
+    compare => '(T, T) -> Int',
 };
 PERL
 
@@ -96,7 +96,7 @@ subtest 'extracts typeclass with multiple superclass constraints' => sub {
     my $result = Typist::Static::Extractor->extract(<<'PERL');
 use v5.40;
 typeclass Printable => 'T: Show + Eq', +{
-    display => Func(T, returns => Str),
+    display => '(T) -> Str',
 };
 PERL
 
@@ -124,7 +124,7 @@ effect Logger => +{
 };
 
 typeclass Printable => T, +{
-    display => Func(T, returns => Str),
+    display => '(T) -> Str',
 };
 
 sub add :Type((Int, Int) -> Int) ($a, $b) {

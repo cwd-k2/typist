@@ -578,7 +578,7 @@ Kind checking is performed during the Checker's structural validation pass for a
 ```perl
 BEGIN {
     typeclass Show => T, +{
-        show => Func(T, returns => Str),
+        show => '(T) -> Str',
     };
 }
 ```
@@ -590,7 +590,7 @@ Type classes can have multiple type parameters for expressing relations between 
 ```perl
 BEGIN {
     typeclass Convertible => 'T, U', +{
-        convert => Func(T, returns => U),
+        convert => '(T) -> U',
     };
 }
 ```
@@ -649,11 +649,11 @@ For multi-parameter resolution, each argument type is matched against the corres
 ```perl
 BEGIN {
     typeclass Eq => T, +{
-        eq_ => Func(T, T, returns => Bool),
+        eq_ => '(T, T) -> Bool',
     };
 
     typeclass Ord => 'T: Eq', +{
-        compare => Func(T, T, returns => Int),
+        compare => '(T, T) -> Int',
     };
 
     # Registering Ord for Int requires Eq for Int to exist
@@ -727,18 +727,18 @@ declare die    => '(Any) -> Never !Eff(Abort)';
 declare length => '(Str) -> Int';              # Pure
 ```
 
-### Perform and Handle
+### Effect Operations (Direct Calls)
 
-Effects can be executed at runtime via `perform` and `handle`:
+Effect definitions auto-install qualified subs for each operation. These dispatch to the nearest handler on the runtime stack:
 
 ```perl
-# Invoke an effect operation
-my $line = perform('Console', 'readLine');
+# Call effect operations directly as qualified subs
+my $line = Console::readLine();
 
 # Provide a handler in a dynamic scope
 handle {
-    my $input = perform('Console', 'readLine');
-    perform('Console', 'writeLine', "You said: $input");
+    my $input = Console::readLine();
+    Console::writeLine("You said: $input");
 } Console => +{
     readLine  => sub { "hello" },
     writeLine => sub ($msg) { print $msg },
@@ -747,7 +747,7 @@ handle {
 
 ### Handler Stack
 
-`Typist::Handler` maintains a LIFO stack of effect handlers. `handle` pushes handlers, executes the body, and pops handlers (even on exception). `perform` searches the stack from top to bottom for a matching handler.
+`Typist::Handler` maintains a LIFO stack of effect handlers. `handle` pushes handlers, executes the body, and pops handlers (even on exception). Effect operation calls search the stack from top to bottom for a matching handler.
 
 ```
 handle { ... } Console => +{...}, DB => +{...};

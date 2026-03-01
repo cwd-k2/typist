@@ -44,8 +44,8 @@ sub max_of :Type(<T: Num>(T, T) -> T) ($a, $b) {
 # Algebraic effects with row polymorphism
 BEGIN {
     effect Console => +{
-        readLine  => Func(returns => Str),
-        writeLine => Func(Str, returns => Void),
+        readLine  => '() -> Str',
+        writeLine => '(Str) -> Void',
     };
 }
 
@@ -84,7 +84,7 @@ sub with_log :Type(<r: Row>(Str) -> Str !Eff(Log | r)) ($msg) {
 | Higher-kinded types | `F: * -> *` | Type constructor abstraction with `F[T]` application |
 | Algebraic effects | `effect` / `!Eff(...)` | `!Eff(Console \| Log)` |
 | Row polymorphism | `<r: Row>` / `Eff(E \| r)` | Effect row extension |
-| Effect handlers | `perform` / `handle` | Optional explicit effect dispatch and scoping |
+| Effect handlers | `Effect::op(...)` / `handle` | Direct effect dispatch and scoped handling |
 
 ### Analysis
 
@@ -219,9 +219,9 @@ sub io_greet :Type((Str) -> Void !Eff(Console)) ($name) { say "Hi, $name" }
 sub main :Type(() -> Void !Eff(Console)) () { io_greet("Alice") }
 ```
 
-### Effect Handlers (perform / handle)
+### Effect Handlers (Effect::op / handle)
 
-Effect handlers provide optional explicit effect dispatch at runtime. They coexist with the implicit effect tracking system (Prelude + `:Eff` annotations) which operates at the static analysis level.
+Effect definitions auto-install qualified subs for each operation. These dispatch to the nearest handler on the runtime stack.
 
 ```perl
 use Typist -runtime;
@@ -237,18 +237,18 @@ BEGIN {
     };
 }
 
-# perform dispatches to the nearest handler on the stack
+# Effect operations are called as qualified subs: Effect::op(...)
 sub greet :Type((Str) -> Str !Eff(Console)) ($name) {
-    perform Console => log => "Hello, $name!";
+    Console::log("Hello, $name!");
     "greeted $name";
 }
 
 # handle installs scoped handlers, executes a body, then pops them
 my $state = 0;
 my $result = handle {
-    perform Console => log => "start";
-    perform State => put => 10;
-    perform State => get =>;
+    Console::log("start");
+    State::put(10);
+    State::get();
 } Console => +{
     log => sub ($msg) { say $msg },
 }, State => +{
@@ -267,7 +267,7 @@ use Typist::DSL;
 
 BEGIN {
     typeclass Show => T, +{
-        show => Func(T, returns => Str),
+        show => '(T) -> Str',
     };
 
     instance Show => Int, +{
@@ -288,7 +288,7 @@ Multi-parameter type classes support multiple type variables:
 ```perl
 BEGIN {
     typeclass Convertible => 'T, U', +{
-        convert => Func(T, returns => U),
+        convert => '(T) -> U',
     };
 
     instance Convertible => 'Int, Str', +{
@@ -587,7 +587,7 @@ lib/
     KindChecker.pm           Kind inference and validation
     TypeClass.pm             Def + Inst + dispatch (single + multi-parameter)
     Effect.pm                Effect definitions with typed operations
-    Handler.pm               Runtime effect handler stack (perform/handle)
+    Handler.pm               Runtime effect handler stack (Effect::op/handle)
     Prelude.pm               Builtin function type annotations (20 CORE:: entries)
     Error.pm                 Error value + Collector (instance-based)
     Error/Global.pm          Singleton error buffer

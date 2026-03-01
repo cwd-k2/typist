@@ -58,7 +58,6 @@ sub import ($class, @args) {
     *{"${caller}::effect"}    = \&_effect;
     *{"${caller}::declare"}   = \&_declare;
     *{"${caller}::datatype"}  = \&_datatype;
-    *{"${caller}::perform"}   = \&_perform;
     *{"${caller}::handle"}    = \&_handle;
     *{"${caller}::match"}     = \&_match;
     *{"${caller}::enum"}      = \&_enum;
@@ -132,18 +131,19 @@ sub _effect ($name, $operations_ref) {
         operations => $operations_ref,
     );
     Typist::Registry->register_effect($name, $eff);
-}
 
-# ── Perform Support (effect operation dispatch) ──
-
-sub _perform ($effect_name, $op_name, @args) {
-    my $handler = Typist::Handler->find_handler($effect_name);
-
-    if ($handler && exists $handler->{$op_name}) {
-        return $handler->{$op_name}->(@args);
+    # Install qualified subs for direct effect operation calls
+    for my $op_name (keys %$operations_ref) {
+        my ($eff_name, $op) = ($name, $op_name);
+        no strict 'refs';
+        *{"${eff_name}::${op}"} = sub (@args) {
+            my $handler = Typist::Handler->find_handler($eff_name);
+            if ($handler && exists $handler->{$op}) {
+                return $handler->{$op}->(@args);
+            }
+            die "No handler for effect ${eff_name}::${op}\n";
+        };
     }
-
-    die "No handler for effect ${effect_name}::${op_name}\n";
 }
 
 # ── Handle Support (scoped effect handler block) ──

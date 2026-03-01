@@ -754,6 +754,14 @@ sub _extract_args ($self, $list) {
         {
             $i += 2;    # skip -> and the subscript/list
         }
+
+        # Consume remaining infix expression parts (e.g., $n + 1, $a . $b)
+        # Everything between commas belongs to the same argument
+        while ($i < @children
+            && !($children[$i]->isa('PPI::Token::Operator') && $children[$i]->content eq ','))
+        {
+            $i++;
+        }
     }
 
     @args;

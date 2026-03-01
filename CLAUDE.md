@@ -12,7 +12,7 @@ Static-First (default)       Runtime (opt-in: -runtime)    LSP Layer
 Typist.pm (entry+CHECK)      Tie::Scalar                   LSP::Server
 Static::Checker              Attribute._wrap_sub            LSP::Document
 Static::Analyzer (CHECK)     Inference.pm                   LSP::Workspace
-Static::TypeChecker          Handler (perform/handle)       LSP::Hover
+Static::TypeChecker          Handler (Effect::op/handle)    LSP::Hover
 Static::EffectChecker                                       LSP::Completion
 Static::Extractor                                           LSP::Transport
 Static::Infer
@@ -39,7 +39,7 @@ Static (LSP)    | TypeMismatch, EffectMis.   | Diagnostics   | typist-lsp, edito
 CHECK (compile) | All of above (expanded)    | warn → STDERR | perlnavigator, prove
 Runtime (opt-in)| Generic instantiation      | die           | -runtime flag
                 | TypeClass constraints      |               |
-                | perform/handle (effects)   |               |
+                | Effect::op/handle (effects)|               |
                 | Boundary (newtype) [always] |              |
 ```
 
@@ -49,12 +49,12 @@ Runtime (opt-in)| Generic instantiation      | die           | -runtime flag
 - `Typist::Type` — Abstract base with `|` (union), `&` (intersection), `""` (stringify) overloads. `coerce($expr)` accepts both Type objects and strings.
 - `Typist::Error` — Value class + Collector (instance-based). `Typist::Error::Global` provides the global singleton buffer.
 - `Typist::Static::Checker` — CHECK-phase validation (alias cycles, undeclared vars, bound/kind/effect well-formedness).
-- `Typist::Prelude` — Builtin function type annotations for Perl core functions and Typist builtins (say, print, die, length, typedef, perform, unwrap, etc. — 84 functions). Installed into CORE:: namespace via `install($registry)`. Auto-loaded by Analyzer and Workspace. User `declare` overrides entries.
+- `Typist::Prelude` — Builtin function type annotations for Perl core functions and Typist builtins (say, print, die, length, typedef, unwrap, etc. — 83 functions). Installed into CORE:: namespace via `install($registry)`. Auto-loaded by Analyzer and Workspace. User `declare` overrides entries.
 - `Typist::Static::Unify` — Type-based unification. Pairs formal (annotated) types against actual (inferred) types, extracting type-variable bindings. Used by TypeChecker for generic function instantiation.
 - `Typist::Static::Infer` — Static type inference from PPI elements (literals, variable symbols, function calls, operator expressions). Infers arithmetic/comparison/logical/concatenation operators, subscript access (`$a->[0]`, `$h->{k}`), ternary expressions, `handle { BLOCK }` return types, and `match` arm union/LUB types. Accepts optional `$env` for gradual typing.
 - `Typist::Static::TypeChecker` — Static type mismatch detection (variable initializers, assignments, call site args, return types). Arity checking (ArityMismatch), variable reassignment checking (annotated-only), method type checking (`$self->method()`), generic instantiation via Unify, and type narrowing (`defined($x)` guard narrows `Maybe[T]` to `T`). Builds type environment for function return type propagation and variable symbol resolution.
 - `Typist::Static::EffectChecker` — PPI-based static effect checker (call graph + label inclusion, cross-package support, unannotated function detection, builtin function effect tracking via CORE:: registry). Keywords `handle`, `match`, `enum` are skipped as non-function calls.
-- `Typist::Handler` — Runtime effect handler stack (LIFO). `perform` dispatches to the nearest handler; `handle { BODY } Effect => { handlers }` provides scoped effect processing with automatic cleanup.
+- `Typist::Handler` — Runtime effect handler stack (LIFO). Effect operations are dispatched as qualified calls (`Effect::op(@args)`) to the nearest handler; `handle { BODY } Effect => { handlers }` provides scoped effect processing with automatic cleanup.
 - `Typist::Type::Data` — Algebraic data type (tagged union). Supports parameterized types via `datatype 'Option[T]' => Some => '(T)', None => '()'` with covariant type arguments, type inference in constructors, and `instantiate` for concrete types. Values are blessed with `_tag`, `_values`, and optional `_type_args` fields. GADT support via `return_types` field: `is_gadt`, `constructor_return_type($tag)`, `parse_constructor_spec($spec, %opts)`.
 - `Typist::Type::Fold` — Type tree traversal utilities. `map_type($type, $cb)` rebuilds bottom-up; `walk($type, $cb)` visits top-down. Handles all type nodes including Data (variants, type_args, return_types).
 - `Typist::Subtype` — Structural subtype relation + `common_super` (LUB for atom types).
@@ -78,9 +78,11 @@ Runtime (opt-in)| Generic instantiation      | die           | -runtime flag
 - `enum Color => qw(Red Green Blue)` defines nullary-only ADTs (pure enumerations). Sugar for `datatype` with all zero-argument variants.
 - `match $value, Tag => sub (...) { ... }, _ => sub { ... }` dispatches on `_tag`, splats `_values` into handlers. `_` is the optional fallback arm. Emits exhaustiveness warnings for registered ADTs when arms are incomplete and no fallback is given.
 - Variadic function types: `(Int, ...Str) -> Void` — rest parameter with `...Type` syntax. Arity checking uses minimum args for variadic functions.
-- `perform Effect => op => @args` dispatches an effect operation to the nearest handler on the runtime stack.
+- `effect Console => +{ writeLine => '(Str) -> Void' }` defines effects with named operations. Operations are auto-installed as qualified subs (`Console::writeLine(@args)`), dispatching to the nearest handler on the runtime stack.
+- `Effect::op(@args)` is the direct call syntax for effect operations (e.g., `Console::writeLine("hello")`). Replaces the old `perform Effect => op => @args` syntax.
 - `handle { BODY } Effect => { op => sub { ... } }` installs scoped effect handlers, executes BODY, and guarantees cleanup (even on exception).
-- Prelude: builtin functions are registered under the CORE:: namespace by `Typist::Prelude->install`. Includes Typist builtins (typedef, newtype, perform, unwrap, etc.) in addition to Perl core functions. User `declare` statements override prelude entries.
+- Typeclass and effect definitions use string syntax for method/operation signatures: `show => '(T) -> Str'`, consistent with `:Type()` annotations. The Extractor only captures `PPI::Token::Quote`, so DSL `Func(...)` does not work for static analysis.
+- Prelude: builtin functions are registered under the CORE:: namespace by `Typist::Prelude->install`. Includes Typist builtins (typedef, newtype, unwrap, etc.) in addition to Perl core functions. User `declare` statements override prelude entries.
 - `handle`/`match` return type inference: `handle { BLOCK }` infers from the block's last expression; `match` collects arm return types and computes union/LUB. These bypass the `Word + List` call pattern used for normal function inference.
 - Type Narrowing: `defined($x)` in an if-condition narrows `Maybe[T]` (i.e., `T | Undef`) to `T` within the then-block.
 - Variable reassignment: `:Type` annotated variables are checked on reassignment (`$x = expr`); unannotated variables are not checked.
@@ -135,7 +137,7 @@ Tests are numbered and ordered by dependency:
 - `t/19_fold.t` — Type::Fold (map_type, walk)
 - `t/20_check_diagnostics.t` — CHECK-phase static analysis (subprocess-based, TypeMismatch/EffectMismatch detection, -runtime flag, TYPIST_RUNTIME env)
 - `t/21_datatype.t` — Algebraic data types (constructors, contains, subtype)
-- `t/22_effects_handler.t` — Effect handlers (perform, handle, handler stack)
+- `t/22_effects_handler.t` — Effect handlers (Effect::op, handle, handler stack)
 - `t/23_gadt.t` — GADT (Generalized Algebraic Data Types: construction, forced type_args, is_gadt, match, return_types)
 - `t/static/00_extractor.t` — PPI-based type extraction
 - `t/static/01_analyzer.t` — Static analysis pipeline
@@ -146,7 +148,7 @@ Tests are numbered and ordered by dependency:
 - `t/static/06_crossfile_analyzer.t` — Cross-file type resolution via workspace registry
 - `t/static/07_method_typecheck.t` — Method type checking (is_method, -> guard, $self->method())
 - `t/static/08_prelude.t` — Builtin prelude (type checking, effect detection, user override)
-- `t/static/09_builtins_infer.t` — Typist builtin inference (handle/match return types, perform/unwrap CORE registration)
+- `t/static/09_builtins_infer.t` — Typist builtin inference (handle/match return types, unwrap CORE registration)
 - `t/lsp/00_transport.t` — JSON-RPC transport
 - `t/lsp/01_server.t` — LSP server lifecycle
 - `t/lsp/02_diagnostics.t` — Diagnostics publishing
