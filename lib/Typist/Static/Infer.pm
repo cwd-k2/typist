@@ -15,7 +15,7 @@ use Typist::Subtype;
 # Infer a Typist type from a PPI element (static analysis counterpart of
 # Typist::Inference::infer_value).  Returns undef for expressions we cannot
 # reason about statically — the caller should skip the check in that case.
-sub infer_expr ($class, $element, $env = undef) {
+sub infer_expr ($class, $element, $env = undef, $expected = undef) {
     return undef unless defined $element;
 
     # ── Numeric literals ────────────────────────
@@ -39,12 +39,12 @@ sub infer_expr ($class, $element, $env = undef) {
 
     # ── Array constructor [...] ─────────────────
     if ($element->isa('PPI::Structure::Constructor') && $element->start->content eq '[') {
-        return _infer_array($element, $env);
+        return _infer_array($element, $env, $expected);
     }
 
     # ── Hash constructor {...} with => ──────────
     if ($element->isa('PPI::Structure::Constructor') && $element->start->content eq '{') {
-        return _infer_hash($element, $env);
+        return _infer_hash($element, $env, $expected);
     }
 
     # ── Variable symbol → lookup in type env ────
@@ -60,13 +60,13 @@ sub infer_expr ($class, $element, $env = undef) {
     if ($element->isa('PPI::Token::Word') && $element->content eq 'handle') {
         my $next = $element->snext_sibling;
         if ($next && $next->isa('PPI::Structure::Block')) {
-            return _infer_block_return($next, $env);
+            return _infer_block_return($next, $env, $expected);
         }
     }
 
     # ── match expression: Word("match") + value ────
     if ($element->isa('PPI::Token::Word') && $element->content eq 'match') {
-        return _infer_match_return($element, $env);
+        return _infer_match_return($element, $env, $expected);
     }
 
     # ── Function call: Word followed by List ────
@@ -88,7 +88,7 @@ sub infer_expr ($class, $element, $env = undef) {
         && !$element->isa('PPI::Statement::Include')
         && !$element->isa('PPI::Statement::Scheduled'))
     {
-        return _infer_operator_expr($element, $env);
+        return _infer_operator_expr($element, $env, $expected);
     }
 
     undef;
@@ -201,7 +201,7 @@ sub _collect_bindings ($formal, $actual, $bindings) {
 # Infers the return type of a PPI::Structure::Block by examining
 # its last statement.  Used by handle inference.
 
-sub _infer_block_return ($block, $env) {
+sub _infer_block_return ($block, $env, $expected = undef) {
     my @stmts = grep { $_->isa('PPI::Statement') } $block->schildren;
     return Typist::Type::Atom->new('Void') unless @stmts;
 
@@ -213,11 +213,11 @@ sub _infer_block_return ($block, $env) {
         my $val = $first->snext_sibling;
         return Typist::Type::Atom->new('Void')
             unless $val && !($val->isa('PPI::Token::Structure') && $val->content eq ';');
-        return __PACKAGE__->infer_expr($val, $env);
+        return __PACKAGE__->infer_expr($val, $env, $expected);
     }
 
     # Implicit return: infer from the last statement's first child
-    __PACKAGE__->infer_expr($first, $env) // __PACKAGE__->infer_expr($last, $env);
+    __PACKAGE__->infer_expr($first, $env, $expected) // __PACKAGE__->infer_expr($last, $env, $expected);
 }
 
 # ── Match Return Type Inference ──────────────────
@@ -226,7 +226,7 @@ sub _infer_block_return ($block, $env) {
 # (sub { ... }), infers each handler's return type, then
 # computes the union/LUB.
 
-sub _infer_match_return ($match_word, $env) {
+sub _infer_match_return ($match_word, $env, $expected = undef) {
     my @arm_types;
     my $sib = $match_word->snext_sibling;
 
@@ -241,7 +241,7 @@ sub _infer_match_return ($match_word, $env) {
                 $after = $after->snext_sibling;
             }
             if ($after && $after->isa('PPI::Structure::Block')) {
-                my $arm_type = _infer_block_return($after, $env);
+                my $arm_type = _infer_block_return($after, $env, $expected);
                 push @arm_types, $arm_type if defined $arm_type;
             }
         }
@@ -294,16 +294,20 @@ sub _infer_number ($token) {
 
 # ── Array Inference ──────────────────────────────
 
-sub _infer_array ($constructor, $env = undef) {
+sub _infer_array ($constructor, $env = undef, $expected = undef) {
     # PPI uses PPI::Statement (not ::Expression) inside array constructors
     my $expr = $constructor->find_first('PPI::Statement');
     return Typist::Type::Param->new('ArrayRef', Typist::Type::Atom->new('Any'))
         unless $expr;
 
+    # Extract element expected type from ArrayRef[T]
+    my $elem_expected = ($expected && $expected->is_param && $expected->base eq 'ArrayRef')
+        ? ($expected->params)[0] : undef;
+
     my @elem_types;
     for my $child ($expr->schildren) {
         next if $child->isa('PPI::Token::Operator');   # skip commas, +
-        my $t = __PACKAGE__->infer_expr($child, $env);
+        my $t = __PACKAGE__->infer_expr($child, $env, $elem_expected);
         push @elem_types, $t if defined $t;
     }
 
@@ -320,7 +324,7 @@ sub _infer_array ($constructor, $env = undef) {
 
 # ── Hash Inference ───────────────────────────────
 
-sub _infer_hash ($constructor, $env = undef) {
+sub _infer_hash ($constructor, $env = undef, $expected = undef) {
     my $expr = $constructor->find_first('PPI::Statement::Expression')
             // $constructor->find_first('PPI::Statement');
     return undef unless $expr;
@@ -330,6 +334,14 @@ sub _infer_hash ($constructor, $env = undef) {
         $_[1]->isa('PPI::Token::Operator') && $_[1]->content eq '=>'
     });
     return undef unless $has_fat_comma;
+
+    # Build field-level expected types from Struct
+    my %field_expected;
+    if ($expected && $expected->is_struct) {
+        %field_expected = %{$expected->required_ref};
+        my $opt = $expected->optional_ref // +{};
+        %field_expected = (%field_expected, %$opt);
+    }
 
     # Split children into comma-separated groups to handle multi-token values
     # (e.g., ProductId("WIDGET") = Word + List = 2 tokens)
@@ -368,7 +380,8 @@ sub _infer_hash ($constructor, $env = undef) {
         my $val_token = $group->[$arrow_idx + 1];
         next unless $val_token;
 
-        my $t = __PACKAGE__->infer_expr($val_token, $env);
+        my $val_expected = defined $key_name ? $field_expected{$key_name} : undef;
+        my $t = __PACKAGE__->infer_expr($val_token, $env, $val_expected);
         if (defined $t) {
             push @val_types, $t;
             $fields{$key_name} = $t if defined $key_name;
@@ -405,7 +418,7 @@ sub _extract_hash_key_name ($token) {
 
 # ── Operator Expression Inference ───────────────
 
-sub _infer_operator_expr ($stmt, $env) {
+sub _infer_operator_expr ($stmt, $env, $expected = undef) {
     my @children = grep { !$_->isa('PPI::Token::Structure') } $stmt->schildren;
 
     return undef unless @children >= 2;
@@ -453,15 +466,15 @@ sub _infer_operator_expr ($stmt, $env) {
         && $children[1]->isa('PPI::Token::Operator') && $children[1]->content eq '?'
         && $children[3]->isa('PPI::Token::Operator') && $children[3]->content eq ':')
     {
-        return _infer_ternary($children[2], $children[4], $env);
+        return _infer_ternary($children[2], $children[4], $env, $expected);
     }
 
     undef;
 }
 
-sub _infer_ternary ($then_expr, $else_expr, $env) {
-    my $then_type = __PACKAGE__->infer_expr($then_expr, $env);
-    my $else_type = __PACKAGE__->infer_expr($else_expr, $env);
+sub _infer_ternary ($then_expr, $else_expr, $env, $expected = undef) {
+    my $then_type = __PACKAGE__->infer_expr($then_expr, $env, $expected);
+    my $else_type = __PACKAGE__->infer_expr($else_expr, $env, $expected);
 
     return undef unless defined $then_type && defined $else_type;
 

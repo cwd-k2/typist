@@ -544,4 +544,70 @@ subtest 'chained operators → undef' => sub {
     is $t, undef, '$a + $b * $c → undef (not 3-element pattern)';
 };
 
+# ── Bidirectional (expected-guided) inference ────
+
+subtest 'expected-guided array inference' => sub {
+    my $source = '[1, 2, 3]';
+    my $doc = PPI::Document->new(\$source);
+    my $cons = $doc->find_first('PPI::Structure::Constructor');
+
+    my $expected = Typist::Type::Param->new('ArrayRef', Typist::Type::Atom->new('Int'));
+    my $result = Typist::Static::Infer->infer_expr($cons, undef, $expected);
+    ok $result, 'got result with expected';
+    is $result->to_string, 'ArrayRef[Int]', 'expected guided array inference';
+};
+
+subtest 'expected does not override actual literal' => sub {
+    my $source = '42';
+    my $doc = PPI::Document->new(\$source);
+    my $num = $doc->find_first('PPI::Token::Number');
+
+    my $expected = Typist::Type::Atom->new('Str');
+    my $result = Typist::Static::Infer->infer_expr($num, undef, $expected);
+    ok $result, 'got result';
+    like $result->to_string, qr/42|Int/, 'expected does not override literal';
+};
+
+subtest 'expected propagates to ternary arms' => sub {
+    my $t = infer_stmt('$x ? "hello" : "world";');
+    ok $t, 'inferred without expected';
+    is $t->to_string, 'Str', 'ternary same type (baseline)';
+
+    # With expected — result should still be Str (same type both arms)
+    my $doc = PPI::Document->new(\'$x ? "hello" : "world";');
+    my $stmt = $doc->find_first('PPI::Statement');
+    my $expected = Typist::Type::Atom->new('Str');
+    my $result = Typist::Static::Infer->infer_expr($stmt, undef, $expected);
+    ok $result, 'got result with expected';
+    is $result->to_string, 'Str', 'ternary with expected hint';
+};
+
+subtest 'expected=undef backward compatible' => sub {
+    # Ensure existing 2-arg calls still work
+    my $source = '42';
+    my $doc = PPI::Document->new(\$source);
+    my $num = $doc->find_first('PPI::Token::Number');
+    my $result = Typist::Static::Infer->infer_expr($num);
+    ok $result, 'works without expected';
+    ok $result->is_literal, 'still infers literal';
+};
+
+subtest 'expected struct propagates to hash values' => sub {
+    my $doc = PPI::Document->new(\'my $x = +{ name => "Alice", items => [1, 2] };');
+    my $cons = $doc->find_first('PPI::Structure::Constructor');
+    ok $cons, 'found constructor';
+
+    my $expected = Typist::Type::Struct->new(
+        name  => Typist::Type::Atom->new('Str'),
+        items => Typist::Type::Param->new('ArrayRef', Typist::Type::Atom->new('Int')),
+    );
+    my $result = Typist::Static::Infer->infer_expr($cons, undef, $expected);
+    ok $result, 'got result with struct expected';
+    ok $result->is_struct, 'result is struct';
+    my %req = $result->required_fields;
+    ok $req{name}, 'has name field';
+    ok $req{items}, 'has items field';
+    is $req{items}->to_string, 'ArrayRef[Int]', 'items field inferred as ArrayRef[Int]';
+};
+
 done_testing;
