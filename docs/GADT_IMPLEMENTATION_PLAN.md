@@ -1,5 +1,8 @@
 # GADT (Generalized Algebraic Data Types) 実装計画書
 
+> **Status: Implemented** — All phases completed and merged.
+> This document is retained as a historical reference.
+
 ## 概要
 
 Typist に GADT サポートを追加する。GADT は通常の ADT を一般化したもので、各コンストラクタが異なる型引数で具体化された戻り型を持つことができる。これにより、パターンマッチ時に型変数が精緻化（refinement）され、型安全なインタープリタや式木、型付き DSL の構築が可能になる。

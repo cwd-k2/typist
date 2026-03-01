@@ -486,3 +486,120 @@ sub _slurp ($path) {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Typist - A static-first type system for Perl 5
+
+=head1 SYNOPSIS
+
+    use Typist;
+    use Typist::DSL;
+
+    # Type aliases
+    BEGIN {
+        typedef Name => Str;
+    }
+
+    # Typed variables
+    my $count :Type(Int) = 0;
+
+    # Typed subroutines
+    sub add :Type((Int, Int) -> Int) ($a, $b) {
+        $a + $b;
+    }
+
+    # Generics with bounded quantification
+    sub max_of :Type(<T: Num>(T, T) -> T) ($a, $b) {
+        $a > $b ? $a : $b;
+    }
+
+=head1 DESCRIPTION
+
+Typist brings static type annotations to Perl through the standard attribute
+syntax C<:Type(...)>. Errors are caught at compile time (CHECK phase) and
+via the LSP server, with zero runtime overhead by default.
+
+    use Typist;            # Static-only (default)
+    use Typist -runtime;   # Enable runtime enforcement
+
+=head1 EXPORTS
+
+The following are exported into the caller's namespace:
+
+=over 4
+
+=item C<typedef>
+
+Define a type alias: C<typedef Name =E<gt> 'Str'>
+
+=item C<newtype>
+
+Define a nominal type: C<newtype UserId =E<gt> 'Int'>
+
+=item C<unwrap>
+
+Extract the inner value from a newtype: C<unwrap($uid)>
+
+=item C<typeclass>
+
+Define a type class: C<typeclass Show =E<gt> T, +{ show =E<gt> '(T) -E<gt> Str' }>
+
+=item C<instance>
+
+Provide a type class instance: C<instance Show =E<gt> Int, +{ show =E<gt> sub ($x) { "$x" } }>
+
+=item C<effect>
+
+Define an algebraic effect: C<effect Console =E<gt> +{ log =E<gt> '(Str) -E<gt> Void' }>
+
+=item C<declare>
+
+Annotate an external function: C<declare say =E<gt> '(Str) -E<gt> Void !Eff(Console)'>
+
+=item C<datatype>
+
+Define an algebraic data type: C<datatype Shape =E<gt> Circle =E<gt> '(Int)'>
+
+=item C<enum>
+
+Define an enumeration: C<enum Color =E<gt> qw(Red Green Blue)>
+
+=item C<handle>
+
+Install scoped effect handlers: C<handle { BODY } Effect =E<gt> +{ op =E<gt> sub { ... } }>
+
+=item C<match>
+
+Pattern match on an ADT: C<match $value, Tag =E<gt> sub { ... }>
+
+=back
+
+=head1 ENVIRONMENT
+
+=over 4
+
+=item C<TYPIST_RUNTIME>
+
+Set to C<1> to enable runtime type enforcement.
+
+=item C<TYPIST_CHECK_QUIET>
+
+Set to C<1> to suppress CHECK-phase diagnostics (use when the LSP server
+provides diagnostics).
+
+=back
+
+=head1 SEE ALSO
+
+L<Typist::DSL> for type constructors and DSL syntax.
+
+See F<docs/type-system.md> and F<docs/architecture.md> for detailed reference.
+
+=head1 LICENSE
+
+MIT License.
+
+=cut

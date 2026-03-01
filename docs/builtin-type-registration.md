@@ -1,5 +1,8 @@
 # 実装指示書: Typist 組み込み関数の型登録 + handle/match 戻り値推論
 
+> **Status: Implemented** — All steps completed and merged.
+> This document is retained as a historical reference.
+
 ## 背景と目的
 
 Typist は `use Typist;` 時に `handle`, `match`, `typedef` 等の関数を caller の名前空間に export する。

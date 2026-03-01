@@ -76,9 +76,13 @@ sub with_log :Type(<r: Row>(Str) -> Str !Eff(Log | r)) ($msg) {
 | Type aliases | `typedef` | `typedef Price => Int` |
 | Nominal types | `newtype` / `unwrap` | `newtype UserId => Int` |
 | Algebraic data types | `datatype` | Tagged unions with auto-generated constructors |
+| Enumerations | `enum` | `enum Color => qw(Red Green Blue)` |
+| GADT | `datatype` with `->` | `IntLit => '(Int) -> Expr[Int]'` |
 | Recursive types | Self-referential `typedef` | `typedef Json => Str \| Int \| ArrayRef[Json]` |
 | Generics | `<T>`, `<T, U>` | `<T>(ArrayRef[T]) -> T` |
 | Bounded quantification | `<T: Bound>` | `<T: Num>(T, T) -> T` |
+| Rank-2 polymorphism | `forall` | `forall A. (A) -> A` |
+| Variadic functions | `...Type` | `(Int, ...Str) -> Void` |
 | Type classes | `typeclass` / `instance` | Ad-hoc polymorphism with dispatch |
 | Multi-parameter type classes | `typeclass Name => 'T, U'` | `Convertible T, U` with multiple type variables |
 | Higher-kinded types | `F: * -> *` | Type constructor abstraction with `F[T]` application |
@@ -101,7 +105,7 @@ sub with_log :Type(<r: Row>(Str) -> Str !Eff(Log | r)) ($msg) {
 | Method type checking | `$self->method()` argument types and arity checked within the same package |
 | Generic static type checking | Type variables instantiated from call-site arguments for concrete type verification |
 | Type narrowing | `Maybe[T]` narrowed to `T` inside `if (defined $x)` blocks |
-| Builtin prelude | 20 Perl builtins (say, print, length, abs, ...) with pre-installed type annotations |
+| Builtin prelude | 83 builtins (74 Perl core + 9 Typist) with pre-installed type annotations |
 
 ### Architecture
 
@@ -111,21 +115,51 @@ sub with_log :Type(<r: Row>(Str) -> Str !Eff(Log | r)) ($msg) {
 | Runtime (`-runtime`) | Per-call type checks via `tie` + sub wrapping | `die` on type violation |
 | Newtype boundary | Always active | Constructor/unwrap validation regardless of mode |
 
-## Requirements
+## Installation
+
+### Requirements
 
 - Perl 5.40+
-- [Carton](https://metacpan.org/pod/Carton)
+- [PPI](https://metacpan.org/pod/PPI) (automatically resolved by any of the methods below)
 
-## Setup
+### From GitHub (cpanm)
+
+```sh
+cpanm https://github.com/cwd-k2/typist.git
+```
+
+### From GitHub (Carton)
+
+Add to your `cpanfile`:
+
+```perl
+requires 'Typist', git => 'https://github.com/cwd-k2/typist.git';
+```
+
+Then:
 
 ```sh
 carton install
 ```
 
-For optional Perl::Critic integration:
+### From source
 
 ```sh
-carton install --with-recommends
+git clone https://github.com/cwd-k2/typist.git
+cd typist
+perl Makefile.PL
+make
+make test
+make install
+```
+
+### Development setup
+
+For development with Carton (includes optional dependencies):
+
+```sh
+carton install
+carton install --with-recommends  # For Perl::Critic integration
 ```
 
 ## Annotation Syntax
@@ -157,6 +191,9 @@ sub max_of :Type(<T: Num>(T, T) -> T) ($a, $b) { $a > $b ? $a : $b }
 
 # With generic row variable
 sub with_log :Type(<r: Row>(Str) -> Str !Eff(Log | r)) ($msg) { $msg }
+
+# Variadic arguments
+sub log_all :Type((Str, ...Any) -> Void !Eff(Console)) ($fmt, @args) { }
 
 # No parameters, no return value
 sub noop :Type(() -> Void) () { }
@@ -202,13 +239,35 @@ my $p = Point();
 
 Constructors perform runtime validation: arity is checked and each argument is verified against the declared type. Values are blessed into `Typist::Data::$name` with `_tag` and `_values` fields.
 
+### Enumerations
+
+```perl
+BEGIN {
+    enum Color => qw(Red Green Blue);
+}
+# Equivalent to: datatype Color => Red => '', Green => '', Blue => '';
+```
+
+### GADT (Generalized Algebraic Data Types)
+
+```perl
+BEGIN {
+    datatype 'Expr[A]' =>
+        IntLit  => '(Int) -> Expr[Int]',
+        BoolLit => '(Bool) -> Expr[Bool]',
+        Add     => '(Expr[Int], Expr[Int]) -> Expr[Int]';
+}
+```
+
+Constructors with `->` specify per-constructor return types, enabling type-safe interpreters and expression trees.
+
 ### Effects
 
 ```perl
 BEGIN {
     effect Console => +{
-        readLine  => 'CodeRef[-> Str]',
-        writeLine => 'CodeRef[Str -> Void]',
+        readLine  => '() -> Str',
+        writeLine => '(Str) -> Void',
     };
 }
 
@@ -406,7 +465,8 @@ Runtime mode adds `tie` to typed scalars and wraps typed subs with validation cl
 The standalone LSP server provides hover, completion, diagnostics, document symbols, go-to-definition, signature help, and inlay hints:
 
 ```sh
-carton exec -- perl bin/typist-lsp
+typist-lsp                            # After make install
+carton exec -- perl bin/typist-lsp    # Development (carton)
 ```
 
 #### Neovim (nvim-lspconfig)
@@ -416,7 +476,7 @@ local configs = require('lspconfig.configs')
 
 configs.typist = {
   default_config = {
-    cmd = { 'carton', 'exec', '--', 'perl', 'bin/typist-lsp' },
+    cmd = { 'typist-lsp' },
     filetypes = { 'perl' },
     root_dir = function(fname)
       return vim.fs.dirname(
@@ -435,8 +495,7 @@ Use the `vscode-languageclient` extension:
 
 ```json
 {
-  "typist-lsp.command": "carton",
-  "typist-lsp.args": ["exec", "--", "perl", "bin/typist-lsp"]
+  "typist-lsp.command": "typist-lsp"
 }
 ```
 
@@ -461,7 +520,7 @@ severity = 2
 ### Logging
 
 ```sh
-TYPIST_LSP_LOG=debug carton exec -- perl bin/typist-lsp
+TYPIST_LSP_LOG=debug typist-lsp
 ```
 
 | Level | Output |
@@ -476,7 +535,7 @@ TYPIST_LSP_LOG=debug carton exec -- perl bin/typist-lsp
 ### Message Tracing
 
 ```sh
-TYPIST_LSP_TRACE=/tmp/trace.jsonl carton exec -- perl bin/typist-lsp
+TYPIST_LSP_TRACE=/tmp/trace.jsonl typist-lsp
 ```
 
 Each line is a JSON object with direction, timestamp, and message:
@@ -489,9 +548,9 @@ Each line is a JSON object with direction, timestamp, and message:
 ### Trace Replay
 
 ```sh
-carton exec -- perl script/lsp-replay trace.jsonl
-carton exec -- perl script/lsp-replay --compare trace.jsonl   # Golden-file regression
-carton exec -- perl script/lsp-replay --verbose trace.jsonl   # Show each message
+perl script/lsp-replay trace.jsonl
+perl script/lsp-replay --compare trace.jsonl   # Golden-file regression
+perl script/lsp-replay --verbose trace.jsonl   # Show each message
 ```
 
 ### Editor Debug Configuration
@@ -499,7 +558,7 @@ carton exec -- perl script/lsp-replay --verbose trace.jsonl   # Show each messag
 **Neovim** — redirect stderr to a log file:
 
 ```lua
-cmd = { 'sh', '-c', 'TYPIST_LSP_LOG=debug carton exec -- perl bin/typist-lsp 2>/tmp/typist-lsp.log' },
+cmd = { 'sh', '-c', 'TYPIST_LSP_LOG=debug typist-lsp 2>/tmp/typist-lsp.log' },
 ```
 
 **VS Code** — add environment variables to server settings:
@@ -507,7 +566,7 @@ cmd = { 'sh', '-c', 'TYPIST_LSP_LOG=debug carton exec -- perl bin/typist-lsp 2>/
 ```json
 {
   "typist-lsp.command": "sh",
-  "typist-lsp.args": ["-c", "TYPIST_LSP_LOG=debug TYPIST_LSP_TRACE=/tmp/trace.jsonl carton exec -- perl bin/typist-lsp 2>/tmp/typist-lsp.log"]
+  "typist-lsp.args": ["-c", "TYPIST_LSP_LOG=debug TYPIST_LSP_TRACE=/tmp/trace.jsonl typist-lsp 2>/tmp/typist-lsp.log"]
 }
 ```
 
@@ -517,35 +576,34 @@ See `example/` for runnable demonstrations:
 
 | File | Topics |
 |------|--------|
-| `basics.pl` | Type aliases, typed variables/functions, runtime error handling |
-| `generics.pl` | Generic functions, parameterized types, union types |
-| `effects.pl` | Effect definitions, row polymorphism, phantom effect tracking |
-| `gradual.pl` | Gradual typing: full, partial, and unannotated functions |
-| `haskell.pl` | Newtypes, literal types, recursive types, bounded quantification, type classes, HKT |
-| `errors_basic.pl` | Runtime type violations for all basic types |
-| `errors_advanced.pl` | Generics, newtypes, bounded quantification violations |
-| `effect_checker.pl` | Static effect analysis demonstrations |
-| `lsp_demo.pm` | LSP hover, completion, diagnostic targets |
-| `lsp_effects.pm` | LSP effect checking demonstrations |
-| `realworld/` | Multi-file shop system (newtypes, effects, cross-module checking) |
+| `01_foundations.pl` | Type aliases, typed variables/functions, runtime error handling |
+| `02_composite_types.pl` | Struct, Union, Maybe, parameterized types |
+| `03_generics.pl` | Generic functions, bounded quantification, union types |
+| `04_nominal_types.pl` | Newtypes, literal types, recursive types |
+| `05_algebraic_types.pl` | Datatype/ADT, pattern matching, enum |
+| `06_typeclasses.pl` | Type classes, HKT, Functor |
+| `07_effects.pl` | Effect system, perform/handle |
+| `08_gradual_typing.pl` | Gradual typing, flow typing |
+| `09_dsl.pl` | DSL operators, constructors |
+| `lsp/demo.pm` | LSP hover, completion, diagnostic targets |
+| `lsp/effects.pm` | LSP effect checking demonstrations |
 
 ```sh
-carton exec -- perl example/basics.pl
-carton exec -- perl example/generics.pl
-carton exec -- perl example/effects.pl
-carton exec -- perl example/haskell.pl
+carton exec -- perl example/01_foundations.pl
+carton exec -- perl example/03_generics.pl
+carton exec -- perl example/07_effects.pl
 ```
 
 ## Testing
 
 ```sh
-# All tests (46 files)
+# All tests (49 files, 720 tests)
 carton exec -- prove -l t/ t/static/ t/lsp/ t/critic/
 
 # By category
-carton exec -- prove -l t/              # Core type system (23 files)
-carton exec -- prove -l t/static/       # Static analysis (9 files)
-carton exec -- prove -l t/lsp/          # LSP server (13 files)
+carton exec -- prove -l t/              # Core type system (25 files)
+carton exec -- prove -l t/static/       # Static analysis (11 files)
+carton exec -- prove -l t/lsp/          # LSP server (12 files)
 carton exec -- prove -l t/critic/       # Perl::Critic policy (1 file)
 
 # Integration tests
@@ -572,7 +630,8 @@ lib/
       Alias.pm               typedef references — lazy resolution
       Literal.pm             42, "hello" — singleton types
       Newtype.pm             Nominal wrappers — name-based identity
-      Data.pm                Tagged unions (datatype) — variant constructors
+      Data.pm                Tagged unions (datatype/GADT) — variant constructors
+      Quantified.pm          forall A B. body — rank-2 polymorphism
       Row.pm                 Effect rows — sorted labels + tail var
       Eff.pm                 Eff(Row) wrapper
       Fold.pm                map_type (bottom-up), walk (top-down)
@@ -588,7 +647,7 @@ lib/
     TypeClass.pm             Def + Inst + dispatch (single + multi-parameter)
     Effect.pm                Effect definitions with typed operations
     Handler.pm               Runtime effect handler stack (Effect::op/handle)
-    Prelude.pm               Builtin function type annotations (20 CORE:: entries)
+    Prelude.pm               Builtin function type annotations (83 entries)
     Error.pm                 Error value + Collector (instance-based)
     Error/Global.pm          Singleton error buffer
     Tie/Scalar.pm            Runtime scalar type enforcement
@@ -615,9 +674,10 @@ script/
   lsp-replay                 JSONL trace replay tool
   lsp-verify-workspace       Workspace integration verifier
 example/                     Runnable demonstrations
-t/                           Test suite (46 files, 597 tests)
+t/                           Test suite (49 files, 720 tests)
+docs/                        Architecture and type system reference
 ```
 
 ## License
 
-This is free software; you can redistribute it and/or modify it under the same terms as the Perl 5 programming language system itself.
+MIT License. See [LICENSE](LICENSE) for details.

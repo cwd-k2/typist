@@ -4,3 +4,54 @@ use FindBin;
 use lib "$FindBin::Bin/../lib";
 use Typist::LSP;
 Typist::LSP->run;
+
+__END__
+
+=head1 NAME
+
+typist-lsp - Language Server Protocol server for Typist
+
+=head1 SYNOPSIS
+
+    typist-lsp
+
+    # With logging
+    TYPIST_LSP_LOG=debug typist-lsp
+
+    # With message tracing
+    TYPIST_LSP_TRACE=/tmp/trace.jsonl typist-lsp
+
+=head1 DESCRIPTION
+
+A standalone LSP server that provides type-aware editor features for Perl
+files using the Typist type system. Communicates over stdin/stdout using
+the JSON-RPC protocol with Content-Length framing.
+
+Supported capabilities: hover, completion, diagnostics, document symbols,
+go-to-definition, signature help, and inlay hints.
+
+=head1 ENVIRONMENT
+
+=over 4
+
+=item C<TYPIST_LSP_LOG>
+
+Log level: C<off>, C<error>, C<warn>, C<info> (default), C<debug>, C<trace>.
+Logs are written to stderr.
+
+=item C<TYPIST_LSP_TRACE>
+
+Path to a JSONL file for recording all LSP messages with timestamps.
+
+=item C<TYPIST_CHECK_QUIET>
+
+Set to C<1> to suppress CHECK-phase diagnostics (recommended when using
+this server, as it provides the same diagnostics).
+
+=back
+
+=head1 SEE ALSO
+
+L<Typist>, L<Typist::LSP::Server>
+
+=cut
