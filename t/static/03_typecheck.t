@@ -1011,7 +1011,7 @@ PERL
     like $errs->[0]{message}, qr/Argument 1.*greet.*Str/, 'type mismatch with union type';
 };
 
-subtest 'narrowing: non-defined condition does not narrow' => sub {
+subtest 'narrowing: truthiness condition narrows Maybe to T' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
 sub greet :Type((Str) -> Str) ($name) {
@@ -1023,7 +1023,7 @@ if ($x) {
 }
 PERL
 
-    is scalar @$errs, 1, 'one error: truthiness check does not narrow';
+    is scalar @$errs, 0, 'no error: truthiness narrows Str | Undef to Str';
 };
 
 subtest 'narrowing: Union(Int, Str, Undef) narrowed to Union(Int, Str)' => sub {
@@ -1491,6 +1491,65 @@ take_struct(+{ a => 42 });
 PERL
 
     is scalar @$errs, 0, 'hash arg matches expected struct param';
+};
+
+# ── Narrowing: truthiness ──────────────────────
+
+subtest 'narrowing: truthiness removes Undef' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub foo :Type((Int | Undef) -> Int) ($x) {
+    if ($x) {
+        return $x;
+    }
+    return 0;
+}
+PERL
+    is scalar @$errs, 0, 'truthiness narrows Int|Undef to Int';
+};
+
+# ── Narrowing: isa ────────────────────────────
+
+subtest 'narrowing: isa narrows to specific type' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub foo :Type((Int | Str) -> Int) ($x) {
+    if ($x isa Int) {
+        return $x;
+    }
+    return 0;
+}
+PERL
+    is scalar @$errs, 0, 'isa narrows to matched type';
+};
+
+# ── Narrowing: early return ───────────────────
+
+subtest 'narrowing: return unless defined narrows scope' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub foo :Type((Int | Undef) -> Int) ($x) {
+    return 0 unless defined $x;
+    $x
+}
+PERL
+    is scalar @$errs, 0, 'return unless defined narrows remaining scope';
+};
+
+# ── Narrowing: else-block inverse ─────────────
+
+subtest 'narrowing: else block has inverse narrowing' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub foo :Type((Int | Undef) -> Undef) ($x) {
+    if (defined $x) {
+        return undef;
+    } else {
+        return $x;
+    }
+}
+PERL
+    is scalar @$errs, 0, 'else block narrows to Undef after defined guard';
 };
 
 done_testing;

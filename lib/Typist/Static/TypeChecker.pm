@@ -352,7 +352,9 @@ sub _check_return_types ($self) {
             # skip 'return;' (bare return)
             next if $val->isa('PPI::Token::Structure') && $val->content eq ';';
 
-            my $inferred = Typist::Static::Infer->infer_expr($val, $env, $declared);
+            # Use node-aware env for narrowing (control flow + early returns)
+            my $ret_env = $self->_env_for_node($ret);
+            my $inferred = Typist::Static::Infer->infer_expr($val, $ret_env, $declared);
             next unless defined $inferred;
             next if $inferred->is_atom && $inferred->name eq 'Any';
 
@@ -376,8 +378,11 @@ sub _check_return_types ($self) {
         my @children = $block->schildren;
         next unless @children;
 
+        # Use node-aware env for implicit return (accounts for early return narrowing)
         my $last_stmt = $children[-1];
-        $self->_check_implicit_return_of_stmt($last_stmt, $env, $declared, $name);
+        my $last_first = $last_stmt->schild(0) // $last_stmt;
+        my $impl_env = $self->_env_for_node($last_first);
+        $self->_check_implicit_return_of_stmt($last_stmt, $impl_env, $declared, $name);
     }
 }
 
@@ -662,12 +667,105 @@ sub _env_for_node ($self, $node) {
     }
     $env //= $self->{env};
 
-    $self->_narrow_env_for_block($env, $node);
+    $env = $self->_narrow_env_for_block($env, $node);
+    $env = $self->_scan_early_returns($env, $node);
+    $env;
+}
+
+# ── Narrowing Rules ──────────────────────────────
+
+# Remove Undef from a Union type, returning the narrowed type or undef if no change.
+sub _remove_undef_from_type ($self, $type) {
+    return undef unless $type && $type->is_union;
+
+    my @non_undef = grep {
+        !($_->is_atom && $_->name eq 'Undef')
+    } $type->members;
+
+    # Nothing removed — no narrowing needed
+    return undef if @non_undef == scalar($type->members);
+
+    @non_undef == 1
+        ? $non_undef[0]
+        : Typist::Type::Union->new(@non_undef);
+}
+
+# Extract a Symbol node from a `defined(...)` or `defined $x` pattern.
+sub _extract_defined_symbol ($self, $cond_children) {
+    return undef unless @$cond_children >= 2;
+    return undef unless $cond_children->[0]->isa('PPI::Token::Word')
+                     && $cond_children->[0]->content eq 'defined';
+
+    my $list = $cond_children->[1];
+
+    if ($list->isa('PPI::Structure::List')) {
+        my @list_children = grep { $_->isa('PPI::Statement::Expression') } $list->schildren;
+        if (@list_children) {
+            my @exprs = $list_children[0]->schildren;
+            return $exprs[0] if @exprs && $exprs[0]->isa('PPI::Token::Symbol');
+        }
+    } elsif ($list->isa('PPI::Token::Symbol')) {
+        return $list;
+    }
+
+    undef;
+}
+
+# Rule: `defined($x)` narrows T | Undef to T.
+# Returns { var_name => narrowed_type } or empty hash.
+sub _narrow_defined ($self, $cond_children, $env) {
+    my $var_symbol = $self->_extract_defined_symbol($cond_children) // return +{};
+    my $var_name = $var_symbol->content;
+    my $var_type = $env->{variables}{$var_name};
+    my $narrowed = $self->_remove_undef_from_type($var_type) // return +{};
+    +{ $var_name => $narrowed };
+}
+
+# Rule: bare variable truthiness `if ($x)` narrows T | Undef to T.
+# Returns { var_name => narrowed_type } or empty hash.
+sub _narrow_truthiness ($self, $cond_children, $env) {
+    # Exactly one child that is a Symbol
+    return +{} unless @$cond_children == 1;
+    return +{} unless $cond_children->[0]->isa('PPI::Token::Symbol');
+
+    my $var_name = $cond_children->[0]->content;
+    my $var_type = $env->{variables}{$var_name};
+    my $narrowed = $self->_remove_undef_from_type($var_type) // return +{};
+    +{ $var_name => $narrowed };
+}
+
+# Rule: `$x isa Type` narrows $x to Type.
+# Returns { var_name => narrowed_type } or empty hash.
+sub _narrow_isa ($self, $cond_children, $env) {
+    return +{} unless @$cond_children >= 3;
+    return +{} unless $cond_children->[0]->isa('PPI::Token::Symbol');
+
+    my $isa_token = $cond_children->[1];
+    return +{} unless ($isa_token->isa('PPI::Token::Operator') || $isa_token->isa('PPI::Token::Word'))
+                    && $isa_token->content eq 'isa';
+
+    my $type_token = $cond_children->[2];
+    return +{} unless $type_token->isa('PPI::Token::Word');
+
+    my $var_name  = $cond_children->[0]->content;
+    my $type_name = $type_token->content;
+    my $resolved  = $self->_resolve_type($type_name) // return +{};
+
+    +{ $var_name => $resolved };
+}
+
+# Compute inverse narrowing for else-blocks.
+# For `defined`: variable is Undef.
+# For truthiness/isa: no useful inverse, return empty.
+sub _inverse_narrowing ($self, $rule, $var_name, $original_type) {
+    if ($rule eq 'defined') {
+        return +{ $var_name => Typist::Type::Atom->new('Undef') };
+    }
+    +{};
 }
 
 # Narrow the env based on control flow guards surrounding $node.
-# Phase B-2a: `defined($var)` in an if-condition removes Undef from
-# the variable's Union type within the then-block.
+# Dispatches through narrowing rules and supports both then- and else-blocks.
 sub _narrow_env_for_block ($self, $env, $node) {
     # Walk up to the nearest enclosing Block
     my $block = $node;
@@ -680,64 +778,168 @@ sub _narrow_env_for_block ($self, $env, $node) {
     my $compound = $block->parent;
     return $env unless $compound && $compound->isa('PPI::Statement::Compound');
 
-    # Only narrow inside the first (then) block of the compound — not else
+    # Determine which block we are in: then (index 0) or else (index 1+)
     my @blocks = grep { $_->isa('PPI::Structure::Block') } $compound->schildren;
-    return $env unless @blocks && $blocks[0] == $block;
+    return $env unless @blocks;
+
+    my $block_index = -1;
+    for my $i (0 .. $#blocks) {
+        if ($blocks[$i] == $block) {
+            $block_index = $i;
+            last;
+        }
+    }
+    return $env if $block_index < 0;
 
     # Extract the condition
     my ($condition) = grep { $_->isa('PPI::Structure::Condition') } $compound->schildren;
     return $env unless $condition;
 
-    # Unwrap: Condition → Expression → children
+    # Unwrap: Condition -> Expression -> children
     my @cond_children = $condition->schildren;
     my $expr = $cond_children[0];
     if ($expr && $expr->isa('PPI::Statement::Expression')) {
         @cond_children = $expr->schildren;
     }
 
-    # Match `defined($x)` or `defined $x`
-    return $env unless @cond_children >= 2;
-    return $env unless $cond_children[0]->isa('PPI::Token::Word')
-                    && $cond_children[0]->content eq 'defined';
+    # Dispatch through narrowing rules (order matters: most specific first)
+    my %narrowing;
+    my $rule;
 
-    my $var_symbol;
-    my $list = $cond_children[1];
-
-    if ($list->isa('PPI::Structure::List')) {
-        # defined($x) — Symbol inside List > Expression
-        my @list_children = grep { $_->isa('PPI::Statement::Expression') } $list->schildren;
-        if (@list_children) {
-            my @exprs = $list_children[0]->schildren;
-            $var_symbol = $exprs[0] if @exprs && $exprs[0]->isa('PPI::Token::Symbol');
-        }
-    } elsif ($list->isa('PPI::Token::Symbol')) {
-        # defined $x — space-separated form
-        $var_symbol = $list;
+    my %try_defined = $self->_narrow_defined(\@cond_children, $env)->%*;
+    if (%try_defined) {
+        %narrowing = %try_defined;
+        $rule = 'defined';
     }
 
-    return $env unless $var_symbol;
+    unless ($rule) {
+        my %try_isa = $self->_narrow_isa(\@cond_children, $env)->%*;
+        if (%try_isa) {
+            %narrowing = %try_isa;
+            $rule = 'isa';
+        }
+    }
 
-    my $var_name = $var_symbol->content;
-    my $var_type = $env->{variables}{$var_name};
+    unless ($rule) {
+        my %try_truth = $self->_narrow_truthiness(\@cond_children, $env)->%*;
+        if (%try_truth) {
+            %narrowing = %try_truth;
+            $rule = 'truthiness';
+        }
+    }
 
-    # Only narrow Union types that contain Undef
-    return $env unless $var_type && $var_type->is_union;
+    return $env unless $rule;
 
-    my @non_undef = grep {
-        !($_->is_atom && $_->name eq 'Undef')
-    } $var_type->members;
+    # Then-block: apply narrowing directly
+    if ($block_index == 0) {
+        my %new_vars = $env->{variables}->%*;
+        $new_vars{$_} = $narrowing{$_} for keys %narrowing;
+        return +{ %$env, variables => \%new_vars };
+    }
 
-    # If nothing was removed, no narrowing needed
-    return $env if @non_undef == scalar($var_type->members);
+    # Else-block: apply inverse narrowing
+    my %inverse;
+    for my $var_name (keys %narrowing) {
+        my $original = $env->{variables}{$var_name};
+        my %inv = $self->_inverse_narrowing($rule, $var_name, $original)->%*;
+        $inverse{$_} = $inv{$_} for keys %inv;
+    }
 
-    my $narrowed = @non_undef == 1
-        ? $non_undef[0]
-        : Typist::Type::Union->new(@non_undef);
+    if (%inverse) {
+        my %new_vars = $env->{variables}->%*;
+        $new_vars{$_} = $inverse{$_} for keys %inverse;
+        return +{ %$env, variables => \%new_vars };
+    }
+
+    $env;
+}
+
+# ── Early Return Narrowing ──────────────────────
+
+# Scan for `return ... unless defined $var` patterns before the current node's
+# containing statement. Each such pattern narrows the env by removing Undef.
+sub _scan_early_returns ($self, $env, $node) {
+    # Find the statement containing this node
+    my $stmt = $node;
+    while ($stmt && !$stmt->isa('PPI::Statement')) {
+        $stmt = $stmt->parent;
+    }
+    return $env unless $stmt;
+
+    # The statement must live inside a Block
+    my $parent_block = $stmt->parent;
+    return $env unless $parent_block && $parent_block->isa('PPI::Structure::Block');
+
+    # Walk preceding sibling statements
+    my %narrowed_vars;
+    my $sib = $stmt->sprevious_sibling;
+    while ($sib) {
+        if ($sib->isa('PPI::Statement')) {
+            my @children = $sib->schildren;
+            # Match: return [expr] unless defined $var
+            if ($self->_is_early_return_unless_defined(\@children)) {
+                my $var_name = $self->_early_return_var(\@children);
+                if ($var_name) {
+                    my $var_type = $env->{variables}{$var_name};
+                    my $narrowed = $self->_remove_undef_from_type($var_type);
+                    $narrowed_vars{$var_name} = $narrowed if $narrowed;
+                }
+            }
+        }
+        $sib = $sib->sprevious_sibling;
+    }
+
+    return $env unless %narrowed_vars;
 
     my %new_vars = $env->{variables}->%*;
-    $new_vars{$var_name} = $narrowed;
-
+    $new_vars{$_} = $narrowed_vars{$_} for keys %narrowed_vars;
     +{ %$env, variables => \%new_vars };
+}
+
+# Check if statement children match: return [exprs] unless defined $var [;]
+sub _is_early_return_unless_defined ($self, $children) {
+    return 0 unless @$children >= 4;
+    return 0 unless $children->[0]->isa('PPI::Token::Word')
+                  && $children->[0]->content eq 'return';
+
+    # Find 'unless' token — it can be at various positions depending on
+    # whether there is a return value expression
+    for my $i (1 .. $#$children - 2) {
+        if ($children->[$i]->isa('PPI::Token::Word')
+            && $children->[$i]->content eq 'unless'
+            && $children->[$i + 1]->isa('PPI::Token::Word')
+            && $children->[$i + 1]->content eq 'defined')
+        {
+            return 1;
+        }
+    }
+    0;
+}
+
+# Extract the variable name from a `return ... unless defined $var` statement.
+sub _early_return_var ($self, $children) {
+    for my $i (1 .. $#$children - 2) {
+        if ($children->[$i]->isa('PPI::Token::Word')
+            && $children->[$i]->content eq 'unless'
+            && $children->[$i + 1]->isa('PPI::Token::Word')
+            && $children->[$i + 1]->content eq 'defined')
+        {
+            # The variable follows `defined` — either directly or inside a list
+            my $next = $children->[$i + 2];
+            if ($next->isa('PPI::Token::Symbol')) {
+                return $next->content;
+            }
+            if ($next->isa('PPI::Structure::List')) {
+                my @lc = grep { $_->isa('PPI::Statement::Expression') } $next->schildren;
+                if (@lc) {
+                    my @exprs = $lc[0]->schildren;
+                    return $exprs[0]->content
+                        if @exprs && $exprs[0]->isa('PPI::Token::Symbol');
+                }
+            }
+        }
+    }
+    undef;
 }
 
 sub _extract_args ($self, $list) {
