@@ -136,6 +136,7 @@ sub _check_call_sites ($self) {
                         $cross_pkg = +{
                             params_expr => [map { $_->to_string } ($sig->{params} // [])->@*],
                             generics    => $sig->{generics},
+                            variadic    => $sig->{variadic},
                         };
                     }
                 }
@@ -149,6 +150,7 @@ sub _check_call_sites ($self) {
                         params_expr => $core_sig->{params_expr}
                             // [map { $_->to_string } ($core_sig->{params} // [])->@*],
                         generics    => $core_sig->{generics},
+                        variadic    => $core_sig->{variadic},
                     };
                 }
             }
@@ -162,6 +164,7 @@ sub _check_call_sites ($self) {
                         params_expr => $pkg_sig->{params_expr}
                             // [map { $_->to_string } ($pkg_sig->{params} // [])->@*],
                         generics    => $pkg_sig->{generics},
+                        variadic    => $pkg_sig->{variadic},
                     };
                 }
             }

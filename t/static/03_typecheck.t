@@ -1297,4 +1297,38 @@ PERL
     ok @errs > 0, 'Expr[A] (generic Var) is not Int';
 };
 
+# ── Variadic flag propagation for registry functions ──
+
+subtest 'variadic builtin via registry: no false arity error' => sub {
+    my $errs = arity_errors(<<'PERL');
+use v5.40;
+my $s = join(",", "a", "b", "c", "d");
+PERL
+    is scalar @$errs, 0, 'join with multiple args is not an arity error';
+};
+
+subtest 'anonymous sub as argument: correct arity' => sub {
+    my $errs = arity_errors(<<'PERL');
+use v5.40;
+sub apply :Type((ArrayRef[Int], CodeRef[Int -> Int]) -> ArrayRef[Int]) ($arr, $f) {
+    [map { $f->($_) } @$arr]
+}
+my $r = apply([1, 2, 3], sub ($x) { $x * 2 });
+PERL
+    is scalar @$errs, 0, 'anonymous sub with signature counted as one arg';
+};
+
+# ── Typeclass method generics ──
+
+subtest 'typeclass method: no UndeclaredTypeVar for free vars' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+typeclass MyFn => 'F', +{
+    apply => '(F, Int) -> Int',
+};
+PERL
+    my @errs = grep { $_->{kind} eq 'UndeclaredTypeVar' } $result->{diagnostics}->@*;
+    is scalar @errs, 0, 'typeclass var F is declared in method generics';
+};
+
 done_testing;
