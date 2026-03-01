@@ -156,4 +156,71 @@ PERL
     like $unann->{message}, qr/safe_fn.*helper/, 'identifies annotated caller and unannotated callee';
 };
 
+# ── Diagnostic range has column precision ────────
+
+subtest 'diagnostic range has column precision' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub add :Type((Int, Int) -> Int) ($a, $b) { "not int" }
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{
+                uri     => 'file:///test/col_precision.pm',
+                text    => $source,
+                version => 1,
+            },
+        }),
+    ));
+
+    my ($diag_notif) = grep { ($_->{method} // '') eq 'textDocument/publishDiagnostics' } @results;
+    ok $diag_notif, 'got publishDiagnostics';
+
+    my @diags = @{$diag_notif->{params}{diagnostics}};
+    ok @diags > 0, 'has diagnostics for type mismatch';
+
+    my $d = $diags[0];
+    my $range = $d->{range};
+    ok $range, 'diagnostic has range';
+
+    # With column precision, start character should not be 0 for errors
+    # that occur mid-line, and end character should not be 999
+    isnt $range->{end}{character}, 999, 'end character is not hardcoded 999';
+};
+
+# ── Diagnostic range falls back gracefully ───────
+
+subtest 'diagnostic range defaults without col info' => sub {
+    my $source = <<'PERL';
+use v5.40;
+typedef CycleX => 'CycleY';
+typedef CycleY => 'CycleX';
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{
+                uri     => 'file:///test/col_fallback.pm',
+                text    => $source,
+                version => 1,
+            },
+        }),
+    ));
+
+    my ($diag_notif) = grep { ($_->{method} // '') eq 'textDocument/publishDiagnostics' } @results;
+    ok $diag_notif, 'got publishDiagnostics';
+
+    my @diags = @{$diag_notif->{params}{diagnostics}};
+    ok @diags > 0, 'has diagnostics';
+
+    my $d = $diags[0];
+    my $range = $d->{range};
+    ok $range, 'diagnostic has range';
+
+    # Range should be well-formed even without precise col info
+    ok $range->{start}{character} >= 0, 'start character >= 0';
+    ok $range->{end}{character} > $range->{start}{character}, 'end character > start character';
+};
+
 done_testing;

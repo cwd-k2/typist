@@ -409,15 +409,39 @@ sub _publish_diagnostics ($self, $doc) {
         my $line = ($d->{line} // 1) - 1;  # Convert to 0-indexed
         $line = 0 if $line < 0;
 
-        push @lsp_diags, +{
+        my $start_col = ($d->{col} // 1) - 1;  # Convert 1-indexed to 0-indexed
+        $start_col = 0 if $start_col < 0;
+
+        my $end_line = defined $d->{end_line} ? ($d->{end_line} - 1) : $line;
+        $end_line = 0 if $end_line < 0;
+
+        my $end_col = defined $d->{end_col} ? ($d->{end_col} - 1) : ($start_col + 20);
+        # If we don't have end_col, span 20 chars from start as a reasonable highlight width
+
+        my $diag = +{
             range => +{
-                start => +{ line => $line, character => 0 },
-                end   => +{ line => $line, character => 999 },
+                start => +{ line => $line, character => $start_col },
+                end   => +{ line => $end_line, character => $end_col },
             },
             severity => _lsp_severity($d->{severity}),
             source   => 'typist',
             message  => $d->{message},
         };
+
+        if ($d->{related} && @{$d->{related}}) {
+            $diag->{relatedInformation} = [map { +{
+                location => +{
+                    uri   => $_->{uri} // $doc->uri,
+                    range => +{
+                        start => +{ line => ($_->{line} // 1) - 1, character => ($_->{col} // 1) - 1 },
+                        end   => +{ line => ($_->{line} // 1) - 1, character => ($_->{col} // 1) + 19 },
+                    },
+                },
+                message => $_->{message},
+            } } @{$d->{related}}];
+        }
+
+        push @lsp_diags, $diag;
     }
 
     $self->{log}->debug("publishing @{[scalar @lsp_diags]} diagnostics for @{[$doc->uri]}");
