@@ -1,6 +1,8 @@
 package Typist::Static::Analyzer;
 use v5.40;
 
+our $VERSION = '0.01';
+
 use Typist::Static::Extractor;
 use Typist::Static::TypeChecker;
 use Typist::Static::EffectChecker;

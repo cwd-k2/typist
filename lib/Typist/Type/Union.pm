@@ -1,5 +1,8 @@
 package Typist::Type::Union;
 use v5.40;
+
+our $VERSION = '0.01';
+
 use parent 'Typist::Type';
 use List::Util 'any', 'all';
 

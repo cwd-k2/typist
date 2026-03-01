@@ -1,6 +1,8 @@
 package Typist::TypeClass;
 use v5.40;
 
+our $VERSION = '0.01';
+
 # Type class definition and instance structures.
 #
 # A type class defines an interface (single or multi-parameter):

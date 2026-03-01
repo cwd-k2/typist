@@ -1,5 +1,8 @@
 package Typist::Type::Alias;
 use v5.40;
+
+our $VERSION = '0.01';
+
 use parent 'Typist::Type';
 
 # Named alias — resolves lazily against Registry on first access.

@@ -1,6 +1,8 @@
 package Typist::Inference;
 use v5.40;
 
+our $VERSION = '0.01';
+
 use Scalar::Util 'looks_like_number', 'reftype';
 use Typist::Type::Atom;
 use Typist::Type::Param;

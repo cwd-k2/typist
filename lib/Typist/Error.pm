@@ -1,6 +1,8 @@
 package Typist::Error;
 use v5.40;
 
+our $VERSION = '0.01';
+
 # ── Error Value Object ───────────────────────────
 
 sub new ($class, %args) {

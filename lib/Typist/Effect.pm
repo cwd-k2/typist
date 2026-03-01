@@ -1,6 +1,8 @@
 package Typist::Effect;
 use v5.40;
 
+our $VERSION = '0.01';
+
 # Effect definition structure.
 # Mirrors TypeClass::Def pattern: a named bag of typed operations.
 #

@@ -1,6 +1,8 @@
 package Typist::Type;
 use v5.40;
 
+our $VERSION = '0.01';
+
 use overload
     '|'    => \&_op_union,
     '&'    => \&_op_intersection,

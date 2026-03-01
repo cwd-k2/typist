@@ -1,6 +1,8 @@
 package Typist::Static::Unify;
 use v5.40;
 
+our $VERSION = '0.01';
+
 use Typist::Subtype;
 
 # ── Type-Based Unification ──────────────────────

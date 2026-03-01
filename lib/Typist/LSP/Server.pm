@@ -1,6 +1,8 @@
 package Typist::LSP::Server;
 use v5.40;
 
+our $VERSION = '0.01';
+
 use Typist::LSP::Transport;
 use Typist::LSP::Document;
 use Typist::LSP::Workspace;

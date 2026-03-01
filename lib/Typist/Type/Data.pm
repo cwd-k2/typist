@@ -1,5 +1,8 @@
 package Typist::Type::Data;
 use v5.40;
+
+our $VERSION = '0.01';
+
 use parent 'Typist::Type';
 use Scalar::Util 'blessed';
 

@@ -1,6 +1,8 @@
 package Typist::Type::Fold;
 use v5.40;
 
+our $VERSION = '0.01';
+
 use Typist::Type::Param;
 use Typist::Type::Union;
 use Typist::Type::Intersection;

@@ -1,6 +1,8 @@
 package Typist::LSP::Workspace;
 use v5.40;
 
+our $VERSION = '0.01';
+
 use File::Find;
 use Typist::Registry;
 use Typist::Static::Extractor;

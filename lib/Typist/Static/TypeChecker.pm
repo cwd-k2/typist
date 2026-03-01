@@ -1,6 +1,8 @@
 package Typist::Static::TypeChecker;
 use v5.40;
 
+our $VERSION = '0.01';
+
 use Typist::Static::Infer;
 use Typist::Static::Unify;
 use Typist::Parser;

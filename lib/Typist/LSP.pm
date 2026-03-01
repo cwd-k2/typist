@@ -1,6 +1,8 @@
 package Typist::LSP;
 use v5.40;
 
+our $VERSION = '0.01';
+
 use Typist::LSP::Server;
 
 sub run ($class) {

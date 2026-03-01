@@ -1,6 +1,8 @@
 package Typist::Error::Global;
 use v5.40;
 
+our $VERSION = '0.01';
+
 use Typist::Error;
 
 # Global singleton error buffer for CHECK-phase validation.

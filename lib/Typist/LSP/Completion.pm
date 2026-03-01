@@ -1,6 +1,8 @@
 package Typist::LSP::Completion;
 use v5.40;
 
+our $VERSION = '0.01';
+
 # ── Primitive and Parametric Types ───────────────
 
 my @PRIMITIVES   = qw(Any Void Never Undef Bool Int Num Str);

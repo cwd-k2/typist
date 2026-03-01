@@ -1,6 +1,8 @@
 package Typist::Attribute;
 use v5.40;
 
+our $VERSION = '0.01';
+
 use B;
 use Typist::Parser;
 use Typist::Registry;

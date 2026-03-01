@@ -1,6 +1,8 @@
 package Typist::Registry;
 use v5.40;
 
+our $VERSION = '0.01';
+
 use Scalar::Util 'weaken';
 use Typist::Parser;
 

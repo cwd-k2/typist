@@ -1,6 +1,8 @@
 package Typist::Transform;
 use v5.40;
 
+our $VERSION = '0.01';
+
 use Typist::Type::Var;
 use Typist::Type::Fold;
 

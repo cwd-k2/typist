@@ -1,6 +1,8 @@
 package Typist::Handler;
 use v5.40;
 
+our $VERSION = '0.01';
+
 # ── Effect Handler Stack ─────────────────────────
 #
 # Runtime infrastructure for algebraic effect handlers.

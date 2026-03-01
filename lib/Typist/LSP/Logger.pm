@@ -1,6 +1,8 @@
 package Typist::LSP::Logger;
 use v5.40;
 
+our $VERSION = '0.01';
+
 # Log levels: 0=off, 1=error, 2=warn, 3=info, 4=debug, 5=trace
 my %LEVEL_NUM = (off => 0, error => 1, warn => 2, info => 3, debug => 4, trace => 5);
 my %NUM_LABEL = reverse %LEVEL_NUM;

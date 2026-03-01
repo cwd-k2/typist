@@ -1,6 +1,8 @@
 package Typist::Static::Checker;
 use v5.40;
 
+our $VERSION = '0.01';
+
 use Typist::Registry;
 use Typist::Parser;
 use Typist::Error;

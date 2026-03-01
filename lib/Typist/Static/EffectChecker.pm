@@ -1,6 +1,8 @@
 package Typist::Static::EffectChecker;
 use v5.40;
 
+our $VERSION = '0.01';
+
 use Typist::Type::Row;
 use Typist::Type::Eff;
 

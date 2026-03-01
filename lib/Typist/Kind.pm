@@ -1,6 +1,8 @@
 package Typist::Kind;
 use v5.40;
 
+our $VERSION = '0.01';
+
 # Kind system: Star and Arrow.
 #   Star            — the kind of concrete types (e.g., Int, Str)
 #   Arrow(from, to) — the kind of type constructors (e.g., ArrayRef : * -> *)

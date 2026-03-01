@@ -1,5 +1,8 @@
 package Typist::Type::Row;
 use v5.40;
+
+our $VERSION = '0.01';
+
 use parent 'Typist::Type';
 use List::Util 'uniq', 'all';
 use Typist::Type::Var;

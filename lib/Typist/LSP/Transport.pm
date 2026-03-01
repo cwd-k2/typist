@@ -1,6 +1,8 @@
 package Typist::LSP::Transport;
 use v5.40;
 
+our $VERSION = '0.01';
+
 use JSON::PP;
 use Time::HiRes ();
 

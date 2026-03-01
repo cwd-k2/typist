@@ -1,6 +1,8 @@
 package Typist::Tie::Scalar;
 use v5.40;
 
+our $VERSION = '0.01';
+
 # Enforces type constraints on scalar assignment via Perl's tie mechanism.
 # STORE validates the new value against the declared type.
 

@@ -1,5 +1,8 @@
 package Typist::Type::Eff;
 use v5.40;
+
+our $VERSION = '0.01';
+
 use parent 'Typist::Type';
 
 # Effect annotation wrapper: Eff(Console | State | r)

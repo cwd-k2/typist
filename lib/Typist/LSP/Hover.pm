@@ -1,6 +1,8 @@
 package Typist::LSP::Hover;
 use v5.40;
 
+our $VERSION = '0.01';
+
 # ── Public API ───────────────────────────────────
 
 # Generate a Hover response for a symbol.

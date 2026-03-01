@@ -1,5 +1,8 @@
 package Typist::Type::Atom;
 use v5.40;
+
+our $VERSION = '0.01';
+
 use parent 'Typist::Type';
 use Scalar::Util 'looks_like_number';
 

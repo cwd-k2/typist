@@ -1,6 +1,8 @@
 package Typist::Prelude;
 use v5.40;
 
+our $VERSION = '0.01';
+
 use Typist::Parser;
 use Typist::Type::Eff;
 use Typist::Effect;
