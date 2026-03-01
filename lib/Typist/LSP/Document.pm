@@ -20,9 +20,7 @@ my %BUILTINS = map { $_ => 1 } qw(
     chr ord pack unpack
     pos quotemeta
     scalar wantarray caller
-    eval require use no
-    local my our state
-    return last next redo goto
+    eval require
     sleep time alarm
 );
 
