@@ -80,4 +80,66 @@ PERL
     ok !$resp->{result}, 'result is null outside function call';
 };
 
+# ── Signature help for cross-package constructor ──
+
+subtest 'signatureHelp resolves imported constructor via workspace' => sub {
+    require File::Temp;
+    require File::Path;
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Server;
+    require Typist::LSP::Transport;
+    require Typist::LSP::Logger;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib");
+
+    open my $fh, '>', "$dir/lib/Types.pm" or die;
+    print $fh <<'PERL';
+package Types;
+use v5.40;
+newtype UserId => 'Int';
+datatype Result =>
+    Ok  => '(Int)',
+    Err => '(Str)';
+1;
+PERL
+    close $fh;
+
+    # Build server with workspace
+    my $server = Typist::LSP::Server->new(
+        transport => Typist::LSP::Transport->new,
+        logger    => Typist::LSP::Logger->new(level => 'off'),
+    );
+    $server->_handle_initialize(+{ rootUri => "file://$dir" });
+
+    # Open a consumer file
+    my $source = <<'PERL';
+package Consumer;
+use v5.40;
+use Types;
+my $val = Ok(42);
+my $uid = UserId(
+PERL
+    $server->_handle_did_open(+{
+        textDocument => +{ uri => 'file:///consumer.pm', text => $source, version => 1 },
+    });
+
+    # SignatureHelp on Ok(
+    my $result1 = $server->_handle_signature_help(+{
+        textDocument => +{ uri => 'file:///consumer.pm' },
+        position     => +{ line => 3, character => 14 },
+    });
+    ok $result1, 'signatureHelp for cross-package Ok';
+    ok $result1->{signatures} && @{$result1->{signatures}}, 'has signatures';
+    like $result1->{signatures}[0]{label}, qr/Ok\(Int\)/, 'label shows Ok(Int)';
+
+    # SignatureHelp on UserId(
+    my $result2 = $server->_handle_signature_help(+{
+        textDocument => +{ uri => 'file:///consumer.pm' },
+        position     => +{ line => 4, character => 17 },
+    });
+    ok $result2, 'signatureHelp for cross-package UserId';
+    like $result2->{signatures}[0]{label}, qr/UserId\(Int\)/, 'label shows UserId(Int)';
+};
+
 done_testing;

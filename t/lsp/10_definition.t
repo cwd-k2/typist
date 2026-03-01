@@ -78,4 +78,65 @@ PERL
     ok !$resp->{result}, 'result is null for unknown symbol';
 };
 
+# ── Definition for cross-package constructor via workspace ──
+
+subtest 'definition jumps to datatype constructor across files' => sub {
+    require File::Temp;
+    require File::Path;
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Server;
+    require Typist::LSP::Transport;
+    require Typist::LSP::Logger;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib");
+
+    open my $fh, '>', "$dir/lib/Types.pm" or die;
+    print $fh <<'PERL';
+package Types;
+use v5.40;
+newtype UserId => 'Int';
+datatype Result =>
+    Ok  => '(Int)',
+    Err => '(Str)';
+1;
+PERL
+    close $fh;
+
+    my $server = Typist::LSP::Server->new(
+        transport => Typist::LSP::Transport->new,
+        logger    => Typist::LSP::Logger->new(level => 'off'),
+    );
+    $server->_handle_initialize(+{ rootUri => "file://$dir" });
+
+    my $source = <<'PERL';
+package Consumer;
+use v5.40;
+use Types;
+my $val = Ok(42);
+my $uid = UserId(1);
+PERL
+    $server->_handle_did_open(+{
+        textDocument => +{ uri => 'file:///consumer.pm', text => $source, version => 1 },
+    });
+
+    # Go-to-definition on Ok → should jump to Types.pm datatype line
+    my $result1 = $server->_handle_definition(+{
+        textDocument => +{ uri => 'file:///consumer.pm' },
+        position     => +{ line => 3, character => 10 },
+    });
+    ok $result1, 'definition found for Ok constructor';
+    like $result1->{uri}, qr/Types\.pm/, 'jumps to Types.pm';
+    is $result1->{range}{start}{line}, 3, 'points to datatype declaration line';
+
+    # Go-to-definition on UserId → should jump to Types.pm newtype line
+    my $result2 = $server->_handle_definition(+{
+        textDocument => +{ uri => 'file:///consumer.pm' },
+        position     => +{ line => 4, character => 10 },
+    });
+    ok $result2, 'definition found for UserId constructor';
+    like $result2->{uri}, qr/Types\.pm/, 'jumps to Types.pm';
+    is $result2->{range}{start}{line}, 2, 'points to newtype declaration line';
+};
+
 done_testing;

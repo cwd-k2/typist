@@ -97,7 +97,7 @@ sub _parse_primary ($tokens, $pos) {
 
     return _parse_struct($tokens, $pos)     if $tok eq '{';
     return _parse_grouped($tokens, $pos)    if $tok eq '(';
-    return _parse_literal($tokens, $pos)    if $tok =~ /\A["\d'-]/;
+    return _parse_literal($tokens, $pos)    if $tok =~ /\A["'\d]/ || $tok =~ /\A-\d/;
     return _parse_quantified($tokens, $pos) if $tok eq 'forall';
     return _parse_named($tokens, $pos);
 }
