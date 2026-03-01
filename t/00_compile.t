@@ -45,6 +45,7 @@ my @modules = qw(
     Typist::LSP::Document
     Typist::LSP::Hover
     Typist::LSP::Completion
+    Typist::LSP::CodeAction
 );
 
 for my $mod (@modules) {

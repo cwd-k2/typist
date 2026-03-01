@@ -9,6 +9,7 @@ use Typist::LSP::Workspace;
 use Typist::LSP::Hover;
 use Typist::LSP::Completion;
 use Typist::LSP::SemanticTokens;
+use Typist::LSP::CodeAction;
 use Typist::LSP::Logger;
 
 # ── Dispatch Table (class-level constant) ──────
@@ -30,6 +31,7 @@ my %DISPATCH = (
     'textDocument/inlayHint'              => \&_handle_inlay_hint,
     'textDocument/references'             => \&_handle_references,
     'textDocument/rename'                 => \&_handle_rename,
+    'textDocument/codeAction'             => \&_handle_code_action,
     'textDocument/semanticTokens/full'    => \&_handle_semantic_tokens,
 );
 
@@ -123,6 +125,9 @@ sub _handle_initialize ($self, $params) {
             referencesProvider     => \1,
             renameProvider         => \1,
             inlayHintProvider      => \1,
+            codeActionProvider     => +{
+                codeActionKinds => ['quickfix'],
+            },
             completionProvider => +{
                 triggerCharacters => ['(', '[', ',', '|', '&', '>', '{', ':'],
             },
@@ -455,6 +460,19 @@ sub _handle_rename ($self, $params) {
     +{ changes => \%changes };
 }
 
+# ── Code Action Handler ─────────────────────────
+
+sub _handle_code_action ($self, $params) {
+    my $uri     = $params->{textDocument}{uri};
+    my $doc     = $self->{documents}{$uri} // return [];
+    my $context = $params->{context} // +{};
+
+    my $diagnostics = $context->{diagnostics} // [];
+
+    my $registry = $self->{workspace} && $self->{workspace}->registry;
+    Typist::LSP::CodeAction->actions_for_diagnostics($diagnostics, $doc, $registry);
+}
+
 # ── Diagnostics Publishing ──────────────────────
 
 sub _publish_diagnostics ($self, $doc) {
@@ -497,6 +515,10 @@ sub _publish_diagnostics ($self, $doc) {
             severity => _lsp_severity($d->{severity}),
             source   => 'typist',
             message  => $d->{message},
+            data     => +{
+                _typist_kind => $d->{kind},
+                ($d->{suggestions} ? (_suggestions => $d->{suggestions}) : ()),
+            },
         };
 
         if ($d->{related} && @{$d->{related}}) {

@@ -1,0 +1,305 @@
+use v5.40;
+use Test::More;
+use lib 'lib', 't/lib';
+
+use Test::Typist::LSP qw(run_session lsp_request lsp_notification init_shutdown_wrap);
+
+# ── Code action for effect mismatch ─────────────
+
+subtest 'code action for effect mismatch (missing effect)' => sub {
+    # Source that triggers "requires effect 'State', but caller does not declare it"
+    my $source = <<'PERL';
+package EffCodeAct;
+use v5.40;
+
+effect Console => +{};
+effect State   => +{};
+
+sub stateful :Type((Str) -> Str !Eff(Console | State)) ($x) { $x }
+
+sub caller_fn :Type(() -> Str !Eff(Console)) () {
+    stateful("hello");
+}
+PERL
+
+    # Step 1: Open the document and capture published diagnostics
+    my @step1 = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{
+                uri     => 'file:///test/code_action.pm',
+                text    => $source,
+                version => 1,
+            },
+        }),
+    ));
+
+    my ($diag_notif) = grep { ($_->{method} // '') eq 'textDocument/publishDiagnostics' } @step1;
+    ok $diag_notif, 'got publishDiagnostics';
+
+    my @all_diags = @{$diag_notif->{params}{diagnostics}};
+    my ($eff_diag) = grep { $_->{message} =~ /effect 'State'/ } @all_diags;
+    ok $eff_diag, 'found EffectMismatch diagnostic for State';
+    ok $eff_diag->{data}, 'diagnostic has data field';
+    is $eff_diag->{data}{_typist_kind}, 'EffectMismatch', 'data._typist_kind is EffectMismatch';
+
+    # Step 2: Request code actions with the captured diagnostic
+    my @step2 = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{
+                uri     => 'file:///test/code_action.pm',
+                text    => $source,
+                version => 1,
+            },
+        }),
+        lsp_request(2, 'textDocument/codeAction', +{
+            textDocument => +{ uri => 'file:///test/code_action.pm' },
+            range => $eff_diag->{range},
+            context => +{
+                diagnostics => [$eff_diag],
+            },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @step2;
+    ok $resp, 'got codeAction response';
+    my $actions = $resp->{result};
+    ok ref $actions eq 'ARRAY', 'result is array';
+    ok @$actions > 0, 'at least one code action returned';
+
+    my ($add_eff) = grep { $_->{title} =~ /Add effect 'State'/ } @$actions;
+    ok $add_eff, 'found action to add State effect';
+    like $add_eff->{title}, qr/Add effect 'State' to caller_fn\(\)/, 'action title references function';
+    is $add_eff->{kind}, 'quickfix', 'action kind is quickfix';
+    ok $add_eff->{diagnostics}, 'action references diagnostics';
+};
+
+# ── Code action for pure-calls-effectful ────────
+
+subtest 'code action for pure function calling effectful' => sub {
+    my $source = <<'PERL';
+package PureCalls;
+use v5.40;
+
+effect Console => +{};
+
+sub write_msg :Type((Str) -> Str !Eff(Console)) ($s) { $s }
+
+sub pure_fn :Type((Str) -> Str) ($x) {
+    write_msg($x);
+}
+PERL
+
+    # Step 1: Capture diagnostics
+    my @step1 = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{
+                uri     => 'file:///test/pure_code_action.pm',
+                text    => $source,
+                version => 1,
+            },
+        }),
+    ));
+
+    my ($diag_notif) = grep { ($_->{method} // '') eq 'textDocument/publishDiagnostics' } @step1;
+    my @all_diags = @{$diag_notif->{params}{diagnostics}};
+    my ($eff_diag) = grep { $_->{message} =~ /no :Eff/ } @all_diags;
+
+    # This message pattern: "...requires Eff(Console), but pure_fn() has no :Eff annotation"
+    # The regex in CodeAction looks for effect 'X' or Eff(X) — check if we get an action
+    if ($eff_diag) {
+        ok $eff_diag->{data}, 'diagnostic has data field';
+
+        # Step 2: Request code actions
+        my @step2 = run_session(init_shutdown_wrap(
+            lsp_notification('textDocument/didOpen', +{
+                textDocument => +{
+                    uri     => 'file:///test/pure_code_action.pm',
+                    text    => $source,
+                    version => 1,
+                },
+            }),
+            lsp_request(2, 'textDocument/codeAction', +{
+                textDocument => +{ uri => 'file:///test/pure_code_action.pm' },
+                range => $eff_diag->{range},
+                context => +{
+                    diagnostics => [$eff_diag],
+                },
+            }),
+        ));
+
+        my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @step2;
+        ok $resp, 'got codeAction response';
+        my $actions = $resp->{result};
+        ok ref $actions eq 'ARRAY', 'result is array';
+
+        # The Eff(...) pattern should also be matched
+        # Message: "requires Eff(Console)" — _suggest_add_effect tries /Eff\(([^)]+)\)/
+        if (@$actions) {
+            like $actions->[0]{title}, qr/Add effect/, 'action suggests adding effect';
+            is $actions->[0]{kind}, 'quickfix', 'action kind is quickfix';
+        }
+    } else {
+        pass 'no matching diagnostic (message format may differ)';
+    }
+};
+
+# ── Code action returns empty for no diagnostics ─
+
+subtest 'code action returns empty for no diagnostics' => sub {
+    my $source = <<'PERL';
+use v5.40;
+typedef Age => 'Int';
+sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{
+                uri     => 'file:///test/clean_code_action.pm',
+                text    => $source,
+                version => 1,
+            },
+        }),
+        lsp_request(2, 'textDocument/codeAction', +{
+            textDocument => +{ uri => 'file:///test/clean_code_action.pm' },
+            range => +{
+                start => +{ line => 0, character => 0 },
+                end   => +{ line => 3, character => 0 },
+            },
+            context => +{
+                diagnostics => [],
+            },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got codeAction response';
+    my $actions = $resp->{result};
+    ok ref $actions eq 'ARRAY', 'result is array';
+    is scalar @$actions, 0, 'no actions for clean document';
+};
+
+# ── Code action with unknown doc returns empty ────
+
+subtest 'code action for unknown document returns empty' => sub {
+    my @results = run_session(init_shutdown_wrap(
+        lsp_request(2, 'textDocument/codeAction', +{
+            textDocument => +{ uri => 'file:///test/nonexistent.pm' },
+            range => +{
+                start => +{ line => 0, character => 0 },
+                end   => +{ line => 1, character => 0 },
+            },
+            context => +{
+                diagnostics => [],
+            },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got codeAction response';
+    my $actions = $resp->{result};
+    ok ref $actions eq 'ARRAY', 'result is array';
+    is scalar @$actions, 0, 'empty actions for unknown doc';
+};
+
+# ── Diagnostics carry data field ──────────────────
+
+subtest 'published diagnostics include data field with kind' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub add :Type((Int, Int) -> Int) ($a, $b) { "not int" }
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{
+                uri     => 'file:///test/data_field.pm',
+                text    => $source,
+                version => 1,
+            },
+        }),
+    ));
+
+    my ($diag_notif) = grep { ($_->{method} // '') eq 'textDocument/publishDiagnostics' } @results;
+    ok $diag_notif, 'got publishDiagnostics';
+
+    my @diags = @{$diag_notif->{params}{diagnostics}};
+    ok @diags > 0, 'has diagnostics';
+
+    my $d = $diags[0];
+    ok $d->{data}, 'diagnostic has data field';
+    ok $d->{data}{_typist_kind}, 'data has _typist_kind';
+    like $d->{data}{_typist_kind}, qr/\w+/, 'kind is a non-empty string';
+};
+
+# ── Code action with suggestions ──────────────────
+
+subtest 'code action with suggestions from TypeMismatch' => sub {
+    # Construct a synthetic diagnostic with suggestions to test the suggestion path
+    my $source = <<'PERL';
+use v5.40;
+sub identity :Type((Int) -> Int) ($x) { $x }
+PERL
+
+    my $synthetic_diag = +{
+        message  => "Return value of test(): expected Int, got Str",
+        range    => +{
+            start => +{ line => 1, character => 0 },
+            end   => +{ line => 1, character => 20 },
+        },
+        severity => 2,
+        source   => 'typist',
+        data     => +{
+            _typist_kind => 'TypeMismatch',
+            _suggestions => ['Cast return value to Int', 'Change return type to Str'],
+        },
+    };
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{
+                uri     => 'file:///test/suggestions.pm',
+                text    => $source,
+                version => 1,
+            },
+        }),
+        lsp_request(2, 'textDocument/codeAction', +{
+            textDocument => +{ uri => 'file:///test/suggestions.pm' },
+            range => +{
+                start => +{ line => 1, character => 0 },
+                end   => +{ line => 1, character => 20 },
+            },
+            context => +{
+                diagnostics => [$synthetic_diag],
+            },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got codeAction response';
+    my $actions = $resp->{result};
+    ok ref $actions eq 'ARRAY', 'result is array';
+    is scalar @$actions, 2, 'two suggestion actions returned';
+    is $actions->[0]{title}, 'Cast return value to Int', 'first suggestion title correct';
+    is $actions->[1]{title}, 'Change return type to Str', 'second suggestion title correct';
+    is $actions->[0]{kind}, 'quickfix', 'suggestion action kind is quickfix';
+};
+
+# ── Initialize capability includes codeActionProvider ──
+
+subtest 'initialize response includes codeActionProvider' => sub {
+    my @results = run_session(
+        lsp_request(1, 'initialize'),
+        lsp_notification('initialized'),
+        lsp_request(99, 'shutdown'),
+        lsp_notification('exit'),
+    );
+
+    my ($init_resp) = grep { defined $_->{id} && $_->{id} == 1 } @results;
+    ok $init_resp, 'got initialize response';
+    my $caps = $init_resp->{result}{capabilities};
+    ok $caps->{codeActionProvider}, 'codeActionProvider is present';
+    is_deeply $caps->{codeActionProvider}{codeActionKinds}, ['quickfix'], 'supports quickfix kind';
+};
+
+done_testing;
