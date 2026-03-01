@@ -3,6 +3,7 @@ use v5.40;
 
 use Typist::Type::Atom;
 use Typist::Type::Param;
+use Typist::Type::Struct;
 use Typist::Type::Literal;
 use Typist::Type::Union;
 use Typist::Subtype;
@@ -36,12 +37,12 @@ sub infer_expr ($class, $element, $env = undef) {
 
     # ── Array constructor [...] ─────────────────
     if ($element->isa('PPI::Structure::Constructor') && $element->start->content eq '[') {
-        return _infer_array($element);
+        return _infer_array($element, $env);
     }
 
     # ── Hash constructor {...} with => ──────────
     if ($element->isa('PPI::Structure::Constructor') && $element->start->content eq '{') {
-        return _infer_hash($element);
+        return _infer_hash($element, $env);
     }
 
     # ── Variable symbol → lookup in type env ────
@@ -50,16 +51,7 @@ sub infer_expr ($class, $element, $env = undef) {
         my $var_type = $env->{variables}{$element->content};
         return undef unless $var_type;
 
-        # Subscript access: $sym->[idx] or $sym->{key}
-        my $arrow = $element->snext_sibling;
-        if ($arrow && $arrow->isa('PPI::Token::Operator') && $arrow->content eq '->') {
-            my $subscript = $arrow->snext_sibling;
-            if ($subscript && $subscript->isa('PPI::Structure::Subscript')) {
-                return _infer_subscript_access($var_type, $subscript);
-            }
-        }
-
-        return $var_type;
+        return _chase_subscript_chain($var_type, $element);
     }
 
     # ── handle expression: Word("handle") + Block ──
@@ -79,7 +71,9 @@ sub infer_expr ($class, $element, $env = undef) {
     if ($element->isa('PPI::Token::Word')) {
         my $next = $element->snext_sibling;
         if ($next && $next->isa('PPI::Structure::List')) {
-            return _infer_call($element->content, $env, $next);
+            my $result = _infer_call($element->content, $env, $next);
+            return _chase_subscript_chain($result, $next) if defined $result;
+            return undef;
         }
     }
 
@@ -298,7 +292,7 @@ sub _infer_number ($token) {
 
 # ── Array Inference ──────────────────────────────
 
-sub _infer_array ($constructor) {
+sub _infer_array ($constructor, $env = undef) {
     # PPI uses PPI::Statement (not ::Expression) inside array constructors
     my $expr = $constructor->find_first('PPI::Statement');
     return Typist::Type::Param->new('ArrayRef', Typist::Type::Atom->new('Any'))
@@ -306,8 +300,8 @@ sub _infer_array ($constructor) {
 
     my @elem_types;
     for my $child ($expr->schildren) {
-        next if $child->isa('PPI::Token::Operator');   # skip commas
-        my $t = __PACKAGE__->infer_expr($child);
+        next if $child->isa('PPI::Token::Operator');   # skip commas, +
+        my $t = __PACKAGE__->infer_expr($child, $env);
         push @elem_types, $t if defined $t;
     }
 
@@ -324,7 +318,7 @@ sub _infer_array ($constructor) {
 
 # ── Hash Inference ───────────────────────────────
 
-sub _infer_hash ($constructor) {
+sub _infer_hash ($constructor, $env = undef) {
     my $expr = $constructor->find_first('PPI::Statement::Expression')
             // $constructor->find_first('PPI::Statement');
     return undef unless $expr;
@@ -335,25 +329,56 @@ sub _infer_hash ($constructor) {
     });
     return undef unless $has_fat_comma;
 
-    # Collect value types (every other significant element after =>)
-    my @children = $expr->schildren;
+    # Split children into comma-separated groups to handle multi-token values
+    # (e.g., ProductId("WIDGET") = Word + List = 2 tokens)
+    my @groups;
+    my @current;
+    for my $child ($expr->schildren) {
+        if ($child->isa('PPI::Token::Operator') && $child->content eq ',') {
+            push @groups, [@current] if @current;
+            @current = ();
+        } else {
+            push @current, $child;
+        }
+    }
+    push @groups, [@current] if @current;
+
+    # Process each group as key => value
+    my %fields;
     my @val_types;
-    my $i = 0;
-    while ($i < @children) {
-        # key
-        $i++;
-        # =>
-        last if $i >= @children;
-        $i++ if $children[$i]->isa('PPI::Token::Operator') && $children[$i]->content eq '=>';
-        # value
-        last if $i >= @children;
-        my $t = __PACKAGE__->infer_expr($children[$i]);
-        push @val_types, $t if defined $t;
-        $i++;
-        # skip comma
-        $i++ if $i < @children && $children[$i]->isa('PPI::Token::Operator') && $children[$i]->content eq ',';
+    my $all_keys_known = 1;
+
+    for my $group (@groups) {
+        # Find => in this group
+        my $arrow_idx;
+        for my $j (0 .. $#$group) {
+            if ($group->[$j]->isa('PPI::Token::Operator') && $group->[$j]->content eq '=>') {
+                $arrow_idx = $j;
+                last;
+            }
+        }
+        next unless defined $arrow_idx && $arrow_idx > 0;
+
+        my $key_name = _extract_hash_key_name($group->[0]);
+        $all_keys_known = 0 unless defined $key_name;
+
+        # Value is the first element after =>; infer_expr navigates siblings for multi-token
+        my $val_token = $group->[$arrow_idx + 1];
+        next unless $val_token;
+
+        my $t = __PACKAGE__->infer_expr($val_token, $env);
+        if (defined $t) {
+            push @val_types, $t;
+            $fields{$key_name} = $t if defined $key_name;
+        }
     }
 
+    # When all keys are statically known, return Struct
+    if ($all_keys_known && %fields) {
+        return Typist::Type::Struct->new(%fields);
+    }
+
+    # Fallback: HashRef[Str, CommonType]
     my $str_type = Typist::Type::Atom->new('Str');
 
     return Typist::Type::Param->new('HashRef', $str_type, Typist::Type::Atom->new('Any'))
@@ -365,6 +390,15 @@ sub _infer_hash ($constructor) {
     }
 
     Typist::Type::Param->new('HashRef', $str_type, $common);
+}
+
+# Extract key name from fat-comma left-hand side (bareword or quoted string)
+sub _extract_hash_key_name ($token) {
+    return $token->content if $token->isa('PPI::Token::Word');
+    if ($token->isa('PPI::Token::Quote')) {
+        return $token->can('string') ? $token->string : $token->content;
+    }
+    undef;
 }
 
 # ── Operator Expression Inference ───────────────
@@ -382,16 +416,28 @@ sub _infer_operator_expr ($stmt, $env) {
         return Typist::Type::Atom->new('Bool');
     }
 
-    # Subscript access: $sym->[idx] or $sym->{key}
-    if (@children == 3
+    # Subscript chain: $sym->{key}, $sym->{a}->{b}, $sym->[0]->{name}
+    if (@children >= 3
         && $children[0]->isa('PPI::Token::Symbol')
         && $children[1]->isa('PPI::Token::Operator') && $children[1]->content eq '->'
         && $children[2]->isa('PPI::Structure::Subscript'))
     {
         if ($env) {
             my $var_type = $env->{variables}{$children[0]->content};
-            return _infer_subscript_access($var_type, $children[2]) if $var_type;
+            return _chase_subscript_chain($var_type, $children[0]) if $var_type;
         }
+        return undef;
+    }
+
+    # Function call chain: func()->{key}, func()->[0]->{name}
+    if (@children >= 4
+        && $children[0]->isa('PPI::Token::Word')
+        && $children[1]->isa('PPI::Structure::List')
+        && $children[2]->isa('PPI::Token::Operator') && $children[2]->content eq '->'
+        && $children[3]->isa('PPI::Structure::Subscript'))
+    {
+        my $call_type = _infer_call($children[0]->content, $env, $children[1]);
+        return _chase_subscript_chain($call_type, $children[1]) if defined $call_type;
         return undef;
     }
 
@@ -506,6 +552,28 @@ sub _extract_subscript_key ($subscript) {
     }
 
     undef;
+}
+
+# ── Subscript Chain Inference ─────────────────
+#
+# Starting from $start_node, walk forward through siblings looking for
+# -> followed by PPI::Structure::Subscript.  For each link, refine the
+# type via _infer_subscript_access.  Returns the final refined type.
+
+sub _chase_subscript_chain ($type, $start_node) {
+    return $type unless defined $type;
+
+    my $node = $start_node->snext_sibling;
+    while ($node) {
+        last unless $node->isa('PPI::Token::Operator') && $node->content eq '->';
+        my $subscript = $node->snext_sibling;
+        last unless $subscript && $subscript->isa('PPI::Structure::Subscript');
+        $type = _infer_subscript_access($type, $subscript);
+        last unless defined $type;
+        $node = $subscript->snext_sibling;
+    }
+
+    $type;
 }
 
 1;

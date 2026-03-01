@@ -20,8 +20,9 @@ my %ATOM_ORDER = (Bool => 0, Int => 1, Num => 2, Str => 3, Any => 4);
 # ── Public API ────────────────────────────────────
 
 # Is $sub a subtype of $super?
-sub is_subtype ($class, $sub, $super) {
-    _check($sub, $super);
+# Optional: registry => $instance for alias resolution in LSP context.
+sub is_subtype ($class, $sub, $super, %opts) {
+    _check($sub, $super, $opts{registry});
 }
 
 # Least upper bound of two types in the atom lattice.
@@ -49,7 +50,9 @@ sub common_super ($class, $a, $b) {
 
 # ── Internal ──────────────────────────────────────
 
-sub _check ($sub, $super) {
+# $registry is optional: when provided, used for alias resolution
+# instead of the singleton Typist::Registry.
+sub _check ($sub, $super, $registry = undef) {
     # Identity — T <: T
     return 1 if $sub->equals($super);
 
@@ -64,32 +67,36 @@ sub _check ($sub, $super) {
 
     # Resolve aliases before comparison
     if ($sub->is_alias) {
-        my $r = Typist::Registry->lookup_type($sub->alias_name);
-        return _check($r, $super) if $r;
+        my $r = $registry
+            ? $registry->lookup_type($sub->alias_name)
+            : Typist::Registry->lookup_type($sub->alias_name);
+        return _check($r, $super, $registry) if $r;
     }
     if ($super->is_alias) {
-        my $r = Typist::Registry->lookup_type($super->alias_name);
-        return _check($sub, $r) if $r;
+        my $r = $registry
+            ? $registry->lookup_type($super->alias_name)
+            : Typist::Registry->lookup_type($super->alias_name);
+        return _check($sub, $r, $registry) if $r;
     }
 
     # ── Union rules ──────────────────────────────
     # T|U <: S  iff  T <: S AND U <: S
     if ($sub->is_union) {
-        return all { _check($_, $super) } $sub->members;
+        return all { _check($_, $super, $registry) } $sub->members;
     }
     # S <: T|U  iff  S <: T OR S <: U
     if ($super->is_union) {
-        return any { _check($sub, $_) } $super->members;
+        return any { _check($sub, $_, $registry) } $super->members;
     }
 
     # ── Intersection rules ───────────────────────
     # T&U <: S  iff  T <: S OR U <: S
     if ($sub->is_intersection) {
-        return any { _check($_, $super) } $sub->members;
+        return any { _check($_, $super, $registry) } $sub->members;
     }
     # S <: T&U  iff  S <: T AND S <: U
     if ($super->is_intersection) {
-        return all { _check($sub, $_) } $super->members;
+        return all { _check($sub, $_, $registry) } $super->members;
     }
 
     # ── Newtype (nominal identity) ────────────────
@@ -107,7 +114,7 @@ sub _check ($sub, $super) {
         my @oa = $super->type_args;
         return 1 if !@sa && !@oa;
         return 0 if @sa != @oa;
-        return all { _check($sa[$_], $oa[$_]) } 0 .. $#sa;
+        return all { _check($sa[$_], $oa[$_], $registry) } 0 .. $#sa;
     }
 
     # ── Literal types ─────────────────────────────
@@ -136,7 +143,7 @@ sub _check ($sub, $super) {
         return 1 unless @pp;  # raw base matches raw base
         return 0 unless @sp == @pp;
         # Covariant: ArrayRef[T] <: ArrayRef[U] iff T <: U
-        return all { _check($sp[$_], $pp[$_]) } 0 .. $#sp;
+        return all { _check($sp[$_], $pp[$_], $registry) } 0 .. $#sp;
     }
 
     # ── Function types (contravariant params, covariant return, covariant effects) ──
@@ -145,15 +152,15 @@ sub _check ($sub, $super) {
         my @pp = $super->params;
         return 0 unless @sp == @pp;
         # Contravariant in parameter types
-        return 0 unless all { _check($pp[$_], $sp[$_]) } 0 .. $#sp;
+        return 0 unless all { _check($pp[$_], $sp[$_], $registry) } 0 .. $#sp;
         # Covariant in return type
-        return 0 unless _check($sub->returns, $super->returns);
+        return 0 unless _check($sub->returns, $super->returns, $registry);
         # Covariant in effects
         my $se = $sub->effects;
         my $pe = $super->effects;
         return 1 if !$se && !$pe;     # both pure
         return 0 if !$se != !$pe;     # one pure, one effectful
-        return _check($se, $pe);      # delegate to Row subtyping
+        return _check($se, $pe, $registry);      # delegate to Row subtyping
     }
 
     # ── Struct width subtyping ───────────────────
@@ -170,14 +177,14 @@ sub _check ($sub, $super) {
         # Every required field in super must be required in sub and type-compatible
         for my $key (keys %sup_req) {
             return 0 unless exists $sub_req{$key};
-            return 0 unless _check($sub_req{$key}, $sup_req{$key});
+            return 0 unless _check($sub_req{$key}, $sup_req{$key}, $registry);
         }
         # Optional fields in super: if present in sub, must be type-compatible
         for my $key (keys %sup_opt) {
             if (exists $sub_req{$key}) {
-                return 0 unless _check($sub_req{$key}, $sup_opt{$key});
+                return 0 unless _check($sub_req{$key}, $sup_opt{$key}, $registry);
             } elsif (exists $sub_opt{$key}) {
-                return 0 unless _check($sub_opt{$key}, $sup_opt{$key});
+                return 0 unless _check($sub_opt{$key}, $sup_opt{$key}, $registry);
             }
             # Not present in sub at all — that's fine for optional
         }
@@ -186,7 +193,7 @@ sub _check ($sub, $super) {
 
     # ── Eff types — delegate to inner Row ────────
     if ($sub->is_eff && $super->is_eff) {
-        return _check($sub->row, $super->row);
+        return _check($sub->row, $super->row, $registry);
     }
 
     # ── Row subtyping — label set inclusion ───────

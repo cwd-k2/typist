@@ -1331,4 +1331,28 @@ PERL
     is scalar @errs, 0, 'typeclass var F is declared in method generics';
 };
 
+# ── Bounded Quantification Body Check ────────────
+
+subtest 'bounded generic body: T:Num used with int()' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub halve :Type(<T: Num>(T) -> T) ($x) {
+    int($x / 2);
+}
+PERL
+
+    is scalar @$errs, 0, 'no errors: T:Num treated as Num in body';
+};
+
+subtest 'bounded generic body: T:Num used with arithmetic' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub double_it :Type(<T: Num>(T) -> T) ($x) {
+    return $x * 2;
+}
+PERL
+
+    is scalar @$errs, 0, 'no errors: T:Num in arithmetic context';
+};
+
 done_testing;

@@ -47,7 +47,7 @@ sub _check_variable_initializers ($self) {
 
         next if $self->_has_type_var($declared);
 
-        unless (Typist::Subtype->is_subtype($inferred, $declared)) {
+        unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
             $self->{errors}->collect(
                 kind    => 'TypeMismatch',
                 message => "Variable $var->{name}: expected ${\$declared->to_string}, got ${\$inferred->to_string}",
@@ -95,7 +95,7 @@ sub _check_assignments ($self) {
         next unless defined $inferred;
         next if $inferred->is_atom && $inferred->name eq 'Any';
 
-        unless (Typist::Subtype->is_subtype($inferred, $declared_type)) {
+        unless (Typist::Subtype->is_subtype($inferred, $declared_type, registry => $self->{registry})) {
             $self->{errors}->collect(
                 kind    => 'TypeMismatch',
                 message => "Assignment to $var_name: expected ${\$declared_type->to_string}, got ${\$inferred->to_string}",
@@ -232,7 +232,7 @@ sub _check_call_sites ($self) {
 
             next if $self->_has_type_var($declared);
 
-            unless (Typist::Subtype->is_subtype($inferred, $declared)) {
+            unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
                 $self->{errors}->collect(
                     kind    => 'TypeMismatch',
                     message => "Argument " . ($i + 1) . " of $name(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
@@ -302,7 +302,7 @@ sub _check_method_call ($self, $word, $arrow) {
         next unless defined $declared;
         next if $self->_has_type_var($declared);
 
-        unless (Typist::Subtype->is_subtype($inferred, $declared)) {
+        unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
             $self->{errors}->collect(
                 kind    => 'TypeMismatch',
                 message => "Argument " . ($i + 1) . " of $display(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
@@ -341,7 +341,7 @@ sub _check_return_types ($self) {
             next unless defined $inferred;
             next if $inferred->is_atom && $inferred->name eq 'Any';
 
-            unless (Typist::Subtype->is_subtype($inferred, $declared)) {
+            unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
                 $self->{errors}->collect(
                     kind    => 'TypeMismatch',
                     message => "Return value of $name(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
@@ -390,7 +390,7 @@ sub _check_implicit_return_of_stmt ($self, $stmt, $env, $declared, $name) {
     return unless defined $inferred;
     return if $inferred->is_atom && $inferred->name eq 'Any';
 
-    unless (Typist::Subtype->is_subtype($inferred, $declared)) {
+    unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
         $self->{errors}->collect(
             kind    => 'TypeMismatch',
             message => "Implicit return of $name(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
@@ -429,7 +429,7 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
     my $n = @param_types < @arg_types ? @param_types : @arg_types;
     my $failed_at = -1;
     for my $i (0 .. $n - 1) {
-        $bindings = Typist::Static::Unify->unify($param_types[$i], $arg_types[$i], $bindings);
+        $bindings = Typist::Static::Unify->unify($param_types[$i], $arg_types[$i], $bindings, registry => $self->{registry});
         unless ($bindings) {
             $failed_at = $i;
             last;
@@ -452,7 +452,7 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
         next unless $g->{bound_expr};
         my $actual = $bindings->{$g->{name}} // next;
         my $bound = $self->_resolve_type($g->{bound_expr}) // next;
-        unless (Typist::Subtype->is_subtype($actual, $bound)) {
+        unless (Typist::Subtype->is_subtype($actual, $bound, registry => $self->{registry})) {
             $self->{errors}->collect(
                 kind    => 'TypeMismatch',
                 message => "Argument of $name(): ${\$actual->to_string} does not satisfy bound ${\$bound->to_string} for type variable $g->{name}",
@@ -467,7 +467,7 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
         my $concrete = Typist::Static::Unify->substitute($param_types[$i], $bindings);
         next if $self->_has_type_var($concrete);
         next if $arg_types[$i]->is_atom && $arg_types[$i]->name eq 'Any';
-        unless (Typist::Subtype->is_subtype($arg_types[$i], $concrete)) {
+        unless (Typist::Subtype->is_subtype($arg_types[$i], $concrete, registry => $self->{registry})) {
             $self->{errors}->collect(
                 kind    => 'TypeMismatch',
                 message => "Argument " . ($i + 1) . " of $name(): expected ${\$concrete->to_string}, got ${\$arg_types[$i]->to_string}",
@@ -510,11 +510,29 @@ sub _fn_env ($self, $fn) {
 
     return $base unless @$names;
 
+    # Build bound map for generic type variables: T => Num, etc.
+    my %bound_map;
+    if ($fn->{generics} && $fn->{generics}->@*) {
+        my @generics = $self->_parse_generics($fn->{generics});
+        for my $g (@generics) {
+            next unless $g->{bound_expr};
+            my $bound_type = $self->_resolve_type($g->{bound_expr});
+            $bound_map{$g->{name}} = $bound_type if $bound_type;
+        }
+    }
+
     # Shallow copy variables hash and add parameter bindings
     my %vars = $base->{variables}->%*;
     for my $i (0 .. $#$names) {
         my $expr = $exprs->[$i] // next;
-        my $type = $self->_resolve_type($expr) // next;
+        my $type = $self->_resolve_type($expr);
+        # For type variables with bounds, substitute the bound type for body checking
+        if ($type && $type->is_var && $bound_map{$type->name}) {
+            $type = $bound_map{$type->name};
+        } elsif (!$type && $bound_map{$expr}) {
+            $type = $bound_map{$expr};
+        }
+        next unless $type;
         $vars{$names->[$i]} = $type;
     }
 

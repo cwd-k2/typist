@@ -8,15 +8,19 @@ use Typist::Subtype;
 # Structural unification of formal (annotated) types against actual
 # (inferred) types, extracting type-variable bindings.
 #
-# unify($formal, $actual, $bindings?) → { VarName => Type } | undef
+# unify($formal, $actual, $bindings?, %opts) → { VarName => Type } | undef
 #
 #   Var('T')  vs Atom('Int')                → { T => Int }
 #   Param('ArrayRef', [Var('T')])
 #       vs Param('ArrayRef', [Atom('Int')]) → { T => Int }
 #   Atom('Int')  vs Atom('Str')             → undef (mismatch)
 #   Atom('Int')  vs Atom('Int')             → {} (match, no bindings)
+#
+# Optional: registry => $instance for alias resolution in LSP context.
 
-sub unify ($class, $formal, $actual, $bindings = +{}) {
+sub unify ($class, $formal, $actual, $bindings = +{}, %opts) {
+    my $registry = $opts{registry};
+
     # ── Type variable → bind or widen ──────────
     if ($formal->is_var) {
         my $name = $formal->name;
@@ -35,7 +39,7 @@ sub unify ($class, $formal, $actual, $bindings = +{}) {
     # ── Atom formal vs Literal actual ─────────
     # Literal(42, Int) should unify with Atom(Int) via subtype chain
     if ($formal->is_atom && $actual->is_literal) {
-        return Typist::Subtype->is_subtype($actual, $formal) ? $bindings : undef;
+        return Typist::Subtype->is_subtype($actual, $formal, registry => $registry) ? $bindings : undef;
     }
 
     # ── Both Param → base match + recursive ───
@@ -45,7 +49,7 @@ sub unify ($class, $formal, $actual, $bindings = +{}) {
         my @ap = $actual->params;
         return undef unless @fp == @ap;
         for my $i (0 .. $#fp) {
-            $bindings = $class->unify($fp[$i], $ap[$i], $bindings);
+            $bindings = $class->unify($fp[$i], $ap[$i], $bindings, registry => $registry);
             return undef unless $bindings;
         }
         return $bindings;
@@ -57,10 +61,10 @@ sub unify ($class, $formal, $actual, $bindings = +{}) {
         my @ap = $actual->params;
         return undef unless @fp == @ap;
         for my $i (0 .. $#fp) {
-            $bindings = $class->unify($fp[$i], $ap[$i], $bindings);
+            $bindings = $class->unify($fp[$i], $ap[$i], $bindings, registry => $registry);
             return undef unless $bindings;
         }
-        $bindings = $class->unify($formal->returns, $actual->returns, $bindings);
+        $bindings = $class->unify($formal->returns, $actual->returns, $bindings, registry => $registry);
         return $bindings;
     }
 
@@ -70,7 +74,7 @@ sub unify ($class, $formal, $actual, $bindings = +{}) {
         my %areq = $actual->required_fields;
         for my $key (sort keys %freq) {
             my $atype = $areq{$key} // next;
-            $bindings = $class->unify($freq{$key}, $atype, $bindings);
+            $bindings = $class->unify($freq{$key}, $atype, $bindings, registry => $registry);
             return undef unless $bindings;
         }
         return $bindings;
@@ -83,7 +87,7 @@ sub unify ($class, $formal, $actual, $bindings = +{}) {
     # ── Fallback: subtype compatibility ───────
     # If the formal type has no free variables and actual is a subtype, succeed.
     if (!scalar($formal->free_vars)) {
-        return Typist::Subtype->is_subtype($actual, $formal) ? $bindings : undef;
+        return Typist::Subtype->is_subtype($actual, $formal, registry => $registry) ? $bindings : undef;
     }
 
     # Structural mismatch with unresolved vars → cannot unify

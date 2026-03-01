@@ -120,19 +120,16 @@ subtest 'array of bools widened to Int' => sub {
 
 # ── Hash Constructor ─────────────────────────────
 
-subtest 'hash with string values' => sub {
-    # Test directly against a PPI::Structure::Constructor node
+subtest 'hash with string values → Struct' => sub {
     my $doc = PPI::Document->new(\'my $x = +{ a => "foo", b => "bar" };');
     my $cons = $doc->find_first('PPI::Structure::Constructor');
     ok $cons, 'found constructor';
     my $t = Typist::Static::Infer->infer_expr($cons);
     ok $t, 'inferred';
-    ok $t->is_param, 'is param';
-    is $t->base, 'HashRef', 'HashRef';
-    my @p = $t->params;
-    is scalar @p, 2, 'two params (key, value)';
-    is $p[0]->name, 'Str', 'key type Str';
-    is $p[1]->name, 'Str', 'value type Str';
+    ok $t->is_struct, 'is struct (not HashRef)';
+    my %req = $t->required_fields;
+    is $req{a}->base_type, 'Str', 'a => Str (literal)';
+    is $req{b}->base_type, 'Str', 'b => Str (literal)';
 };
 
 # ── Non-inferable expressions ────────────────────
@@ -489,6 +486,55 @@ subtest 'array subscript via Symbol handler (assignment RHS)' => sub {
         }
     }
     fail 'should have found assignment';
+};
+
+# ── Subscript Chain ──────────────────────────────
+
+subtest 'chained struct subscript: $s->{a}->{b}' => sub {
+    my $env = +{ variables => +{
+        '$order' => Typist::Type::Struct->new(
+            id     => Typist::Type::Atom->new('Int'),
+            item   => Typist::Type::Struct->new(
+                name  => Typist::Type::Atom->new('Str'),
+                price => Typist::Type::Atom->new('Num'),
+            ),
+        ),
+    }};
+    my $t = infer_stmt('$order->{item}->{name};', $env);
+    ok $t, 'inferred nested struct field';
+    ok $t->is_atom, 'is atom';
+    is $t->name, 'Str', '$order->{item}->{name} → Str';
+};
+
+subtest 'function call chain: func()->{field}' => sub {
+    my $env = +{
+        variables => +{},
+        functions => +{
+            get_order => Typist::Type::Struct->new(
+                id    => Typist::Type::Atom->new('Int'),
+                total => Typist::Type::Atom->new('Num'),
+            ),
+        },
+        known => +{ get_order => 1 },
+    };
+    my $t = infer_stmt('get_order()->{total};', $env);
+    ok $t, 'inferred function call chain';
+    ok $t->is_atom, 'is atom';
+    is $t->name, 'Num', 'get_order()->{total} → Num';
+};
+
+subtest 'chained array then struct: $arr->[0]->{name}' => sub {
+    my $env = +{ variables => +{
+        '$arr' => Typist::Type::Param->new('ArrayRef',
+            Typist::Type::Struct->new(
+                name => Typist::Type::Atom->new('Str'),
+            ),
+        ),
+    }};
+    my $t = infer_stmt('$arr->[0]->{name};', $env);
+    ok $t, 'inferred array→struct chain';
+    ok $t->is_atom, 'is atom';
+    is $t->name, 'Str', '$arr->[0]->{name} → Str';
 };
 
 # ── Complex expressions → undef (gradual) ───────

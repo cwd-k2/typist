@@ -128,4 +128,61 @@ PERL
     is scalar @eff_errs, 0, 'no effect mismatch when caller declares required effects';
 };
 
+# ── Cross-module alias resolution in subtype ─────
+
+subtest 'alias argument matches concrete param via workspace registry' => sub {
+    my $ws_reg = Typist::Registry->new;
+    $ws_reg->define_alias('Price', 'Int');
+    $ws_reg->register_function('Pricing', 'subtotal', +{
+        params  => [Typist::Parser->parse('Int')],
+        returns => Typist::Parser->parse('Price'),
+    });
+    $ws_reg->register_function('Pricing', 'apply_discount', +{
+        params  => [Typist::Parser->parse('Int'), Typist::Parser->parse('Int')],
+        returns => Typist::Parser->parse('Int'),
+    });
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws_reg);
+package Order;
+use v5.40;
+
+sub create :Type((Int) -> Int) ($qty) {
+    my $sub = Pricing::subtotal($qty);
+    return Pricing::apply_discount($sub, 10);
+}
+PERL
+
+    my @type_errs = grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@*;
+    is scalar @type_errs, 0, 'Price (alias for Int) accepted where Int expected';
+};
+
+subtest 'alias argument satisfies bound in generic call via workspace registry' => sub {
+    my $ws_reg = Typist::Registry->new;
+    $ws_reg->define_alias('Price', 'Int');
+    $ws_reg->register_function('Pricing', 'subtotal', +{
+        params  => [Typist::Parser->parse('Int')],
+        returns => Typist::Parser->parse('Price'),
+    });
+    $ws_reg->register_function('Pricing', 'apply_discount', +{
+        params      => [Typist::Parser->parse('T'), Typist::Parser->parse('Int')],
+        returns     => Typist::Parser->parse('T'),
+        generics    => [+{ name => 'T', bound_expr => 'Num' }],
+        params_expr => ['T', 'Int'],
+        returns_expr => 'T',
+    });
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws_reg);
+package Order;
+use v5.40;
+
+sub create :Type((Int) -> Int) ($qty) {
+    my $sub = Pricing::subtotal($qty);
+    return Pricing::apply_discount($sub, 10);
+}
+PERL
+
+    my @type_errs = grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@*;
+    is scalar @type_errs, 0, 'Price satisfies bound Num via alias resolution (Price -> Int <: Num)';
+};
+
 done_testing;
