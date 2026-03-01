@@ -40,14 +40,13 @@ sub _check_variable_initializers ($self) {
     for my $var ($self->{extracted}{variables}->@*) {
         my $init_node = $var->{init_node} // next;
 
-        my $inferred = Typist::Static::Infer->infer_expr($init_node, $self->{env});
-        next unless defined $inferred;
-        next if $inferred->is_atom && $inferred->name eq 'Any';
-
         my $declared = $self->_resolve_type($var->{type_expr});
         next unless defined $declared;
-
         next if $self->_has_type_var($declared);
+
+        my $inferred = Typist::Static::Infer->infer_expr($init_node, $self->{env}, $declared);
+        next unless defined $inferred;
+        next if $inferred->is_atom && $inferred->name eq 'Any';
 
         unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
             $self->{errors}->collect(
@@ -96,7 +95,7 @@ sub _check_assignments ($self) {
 
         # Infer the RHS expression type
         my $rhs = $op->snext_sibling // next;
-        my $inferred = Typist::Static::Infer->infer_expr($rhs, $env);
+        my $inferred = Typist::Static::Infer->infer_expr($rhs, $env, $declared_type);
         next unless defined $inferred;
         next if $inferred->is_atom && $inferred->name eq 'Any';
 
@@ -233,14 +232,13 @@ sub _check_call_sites ($self) {
 
         my $n = @param_exprs < @args ? @param_exprs : @args;
         for my $i (0 .. $n - 1) {
-            my $inferred = Typist::Static::Infer->infer_expr($args[$i], $env);
-            next unless defined $inferred;
-            next if $inferred->is_atom && $inferred->name eq 'Any';
-
             my $declared = $self->_resolve_type($param_exprs[$i]);
             next unless defined $declared;
-
             next if $self->_has_type_var($declared);
+
+            my $inferred = Typist::Static::Infer->infer_expr($args[$i], $env, $declared);
+            next unless defined $inferred;
+            next if $inferred->is_atom && $inferred->name eq 'Any';
 
             unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
                 $self->{errors}->collect(
@@ -308,13 +306,13 @@ sub _check_method_call ($self, $word, $arrow) {
     # ── Type check each argument ─────────────────
     my $n = @param_exprs < @args ? @param_exprs : @args;
     for my $i (0 .. $n - 1) {
-        my $inferred = Typist::Static::Infer->infer_expr($args[$i], $env);
-        next unless defined $inferred;
-        next if $inferred->is_atom && $inferred->name eq 'Any';
-
         my $declared = $self->_resolve_type($param_exprs[$i]);
         next unless defined $declared;
         next if $self->_has_type_var($declared);
+
+        my $inferred = Typist::Static::Infer->infer_expr($args[$i], $env, $declared);
+        next unless defined $inferred;
+        next if $inferred->is_atom && $inferred->name eq 'Any';
 
         unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
             $self->{errors}->collect(
@@ -354,7 +352,7 @@ sub _check_return_types ($self) {
             # skip 'return;' (bare return)
             next if $val->isa('PPI::Token::Structure') && $val->content eq ';';
 
-            my $inferred = Typist::Static::Infer->infer_expr($val, $env);
+            my $inferred = Typist::Static::Infer->infer_expr($val, $env, $declared);
             next unless defined $inferred;
             next if $inferred->is_atom && $inferred->name eq 'Any';
 
@@ -406,7 +404,7 @@ sub _check_implicit_return_of_stmt ($self, $stmt, $env, $declared, $name) {
     # Skip if starts with 'return' — already checked in explicit path
     return if $first->isa('PPI::Token::Word') && $first->content eq 'return';
 
-    my $inferred = Typist::Static::Infer->infer_expr($first, $env);
+    my $inferred = Typist::Static::Infer->infer_expr($first, $env, $declared);
     return unless defined $inferred;
     return if $inferred->is_atom && $inferred->name eq 'Any';
 

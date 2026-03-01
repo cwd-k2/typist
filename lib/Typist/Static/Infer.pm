@@ -47,6 +47,17 @@ sub infer_expr ($class, $element, $env = undef, $expected = undef) {
         return _infer_hash($element, $env, $expected);
     }
 
+    # ── Unary + before hash constructor: +{...} ──
+    if ($element->isa('PPI::Token::Operator') && $element->content eq '+') {
+        my $next = $element->snext_sibling;
+        if ($next && (
+            ($next->isa('PPI::Structure::Constructor') && $next->start->content eq '{')
+            || $next->isa('PPI::Structure::Block')
+        )) {
+            return _infer_hash($next, $env, $expected);
+        }
+    }
+
     # ── Variable symbol → lookup in type env ────
     if ($element->isa('PPI::Token::Symbol')) {
         return undef unless $env;

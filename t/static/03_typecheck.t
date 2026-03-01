@@ -1440,4 +1440,57 @@ PERL
     like $errs[0]{actual_type}, qr/hello/, 'actual_type contains the inferred type';
 };
 
+# ── Bidirectional Inference (expected type threading) ──
+
+subtest 'bidirectional: hash matches expected struct via return type' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub get_config :Type(() -> Struct(name => Str, count => Int)) () {
+    +{ name => "test", count => 42 }
+}
+PERL
+
+    is scalar @$errs, 0, 'no mismatch when hash matches expected struct';
+};
+
+subtest 'bidirectional: hash mismatch detected via expected struct' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub get_config :Type(() -> Struct(name => Str, count => Int)) () {
+    +{ name => "test", count => "wrong" }
+}
+PERL
+
+    is scalar @$errs, 1, 'mismatch detected when hash field type is wrong';
+    like $errs->[0]{message}, qr/Implicit return.*get_config/, 'implicit return mismatch';
+};
+
+subtest 'bidirectional: variable init passes expected type' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+my $cfg :Type(Struct(x => Int, y => Int)) = +{ x => 1, y => 2 };
+PERL
+
+    is scalar @$errs, 0, 'no mismatch when hash matches expected struct in variable init';
+};
+
+subtest 'bidirectional: array matches expected ArrayRef element type' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+my $xs :Type(ArrayRef[Int]) = [1, 2, 3];
+PERL
+
+    is scalar @$errs, 0, 'no mismatch for array matching expected ArrayRef';
+};
+
+subtest 'bidirectional: expected type flows to call site arg' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub take_struct :Type((Struct(a => Int)) -> Int) ($s) { 0 }
+take_struct(+{ a => 42 });
+PERL
+
+    is scalar @$errs, 0, 'hash arg matches expected struct param';
+};
+
 done_testing;
