@@ -51,13 +51,13 @@ Runtime (opt-in)| Generic instantiation      | die           | -runtime flag
 - `Typist::Static::Checker` — CHECK-phase validation (alias cycles, undeclared vars, bound/kind/effect well-formedness).
 - `Typist::Prelude` — Builtin function type annotations for Perl core functions and Typist builtins (say, print, die, length, typedef, unwrap, etc. — 83 functions). Installed into CORE:: namespace via `install($registry)`. Auto-loaded by Analyzer and Workspace. User `declare` overrides entries.
 - `Typist::Static::Unify` — Type-based unification. Pairs formal (annotated) types against actual (inferred) types, extracting type-variable bindings. Used by TypeChecker for generic function instantiation.
-- `Typist::Static::Infer` — Static type inference from PPI elements (literals, variable symbols, function calls, operator expressions). Infers arithmetic/comparison/logical/concatenation operators, subscript access (`$a->[0]`, `$h->{k}`), ternary expressions, `handle { BLOCK }` return types, and `match` arm union/LUB types. Accepts optional `$env` for gradual typing.
-- `Typist::Static::TypeChecker` — Static type mismatch detection (variable initializers, assignments, call site args, return types). Arity checking (ArityMismatch), variable reassignment checking (annotated-only), method type checking (`$self->method()`), generic instantiation via Unify, and type narrowing (`defined($x)` guard narrows `Maybe[T]` to `T`). Builds type environment for function return type propagation and variable symbol resolution.
+- `Typist::Static::Infer` — Static type inference from PPI elements (literals, variable symbols, function calls, operator expressions). Infers arithmetic/comparison/logical/concatenation/repetition operators, chained binary expressions, compound assignment operators, subscript access (`$a->[0]`, `$h->{k}`), ternary expressions, `handle { BLOCK }` return types, and `match` arm union/LUB types. Interpolated strings (`"Hello $name"`) infer as `Str`, not `Literal`. Bidirectional: accepts optional `$expected` for propagation into arrays, hashes, and ternary arms. Accepts optional `$env` for gradual typing.
+- `Typist::Static::TypeChecker` — Static type mismatch detection (variable initializers, assignments, call site args, return types). Arity checking (ArityMismatch) with default parameter support, variable reassignment checking (annotated-only), method type checking (`$self->method()`), generic instantiation via Unify, and control flow narrowing (`defined($x)`, truthiness `if ($x)`, `isa`, early return). Builds type environment for function return type propagation and variable symbol resolution.
 - `Typist::Static::EffectChecker` — PPI-based static effect checker (call graph + label inclusion, cross-package support, unannotated function detection, builtin function effect tracking via CORE:: registry). Keywords `handle`, `match`, `enum` are skipped as non-function calls.
 - `Typist::Handler` — Runtime effect handler stack (LIFO). Effect operations are dispatched as qualified calls (`Effect::op(@args)`) to the nearest handler; `handle { BODY } Effect => { handlers }` provides scoped effect processing with automatic cleanup.
 - `Typist::Type::Data` — Algebraic data type (tagged union). Supports parameterized types via `datatype 'Option[T]' => Some => '(T)', None => '()'` with covariant type arguments, type inference in constructors, and `instantiate` for concrete types. Values are blessed with `_tag`, `_values`, and optional `_type_args` fields. GADT support via `return_types` field: `is_gadt`, `constructor_return_type($tag)`, `parse_constructor_spec($spec, %opts)`.
 - `Typist::Type::Fold` — Type tree traversal utilities. `map_type($type, $cb)` rebuilds bottom-up; `walk($type, $cb)` visits top-down. Handles all type nodes including Data (variants, type_args, return_types).
-- `Typist::Subtype` — Structural subtype relation + `common_super` (LUB for atom types).
+- `Typist::Subtype` — Structural subtype relation + `common_super` (LUB for atom and struct types).
 - `Typist::Attribute` — Attribute handlers + `parse_generic_decl` (shared between runtime and static paths).
 - `Typist::TypeClass` — Type class Def (with `install_dispatch`, `check_instance_completeness`, `resolve`) and Inst structures.
 
@@ -77,14 +77,14 @@ Runtime (opt-in)| Generic instantiation      | die           | -runtime flag
 - GADT (Generalized Algebraic Data Types): `datatype 'Expr[A]' => IntLit => '(Int) -> Expr[Int]', BoolLit => '(Bool) -> Expr[Bool]'` — constructors with `->` specify per-constructor return types. `is_gadt` predicate, `constructor_return_type($tag)` accessor. `parse_constructor_spec` shared helper parses both ADT and GADT specs. GADT constructors force type_args at runtime; static analysis infers concrete return types via argument unification.
 - `enum Color => qw(Red Green Blue)` defines nullary-only ADTs (pure enumerations). Sugar for `datatype` with all zero-argument variants.
 - `match $value, Tag => sub (...) { ... }, _ => sub { ... }` dispatches on `_tag`, splats `_values` into handlers. `_` is the optional fallback arm. Emits exhaustiveness warnings for registered ADTs when arms are incomplete and no fallback is given.
-- Variadic function types: `(Int, ...Str) -> Void` — rest parameter with `...Type` syntax. Arity checking uses minimum args for variadic functions.
+- Variadic function types: `(Int, ...Str) -> Void` — rest parameter with `...Type` syntax. Arity checking uses minimum args for variadic functions. Default parameters (`$x = expr`) reduce minimum arity via `default_count`.
 - `effect Console => +{ writeLine => '(Str) -> Void' }` defines effects with named operations. Operations are auto-installed as qualified subs (`Console::writeLine(@args)`), dispatching to the nearest handler on the runtime stack.
 - `Effect::op(@args)` is the direct call syntax for effect operations (e.g., `Console::writeLine("hello")`). Replaces the old `perform Effect => op => @args` syntax.
 - `handle { BODY } Effect => { op => sub { ... } }` installs scoped effect handlers, executes BODY, and guarantees cleanup (even on exception).
 - Typeclass and effect definitions use string syntax for method/operation signatures: `show => '(T) -> Str'`, consistent with `:Type()` annotations. The Extractor only captures `PPI::Token::Quote`, so DSL `Func(...)` does not work for static analysis.
 - Prelude: builtin functions are registered under the CORE:: namespace by `Typist::Prelude->install`. Includes Typist builtins (typedef, newtype, unwrap, etc.) in addition to Perl core functions. User `declare` statements override prelude entries.
 - `handle`/`match` return type inference: `handle { BLOCK }` infers from the block's last expression; `match` collects arm return types and computes union/LUB. These bypass the `Word + List` call pattern used for normal function inference.
-- Type Narrowing: `defined($x)` in an if-condition narrows `Maybe[T]` (i.e., `T | Undef`) to `T` within the then-block.
+- Type Narrowing: `defined($x)` narrows `Maybe[T]` to `T` in the then-block; `if ($x)` (truthiness) also narrows by removing `Undef`; `$x isa Foo` narrows to `Foo`; `return unless defined($x)` narrows `$x` for the rest of the body (early return). Else-blocks receive the inverse narrowing.
 - Variable reassignment: `:Type` annotated variables are checked on reassignment (`$x = expr`); unannotated variables are not checked.
 - Method calls: `$self->method()` is type-checked within the same package via registry lookup; cross-package method calls are gradual-skipped.
 
@@ -159,4 +159,11 @@ Tests are numbered and ordered by dependency:
 - `t/lsp/10_definition.t` — Go to Definition
 - `t/lsp/11_signature_help.t` — Signature Help
 - `t/lsp/12_inlay_hints.t` — Inlay Hints
+- `t/lsp/13_references.t` — Find References
+- `t/lsp/14_rename.t` — Rename
+- `t/lsp/15_code_actions.t` — Code Actions (quick fixes)
+- `t/lsp/16_semantic_tokens.t` — Semantic Tokens
 - `t/critic/00_policy.t` — Perl::Critic policy bridge
+- `t/critic/01_annotation_style.t` — Annotation style policy
+- `t/critic/02_effect_completeness.t` — Effect completeness policy
+- `t/critic/03_exhaustiveness.t` — Match exhaustiveness policy

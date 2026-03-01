@@ -129,6 +129,56 @@ sub safe_length :Type((Maybe[Str]) -> Int) ($s) {
 say "safe_length('hi'):   ", safe_length("hi");
 say "safe_length(undef):  ", safe_length(undef);
 
+# ── 8. Truthiness Narrowing ─────────────────────────────
+#
+# `if ($x)` narrows Maybe[T] by removing Undef from the union.
+# Simpler than `defined($x)` but achieves the same effect.
+
+sub display_name :Type((Maybe[Str]) -> Str) ($name) {
+    if ($name) {
+        # Inside: $name narrowed from Maybe[Str] to Str
+        "Name: $name";
+    } else {
+        "Anonymous";
+    }
+}
+
+say display_name("Bob");
+say display_name(undef);
+
+# ── 9. Early Return Narrowing ───────────────────────────
+#
+# `return ... unless defined($x)` narrows $x to T for
+# the rest of the function body (after the guard).
+
+sub greet_customer :Type((Maybe[Str]) -> Str) ($name) {
+    return "Hello, stranger!" unless defined($name);
+    # After early return: $name is narrowed to Str
+    "Hello, $name! Welcome back.";
+}
+
+say greet_customer("Alice");
+say greet_customer(undef);
+
+# ── 10. Else-Block Inverse Narrowing ────────────────────
+#
+# The else-block gets the inverse narrowing:
+# if defined($x) narrows to T in then-block,
+# the else-block knows $x is Undef.
+
+sub format_or_default :Type((Maybe[Int]) -> Str) ($n) {
+    if (defined($n)) {
+        # then: $n is Int
+        "Value: $n";
+    } else {
+        # else: $n is Undef — inverse narrowing
+        "No value provided";
+    }
+}
+
+say format_or_default(42);
+say format_or_default(undef);
+
 # ── Summary ───────────────────────────────────────────────
 #
 # ┌─────────────────────┬──────────────────┬──────────────────┐
@@ -145,3 +195,6 @@ say "safe_length(undef):  ", safe_length(undef);
 #
 # Type Narrowing:
 #   if (defined($x))  → $x narrowed from Maybe[T] to T
+#   if ($x)           → truthiness narrows Maybe[T] to T
+#   return unless defined($x) → early return narrows for rest of body
+#   if/else           → else-block gets inverse narrowing

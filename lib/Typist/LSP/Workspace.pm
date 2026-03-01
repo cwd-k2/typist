@@ -319,10 +319,11 @@ sub _register_file_types ($self, $extracted) {
             }
 
             my $sig = +{
-                params   => \@param_types,
-                returns  => $return_type,
-                generics => \@generics,
-                effects  => $effects,
+                params        => \@param_types,
+                returns       => $return_type,
+                generics      => \@generics,
+                effects       => $effects,
+                default_count => $fn->{default_count} // 0,
             };
 
             if ($fn->{is_method}) {

@@ -467,6 +467,7 @@ sub _extract_variables ($class, $doc, $result) {
         next unless $var_name && $init_node;
         next if $typed_vars{$var_name};
 
+        $typed_vars{$var_name} = 1;
         push $result->{variables}->@*, +{
             name      => $var_name,
             type_expr => undef,
@@ -474,6 +475,25 @@ sub _extract_variables ($class, $doc, $result) {
             col       => $var_sym->column_number,
             init_node => $init_node,
         };
+    }
+
+    # Third pass: unannotated variables without initializer → captured for Any display
+    for my $stmt (@$stmts) {
+        my @children = $stmt->schildren;
+        for my $child (@children) {
+            next unless $child->isa('PPI::Token::Symbol');
+            my $var_name = $child->content;
+            next if $typed_vars{$var_name};
+
+            $typed_vars{$var_name} = 1;
+            push $result->{variables}->@*, +{
+                name      => $var_name,
+                type_expr => undef,
+                line      => $child->line_number,
+                col       => $child->column_number,
+                init_node => undef,
+            };
+        }
     }
 }
 
@@ -487,6 +507,7 @@ sub _extract_functions ($class, $doc, $result) {
 
         # Detect method: first parameter is $self or $class
         my $param_names = $class->_extract_sig_params($sub_stmt);
+        my $default_count = $class->_count_sig_defaults($sub_stmt);
         my ($is_method, $method_kind) = (0, undef);
         if (@$param_names && $param_names->[0] eq '$self') {
             ($is_method, $method_kind) = (1, 'instance');
@@ -530,18 +551,19 @@ sub _extract_functions ($class, $doc, $result) {
                 }
 
                 $result->{functions}{$name} = +{
-                    params_expr  => \@params_expr,
-                    returns_expr => $returns_expr,
-                    generics     => $ann->{generics_raw},
-                    eff_expr     => $eff_expr,
-                    variadic     => $variadic,
-                    param_names  => $param_names,
-                    is_method    => $is_method,
-                    method_kind  => $method_kind,
-                    line         => $sub_stmt->line_number,
-                    end_line     => $class->_end_line($sub_stmt),
-                    col          => $sub_stmt->column_number,
-                    block        => $sub_stmt->block,
+                    params_expr   => \@params_expr,
+                    returns_expr  => $returns_expr,
+                    generics      => $ann->{generics_raw},
+                    eff_expr      => $eff_expr,
+                    variadic      => $variadic,
+                    default_count => $default_count,
+                    param_names   => $param_names,
+                    is_method     => $is_method,
+                    method_kind   => $method_kind,
+                    line          => $sub_stmt->line_number,
+                    end_line      => $class->_end_line($sub_stmt),
+                    col           => $sub_stmt->column_number,
+                    block         => $sub_stmt->block,
                 };
             }
             # No :Type annotation — skip
@@ -553,18 +575,19 @@ sub _extract_functions ($class, $doc, $result) {
             $arity -= 1 if $is_method && $arity > 0;
 
             $result->{functions}{$name} = +{
-                params_expr  => [('Any') x $arity],
-                returns_expr => 'Any',
-                generics     => [],
-                eff_expr     => undef,
-                unannotated  => 1,
-                param_names  => $param_names,
-                is_method    => $is_method,
-                method_kind  => $method_kind,
-                line         => $sub_stmt->line_number,
-                end_line     => $class->_end_line($sub_stmt),
-                col          => $sub_stmt->column_number,
-                block        => $sub_stmt->block,
+                params_expr   => [('Any') x $arity],
+                returns_expr  => 'Any',
+                generics      => [],
+                eff_expr      => undef,
+                unannotated   => 1,
+                default_count => $default_count,
+                param_names   => $param_names,
+                is_method     => $is_method,
+                method_kind   => $method_kind,
+                line          => $sub_stmt->line_number,
+                end_line      => $class->_end_line($sub_stmt),
+                col           => $sub_stmt->column_number,
+                block         => $sub_stmt->block,
             };
         }
     }
@@ -629,6 +652,21 @@ sub _extract_sig_params ($class, $sub_stmt) {
 # Count the number of parameters in a subroutine signature.
 sub _count_sig_params ($class, $sub_stmt) {
     scalar $class->_extract_sig_params($sub_stmt)->@*;
+}
+
+# Count default parameters in a subroutine signature (params with = expr).
+sub _count_sig_defaults ($class, $sub_stmt) {
+    my $sig_list;
+    for my $child ($sub_stmt->schildren) {
+        last if $child->isa('PPI::Structure::Block');
+        $sig_list = $child if $child->isa('PPI::Structure::List');
+    }
+    return 0 unless $sig_list;
+
+    my $ops = $sig_list->find(sub {
+        $_[1]->isa('PPI::Token::Operator') && $_[1]->content eq '='
+    }) || [];
+    scalar @$ops;
 }
 
 # Extract the end line of a subroutine block (last token's line number).

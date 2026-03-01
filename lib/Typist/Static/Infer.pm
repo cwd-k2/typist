@@ -25,6 +25,13 @@ sub infer_expr ($class, $element, $env = undef, $expected = undef) {
 
     # ── String literals ─────────────────────────
     if ($element->isa('PPI::Token::Quote')) {
+        # Interpolated strings (containing $var or @arr) → Str (not literal)
+        if ($element->isa('PPI::Token::Quote::Double')
+            || $element->isa('PPI::Token::Quote::Interpolate'))
+        {
+            my $raw = $element->string // $element->content;
+            return Typist::Type::Atom->new('Str') if $raw =~ /[\$\@]/;
+        }
         my $str = $element->can('string') ? $element->string : $element->content;
         return Typist::Type::Literal->new($str, 'Str');
     }
@@ -146,6 +153,18 @@ sub _infer_call ($name, $env, $list_element = undef) {
         my $pkg_sig = $registry->lookup_function($pkg, $name);
         if ($pkg_sig && $pkg_sig->{returns}) {
             return _maybe_instantiate_return($pkg_sig, $env, $list_element);
+        }
+    }
+
+    # Cross-package fallback: Exporter-imported constructors (Regular, Ok, Err, etc.)
+    if (my $registry = $env->{registry}) {
+        if (my $sig = $registry->search_function_by_name($name)) {
+            if ($sig->{returns}) {
+                my $ret = _maybe_instantiate_return($sig, $env, $list_element);
+                # Only use cross-package result if generics are fully instantiated;
+                # unresolved type vars (e.g., Err<T>(Str)->Result[T]) fall through to Any
+                return $ret unless $ret->free_vars;
+            }
         }
     }
 
@@ -308,8 +327,12 @@ sub _infer_number ($token) {
 sub _infer_array ($constructor, $env = undef, $expected = undef) {
     # PPI uses PPI::Statement (not ::Expression) inside array constructors
     my $expr = $constructor->find_first('PPI::Statement');
-    return Typist::Type::Param->new('ArrayRef', Typist::Type::Atom->new('Any'))
-        unless $expr;
+
+    # Empty array: use expected type if available
+    unless ($expr) {
+        return $expected if $expected && $expected->is_param && $expected->base eq 'ArrayRef';
+        return Typist::Type::Param->new('ArrayRef', Typist::Type::Atom->new('Any'));
+    }
 
     # Extract element expected type from ArrayRef[T]
     my $elem_expected = ($expected && $expected->is_param && $expected->base eq 'ArrayRef')
@@ -322,12 +345,29 @@ sub _infer_array ($constructor, $env = undef, $expected = undef) {
         push @elem_types, $t if defined $t;
     }
 
-    return Typist::Type::Param->new('ArrayRef', Typist::Type::Atom->new('Any'))
-        unless @elem_types;
+    unless (@elem_types) {
+        return $expected if $expected && $expected->is_param && $expected->base eq 'ArrayRef';
+        return Typist::Type::Param->new('ArrayRef', Typist::Type::Atom->new('Any'));
+    }
 
     my $common = $elem_types[0];
     for my $i (1 .. $#elem_types) {
         $common = Typist::Subtype->common_super($common, $elem_types[$i]);
+    }
+
+    # When bottom-up LUB yields Any (e.g., diverse struct literals),
+    # prefer the top-down expected element type if all elements conform
+    if ($common->is_atom && $common->name eq 'Any' && $elem_expected) {
+        my $registry = $env ? $env->{registry} : undef;
+        my $all_conform = 1;
+        for my $t (@elem_types) {
+            unless (Typist::Subtype->is_subtype($t, $elem_expected,
+                    $registry ? (registry => $registry) : ())) {
+                $all_conform = 0;
+                last;
+            }
+        }
+        $common = $elem_expected if $all_conform;
     }
 
     Typist::Type::Param->new('ArrayRef', $common);
@@ -345,6 +385,12 @@ sub _infer_hash ($constructor, $env = undef, $expected = undef) {
         $_[1]->isa('PPI::Token::Operator') && $_[1]->content eq '=>'
     });
     return undef unless $has_fat_comma;
+
+    # Resolve alias on expected type (e.g., ReportNode → Struct(...))
+    if ($expected && $expected->is_alias && $env && $env->{registry}) {
+        my $resolved = $env->{registry}->lookup_type($expected->alias_name);
+        $expected = $resolved if $resolved;
+    }
 
     # Build field-level expected types from Struct
     my %field_expected;
@@ -480,6 +526,18 @@ sub _infer_operator_expr ($stmt, $env, $expected = undef) {
         return _infer_ternary($children[2], $children[4], $env, $expected);
     }
 
+    # Chained binary: Expr Op Expr Op Expr ... (5+ children, same operator)
+    if (@children >= 5) {
+        my @ops = grep { $_->isa('PPI::Token::Operator') } @children;
+        if (@ops >= 2) {
+            my $op = $ops[0]->content;
+            my $all_same = !grep { $_->content ne $op } @ops;
+            if ($all_same) {
+                return _infer_binop($op, $children[0], $children[-1], $env);
+            }
+        }
+    }
+
     undef;
 }
 
@@ -508,8 +566,12 @@ sub _infer_binop ($op, $lhs, $rhs, $env) {
     return Typist::Type::Atom->new('Num')
         if $op =~ /\A(?:\+|-|\*|\/|%|\*\*)\z/;
 
-    # String concatenation → Str
-    return Typist::Type::Atom->new('Str') if $op eq '.';
+    # String concatenation / repetition → Str
+    return Typist::Type::Atom->new('Str') if $op eq '.' || $op eq '.=' || $op eq 'x';
+
+    # Compound assignment: +=, -=, *=, /= → Num
+    return Typist::Type::Atom->new('Num')
+        if $op =~ /\A(?:\+=|-=|\*=|\/=|%=|\*\*=)\z/;
 
     # Numeric comparison → Bool
     return Typist::Type::Atom->new('Bool')

@@ -346,10 +346,11 @@ sub analyze ($class, $source, %opts) {
         }
 
         my $sig = +{
-            params   => \@param_types,
-            returns  => $return_type,
-            generics => \@generics,
-            effects  => $effects,
+            params        => \@param_types,
+            returns       => $return_type,
+            generics      => \@generics,
+            effects       => $effects,
+            default_count => $fn->{default_count} // 0,
         };
 
         if ($fn->{is_method}) {
@@ -506,7 +507,11 @@ sub _build_symbol_index ($extracted, $env = undef) {
             $inferred = 1;
         }
 
-        next unless $type;
+        # Fallback: unannotated variables with no inferrable type → Any
+        if (!$type) {
+            $type     = 'Any';
+            $inferred = 1;
+        }
 
         push @symbols, +{
             name     => $var->{name},

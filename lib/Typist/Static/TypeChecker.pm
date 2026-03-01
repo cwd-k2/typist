@@ -44,7 +44,9 @@ sub _check_variable_initializers ($self) {
         next unless defined $declared;
         next if $self->_has_type_var($declared);
 
-        my $inferred = Typist::Static::Infer->infer_expr($init_node, $self->{env}, $declared);
+        # Use function-scoped env if variable is inside a function body
+        my $env = $self->_env_for_node($init_node);
+        my $inferred = Typist::Static::Infer->infer_expr($init_node, $env, $declared);
         next unless defined $inferred;
         next if $inferred->is_atom && $inferred->name eq 'Any';
 
@@ -141,9 +143,10 @@ sub _check_call_sites ($self) {
                     my $sig = $self->{registry}->lookup_function($pkg, $fname);
                     if ($sig) {
                         $cross_pkg = +{
-                            params_expr => [map { $_->to_string } ($sig->{params} // [])->@*],
-                            generics    => $sig->{generics},
-                            variadic    => $sig->{variadic},
+                            params_expr   => [map { $_->to_string } ($sig->{params} // [])->@*],
+                            generics      => $sig->{generics},
+                            variadic      => $sig->{variadic},
+                            default_count => $sig->{default_count} // 0,
                         };
                     }
                 }
@@ -154,10 +157,11 @@ sub _check_call_sites ($self) {
                 my $core_sig = $self->{registry}->lookup_function('CORE', $name);
                 if ($core_sig) {
                     $cross_pkg = +{
-                        params_expr => $core_sig->{params_expr}
+                        params_expr   => $core_sig->{params_expr}
                             // [map { $_->to_string } ($core_sig->{params} // [])->@*],
-                        generics    => $core_sig->{generics},
-                        variadic    => $core_sig->{variadic},
+                        generics      => $core_sig->{generics},
+                        variadic      => $core_sig->{variadic},
+                        default_count => $core_sig->{default_count} // 0,
                     };
                 }
             }
@@ -168,10 +172,11 @@ sub _check_call_sites ($self) {
                 my $pkg_sig = $self->{registry}->lookup_function($pkg, $name);
                 if ($pkg_sig) {
                     $cross_pkg = +{
-                        params_expr => $pkg_sig->{params_expr}
+                        params_expr   => $pkg_sig->{params_expr}
                             // [map { $_->to_string } ($pkg_sig->{params} // [])->@*],
-                        generics    => $pkg_sig->{generics},
-                        variadic    => $pkg_sig->{variadic},
+                        generics      => $pkg_sig->{generics},
+                        variadic      => $pkg_sig->{variadic},
+                        default_count => $pkg_sig->{default_count} // 0,
                     };
                 }
             }
@@ -198,7 +203,8 @@ sub _check_call_sites ($self) {
 
         # ── Arity check ──────────────────────────────
         my $is_variadic = $fn->{variadic};
-        my $min_args = $is_variadic ? @param_exprs - 1 : @param_exprs;
+        my $default_count = $fn->{default_count} // 0;
+        my $min_args = $is_variadic ? @param_exprs - 1 : @param_exprs - $default_count;
 
         if (@args < $min_args) {
             my $expect = $is_variadic ? "at least $min_args" : "${\scalar @param_exprs}";

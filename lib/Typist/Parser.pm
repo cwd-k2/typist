@@ -152,7 +152,7 @@ sub _parse_struct_fields ($tokens, $pos, $close) {
     my %fields;
     return %fields if $$pos < @$tokens && $tokens->[$$pos] eq $close;
 
-    my $key = $tokens->[$$pos++];
+    my $key = _unquote_struct_key($tokens->[$$pos++]);
     if ($$pos < @$tokens && $tokens->[$$pos] eq '?') {
         $key .= '?';
         $$pos++;
@@ -165,7 +165,7 @@ sub _parse_struct_fields ($tokens, $pos, $close) {
     while ($$pos < @$tokens && $tokens->[$$pos] eq ',') {
         $$pos++;
         last if $$pos < @$tokens && $tokens->[$$pos] eq $close;
-        $key = $tokens->[$$pos++];
+        $key = _unquote_struct_key($tokens->[$$pos++]);
         if ($$pos < @$tokens && $tokens->[$$pos] eq '?') {
             $key .= '?';
             $$pos++;
@@ -177,6 +177,12 @@ sub _parse_struct_fields ($tokens, $pos, $close) {
     }
 
     %fields;
+}
+
+# Strip surrounding quotes from a struct key token: 'description?' → description?
+sub _unquote_struct_key ($tok) {
+    $tok =~ s/\A(['"])(.+)\1\z/$2/;
+    $tok;
 }
 
 # grouped ::= '(' type_expr ')' | func_type

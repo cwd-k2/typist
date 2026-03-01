@@ -48,6 +48,52 @@ sub common_super ($class, $a, $b) {
         }
     }
 
+    # Struct LUB: intersect field names, LUB each field's type
+    if ($a_eff->is_struct && $b_eff->is_struct) {
+        require Typist::Type::Struct;
+        my %a_req = $a_eff->required_fields;
+        my %b_req = $b_eff->required_fields;
+        my %a_opt = $a_eff->optional_fields;
+        my %b_opt = $b_eff->optional_fields;
+
+        my %result;
+        # Common required fields: LUB of each field type
+        for my $key (keys %a_req) {
+            if (exists $b_req{$key}) {
+                $result{$key} = $class->common_super($a_req{$key}, $b_req{$key});
+            } elsif (exists $b_opt{$key}) {
+                # Required in A, optional in B → optional in LUB
+                $result{"${key}?"} = $class->common_super($a_req{$key}, $b_opt{$key});
+            } else {
+                # Only in A → optional in LUB
+                $result{"${key}?"} = $a_req{$key};
+            }
+        }
+        # B-only required fields → optional in LUB
+        for my $key (keys %b_req) {
+            next if exists $a_req{$key};
+            if (exists $a_opt{$key}) {
+                $result{"${key}?"} = $class->common_super($a_opt{$key}, $b_req{$key});
+            } else {
+                $result{"${key}?"} = $b_req{$key};
+            }
+        }
+        # Common optional fields
+        for my $key (keys %a_opt) {
+            next if exists $result{$key} || exists $result{"${key}?"};
+            if (exists $b_opt{$key}) {
+                $result{"${key}?"} = $class->common_super($a_opt{$key}, $b_opt{$key});
+            } else {
+                $result{"${key}?"} = $a_opt{$key};
+            }
+        }
+        for my $key (keys %b_opt) {
+            next if exists $result{$key} || exists $result{"${key}?"};
+            $result{"${key}?"} = $b_opt{$key};
+        }
+        return Typist::Type::Struct->new(%result) if %result;
+    }
+
     Typist::Type::Atom->new('Any');
 }
 
