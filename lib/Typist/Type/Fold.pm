@@ -8,6 +8,7 @@ use Typist::Type::Func;
 use Typist::Type::Struct;
 use Typist::Type::Eff;
 use Typist::Type::Data;
+use Typist::Type::Quantified;
 
 # ── Bottom-up Map ───────────────────────────────
 
@@ -69,6 +70,16 @@ sub map_type ($class, $type, $cb) {
         ));
     }
 
+    if ($type->is_quantified) {
+        my @new_vars = map {
+            $_->{bound}
+                ? +{ name => $_->{name}, bound => $class->map_type($_->{bound}, $cb) }
+                : +{ %$_ }
+        } $type->vars;
+        my $new_body = $class->map_type($type->body, $cb);
+        return $cb->(Typist::Type::Quantified->new(vars => \@new_vars, body => $new_body));
+    }
+
     # Leaf nodes: Atom, Var, Alias, Literal, Newtype, Row
     $cb->($type);
 }
@@ -106,6 +117,12 @@ sub walk ($class, $type, $cb) {
         }
         $class->walk($_, $cb) for $type->type_args;
         $class->walk($_, $cb) for values $type->return_types->%*;
+    }
+    elsif ($type->is_quantified) {
+        for my $v ($type->vars) {
+            $class->walk($v->{bound}, $cb) if $v->{bound};
+        }
+        $class->walk($type->body, $cb);
     }
 
     return;

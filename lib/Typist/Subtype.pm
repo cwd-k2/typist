@@ -2,6 +2,7 @@ package Typist::Subtype;
 use v5.40;
 
 use Typist::Type::Atom;
+use Typist::Type::Var;
 use List::Util 'any', 'all';
 
 # Primitive hierarchy: Any > Num > Int > Bool, Any > Str, Any > Undef, Any > Void
@@ -191,6 +192,50 @@ sub _check ($sub, $super, $registry = undef) {
         return 1;
     }
 
+    # ── Quantified types (forall) ────────────────
+    # forall A. A -> A  <:  Int -> Int  (instantiation)
+    if ($sub->is_quantified && !$super->is_quantified) {
+        # Try instantiation: substitute vars with types inferred from super
+        my %bindings;
+        for my $v ($sub->vars) {
+            # Bind each quantified var to Any for a permissive check,
+            # then verify with the concrete super type.
+            $bindings{$v->{name}} = Typist::Type::Atom->new('Any');
+        }
+        # Try to find a valid instantiation by matching body against super
+        my $inst = _instantiate_check($sub, $super, $registry);
+        return $inst if defined $inst;
+        # Fallback: instantiate with Any and check
+        my $body = $sub->body->substitute(\%bindings);
+        return _check($body, $super, $registry);
+    }
+    # Concrete ≮: forall (a mono type cannot satisfy a universally quantified type)
+    if (!$sub->is_quantified && $super->is_quantified) {
+        return 0;
+    }
+    # forall <: forall (subsumption: rename and compare bodies)
+    if ($sub->is_quantified && $super->is_quantified) {
+        my @sv = $sub->vars;
+        my @ov = $super->vars;
+        return 0 unless @sv == @ov;
+        # Check bounds compatibility
+        for my $i (0 .. $#sv) {
+            my $sb = $sv[$i]{bound};
+            my $ob = $ov[$i]{bound};
+            return 0 if !$sb != !$ob;
+            if ($sb && $ob) {
+                return 0 unless _check($ob, $sb, $registry);  # contravariant bounds
+            }
+        }
+        # Rename super's vars to sub's vars for body comparison
+        my %rename;
+        for my $i (0 .. $#sv) {
+            $rename{$ov[$i]{name}} = Typist::Type::Var->new($sv[$i]{name});
+        }
+        my $super_body = $super->body->substitute(\%rename);
+        return _check($sub->body, $super_body, $registry);
+    }
+
     # ── Eff types — delegate to inner Row ────────
     if ($sub->is_eff && $super->is_eff) {
         return _check($sub->row, $super->row, $registry);
@@ -207,6 +252,71 @@ sub _check ($sub, $super, $registry = undef) {
     }
 
     0;
+}
+
+# Try to instantiate a Quantified type to match a concrete super type.
+# Uses structural matching to infer bindings for quantified variables.
+sub _instantiate_check ($quant, $target, $registry) {
+    my %bindings;
+    my $body = $quant->body;
+
+    # Simple case: both are Func — match params/return structurally
+    if ($body->is_func && $target->is_func) {
+        my @bp = $body->params;
+        my @tp = $target->params;
+        return undef unless @bp == @tp;
+
+        for my $i (0 .. $#bp) {
+            _collect_bindings($bp[$i], $tp[$i], \%bindings) or return undef;
+        }
+        _collect_bindings($body->returns, $target->returns, \%bindings) or return undef;
+
+        # Verify bounds
+        for my $v ($quant->vars) {
+            my $actual = $bindings{$v->{name}} // next;
+            if ($v->{bound}) {
+                return 0 unless _check($actual, $v->{bound}, $registry);
+            }
+        }
+
+        my $instantiated = $body->substitute(\%bindings);
+        return _check($instantiated, $target, $registry) ? 1 : 0;
+    }
+
+    undef;
+}
+
+# Collect type variable bindings by structural matching.
+sub _collect_bindings ($formal, $actual, $bindings) {
+    if ($formal->is_var) {
+        my $name = $formal->name;
+        if (exists $bindings->{$name}) {
+            return $bindings->{$name}->equals($actual) ? 1 : 0;
+        }
+        $bindings->{$name} = $actual;
+        return 1;
+    }
+    if ($formal->is_func && $actual->is_func) {
+        my @fp = $formal->params;
+        my @ap = $actual->params;
+        return 0 unless @fp == @ap;
+        for my $i (0 .. $#fp) {
+            _collect_bindings($fp[$i], $ap[$i], $bindings) or return 0;
+        }
+        return _collect_bindings($formal->returns, $actual->returns, $bindings);
+    }
+    if ($formal->is_param && $actual->is_param) {
+        return 0 unless $formal->base eq $actual->base;
+        my @fp = $formal->params;
+        my @ap = $actual->params;
+        return 0 unless @fp == @ap;
+        for my $i (0 .. $#fp) {
+            _collect_bindings($fp[$i], $ap[$i], $bindings) or return 0;
+        }
+        return 1;
+    }
+    # Non-variable leaf: must be structurally equal
+    $formal->equals($actual) ? 1 : 0;
 }
 
 sub _atom_subtype ($sub_name, $super_name) {

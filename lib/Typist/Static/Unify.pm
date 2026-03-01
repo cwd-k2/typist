@@ -80,6 +80,32 @@ sub unify ($class, $formal, $actual, $bindings = +{}, %opts) {
         return $bindings;
     }
 
+    # ── Quantified types ──────────────────────
+    # formal is Quantified: freshen vars and unify body
+    if ($formal->is_quantified && !$actual->is_quantified) {
+        my $body = $formal->body;
+        # Instantiate: just unify the body (vars become free for binding)
+        return $class->unify($body, $actual, $bindings, %opts);
+    }
+    # actual is Quantified: instantiate and unify body
+    if (!$formal->is_quantified && $actual->is_quantified) {
+        return $class->unify($formal, $actual->body, $bindings, %opts);
+    }
+    # Both Quantified: match vars count and unify bodies
+    if ($formal->is_quantified && $actual->is_quantified) {
+        my @fv = $formal->vars;
+        my @av = $actual->vars;
+        return undef unless @fv == @av;
+        # Rename actual's vars to formal's vars for body comparison
+        my %rename;
+        for my $i (0 .. $#fv) {
+            require Typist::Type::Var;
+            $rename{$av[$i]{name}} = Typist::Type::Var->new($fv[$i]{name});
+        }
+        my $actual_body = $actual->body->substitute(\%rename);
+        return $class->unify($formal->body, $actual_body, $bindings, %opts);
+    }
+
     # ── Both Union → delegate to subtype ──────
     # Union types are too complex for structural unification;
     # fall through to the subtype check below.

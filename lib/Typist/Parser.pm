@@ -10,6 +10,7 @@ use Typist::Type::Struct;
 use Typist::Type::Var;
 use Typist::Type::Alias;
 use Typist::Type::Literal;
+use Typist::Type::Quantified;
 
 use Typist::Type::Row;
 use Typist::Type::Eff;
@@ -52,7 +53,7 @@ sub _tokenize ($input) {
         elsif ($input =~ /\G('(?:[^'\\]|\\.)*')/gc) { push @tokens, $1 }
         elsif ($input =~ /\G(-?\d+(?:\.\d+)?)/gc)   { push @tokens, $1 }
         elsif ($input =~ /\G([A-Za-z_]\w*)/gc)    { push @tokens, $1 }
-        elsif ($input =~ /\G([\[\]{}(),|&?!])/gc)  { push @tokens, $1 }
+        elsif ($input =~ /\G([\[\]{}(),.|&?!:])/gc)  { push @tokens, $1 }
         else {
             my $ch = substr($input, pos($input), 1);
             die "Typist::Parser: unexpected character '$ch' in '$input'";
@@ -94,9 +95,10 @@ sub _parse_primary ($tokens, $pos) {
 
     my $tok = $tokens->[$$pos];
 
-    return _parse_struct($tokens, $pos)  if $tok eq '{';
-    return _parse_grouped($tokens, $pos) if $tok eq '(';
-    return _parse_literal($tokens, $pos) if $tok =~ /\A["\d'-]/;
+    return _parse_struct($tokens, $pos)     if $tok eq '{';
+    return _parse_grouped($tokens, $pos)    if $tok eq '(';
+    return _parse_literal($tokens, $pos)    if $tok =~ /\A["\d'-]/;
+    return _parse_quantified($tokens, $pos) if $tok eq 'forall';
     return _parse_named($tokens, $pos);
 }
 
@@ -385,6 +387,55 @@ sub _resolve_param_constructor ($name, $params, $return_type, $effect_row) {
     }
 
     Typist::Type::Param->new($name, @$params);
+}
+
+# ── Quantified Types (forall) ────────────────────
+
+# forall A B. body | forall A: Num. body
+sub _parse_quantified ($tokens, $pos) {
+    $$pos++;  # consume 'forall'
+
+    my @vars;
+    while ($$pos < @$tokens && $tokens->[$$pos] ne '.') {
+        my $var_name = $tokens->[$$pos++];
+        my $bound;
+        # Optional bound: A: Num
+        if ($$pos < @$tokens && $tokens->[$$pos] eq ':') {
+            $$pos++;  # consume ':'
+            # Resolve the bound type name
+            die "Typist::Parser: expected bound type after ':' in forall"
+                unless $$pos < @$tokens;
+            $bound = _resolve_name($tokens->[$$pos++]);
+        }
+        push @vars, $bound ? +{ name => $var_name, bound => $bound } : +{ name => $var_name };
+    }
+
+    die "Typist::Parser: expected '.' after forall variable list"
+        unless $$pos < @$tokens && $tokens->[$$pos] eq '.';
+    $$pos++;  # consume '.'
+
+    die "Typist::Parser: forall requires at least one type variable"
+        unless @vars;
+
+    # Body may be a bare function type: forall A. A -> A
+    # Parse first type, then check for '->' to build Func.
+    my $body = _parse_union($tokens, $pos);
+
+    if ($$pos < @$tokens && $tokens->[$$pos] eq '->') {
+        $$pos++;  # consume '->'
+        my $ret = _parse_union($tokens, $pos);
+        my $effects;
+        if ($$pos < @$tokens && $tokens->[$$pos] eq '!') {
+            $$pos++;
+            $effects = _parse_effect_row($tokens, $pos);
+        }
+        # Wrap the body as params: if body is already a Func (from grouped parse),
+        # extract its params; otherwise treat body as a single param.
+        my @params = $body->is_func ? ($body) : ($body);
+        $body = Typist::Type::Func->new(\@params, $ret, $effects);
+    }
+
+    Typist::Type::Quantified->new(vars => \@vars, body => $body);
 }
 
 # ── Literal Types ────────────────────────────────
