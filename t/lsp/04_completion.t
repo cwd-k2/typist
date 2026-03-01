@@ -153,4 +153,309 @@ PERL
     ok((grep { $_ eq 'Rectangle' } @constructors), 'Rectangle in constructors');
 };
 
+# ── Code Completion: struct field ────────────────
+
+subtest 'code completion: struct field' => sub {
+    use Typist::LSP::Document;
+    use Typist::LSP::Completion;
+    use Typist::Registry;
+
+    my $source = <<'PERL';
+use v5.40;
+package TestPkg;
+my $point :Type({ x => Int, y => Int }) = +{ x => 1, y => 2 };
+$point->{
+PERL
+
+    my $doc = Typist::LSP::Document->new(uri => 'file:///test_struct.pm', content => $source);
+    my $reg = Typist::Registry->new;
+    $doc->analyze(workspace_registry => $reg);
+
+    # Verify context detection
+    my $ctx = $doc->code_completion_at(3, length('$point->{'));
+    ok $ctx, 'detected struct field context';
+    is $ctx->{kind}, 'struct_field', 'kind is struct_field';
+    is $ctx->{var}, '$point', 'var is $point';
+
+    # Verify type resolution
+    my $type_str = $doc->_resolve_var_type('$point');
+    ok $type_str, 'resolved variable type';
+    like $type_str, qr/x/, 'type contains field x';
+
+    # Verify completions
+    my $items = Typist::LSP::Completion->complete_code($ctx, $doc, $reg);
+    ok ref $items eq 'ARRAY', 'items is array';
+    ok @$items >= 2, 'at least 2 field completions';
+
+    my @labels = map { $_->{label} } @$items;
+    ok((grep { $_ eq 'x' } @labels), 'field x in completions');
+    ok((grep { $_ eq 'y' } @labels), 'field y in completions');
+
+    # Verify kind is Field (5)
+    for my $item (@$items) {
+        is $item->{kind}, 5, "item '$item->{label}' has Field kind";
+    }
+
+    # Verify detail contains type info
+    my ($x_item) = grep { $_->{label} eq 'x' } @$items;
+    like $x_item->{detail}, qr/Int/, 'field x detail contains Int';
+};
+
+# ── Code Completion: struct field with prefix ────
+
+subtest 'code completion: struct field with prefix' => sub {
+    my $source = <<'PERL';
+use v5.40;
+package TestPkg2;
+my $rec :Type({ name => Str, age => Int, address => Str }) = +{};
+$rec->{a
+PERL
+
+    my $doc = Typist::LSP::Document->new(uri => 'file:///test_prefix.pm', content => $source);
+    my $reg = Typist::Registry->new;
+    $doc->analyze(workspace_registry => $reg);
+
+    my $ctx = $doc->code_completion_at(3, length('$rec->{a'));
+    ok $ctx, 'detected struct field context with prefix';
+    is $ctx->{prefix}, 'a', 'prefix is a';
+
+    my $items = Typist::LSP::Completion->complete_code($ctx, $doc, $reg);
+    my @labels = map { $_->{label} } @$items;
+    ok((grep { $_ eq 'age' }     @labels), 'age in filtered completions');
+    ok((grep { $_ eq 'address' } @labels), 'address in filtered completions');
+    ok(!(grep { $_ eq 'name' }   @labels), 'name NOT in filtered completions');
+};
+
+# ── Code Completion: struct field with optional fields ──
+
+subtest 'code completion: struct optional fields' => sub {
+    my $source = <<'PERL';
+use v5.40;
+package TestPkg3;
+my $user :Type({ name => Str, email? => Str }) = +{ name => "alice" };
+$user->{
+PERL
+
+    my $doc = Typist::LSP::Document->new(uri => 'file:///test_opt.pm', content => $source);
+    my $reg = Typist::Registry->new;
+    $doc->analyze(workspace_registry => $reg);
+
+    my $ctx = $doc->code_completion_at(3, length('$user->{'));
+    ok $ctx, 'detected context';
+
+    my $items = Typist::LSP::Completion->complete_code($ctx, $doc, $reg);
+    my @labels = map { $_->{label} } @$items;
+    ok((grep { $_ eq 'name' }  @labels), 'required field name present');
+    ok((grep { $_ eq 'email' } @labels), 'optional field email present');
+
+    my ($email) = grep { $_->{label} eq 'email' } @$items;
+    like $email->{detail}, qr/optional/, 'optional field marked as optional';
+};
+
+# ── Code Completion: method ───────────────────────
+
+subtest 'code completion: method' => sub {
+    use Typist::LSP::Workspace;
+
+    # Build a workspace with a package that has methods
+    my $ws = Typist::LSP::Workspace->new;
+    my $pkg_source = <<'PERL';
+use v5.40;
+package Counter;
+
+sub new :Type(() -> Counter) ($class) {
+    bless +{ count => 0 }, $class;
+}
+
+sub increment :Type((Int) -> Void) ($self, $n) {
+    $self->{count} += $n;
+}
+
+sub get_count :Type(() -> Int) ($self) {
+    $self->{count};
+}
+PERL
+    $ws->update_file('/fake/Counter.pm', $pkg_source);
+
+    # Now create a doc that uses $self->
+    my $doc_source = <<'PERL';
+use v5.40;
+package Counter;
+
+sub new :Type(() -> Counter) ($class) {
+    bless +{ count => 0 }, $class;
+}
+
+sub increment :Type((Int) -> Void) ($self, $n) {
+    $self->{count} += $n;
+}
+
+sub get_count :Type(() -> Int) ($self) {
+    $self->{count};
+}
+
+sub reset :Type(() -> Void) ($self) {
+    $self->
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(uri => 'file:///fake/Counter.pm', content => $doc_source);
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Verify context detection — $self-> is on line 16 (0-indexed)
+    my $ctx = $doc->code_completion_at(16, length('    $self->'));
+    ok $ctx, 'detected method context';
+    is $ctx->{kind}, 'method', 'kind is method';
+    is $ctx->{prefix}, '', 'empty prefix';
+
+    my $items = Typist::LSP::Completion->complete_code($ctx, $doc, $ws->registry);
+    ok ref $items eq 'ARRAY', 'items is array';
+
+    my @labels = map { $_->{label} } @$items;
+    ok((grep { $_ eq 'increment' } @labels), 'increment in method completions');
+    ok((grep { $_ eq 'get_count' } @labels), 'get_count in method completions');
+
+    # Verify kind is Method (2)
+    for my $item (@$items) {
+        is $item->{kind}, 2, "item '$item->{label}' has Method kind";
+    }
+};
+
+# ── Code Completion: method with prefix ───────────
+
+subtest 'code completion: method with prefix' => sub {
+    my $ws = Typist::LSP::Workspace->new;
+    my $pkg_source = <<'PERL';
+use v5.40;
+package Animal;
+
+sub speak :Type(() -> Str) ($self) { "..." }
+sub sleep :Type(() -> Void) ($self) { }
+sub eat :Type((Str) -> Void) ($self, $food) { }
+PERL
+    $ws->update_file('/fake/Animal.pm', $pkg_source);
+
+    my $doc_source = <<'PERL';
+use v5.40;
+package Animal;
+
+sub speak :Type(() -> Str) ($self) { "..." }
+sub sleep :Type(() -> Void) ($self) { }
+sub eat :Type((Str) -> Void) ($self, $food) { }
+
+sub run :Type(() -> Void) ($self) {
+    $self->s
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(uri => 'file:///fake/Animal.pm', content => $doc_source);
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # $self->s is on line 8 (0-indexed)
+    my $ctx = $doc->code_completion_at(8, length('    $self->s'));
+    ok $ctx, 'detected method context with prefix';
+    is $ctx->{prefix}, 's', 'prefix is s';
+
+    my $items = Typist::LSP::Completion->complete_code($ctx, $doc, $ws->registry);
+    my @labels = map { $_->{label} } @$items;
+    ok((grep { $_ eq 'speak' } @labels), 'speak in filtered completions');
+    ok((grep { $_ eq 'sleep' } @labels), 'sleep in filtered completions');
+    ok(!(grep { $_ eq 'eat' } @labels), 'eat NOT in filtered completions');
+};
+
+# ── Code Completion: effect operation ─────────────
+
+subtest 'code completion: effect operation' => sub {
+    my $ws = Typist::LSP::Workspace->new;
+    my $eff_source = <<'PERL';
+use v5.40;
+package Effects;
+effect Console => +{
+    writeLine => '(Str) -> Void',
+    readLine  => '() -> Str',
+};
+PERL
+    $ws->update_file('/fake/Effects.pm', $eff_source);
+
+    my $doc_source = <<'PERL';
+use v5.40;
+Console::
+PERL
+
+    my $doc = Typist::LSP::Document->new(uri => 'file:///test_eff.pm', content => $doc_source);
+
+    # Verify context detection
+    my $ctx = $doc->code_completion_at(1, length('Console::'));
+    ok $ctx, 'detected effect op context';
+    is $ctx->{kind}, 'effect_op', 'kind is effect_op';
+    is $ctx->{effect}, 'Console', 'effect is Console';
+
+    my $items = Typist::LSP::Completion->complete_code($ctx, $doc, $ws->registry);
+    ok ref $items eq 'ARRAY', 'items is array';
+    ok @$items >= 2, 'at least 2 effect ops';
+
+    my @labels = map { $_->{label} } @$items;
+    ok((grep { $_ eq 'writeLine' } @labels), 'writeLine in completions');
+    ok((grep { $_ eq 'readLine' }  @labels), 'readLine in completions');
+
+    # Verify kind is Method (2)
+    for my $item (@$items) {
+        is $item->{kind}, 2, "item '$item->{label}' has Method kind";
+    }
+
+    # Verify detail contains type info
+    my ($wl) = grep { $_->{label} eq 'writeLine' } @$items;
+    like $wl->{detail}, qr/Str/, 'writeLine detail contains Str';
+};
+
+# ── Code Completion: effect op with prefix ────────
+
+subtest 'code completion: effect op with prefix' => sub {
+    my $ws = Typist::LSP::Workspace->new;
+    my $eff_source = <<'PERL';
+use v5.40;
+package Effects2;
+effect Storage => +{
+    getItem    => '(Str) -> Str',
+    setItem    => '(Str, Str) -> Void',
+    removeItem => '(Str) -> Void',
+};
+PERL
+    $ws->update_file('/fake/Effects2.pm', $eff_source);
+
+    my $doc_source = "use v5.40;\nStorage::get";
+    my $doc = Typist::LSP::Document->new(uri => 'file:///test_eff2.pm', content => $doc_source);
+
+    my $ctx = $doc->code_completion_at(1, length('Storage::get'));
+    ok $ctx, 'detected effect op context with prefix';
+    is $ctx->{prefix}, 'get', 'prefix is get';
+
+    my $items = Typist::LSP::Completion->complete_code($ctx, $doc, $ws->registry);
+    my @labels = map { $_->{label} } @$items;
+    ok((grep { $_ eq 'getItem' } @labels), 'getItem in filtered completions');
+    ok(!(grep { $_ eq 'setItem' } @labels), 'setItem NOT in filtered completions');
+    ok(!(grep { $_ eq 'removeItem' } @labels), 'removeItem NOT in filtered completions');
+};
+
+# ── Code Completion context: no false positives ───
+
+subtest 'code completion: context detection edge cases' => sub {
+    my $doc = Typist::LSP::Document->new(
+        uri => 'file:///edge.pm',
+        content => "use v5.40;\nmy \$x = 1;\n",
+    );
+
+    # Plain variable assignment should not trigger
+    my $ctx = $doc->code_completion_at(1, length('my $x = 1'));
+    is $ctx, undef, 'no code context for plain assignment';
+
+    # $var-> without { should not trigger struct field
+    my $doc2 = Typist::LSP::Document->new(
+        uri => 'file:///edge2.pm',
+        content => "use v5.40;\n\$obj->method(",
+    );
+    $ctx = $doc2->code_completion_at(1, length('$obj->method('));
+    is $ctx, undef, 'no code context for method call with parens';
+};
+
 done_testing;

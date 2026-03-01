@@ -430,6 +430,51 @@ sub _symbol_detail ($self, $sym) {
     undef;
 }
 
+# ── Code Completion Context ─────────────────────
+
+# Detect code-level completion context at a given position.
+# Returns: { kind => 'struct_field', var => '$x' }
+#        | { kind => 'method', prefix => '...' }
+#        | { kind => 'effect_op', effect => 'Console', prefix => '...' }
+#        | undef
+sub code_completion_at ($self, $line, $col) {
+    my $lines = $self->_lines;
+    return undef unless $line < @$lines;
+    my $text = substr($lines->[$line], 0, $col);
+
+    # $var->{  → struct field completion
+    if ($text =~ /(\$\w+)\s*->\s*\{\s*(\w*)\z/) {
+        return +{ kind => 'struct_field', var => $1, prefix => ($2 // '') };
+    }
+
+    # $self->  → method completion (only $self, not arbitrary variables)
+    if ($text =~ /\$self\s*->\s*(\w*)\z/) {
+        return +{ kind => 'method', prefix => ($1 // '') };
+    }
+
+    # Effect::  → effect operation completion
+    if ($text =~ /([A-Z]\w*)::\s*(\w*)\z/) {
+        return +{ kind => 'effect_op', effect => $1, prefix => ($2 // '') };
+    }
+
+    undef;
+}
+
+# Resolve the type of a variable from analysis symbols.
+# Returns a type string or undef.
+sub _resolve_var_type ($self, $var_name) {
+    my $result = $self->{result} // return undef;
+    my $symbols = $result->{symbols} // return undef;
+
+    for my $sym (@$symbols) {
+        my $kind = $sym->{kind} // '';
+        next unless $kind eq 'variable' || $kind eq 'parameter';
+        next unless ($sym->{name} // '') eq $var_name;
+        return $sym->{type} if $sym->{type};
+    }
+    undef;
+}
+
 # Determine completion context at a given position.
 # Returns: 'type_expr' | 'generic' | 'effect' | 'constraint' | undef
 sub completion_context ($self, $line, $col) {

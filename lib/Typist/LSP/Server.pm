@@ -120,7 +120,7 @@ sub _handle_initialize ($self, $params) {
             },
             inlayHintProvider      => \1,
             completionProvider => +{
-                triggerCharacters => ['(', '[', ',', '|', '&'],
+                triggerCharacters => ['(', '[', ',', '|', '&', '>', '{', ':'],
             },
             semanticTokensProvider => +{
                 legend => Typist::LSP::SemanticTokens->legend,
@@ -237,27 +237,36 @@ sub _handle_completion ($self, $params) {
     my $uri = $params->{textDocument}{uri};
     my $doc = $self->{documents}{$uri} // return +{ items => [] };
     my $pos = $params->{position};
+    my $line = $pos->{line};
+    my $col  = $pos->{character};
 
-    my $ctx = $doc->completion_context($pos->{line}, $pos->{character});
-
-    # Regular code context: offer constructor completions
-    if (!$ctx) {
-        my @constructors = $self->{workspace} ? $self->{workspace}->all_constructor_names : ();
-        return +{ items => [] } unless @constructors;
-        my @items = map { +{
-            label  => $_,
-            kind   => 3,  # Function
-            detail => 'constructor',
-        } } @constructors;
-        return +{ items => \@items };
+    # Type annotation context (existing)
+    if (my $ctx = $doc->completion_context($line, $col)) {
+        my @typedefs    = $self->{workspace} ? $self->{workspace}->all_typedef_names    : ();
+        my @effects     = $self->{workspace} ? $self->{workspace}->all_effect_names     : ();
+        my @typeclasses = $self->{workspace} ? $self->{workspace}->all_typeclass_names  : ();
+        my $items = Typist::LSP::Completion->complete($ctx, \@typedefs, \@effects, \@typeclasses);
+        return +{ items => $items };
     }
 
-    my @typedefs    = $self->{workspace} ? $self->{workspace}->all_typedef_names    : ();
-    my @effects     = $self->{workspace} ? $self->{workspace}->all_effect_names     : ();
-    my @typeclasses = $self->{workspace} ? $self->{workspace}->all_typeclass_names  : ();
-    my $items = Typist::LSP::Completion->complete($ctx, \@typedefs, \@effects, \@typeclasses);
+    # Code completion context (type-aware)
+    if (my $code_ctx = $doc->code_completion_at($line, $col)) {
+        $doc->analyze(workspace_registry => $self->{workspace} && $self->{workspace}->registry)
+            unless $doc->{result};
+        my $registry = $self->{workspace} ? $self->{workspace}->registry : undef;
+        my $items = Typist::LSP::Completion->complete_code($code_ctx, $doc, $registry);
+        return +{ isIncomplete => \0, items => $items } if @$items;
+    }
 
-    +{ items => $items };
+    # Fallback: constructor completions
+    my @constructors = $self->{workspace} ? $self->{workspace}->all_constructor_names : ();
+    return +{ items => [] } unless @constructors;
+    my @items = map { +{
+        label  => $_,
+        kind   => 3,  # Function
+        detail => 'constructor',
+    } } @constructors;
+    +{ items => \@items };
 }
 
 # ── Inlay Hint Handler ──────────────────────────
