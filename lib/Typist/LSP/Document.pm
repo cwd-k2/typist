@@ -344,7 +344,8 @@ sub _symbol_detail ($self, $sym) {
         return $detail;
     }
 
-    return $sym->{type} if $kind eq 'variable' || $kind eq 'typedef' || $kind eq 'newtype';
+    return $sym->{type} if $kind eq 'variable' || $kind eq 'typedef'
+                         || $kind eq 'newtype' || $kind eq 'datatype';
 
     undef;
 }

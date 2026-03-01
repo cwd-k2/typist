@@ -335,4 +335,31 @@ PERL
     like $hover->{result}{contents}{value}, qr/declared/, 'shows declared label';
 };
 
+# ── Hover on datatype ─────────────────────────────
+
+subtest 'hover shows datatype info' => sub {
+    my $source = <<'PERL';
+use v5.40;
+datatype Shape =>
+    Circle    => '(Int)',
+    Rectangle => '(Int, Int)';
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 1, character => 10 },  # on 'Shape'
+        }),
+    ));
+
+    my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $hover, 'got hover response';
+    ok $hover->{result}, 'hover has result';
+    like $hover->{result}{contents}{value}, qr/datatype Shape/, 'contains datatype name';
+    like $hover->{result}{contents}{value}, qr/Circle/, 'shows Circle variant';
+};
+
 done_testing;

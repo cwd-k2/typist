@@ -81,4 +81,32 @@ PERL
     ok $greet->{selectionRange}, 'has selectionRange';
 };
 
+# ── Document symbols include datatype ────────────
+
+subtest 'documentSymbol includes datatype' => sub {
+    my $source = <<'PERL';
+use v5.40;
+datatype Shape =>
+    Circle    => '(Int)',
+    Rectangle => '(Int, Int)';
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/documentSymbol', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    my $symbols = $resp->{result};
+    my ($shape) = grep { $_->{name} eq 'Shape' } @$symbols;
+
+    ok $shape, 'datatype Shape present';
+    is $shape->{kind}, 10, 'datatype has Enum kind (10)';
+    like $shape->{detail}, qr/Circle/, 'detail mentions Circle variant';
+};
+
 done_testing;

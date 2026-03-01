@@ -178,3 +178,50 @@ my $name = match $favorite,
 say "Blue is: $name";
 
 # Exhaustiveness warning for enums — try commenting out a branch!
+
+# ── GADTs (Generalized Algebraic Data Types) ──────────────
+#
+# GADT constructors specify per-constructor return types using
+# the '->' syntax. This lets each constructor constrain the
+# type parameter to a specific type.
+#
+#   datatype 'Expr[A]' =>
+#       IntLit  => '(Int) -> Expr[Int]',    # A = Int
+#       BoolLit => '(Bool) -> Expr[Bool]';  # A = Bool
+#
+# At runtime, forced type_args override inference.
+
+BEGIN {
+    datatype 'TypedExpr[A]' =>
+        TInt    => '(Int) -> TypedExpr[Int]',
+        TBool   => '(Bool) -> TypedExpr[Bool]',
+        TAdd    => '(TypedExpr[Int], TypedExpr[Int]) -> TypedExpr[Int]',
+        TIf     => '(TypedExpr[Bool], TypedExpr[A], TypedExpr[A]) -> TypedExpr[A]';
+}
+
+my $lit = TInt(42);
+say "TInt(42):   tag=$lit->{_tag}  type_arg=", $lit->{_type_args}[0]->to_string;
+
+my $b = TBool(1);
+say "TBool(1):   tag=$b->{_tag}  type_arg=", $b->{_type_args}[0]->to_string;
+
+my $sum = TAdd(TInt(1), TInt(2));
+say "TAdd(1, 2): tag=$sum->{_tag}  type_arg=", $sum->{_type_args}[0]->to_string;
+
+# is_gadt predicate
+my $dt = Typist::Registry->lookup_datatype('TypedExpr');
+say "TypedExpr is GADT? ", $dt->is_gadt ? 'yes' : 'no';
+say "Shape is GADT?     ", Typist::Registry->lookup_datatype('Shape')->is_gadt ? 'yes' : 'no';
+
+# Match works normally with GADTs
+sub eval_typed ($e) {
+    match $e,
+        TInt    => sub ($n)       { $n },
+        TBool   => sub ($b)       { $b },
+        TAdd    => sub ($l, $r)   { eval_typed($l) + eval_typed($r) },
+        TIf     => sub ($c, $t, $f) { eval_typed($c) ? eval_typed($t) : eval_typed($f) };
+}
+
+say "eval TAdd(TInt(1), TInt(2)) = ", eval_typed($sum);
+say "eval TIf(TBool(1), TInt(10), TInt(20)) = ",
+    eval_typed(TIf(TBool(1), TInt(10), TInt(20)));
