@@ -13,6 +13,7 @@ use Typist::Attribute;
 use Typist::TypeClass;
 use Typist::Prelude;
 use Typist::Type::Var;
+use Typist::Type::Param;
 
 # ── Constructor ──────────────────────────────────
 
@@ -138,6 +139,30 @@ sub _register_file_types ($self, $extracted) {
             return_types => (%return_types ? \%return_types : +{}),
         );
         $reg->register_datatype($name, $type);
+
+        # Register datatype constructors as functions
+        my $pkg = $extracted->{package} // 'main';
+        for my $tag (keys %parsed_variants) {
+            my $param_types = $parsed_variants{$tag};
+            my $return_type;
+
+            if (exists $return_types{$tag}) {
+                $return_type = $return_types{$tag};
+            } elsif (@tp) {
+                my @vars = map { Typist::Type::Var->new($_) } @tp;
+                $return_type = Typist::Type::Param->new($name, @vars);
+            } else {
+                $return_type = $type;
+            }
+            my @generics = map { +{ name => $_, bound_expr => undef } } @tp;
+            $reg->register_function($pkg, $tag, +{
+                params       => $param_types,
+                returns      => $return_type,
+                generics     => \@generics,
+                params_expr  => [map { $_->to_string } @$param_types],
+                returns_expr => $return_type->to_string,
+            });
+        }
     }
 
     for my $name (keys $extracted->{effects}->%*) {
@@ -155,6 +180,40 @@ sub _register_file_types ($self, $extracted) {
             );
         };
         $reg->register_typeclass($name, $def // undef);
+    }
+
+    # Register typeclass methods as functions
+    for my $tc_name (keys $extracted->{typeclasses}->%*) {
+        my $tc_info = $extracted->{typeclasses}{$tc_name};
+        my $methods = $tc_info->{methods} // +{};
+
+        for my $method_name (keys %$methods) {
+            my $sig_str = $methods->{$method_name};
+            eval {
+                my $ann = Typist::Parser->parse_annotation($sig_str);
+                my $type = $ann->{type};
+                my (@params, $returns);
+                if ($type->is_func) {
+                    @params  = $type->params;
+                    $returns = $type->returns;
+                } else {
+                    $returns = $type;
+                }
+
+                my %seen;
+                $seen{$_} = 1 for map { $_->free_vars } @params;
+                if ($returns) { $seen{$_} = 1 for $returns->free_vars }
+                my @generics = map { +{ name => $_, bound_expr => undef } } sort keys %seen;
+
+                $reg->register_function($tc_name, $method_name, +{
+                    params       => \@params,
+                    returns      => $returns,
+                    generics     => \@generics,
+                    params_expr  => [map { $_->to_string } @params],
+                    returns_expr => $returns->to_string,
+                });
+            };
+        }
     }
 
     # Register declared external functions
@@ -311,6 +370,16 @@ sub all_typeclass_names ($self) {
     my %seen;
     for my $info (values $self->{files}->%*) {
         $seen{$_} = 1 for keys(($info->{typeclasses} // +{})->%*);
+    }
+    sort keys %seen;
+}
+
+sub all_constructor_names ($self) {
+    my %seen;
+    for my $info (values $self->{files}->%*) {
+        for my $dt_info (values(($info->{datatypes} // +{})->%*)) {
+            $seen{$_} = 1 for keys($dt_info->{variants}->%*);
+        }
     }
     sort keys %seen;
 }

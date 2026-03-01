@@ -125,8 +125,6 @@ sub analyze ($class, $source, %opts) {
     for my $tc_name (sort keys $extracted->{typeclasses}->%*) {
         my $tc_info = $extracted->{typeclasses}{$tc_name};
         my $methods = $tc_info->{methods} // +{};
-        my $var_spec = $tc_info->{var_spec} // 'T';
-        my @generics = (+{ name => $var_spec, bound_expr => undef });
 
         for my $method_name (sort keys %$methods) {
             my $sig_str = $methods->{$method_name};
@@ -140,6 +138,14 @@ sub analyze ($class, $source, %opts) {
             } else {
                 $returns = $type;
             }
+
+            # Collect all free type variables from the method signature
+            # (includes typeclass var + method-specific vars like A, B)
+            my %seen;
+            $seen{$_} = 1 for map { $_->free_vars } @params;
+            if ($returns) { $seen{$_} = 1 for $returns->free_vars }
+            my @generics = map { +{ name => $_, bound_expr => undef } } sort keys %seen;
+
             $registry->register_function($tc_name, $method_name, +{
                 params       => \@params,
                 returns      => $returns,
@@ -578,6 +584,7 @@ sub _build_symbol_index ($extracted, $env = undef) {
     # Datatypes (ADT/GADT)
     for my $name (sort keys(($extracted->{datatypes} // +{})->%*)) {
         my $info = $extracted->{datatypes}{$name};
+        my @tp   = ($info->{type_params} // [])->@*;
         my @parts;
         for my $tag (sort keys $info->{variants}->%*) {
             my $spec = $info->{variants}{$tag};
@@ -590,6 +597,74 @@ sub _build_symbol_index ($extracted, $env = undef) {
             line => $info->{line},
             col  => $info->{col},
         };
+
+        # Constructor symbols for each variant
+        for my $tag (sort keys $info->{variants}->%*) {
+            my ($types, $ret_expr) = Typist::Type::Data->parse_constructor_spec(
+                $info->{variants}{$tag}, type_params => \@tp,
+            );
+            my @params_expr = map { $_->to_string } @$types;
+            my $returns_expr;
+            if (defined $ret_expr) {
+                $returns_expr = $ret_expr;
+            } elsif (@tp) {
+                $returns_expr = $name . '[' . join(', ', @tp) . ']';
+            } else {
+                $returns_expr = $name;
+            }
+            my @generics = @tp ? @tp : ();
+
+            push @symbols, +{
+                name         => $tag,
+                kind         => 'function',
+                params_expr  => \@params_expr,
+                returns_expr => $returns_expr,
+                generics     => \@generics,
+                constructor  => 1,
+                line         => $info->{line},
+                col          => $info->{col},
+            };
+        }
+    }
+
+    # Typeclass method symbols
+    for my $tc_name (sort keys $extracted->{typeclasses}->%*) {
+        my $tc_info = $extracted->{typeclasses}{$tc_name};
+        my $methods = $tc_info->{methods} // +{};
+
+        for my $method_name (sort keys %$methods) {
+            my $sig_str = $methods->{$method_name};
+            my $ann = eval { Typist::Parser->parse_annotation($sig_str) };
+            next unless $ann;
+            my $type = $ann->{type};
+            my (@params_expr, $returns_expr);
+            if ($type->is_func) {
+                @params_expr  = map { $_->to_string } $type->params;
+                $returns_expr = $type->returns->to_string;
+            } else {
+                $returns_expr = $type->to_string;
+            }
+
+            # Collect free type variables for generics display
+            my %seen;
+            if ($type->is_func) {
+                $seen{$_} = 1 for map { $_->free_vars } $type->params;
+                if ($type->returns) { $seen{$_} = 1 for $type->returns->free_vars }
+            } else {
+                $seen{$_} = 1 for $type->free_vars;
+            }
+            my @generics = sort keys %seen;
+
+            push @symbols, +{
+                name         => $method_name,
+                kind         => 'function',
+                params_expr  => \@params_expr,
+                returns_expr => $returns_expr,
+                generics     => \@generics,
+                line         => $tc_info->{line},
+                col          => $tc_info->{col},
+            };
+        }
     }
 
     \@symbols;

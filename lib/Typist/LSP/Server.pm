@@ -231,7 +231,18 @@ sub _handle_completion ($self, $params) {
     my $pos = $params->{position};
 
     my $ctx = $doc->completion_context($pos->{line}, $pos->{character});
-    return +{ items => [] } unless $ctx;
+
+    # Regular code context: offer constructor completions
+    if (!$ctx) {
+        my @constructors = $self->{workspace} ? $self->{workspace}->all_constructor_names : ();
+        return +{ items => [] } unless @constructors;
+        my @items = map { +{
+            label  => $_,
+            kind   => 3,  # Function
+            detail => 'constructor',
+        } } @constructors;
+        return +{ items => \@items };
+    }
 
     my @typedefs    = $self->{workspace} ? $self->{workspace}->all_typedef_names    : ();
     my @effects     = $self->{workspace} ? $self->{workspace}->all_effect_names     : ();

@@ -90,16 +90,30 @@ sub _word_at ($self, $line, $col) {
     my $len  = length $text;
     return undef unless $col < $len;
 
-    # Expand left from $col
+    # Expand left from $col (consume word chars, sigils, and :: pairs)
     my $start = $col;
-    while ($start > 0 && substr($text, $start - 1, 1) =~ /[\w\$\@%]/) {
-        $start--;
+    while ($start > 0) {
+        my $ch = substr($text, $start - 1, 1);
+        if ($ch =~ /[\w\$\@%]/) {
+            $start--;
+        } elsif ($ch eq ':' && $start >= 2 && substr($text, $start - 2, 1) eq ':') {
+            $start -= 2;  # consume :: pair
+        } else {
+            last;
+        }
     }
 
-    # Expand right from $col
+    # Expand right from $col (consume word chars and :: pairs)
     my $end = $col;
-    while ($end < $len && substr($text, $end, 1) =~ /\w/) {
-        $end++;
+    while ($end < $len) {
+        my $ch = substr($text, $end, 1);
+        if ($ch =~ /\w/) {
+            $end++;
+        } elsif ($ch eq ':' && $end + 1 < $len && substr($text, $end + 1, 1) eq ':') {
+            $end += 2;  # consume :: pair
+        } else {
+            last;
+        }
     }
 
     return undef if $start == $end;
@@ -107,6 +121,8 @@ sub _word_at ($self, $line, $col) {
     my $word = substr($text, $start, $end - $start);
     # Strip leading sigil noise if it's just a bare sigil
     return undef if $word =~ /^[\$\@%]$/;
+    # Reject bare :: separator
+    return undef if $word eq '::';
 
     $word;
 }
@@ -139,6 +155,26 @@ sub symbol_at ($self, $line, $col) {
                 eff_expr     => 'Eff(*)',
                 builtin      => 1,
             };
+        }
+
+        # Fallback: registry lookup for cross-package or constructor symbols
+        if (my $registry = $result->{registry}) {
+            if ($word =~ /::/) {
+                # Qualified name: Pkg::func
+                my ($pkg, $fname) = $word =~ /\A(.+)::(\w+)\z/;
+                if ($pkg && $fname) {
+                    if (my $sig = $registry->lookup_function($pkg, $fname)) {
+                        return _synthesize_function_symbol($fname, $sig);
+                    }
+                }
+            } else {
+                # Unqualified: try current package
+                my $pkg = $result->{extracted}{package} // 'main';
+                my $lookup_name = $bare // $word;
+                if (my $sig = $registry->lookup_function($pkg, $lookup_name)) {
+                    return _synthesize_function_symbol($lookup_name, $sig);
+                }
+            }
         }
     }
 
@@ -375,6 +411,41 @@ sub completion_context ($self, $line, $col) {
     return 'type_expr' if $text =~ /declare\s+(?:\w+|'[^']*')\s*=>\s*['"]?\s*\z/;
 
     undef;
+}
+
+# ── Registry Symbol Synthesis ───────────────────
+
+sub _synthesize_function_symbol ($name, $sig) {
+    my @params_expr;
+    if ($sig->{params}) {
+        @params_expr = map { ref $_ ? $_->to_string : $_ } @{$sig->{params}};
+    }
+    @params_expr = @{$sig->{params_expr}} if $sig->{params_expr} && !@params_expr;
+
+    my $returns_expr;
+    if ($sig->{returns}) {
+        $returns_expr = ref $sig->{returns} ? $sig->{returns}->to_string : $sig->{returns};
+    }
+    $returns_expr //= $sig->{returns_expr};
+
+    my @generics;
+    if ($sig->{generics} && @{$sig->{generics}}) {
+        @generics = map { ref $_ eq 'HASH' ? $_->{name} : $_ } @{$sig->{generics}};
+    }
+
+    my $eff_expr;
+    if ($sig->{effects}) {
+        $eff_expr = ref $sig->{effects} ? $sig->{effects}->to_string : $sig->{effects};
+    }
+
+    +{
+        name         => $name,
+        kind         => 'function',
+        params_expr  => \@params_expr,
+        returns_expr => $returns_expr,
+        generics     => \@generics,
+        eff_expr     => $eff_expr,
+    };
 }
 
 1;

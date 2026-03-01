@@ -107,6 +107,17 @@ PERL
     ok $shape, 'datatype Shape present';
     is $shape->{kind}, 10, 'datatype has Enum kind (10)';
     like $shape->{detail}, qr/Circle/, 'detail mentions Circle variant';
+
+    # Constructor symbols should appear as functions
+    my ($circle) = grep { $_->{name} eq 'Circle' } @$symbols;
+    ok $circle, 'constructor Circle present as symbol';
+    is $circle->{kind}, 12, 'constructor has Function kind (12)';
+    like $circle->{detail}, qr/\(Int\) -> Shape/, 'constructor detail shows (Int) -> Shape';
+
+    my ($rect) = grep { $_->{name} eq 'Rectangle' } @$symbols;
+    ok $rect, 'constructor Rectangle present as symbol';
+    is $rect->{kind}, 12, 'constructor has Function kind (12)';
+    like $rect->{detail}, qr/\(Int, Int\) -> Shape/, 'constructor detail shows (Int, Int) -> Shape';
 };
 
 done_testing;

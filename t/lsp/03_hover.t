@@ -362,4 +362,59 @@ PERL
     like $hover->{result}{contents}{value}, qr/Circle/, 'shows Circle variant';
 };
 
+# ── Hover on ADT constructor ──────────────────────
+
+subtest 'hover shows constructor signature' => sub {
+    my $source = <<'PERL';
+use v5.40;
+datatype Shape =>
+    Circle    => '(Int)',
+    Rectangle => '(Int, Int)';
+my $c = Circle(5);
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 4, character => 9 },  # on 'Circle' in call
+        }),
+    ));
+
+    my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $hover, 'got hover response';
+    ok $hover->{result}, 'hover has result';
+    like $hover->{result}{contents}{value}, qr/sub Circle\(Int\) -> Shape/, 'shows sub Circle(Int) -> Shape';
+};
+
+# ── Hover on typeclass method ──────────────────────
+
+subtest 'hover shows typeclass method signature' => sub {
+    my $source = <<'PERL';
+use v5.40;
+typeclass Show => 'T', +{
+    show => '(T) -> Str',
+};
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 2, character => 5 },  # on 'show'
+        }),
+    ));
+
+    my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $hover, 'got hover response';
+    ok $hover->{result}, 'hover has result';
+    like $hover->{result}{contents}{value}, qr/sub show/, 'shows function name';
+    like $hover->{result}{contents}{value}, qr/T/, 'shows type variable T';
+    like $hover->{result}{contents}{value}, qr/-> Str/, 'shows return type Str';
+};
+
 done_testing;

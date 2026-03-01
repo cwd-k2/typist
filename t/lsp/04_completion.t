@@ -125,4 +125,32 @@ subtest 'completion inside :Type(<T: ' => sub {
     ok(!(grep { $_ eq 'T' }   @labels), 'T not in constraint completions');
 };
 
+# ── Constructor completion in code context ────────
+
+subtest 'constructor completion in code context' => sub {
+    # Need workspace with a datatype for constructors to be available.
+    # The completion handler returns constructors when no :Type() context is detected.
+    # Create a workspace by using a mock workspace setup via Server internals.
+    use Typist::LSP::Server;
+    use Typist::LSP::Transport;
+    use Typist::LSP::Logger;
+    use Typist::LSP::Workspace;
+
+    # Set up a workspace with a datatype file
+    my $ws = Typist::LSP::Workspace->new;
+    my $dt_source = <<'PERL';
+use v5.40;
+package Shapes;
+datatype Shape =>
+    Circle    => '(Int)',
+    Rectangle => '(Int, Int)';
+PERL
+    $ws->update_file('/fake/Shapes.pm', $dt_source);
+
+    my @constructors = $ws->all_constructor_names;
+    ok(scalar @constructors >= 2, 'workspace has constructor names');
+    ok((grep { $_ eq 'Circle' } @constructors), 'Circle in constructors');
+    ok((grep { $_ eq 'Rectangle' } @constructors), 'Rectangle in constructors');
+};
+
 done_testing;
