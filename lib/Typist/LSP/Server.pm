@@ -8,6 +8,7 @@ use Typist::LSP::Document;
 use Typist::LSP::Workspace;
 use Typist::LSP::Hover;
 use Typist::LSP::Completion;
+use Typist::LSP::SemanticTokens;
 use Typist::LSP::Logger;
 
 # ── Dispatch Table (class-level constant) ──────
@@ -26,7 +27,8 @@ my %DISPATCH = (
     'textDocument/documentSymbol' => \&_handle_document_symbol,
     'textDocument/definition'     => \&_handle_definition,
     'textDocument/signatureHelp'  => \&_handle_signature_help,
-    'textDocument/inlayHint'      => \&_handle_inlay_hint,
+    'textDocument/inlayHint'              => \&_handle_inlay_hint,
+    'textDocument/semanticTokens/full'    => \&_handle_semantic_tokens,
 );
 
 # ── Constructor ──────────────────────────────────
@@ -119,6 +121,10 @@ sub _handle_initialize ($self, $params) {
             inlayHintProvider      => \1,
             completionProvider => +{
                 triggerCharacters => ['(', '[', ',', '|', '&'],
+            },
+            semanticTokensProvider => +{
+                legend => Typist::LSP::SemanticTokens->legend,
+                full   => \1,
             },
         },
         serverInfo => +{
@@ -267,6 +273,17 @@ sub _handle_inlay_hint ($self, $params) {
     my $end   = $range->{end}{line};
 
     $doc->inlay_hints($start, $end);
+}
+
+# ── Semantic Tokens Handler ────────────────────
+
+sub _handle_semantic_tokens ($self, $params) {
+    my $uri = $params->{textDocument}{uri};
+    my $doc = $self->{documents}{$uri} // return +{ data => [] };
+
+    $doc->analyze(workspace_registry => $self->{workspace} && $self->{workspace}->registry);
+
+    Typist::LSP::SemanticTokens->compute($doc);
 }
 
 # ── Signature Help Handler ──────────────────────
