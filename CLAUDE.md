@@ -98,7 +98,6 @@ mise run test:static       # Static analysis tests
 mise run test:lsp          # LSP server tests
 mise run test:critic       # Perl::Critic policy tests
 mise run test:e2e          # LSP E2E smoke test (subprocess)
-mise run test:workspace    # Verify LSP workspace on realworld example
 mise run example              # Run all examples
 mise run example:foundations  # Types, aliases, functions
 mise run example:composite   # Struct, Union, Maybe, etc.
@@ -109,7 +108,6 @@ mise run example:typeclasses # Type classes, HKT, Functor
 mise run example:effects     # Effect system, perform/handle
 mise run example:gradual     # Gradual typing, flow typing
 mise run example:dsl         # DSL operators, constructors
-mise run example:realworld   # Multi-file shop example
 ```
 
 ## Test Structure
@@ -157,7 +155,6 @@ Tests are numbered and ordered by dependency:
 - `t/lsp/05_workspace.t` — Workspace scanning
 - `t/lsp/06_workspace_crossfile.t` — Cross-file workspace registration
 - `t/lsp/07_crossfile_diagnostics.t` — Cross-file re-diagnosis on save
-- `t/lsp/08_workspace_realworld.t` — Workspace integration on realworld example (diagnostics, hover, completion)
 - `t/lsp/09_document_symbol.t` — DocumentSymbol provider
 - `t/lsp/10_definition.t` — Go to Definition
 - `t/lsp/11_signature_help.t` — Signature Help

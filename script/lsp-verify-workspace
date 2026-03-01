@@ -4,7 +4,7 @@
 # Usage:
 #   carton exec -- perl script/lsp-verify-workspace [root_dir]
 #
-# Default root_dir: example/realworld/lib
+# Default root_dir: lib
 #
 # Exercises the same code path the LSP server uses:
 #   Workspace->scan → registry → Analyzer->analyze (per file)
@@ -20,7 +20,7 @@ use Typist::LSP::Hover;
 use Typist::LSP::Completion;
 use Typist::Static::Analyzer;
 
-my $root = $ARGV[0] // 'example/realworld/lib';
+my $root = $ARGV[0] // 'lib';
 die "Directory not found: $root\n" unless -d $root;
 
 # ── Workspace Scan ──────────────────────────────

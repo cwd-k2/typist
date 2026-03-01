@@ -4,7 +4,7 @@ run = "carton install"
 
 [tasks.test]
 description = "Run all tests"
-depends = ["test:core", "test:static", "test:lsp", "test:critic", "test:e2e", "test:workspace"]
+depends = ["test:core", "test:static", "test:lsp", "test:critic", "test:e2e"]
 
 [tasks."test:core"]
 description = "Run core type system tests"
@@ -26,13 +26,9 @@ run = "carton exec -- prove -l t/critic/"
 description = "Run LSP E2E smoke test"
 run = "carton exec -- perl t/lsp/e2e_smoke.pl"
 
-[tasks."test:workspace"]
-description = "Verify LSP workspace on realworld example"
-run = "carton exec -- perl script/lsp-verify-workspace"
-
 [tasks.example]
 description = "Run all examples"
-depends = ["example:foundations", "example:composite", "example:generics", "example:nominal", "example:algebraic", "example:typeclasses", "example:effects", "example:gradual", "example:dsl", "example:realworld"]
+depends = ["example:foundations", "example:composite", "example:generics", "example:nominal", "example:algebraic", "example:typeclasses", "example:effects", "example:gradual", "example:dsl"]
 
 [tasks."example:foundations"]
 description = "Run foundations example (types, aliases, functions)"
@@ -69,7 +65,3 @@ run = "carton exec -- perl example/08_gradual_typing.pl"
 [tasks."example:dsl"]
 description = "Run DSL example (type constructors, operators)"
 run = "carton exec -- perl example/09_dsl.pl"
-
-[tasks."example:realworld"]
-description = "Run realworld multi-file shop example"
-run = "carton exec -- perl -Iexample/realworld/lib example/realworld/main.pl"
