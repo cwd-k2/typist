@@ -126,7 +126,7 @@ say "JsonValue <- CodeRef:  $@" if $@;
 # ── Combining Newtype and Struct ──────────────────────────
 
 BEGIN {
-    typedef Account => Struct(
+    typedef Account => Record(
         id    => Alias('UserId'),
         email => Alias('Email'),
         name  => Str,

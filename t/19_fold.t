@@ -8,7 +8,7 @@ use Typist::Type::Var;
 use Typist::Type::Atom;
 use Typist::Type::Param;
 use Typist::Type::Func;
-use Typist::Type::Struct;
+use Typist::Type::Record;
 use Typist::Type::Union;
 
 # ── map_type: identity ─────────────────────────
@@ -92,7 +92,7 @@ subtest 'map_type transforms Struct field types' => sub {
             if $node->is_alias && $node->alias_name eq 'Elem';
         $node;
     });
-    ok $mapped->is_struct, 'result is Struct';
+    ok $mapped->is_record, 'result is Struct';
     my %r = $mapped->required_fields;
     ok $r{name}->is_atom && $r{name}->name eq 'Str', 'name field unchanged';
     ok $r{value}->is_atom && $r{value}->name eq 'Int', 'value field transformed';

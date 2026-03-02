@@ -89,7 +89,7 @@ subtest 'function types' => sub {
 
 subtest 'struct types' => sub {
     my $t = Typist::Parser->parse('{ name => Str, age => Int }');
-    ok $t->is_struct, 'struct is struct';
+    ok $t->is_record, 'struct is struct';
     my %f = $t->fields;
     is $f{name}->to_string, 'Str', 'name field is Str';
     is $f{age}->to_string,  'Int', 'age field is Int';
@@ -99,7 +99,7 @@ subtest 'struct types' => sub {
 
 subtest 'optional struct fields' => sub {
     my $t = Typist::Parser->parse('{ name => Str, age? => Int }');
-    ok $t->is_struct, 'optional struct is struct';
+    ok $t->is_record, 'optional struct is struct';
     my %req = $t->required_fields;
     my %opt = $t->optional_fields;
     is $req{name}->to_string, 'Str', 'name is required Str';
@@ -137,17 +137,17 @@ subtest 'complex expression' => sub {
 
 # ── DSL constructor syntax ───────────────────────
 
-subtest 'DSL: Struct(...)' => sub {
-    my $t = Typist::Parser->parse('Struct(name => Str, age => Int)');
-    ok $t->is_struct, 'Struct(...) is struct';
+subtest 'DSL: Record(...)' => sub {
+    my $t = Typist::Parser->parse('Record(name => Str, age => Int)');
+    ok $t->is_record, 'Record(...) is struct';
     my %f = $t->fields;
     is $f{name}->to_string, 'Str', 'name field is Str';
     is $f{age}->to_string,  'Int', 'age field is Int';
 };
 
 subtest 'DSL: Struct with optional fields' => sub {
-    my $t = Typist::Parser->parse('Struct(name => Str, age? => Int)');
-    ok $t->is_struct, 'Struct with optional is struct';
+    my $t = Typist::Parser->parse('Record(name => Str, age? => Int)');
+    ok $t->is_record, 'Struct with optional is struct';
     my %req = $t->required_fields;
     my %opt = $t->optional_fields;
     ok exists $req{name}, 'name is required';
@@ -191,10 +191,10 @@ subtest 'DSL: Alias(Name)' => sub {
 };
 
 subtest 'DSL: nested DSL constructors' => sub {
-    my $t = Typist::Parser->parse('ArrayRef(Struct(x => Int, y => Int))');
+    my $t = Typist::Parser->parse('ArrayRef(Record(x => Int, y => Int))');
     ok $t->is_param, 'outer is param';
     my ($inner) = $t->params;
-    ok $inner->is_struct, 'inner is struct';
+    ok $inner->is_record, 'inner is struct';
 };
 
 subtest 'DSL: mixed bracket and paren' => sub {

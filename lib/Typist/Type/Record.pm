@@ -1,4 +1,4 @@
-package Typist::Type::Struct;
+package Typist::Type::Record;
 use v5.40;
 
 our $VERSION = '0.01';
@@ -45,7 +45,7 @@ sub optional_fields ($self) { %{$self->{optional}} }
 sub required_ref    ($self) { $self->{required} }
 sub optional_ref    ($self) { $self->{optional} }
 sub field_ref       ($self) { +{ $self->fields } }
-sub is_struct       ($self) { 1 }
+sub is_record       ($self) { 1 }
 
 sub name ($self) { $self->to_string }
 
@@ -61,7 +61,7 @@ sub to_string ($self) {
 }
 
 sub equals ($self, $other) {
-    return 0 unless $other->is_struct;
+    return 0 unless $other->is_record;
 
     my %sr = %{$self->{required}};
     my %so = %{$self->{optional}};

@@ -71,7 +71,7 @@ sub unify ($class, $formal, $actual, $bindings = +{}, %opts) {
     }
 
     # ── Both Struct → field-wise ──────────────
-    if ($formal->is_struct && $actual->is_struct) {
+    if ($formal->is_record && $actual->is_record) {
         my %freq = $formal->required_fields;
         my %areq = $actual->required_fields;
         for my $key (sort keys %freq) {

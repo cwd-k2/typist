@@ -8,7 +8,7 @@ use Typist::Type::Param;
 use Typist::Type::Union;
 use Typist::Type::Intersection;
 use Typist::Type::Func;
-use Typist::Type::Struct;
+use Typist::Type::Record;
 use Typist::Type::Var;
 use Typist::Type::Alias;
 use Typist::Type::Literal;
@@ -21,7 +21,7 @@ my %PRIMITIVES = map { $_ => 1 } qw(Any Void Never Undef Bool Int Num Str);
 
 # DSL constructor names that use (...) syntax
 my %DSL_CONSTRUCTORS = (
-    Struct  => \&_parse_dsl_struct,
+    Record  => \&_parse_dsl_record,
     Func    => \&_parse_dsl_func,
     Alias   => \&_parse_dsl_alias,
     # Parametric: ArrayRef(...), HashRef(...), Maybe(...), Tuple(...), Ref(...), CodeRef(...)
@@ -97,7 +97,7 @@ sub _parse_primary ($tokens, $pos) {
 
     my $tok = $tokens->[$$pos];
 
-    return _parse_struct($tokens, $pos)     if $tok eq '{';
+    return _parse_record($tokens, $pos)     if $tok eq '{';
     return _parse_grouped($tokens, $pos)    if $tok eq '(';
     return _parse_literal($tokens, $pos)    if $tok =~ /\A["'\d]/ || $tok =~ /\A-\d/;
     return _parse_quantified($tokens, $pos) if $tok eq 'forall';
@@ -138,17 +138,17 @@ sub _parse_named ($tokens, $pos) {
 }
 
 # struct ::= '{' struct_fields '}'
-sub _parse_struct ($tokens, $pos) {
+sub _parse_record ($tokens, $pos) {
     $$pos++; # consume '{'
-    my %fields = _parse_struct_fields($tokens, $pos, '}');
+    my %fields = _parse_record_fields($tokens, $pos, '}');
     die "Typist::Parser: expected '}'"
         unless $$pos < @$tokens && $tokens->[$$pos] eq '}';
     $$pos++;
-    Typist::Type::Struct->new(%fields);
+    Typist::Type::Record->new(%fields);
 }
 
 # Common struct field parser: IDENT '?'? '=>' type_expr (',' ...)*
-sub _parse_struct_fields ($tokens, $pos, $close) {
+sub _parse_record_fields ($tokens, $pos, $close) {
     my %fields;
     return %fields if $$pos < @$tokens && $tokens->[$$pos] eq $close;
 
@@ -257,14 +257,14 @@ sub _parse_func_type ($tokens, $pos) {
 
 # ── DSL Constructors ─────────────────────────────
 
-# Struct(k => V, ...) → Type::Struct
-sub _parse_dsl_struct ($name, $tokens, $pos) {
+# Record(k => V, ...) → Type::Record
+sub _parse_dsl_record ($name, $tokens, $pos) {
     $$pos++; # consume '('
-    my %fields = _parse_struct_fields($tokens, $pos, ')');
-    die "Typist::Parser: expected ')' after Struct(...)"
+    my %fields = _parse_record_fields($tokens, $pos, ')');
+    die "Typist::Parser: expected ')' after Record(...)"
         unless $$pos < @$tokens && $tokens->[$$pos] eq ')';
     $$pos++;
-    Typist::Type::Struct->new(%fields);
+    Typist::Type::Record->new(%fields);
 }
 
 # Func(A, B, returns => R) or Func(Int, ...Str, returns => R) → Type::Func
@@ -694,7 +694,7 @@ Parse a type expression string into a type object. Supported syntax:
 
 =item Quantified types: C<forall A. A -E<gt> A>, C<forall A: Num. A -E<gt> A>
 
-=item DSL constructors: C<Struct(...)>, C<Func(... returns =E<gt> R)>
+=item DSL constructors: C<Record(...)>, C<Func(... returns =E<gt> R)>
 
 =back
 

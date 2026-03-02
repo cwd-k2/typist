@@ -25,7 +25,7 @@ sub is_param        { 0 }
 sub is_union        { 0 }
 sub is_intersection { 0 }
 sub is_func         { 0 }
-sub is_struct       { 0 }
+sub is_record       { 0 }
 sub is_var          { 0 }
 sub is_alias        { 0 }
 sub is_literal      { 0 }
@@ -115,7 +115,7 @@ Each predicate returns false by default; the corresponding subclass
 overrides it to return true:
 
     is_atom  is_param  is_union  is_intersection  is_func
-    is_struct  is_var  is_alias  is_literal  is_newtype
+    is_record  is_var  is_alias  is_literal  is_newtype
     is_row  is_eff  is_data  is_quantified
 
 =head1 CLASS METHODS

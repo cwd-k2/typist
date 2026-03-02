@@ -15,7 +15,7 @@ use Typist::Type::Param;
 use Typist::Type::Union;
 use Typist::Type::Intersection;
 use Typist::Type::Func;
-use Typist::Type::Struct;
+use Typist::Type::Record;
 use Typist::Type::Var;
 use Typist::Type::Alias;
 use Typist::Type::Literal;

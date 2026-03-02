@@ -5,7 +5,7 @@ our $VERSION = '0.01';
 
 use Typist::Type::Atom;
 use Typist::Type::Param;
-use Typist::Type::Struct;
+use Typist::Type::Record;
 use Typist::Type::Literal;
 use Typist::Type::Union;
 use Typist::Subtype;
@@ -394,7 +394,7 @@ sub _infer_hash ($constructor, $env = undef, $expected = undef) {
 
     # Build field-level expected types from Struct
     my %field_expected;
-    if ($expected && $expected->is_struct) {
+    if ($expected && $expected->is_record) {
         %field_expected = %{$expected->required_ref};
         my $opt = $expected->optional_ref // +{};
         %field_expected = (%field_expected, %$opt);
@@ -447,7 +447,7 @@ sub _infer_hash ($constructor, $env = undef, $expected = undef) {
 
     # When all keys are statically known, return Struct
     if ($all_keys_known && %fields) {
-        return Typist::Type::Struct->new(%fields);
+        return Typist::Type::Record->new(%fields);
     }
 
     # Fallback: HashRef[Str, CommonType]
@@ -610,7 +610,7 @@ sub _infer_subscript_access ($var_type, $subscript) {
         }
 
         # Struct → field type lookup
-        if ($var_type->is_struct) {
+        if ($var_type->is_record) {
             my $key = _extract_subscript_key($subscript);
             return undef unless defined $key;
 

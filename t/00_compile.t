@@ -9,7 +9,7 @@ my @modules = qw(
     Typist::Type::Union
     Typist::Type::Intersection
     Typist::Type::Func
-    Typist::Type::Struct
+    Typist::Type::Record
     Typist::Type::Var
     Typist::Type::Alias
     Typist::Type::Literal

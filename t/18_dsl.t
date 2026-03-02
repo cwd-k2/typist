@@ -82,16 +82,16 @@ subtest 'Ref constructor' => sub {
 # ── Struct ──────────────────────────────────────
 
 subtest 'Struct constructor' => sub {
-    my $t = Struct(name => Str, age => Int);
-    isa_ok $t, 'Typist::Type::Struct';
-    ok $t->is_struct, 'is_struct';
+    my $t = Record(name => Str, age => Int);
+    isa_ok $t, 'Typist::Type::Record';
+    ok $t->is_record, 'is_record';
     my %r = $t->required_fields;
     ok exists $r{name}, 'has name field';
     ok exists $r{age},  'has age field';
 };
 
 subtest 'Struct with optional fields' => sub {
-    my $t = Struct(name => Str, 'email?' => Str);
+    my $t = Record(name => Str, 'email?' => Str);
     my %r = $t->required_fields;
     my %o = $t->optional_fields;
     ok exists $r{name},  'name is required';

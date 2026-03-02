@@ -6,7 +6,7 @@ use PPI;
 use Typist::Static::Infer;
 use Typist::Type::Atom;
 use Typist::Type::Param;
-use Typist::Type::Struct;
+use Typist::Type::Record;
 
 # Helper: parse source, find the first expression-like token after '='
 sub infer_from_source ($source) {
@@ -126,7 +126,7 @@ subtest 'hash with string values → Struct' => sub {
     ok $cons, 'found constructor';
     my $t = Typist::Static::Infer->infer_expr($cons);
     ok $t, 'inferred';
-    ok $t->is_struct, 'is struct (not HashRef)';
+    ok $t->is_record, 'is struct (not HashRef)';
     my %req = $t->required_fields;
     is $req{a}->base_type, 'Str', 'a => Str (literal)';
     is $req{b}->base_type, 'Str', 'b => Str (literal)';
@@ -419,7 +419,7 @@ subtest 'hash subscript: HashRef[Str, Int] → Int' => sub {
 
 subtest 'struct subscript: { name => Str } → Str' => sub {
     my $env = +{ variables => +{
-        '$struct' => Typist::Type::Struct->new(
+        '$struct' => Typist::Type::Record->new(
             name => Typist::Type::Atom->new('Str'),
             age  => Typist::Type::Atom->new('Int'),
         ),
@@ -432,7 +432,7 @@ subtest 'struct subscript: { name => Str } → Str' => sub {
 
 subtest 'struct subscript: quoted key' => sub {
     my $env = +{ variables => +{
-        '$s' => Typist::Type::Struct->new(
+        '$s' => Typist::Type::Record->new(
             key => Typist::Type::Atom->new('Num'),
         ),
     }};
@@ -443,7 +443,7 @@ subtest 'struct subscript: quoted key' => sub {
 
 subtest 'struct subscript: unknown field → undef' => sub {
     my $env = +{ variables => +{
-        '$s' => Typist::Type::Struct->new(
+        '$s' => Typist::Type::Record->new(
             name => Typist::Type::Atom->new('Str'),
         ),
     }};
@@ -492,9 +492,9 @@ subtest 'array subscript via Symbol handler (assignment RHS)' => sub {
 
 subtest 'chained struct subscript: $s->{a}->{b}' => sub {
     my $env = +{ variables => +{
-        '$order' => Typist::Type::Struct->new(
+        '$order' => Typist::Type::Record->new(
             id     => Typist::Type::Atom->new('Int'),
-            item   => Typist::Type::Struct->new(
+            item   => Typist::Type::Record->new(
                 name  => Typist::Type::Atom->new('Str'),
                 price => Typist::Type::Atom->new('Num'),
             ),
@@ -510,7 +510,7 @@ subtest 'function call chain: func()->{field}' => sub {
     my $env = +{
         variables => +{},
         functions => +{
-            get_order => Typist::Type::Struct->new(
+            get_order => Typist::Type::Record->new(
                 id    => Typist::Type::Atom->new('Int'),
                 total => Typist::Type::Atom->new('Num'),
             ),
@@ -526,7 +526,7 @@ subtest 'function call chain: func()->{field}' => sub {
 subtest 'chained array then struct: $arr->[0]->{name}' => sub {
     my $env = +{ variables => +{
         '$arr' => Typist::Type::Param->new('ArrayRef',
-            Typist::Type::Struct->new(
+            Typist::Type::Record->new(
                 name => Typist::Type::Atom->new('Str'),
             ),
         ),
@@ -597,13 +597,13 @@ subtest 'expected struct propagates to hash values' => sub {
     my $cons = $doc->find_first('PPI::Structure::Constructor');
     ok $cons, 'found constructor';
 
-    my $expected = Typist::Type::Struct->new(
+    my $expected = Typist::Type::Record->new(
         name  => Typist::Type::Atom->new('Str'),
         items => Typist::Type::Param->new('ArrayRef', Typist::Type::Atom->new('Int')),
     );
     my $result = Typist::Static::Infer->infer_expr($cons, undef, $expected);
     ok $result, 'got result with struct expected';
-    ok $result->is_struct, 'result is struct';
+    ok $result->is_record, 'result is struct';
     my %req = $result->required_fields;
     ok $req{name}, 'has name field';
     ok $req{items}, 'has items field';

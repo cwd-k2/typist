@@ -174,7 +174,7 @@ PERL
     # Verify context detection
     my $ctx = $doc->code_completion_at(3, length('$point->{'));
     ok $ctx, 'detected struct field context';
-    is $ctx->{kind}, 'struct_field', 'kind is struct_field';
+    is $ctx->{kind}, 'record_field', 'kind is record_field';
     is $ctx->{var}, '$point', 'var is $point';
 
     # Verify type resolution

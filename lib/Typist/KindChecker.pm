@@ -136,7 +136,7 @@ sub infer_kind ($class, $type, $var_kinds = undef) {
         return Typist::Kind->Star;
     }
 
-    if ($type->is_struct) {
+    if ($type->is_record) {
         return Typist::Kind->Star;
     }
 

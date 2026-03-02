@@ -49,8 +49,8 @@ sub common_super ($class, $a, $b) {
     }
 
     # Struct LUB: intersect field names, LUB each field's type
-    if ($a_eff->is_struct && $b_eff->is_struct) {
-        require Typist::Type::Struct;
+    if ($a_eff->is_record && $b_eff->is_record) {
+        require Typist::Type::Record;
         my %a_req = $a_eff->required_fields;
         my %b_req = $b_eff->required_fields;
         my %a_opt = $a_eff->optional_fields;
@@ -91,7 +91,7 @@ sub common_super ($class, $a, $b) {
             next if exists $result{$key} || exists $result{"${key}?"};
             $result{"${key}?"} = $b_opt{$key};
         }
-        return Typist::Type::Struct->new(%result) if %result;
+        return Typist::Type::Record->new(%result) if %result;
     }
 
     Typist::Type::Atom->new('Any');
@@ -217,7 +217,7 @@ sub _check ($sub, $super, $registry = undef) {
     # Optional field rules:
     #   super required → sub must have (required or optional)
     #   super optional → sub may have or omit; if present, must be type-compatible
-    if ($sub->is_struct && $super->is_struct) {
+    if ($sub->is_record && $super->is_record) {
         my %sub_req = $sub->required_fields;
         my %sub_opt = $sub->optional_fields;
         my %sup_req = $super->required_fields;

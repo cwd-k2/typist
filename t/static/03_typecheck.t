@@ -1445,7 +1445,7 @@ PERL
 subtest 'bidirectional: hash matches expected struct via return type' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub get_config :Type(() -> Struct(name => Str, count => Int)) () {
+sub get_config :Type(() -> Record(name => Str, count => Int)) () {
     +{ name => "test", count => 42 }
 }
 PERL
@@ -1456,7 +1456,7 @@ PERL
 subtest 'bidirectional: hash mismatch detected via expected struct' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub get_config :Type(() -> Struct(name => Str, count => Int)) () {
+sub get_config :Type(() -> Record(name => Str, count => Int)) () {
     +{ name => "test", count => "wrong" }
 }
 PERL
@@ -1468,7 +1468,7 @@ PERL
 subtest 'bidirectional: variable init passes expected type' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-my $cfg :Type(Struct(x => Int, y => Int)) = +{ x => 1, y => 2 };
+my $cfg :Type(Record(x => Int, y => Int)) = +{ x => 1, y => 2 };
 PERL
 
     is scalar @$errs, 0, 'no mismatch when hash matches expected struct in variable init';
@@ -1486,7 +1486,7 @@ PERL
 subtest 'bidirectional: expected type flows to call site arg' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub take_struct :Type((Struct(a => Int)) -> Int) ($s) { 0 }
+sub take_struct :Type((Record(a => Int)) -> Int) ($s) { 0 }
 take_struct(+{ a => 42 });
 PERL
 

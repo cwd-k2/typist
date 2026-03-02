@@ -6,7 +6,7 @@ our $VERSION = '0.01';
 use Scalar::Util 'looks_like_number', 'reftype';
 use Typist::Type::Atom;
 use Typist::Type::Param;
-use Typist::Type::Struct;
+use Typist::Type::Record;
 use Typist::Subtype;
 
 # ── Value Inference ───────────────────────────────
@@ -132,7 +132,7 @@ sub _unify ($formal, $actual, $bindings) {
     }
 
     # Struct types — unify required and optional fields separately
-    if ($formal->is_struct && $actual->is_struct) {
+    if ($formal->is_record && $actual->is_record) {
         my %freq = $formal->required_fields;
         my %fopt = $formal->optional_fields;
         my %areq = $actual->required_fields;

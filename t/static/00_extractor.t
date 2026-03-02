@@ -145,14 +145,14 @@ subtest 'extracts multi-token typedef (DSL syntax)' => sub {
     my $result = Typist::Static::Extractor->extract(<<'PERL');
 use v5.40;
 typedef MaybeStr => Str | Undef;
-typedef Pair => Struct(fst => Int, snd => Int);
+typedef Pair => Record(fst => Int, snd => Int);
 PERL
 
     my $aliases = $result->{aliases};
     ok exists $aliases->{MaybeStr}, 'MaybeStr typedef found';
     like $aliases->{MaybeStr}{expr}, qr/Str.*\|.*Undef/, 'MaybeStr expr is union';
     ok exists $aliases->{Pair}, 'Pair typedef found';
-    like $aliases->{Pair}{expr}, qr/Struct/, 'Pair expr contains Struct';
+    like $aliases->{Pair}{expr}, qr/Record/, 'Pair expr contains Record';
 };
 
 subtest 'multi-token newtype extraction' => sub {

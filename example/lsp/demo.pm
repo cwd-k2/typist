@@ -20,7 +20,7 @@ use Typist;
 BEGIN {
     typedef Email  => 'Str';
     typedef UserId => 'Int';
-    typedef Person => 'Struct(name => Str, age => Int)';
+    typedef Person => 'Record(name => Str, age => Int)';
 }
 
 # ── Typed variables — hover shows: $user_id: UserId ──────

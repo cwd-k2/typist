@@ -14,12 +14,12 @@ use Typist::DSL;
 
 # ── Struct ────────────────────────────────────────────────
 #
-# Struct(k => T, ...) defines a record type.
+# Record(k => T, ...) defines a record type.
 # Values are plain hashrefs — Typist checks field presence and types.
 
 BEGIN {
-    typedef Point  => Struct(x => Int, y => Int);
-    typedef Person => Struct(name => Str, age => Int);
+    typedef Point  => Record(x => Int, y => Int);
+    typedef Person => Record(name => Str, age => Int);
 }
 
 my $origin :Type(Point) = +{ x => 0, y => 0 };
@@ -42,7 +42,7 @@ say "Person age=Str:   $@" if $@;
 # present fields must match the declared type.
 
 BEGIN {
-    typedef Config => Struct(
+    typedef Config => Record(
         host      => Str,
         port      => Int,
         'debug?'  => Bool,
@@ -143,7 +143,7 @@ say "Ref[Int] <- \\Str:  $@" if $@;
 # Types compose freely: ArrayRef of Struct, HashRef of arrays, etc.
 
 BEGIN {
-    typedef UserList => ArrayRef(Struct(name => Str, age => Int));
+    typedef UserList => ArrayRef(Record(name => Str, age => Int));
     typedef Matrix   => ArrayRef(ArrayRef(Int));
 }
 

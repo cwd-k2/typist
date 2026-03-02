@@ -467,7 +467,7 @@ sub _symbol_detail ($self, $sym) {
 # ── Code Completion Context ─────────────────────
 
 # Detect code-level completion context at a given position.
-# Returns: { kind => 'struct_field', var => '$x' }
+# Returns: { kind => 'record_field', var => '$x' }
 #        | { kind => 'method', prefix => '...' }
 #        | { kind => 'effect_op', effect => 'Console', prefix => '...' }
 #        | undef
@@ -476,9 +476,9 @@ sub code_completion_at ($self, $line, $col) {
     return undef unless $line < @$lines;
     my $text = substr($lines->[$line], 0, $col);
 
-    # $var->{  → struct field completion
+    # $var->{  → record field completion
     if ($text =~ /(\$\w+)\s*->\s*\{\s*(\w*)\z/) {
-        return +{ kind => 'struct_field', var => $1, prefix => ($2 // '') };
+        return +{ kind => 'record_field', var => $1, prefix => ($2 // '') };
     }
 
     # $self->  → method completion (only $self, not arbitrary variables)
@@ -720,7 +720,7 @@ or C<undef>.
     my $ctx = $doc->code_completion_at($line, $col);
 
 Detect code-level completion context at the given position. Returns a
-hashref describing the context kind (C<struct_field>, C<method>, or
+hashref describing the context kind (C<record_field>, C<method>, or
 C<effect_op>) or C<undef>.
 
 =head1 SEE ALSO

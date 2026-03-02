@@ -7,7 +7,7 @@ use Typist::Type::Param;
 use Typist::Type::Union;
 use Typist::Type::Intersection;
 use Typist::Type::Func;
-use Typist::Type::Struct;
+use Typist::Type::Record;
 use Typist::Type::Eff;
 use Typist::Type::Data;
 use Typist::Type::Quantified;
@@ -41,12 +41,12 @@ sub map_type ($class, $type, $cb) {
             ? $class->map_type($type->effects, $cb) : undef;
         return $cb->(Typist::Type::Func->new(\@new_p, $new_r, $new_e));
     }
-    if ($type->is_struct) {
+    if ($type->is_record) {
         my %req = $type->required_fields;
         my %opt = $type->optional_fields;
         my %new_req = map { $_ => $class->map_type($req{$_}, $cb) } keys %req;
         my %new_opt = map { $_ => $class->map_type($opt{$_}, $cb) } keys %opt;
-        return $cb->(Typist::Type::Struct->from_parts(
+        return $cb->(Typist::Type::Record->from_parts(
             required => \%new_req, optional => \%new_opt,
         ));
     }
@@ -105,7 +105,7 @@ sub walk ($class, $type, $cb) {
         $class->walk($type->returns, $cb);
         $class->walk($type->effects, $cb) if $type->effects;
     }
-    elsif ($type->is_struct) {
+    elsif ($type->is_record) {
         my %r = $type->required_fields;
         my %o = $type->optional_fields;
         $class->walk($_, $cb) for values %r, values %o;

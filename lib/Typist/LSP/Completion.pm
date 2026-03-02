@@ -60,8 +60,8 @@ sub complete ($class, $context, $typedefs, $effects, $typeclasses = undef) {
 sub complete_code ($class, $context, $doc, $registry) {
     my $kind = $context->{kind};
 
-    if ($kind eq 'struct_field') {
-        return $class->_complete_struct_fields($context, $doc, $registry);
+    if ($kind eq 'record_field') {
+        return $class->_complete_record_fields($context, $doc, $registry);
     }
     if ($kind eq 'method') {
         return $class->_complete_methods($context, $doc, $registry);
@@ -73,7 +73,7 @@ sub complete_code ($class, $context, $doc, $registry) {
     [];
 }
 
-sub _complete_struct_fields ($class, $context, $doc, $registry) {
+sub _complete_record_fields ($class, $context, $doc, $registry) {
     my $var_name = $context->{var};
     my $prefix   = $context->{prefix} // '';
 
@@ -89,7 +89,7 @@ sub _complete_struct_fields ($class, $context, $doc, $registry) {
         $type = eval { $registry->lookup_type($type->alias_name) } // $type;
     }
 
-    return [] unless $type->is_struct;
+    return [] unless $type->is_record;
 
     my @items;
     my $req = $type->required_ref;
@@ -293,7 +293,7 @@ C<Document-E<gt>code_completion_at>) determines the completion kind:
 
 =over 4
 
-=item C<struct_field> - Struct field names based on the variable's type
+=item C<record_field> - Struct field names based on the variable's type
 
 =item C<method> - Method names for C<$self-E<gt>> calls within the same package
 

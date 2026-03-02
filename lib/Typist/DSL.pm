@@ -8,7 +8,7 @@ use Typist::Type::Param;
 use Typist::Type::Union;
 use Typist::Type::Intersection;
 use Typist::Type::Func;
-use Typist::Type::Struct;
+use Typist::Type::Record;
 use Typist::Type::Var;
 use Typist::Type::Alias;
 use Typist::Type::Literal;
@@ -21,7 +21,7 @@ use Exporter 'import';
 our @EXPORT = qw(
     Int Str Num Bool Any Void Never Undef
     ArrayRef HashRef Maybe Tuple Ref
-    Struct Func Literal TVar Alias
+    Record Func Literal TVar Alias
     Row Eff
     T U V A B K
 );
@@ -32,7 +32,7 @@ our %EXPORT_TAGS = (
     types => [qw(
         Int Str Num Bool Any Void Never Undef
         ArrayRef HashRef Maybe Tuple Ref
-        Struct Func Literal TVar Alias
+        Record Func Literal TVar Alias
         Row Eff
     )],
 );
@@ -81,8 +81,8 @@ sub Ref :prototype($) {
 
 # ── Structural Type ─────────────────────────────
 
-sub Struct :prototype(%) {
-    Typist::Type::Struct->new(@_);
+sub Record :prototype(%) {
+    Typist::Type::Record->new(@_);
 }
 
 # ── Function Type ───────────────────────────────

@@ -51,10 +51,10 @@ say "";
 
 # ── Struct Constructor ────────────────────────────────────
 
-my $point_t = Struct(x => Int, y => Int);
-say "Struct(x=>Int, y=>Int):  $point_t";
+my $point_t = Record(x => Int, y => Int);
+say "Record(x=>Int, y=>Int):  $point_t";
 
-my $config_t = Struct(host => Str, port => Int, 'debug?' => Bool);
+my $config_t = Record(host => Str, port => Int, 'debug?' => Bool);
 say "Config with optional:    $config_t";
 say "";
 
@@ -122,7 +122,7 @@ say "";
 BEGIN {
     typedef Name   => Str;
     typedef Age    => Int;
-    typedef Person => Struct(name => Str, age => Int, 'email?' => Str);
+    typedef Person => Record(name => Str, age => Int, 'email?' => Str);
     typedef IdOrName => Str | Int;
 }
 
