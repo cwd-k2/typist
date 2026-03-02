@@ -13,6 +13,8 @@ use Typist::Type::Param;
 use Typist::Effect;
 use Typist::TypeClass;
 use Typist::Attribute;
+use Typist::Type::Record;
+use Typist::Type::Struct;
 
 # ── Public API ───────────────────────────────────
 #
@@ -26,6 +28,7 @@ use Typist::Attribute;
 sub register_all ($class, $extracted, $registry, %opts) {
     $class->register_aliases($extracted, $registry, %opts);
     $class->register_newtypes($extracted, $registry, %opts);
+    $class->register_structs($extracted, $registry, %opts);
     $class->register_datatypes($extracted, $registry, %opts);
     $class->register_effects($extracted, $registry, %opts);
     $class->register_typeclasses($extracted, $registry, %opts);
@@ -85,6 +88,88 @@ sub register_newtypes ($class, $extracted, $registry, %opts) {
             generics     => [],
             params_expr  => [$inner->to_string],
             returns_expr => $name,
+        });
+    }
+}
+
+# ── Structs ─────────────────────────────────────
+
+sub register_structs ($class, $extracted, $registry, %opts) {
+    my ($errors, $file) = @opts{qw(errors file)};
+    my $pkg = $extracted->{package} // 'main';
+
+    for my $name (sort keys(($extracted->{structs} // +{})->%*)) {
+        my $info = $extracted->{structs}{$name};
+        my $fields = $info->{fields} // +{};
+        my @opt_names = ($info->{optional_fields} // [])->@*;
+        my %opt_set = map { $_ => 1 } @opt_names;
+
+        # Parse field types
+        my (%required, %optional);
+        for my $fname (keys %$fields) {
+            my $type_str = $fields->{$fname};
+            my $parsed = eval { Typist::Parser->parse($type_str) };
+            if ($@ && $errors) {
+                $errors->collect(
+                    kind    => 'ResolveError',
+                    message => "Failed to parse struct field type '$type_str' in $name.$fname: $@",
+                    file    => $file // '(buffer)',
+                    line    => $info->{line},
+                );
+                next;
+            }
+            next unless $parsed;
+
+            if ($opt_set{$fname}) {
+                $optional{$fname} = $parsed;
+            } else {
+                $required{$fname} = $parsed;
+            }
+        }
+
+        my $record = Typist::Type::Record->from_parts(
+            required => \%required,
+            optional => \%optional,
+        );
+        my $struct_pkg = "Typist::Struct::${name}";
+        my $struct_type = Typist::Type::Struct->new(
+            name    => $name,
+            record  => $record,
+            package => $struct_pkg,
+        );
+        $registry->register_type($name, $struct_type);
+
+        # Constructor: variadic to accept named args, returns struct type
+        $registry->register_function($pkg, $name, +{
+            params       => [],
+            returns      => $struct_type,
+            generics     => [],
+            variadic     => 1,
+            params_expr  => [],
+            returns_expr => $name,
+        });
+
+        # Accessor methods on the struct package
+        for my $fname (keys %required) {
+            $registry->register_method($struct_pkg, $fname, +{
+                params  => [],
+                returns => $required{$fname},
+            });
+        }
+        for my $fname (keys %optional) {
+            $registry->register_method($struct_pkg, $fname, +{
+                params  => [],
+                returns => Typist::Type::Union->new(
+                    $optional{$fname}, Typist::Type::Atom->new('Undef'),
+                ),
+            });
+        }
+
+        # with() method: returns the same struct type
+        $registry->register_method($struct_pkg, 'with', +{
+            params   => [],
+            returns  => $struct_type,
+            variadic => 1,
         });
     }
 }

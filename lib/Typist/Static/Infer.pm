@@ -71,7 +71,7 @@ sub infer_expr ($class, $element, $env = undef, $expected = undef) {
         my $var_type = $env->{variables}{$element->content};
         return undef unless $var_type;
 
-        return _chase_subscript_chain($var_type, $element);
+        return _chase_subscript_chain($var_type, $element, $env);
     }
 
     # ── handle expression: Word("handle") + Block ──
@@ -92,7 +92,7 @@ sub infer_expr ($class, $element, $env = undef, $expected = undef) {
         my $next = $element->snext_sibling;
         if ($next && $next->isa('PPI::Structure::List')) {
             my $result = _infer_call($element->content, $env, $next);
-            return _chase_subscript_chain($result, $next) if defined $result;
+            return _chase_subscript_chain($result, $next, $env) if defined $result;
             return undef;
         }
     }
@@ -488,28 +488,28 @@ sub _infer_operator_expr ($stmt, $env, $expected = undef) {
         return Typist::Type::Atom->new('Bool');
     }
 
-    # Subscript chain: $sym->{key}, $sym->{a}->{b}, $sym->[0]->{name}
+    # Subscript/method chain: $sym->{key}, $sym->method, $sym->{a}->{b}
     if (@children >= 3
         && $children[0]->isa('PPI::Token::Symbol')
         && $children[1]->isa('PPI::Token::Operator') && $children[1]->content eq '->'
-        && $children[2]->isa('PPI::Structure::Subscript'))
+        && ($children[2]->isa('PPI::Structure::Subscript') || $children[2]->isa('PPI::Token::Word')))
     {
         if ($env) {
             my $var_type = $env->{variables}{$children[0]->content};
-            return _chase_subscript_chain($var_type, $children[0]) if $var_type;
+            return _chase_subscript_chain($var_type, $children[0], $env) if $var_type;
         }
         return undef;
     }
 
-    # Function call chain: func()->{key}, func()->[0]->{name}
+    # Function call chain: func()->{key}, func()->method, func()->[0]->{name}
     if (@children >= 4
         && $children[0]->isa('PPI::Token::Word')
         && $children[1]->isa('PPI::Structure::List')
         && $children[2]->isa('PPI::Token::Operator') && $children[2]->content eq '->'
-        && $children[3]->isa('PPI::Structure::Subscript'))
+        && ($children[3]->isa('PPI::Structure::Subscript') || $children[3]->isa('PPI::Token::Word')))
     {
         my $call_type = _infer_call($children[0]->content, $env, $children[1]);
-        return _chase_subscript_chain($call_type, $children[1]) if defined $call_type;
+        return _chase_subscript_chain($call_type, $children[1], $env) if defined $call_type;
         return undef;
     }
 
@@ -648,20 +648,79 @@ sub _extract_subscript_key ($subscript) {
 # -> followed by PPI::Structure::Subscript.  For each link, refine the
 # type via _infer_subscript_access.  Returns the final refined type.
 
-sub _chase_subscript_chain ($type, $start_node) {
+sub _chase_subscript_chain ($type, $start_node, $env = undef) {
     return $type unless defined $type;
 
     my $node = $start_node->snext_sibling;
     while ($node) {
         last unless $node->isa('PPI::Token::Operator') && $node->content eq '->';
-        my $subscript = $node->snext_sibling;
-        last unless $subscript && $subscript->isa('PPI::Structure::Subscript');
-        $type = _infer_subscript_access($type, $subscript);
-        last unless defined $type;
-        $node = $subscript->snext_sibling;
+        my $next = $node->snext_sibling;
+        last unless $next;
+
+        # -> Subscript: $h->{key}, $a->[0]
+        if ($next->isa('PPI::Structure::Subscript')) {
+            $type = _infer_subscript_access($type, $next);
+            last unless defined $type;
+            $node = $next->snext_sibling;
+            next;
+        }
+
+        # -> Word: method call / struct accessor
+        if ($next->isa('PPI::Token::Word')) {
+            $type = _infer_method_access($type, $next, $env);
+            last unless defined $type;
+            # Skip past optional argument list: ->method(...)
+            my $after = $next->snext_sibling;
+            if ($after && $after->isa('PPI::Structure::List')) {
+                $node = $after->snext_sibling;
+            } else {
+                $node = $after;
+            }
+            next;
+        }
+
+        last;
     }
 
     $type;
+}
+
+# Infer the return type of a method call or struct accessor.
+# For struct types, field accessors return the field type.
+# For with(), returns the same struct type.
+sub _infer_method_access ($receiver_type, $method_word, $env = undef) {
+    my $method_name = $method_word->content;
+
+    # Struct accessor: resolve field type from the inner record
+    if ($receiver_type->is_struct) {
+        my $record = $receiver_type->record;
+        my $req = $record->required_ref;
+        my $opt = $record->optional_ref;
+
+        if (exists $req->{$method_name}) {
+            return $req->{$method_name};
+        }
+        if (exists $opt->{$method_name}) {
+            return Typist::Type::Union->new(
+                $opt->{$method_name}, Typist::Type::Atom->new('Undef'),
+            );
+        }
+
+        # with() returns the same struct type
+        return $receiver_type if $method_name eq 'with';
+    }
+
+    # Fallback: look up method in registry if available
+    if ($env && $env->{registry}) {
+        my $pkg = ref $receiver_type && $receiver_type->is_struct
+            ? $receiver_type->package : undef;
+        if ($pkg) {
+            my $sig = $env->{registry}->lookup_method($pkg, $method_name);
+            return $sig->{returns} if $sig && $sig->{returns};
+        }
+    }
+
+    undef;
 }
 
 1;

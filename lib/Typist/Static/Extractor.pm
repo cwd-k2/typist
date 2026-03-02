@@ -20,6 +20,7 @@ sub extract ($class, $source) {
         newtypes    => +{},
         datatypes   => +{},
         effects     => +{},
+        structs     => +{},
         typeclasses => +{},
         declares    => +{},
         package     => 'main',
@@ -35,6 +36,7 @@ sub extract ($class, $source) {
     $class->_extract_newtypes($doc, $result);
     $class->_extract_datatypes($doc, $result);
     $class->_extract_enums($doc, $result);
+    $class->_extract_structs($doc, $result);
     $class->_extract_effects($doc, $result);
     $class->_extract_typeclasses($doc, $result);
     $class->_extract_declares($doc, $result);
@@ -219,6 +221,105 @@ sub _extract_enums ($class, $doc, $result) {
             line        => $stmt->line_number,
             col         => $stmt->column_number,
         };
+    }
+}
+
+# ── Struct Extraction ─────────────────────────
+#
+# struct Name => (field => Type, field2 => optional(Type), ...);
+
+sub _extract_structs ($class, $doc, $result) {
+    my $statements = $doc->find('PPI::Statement') || [];
+
+    for my $stmt (@$statements) {
+        my @children = $stmt->schildren;
+        next unless @children >= 4;
+
+        next unless $children[0]->isa('PPI::Token::Word')
+                 && $children[0]->content eq 'struct';
+
+        my $name_tok = $children[1];
+        my $name_raw = $name_tok->isa('PPI::Token::Quote')
+            ? $name_tok->string
+            : $name_tok->content;
+        next unless $children[2]->isa('PPI::Token::Operator')
+                 && $children[2]->content eq '=>';
+
+        # Parse name and type parameters (e.g., 'Rect[T]')
+        my ($base_name, @type_params);
+        if ($name_raw =~ /\A(\w+)\[(.+)\]\z/) {
+            $base_name = $1;
+            @type_params = map { s/\s//gr } split /,/, $2;
+        } else {
+            $base_name = $name_raw;
+        }
+
+        # Extract field definitions from the List structure
+        my (%fields, @optional_fields);
+        for my $child (@children[3 .. $#children]) {
+            next unless $child->isa('PPI::Structure::List');
+            $class->_extract_struct_fields($child, \%fields, \@optional_fields);
+            last;
+        }
+
+        $result->{structs}{$base_name} = +{
+            fields          => \%fields,
+            optional_fields => \@optional_fields,
+            type_params     => \@type_params,
+            line            => $stmt->line_number,
+            col             => $stmt->column_number,
+        };
+    }
+}
+
+sub _extract_struct_fields ($class, $list, $fields, $optional_fields) {
+    for my $child ($list->schildren) {
+        next unless $child->isa('PPI::Statement')
+                 || $child->isa('PPI::Statement::Expression');
+        my @sc = $child->schildren;
+        my $i = 0;
+
+        while ($i <= $#sc) {
+            # Skip commas and semicolons
+            if ($sc[$i]->isa('PPI::Token::Operator') && $sc[$i]->content eq ',') {
+                $i++;
+                next;
+            }
+            last if $sc[$i]->isa('PPI::Token::Structure') && $sc[$i]->content eq ';';
+
+            # Expect field name (Word)
+            last unless $sc[$i]->isa('PPI::Token::Word');
+            my $field_name = $sc[$i]->content;
+            $i++;
+
+            # Expect =>
+            last unless $i <= $#sc
+                     && $sc[$i]->isa('PPI::Token::Operator')
+                     && $sc[$i]->content eq '=>';
+            $i++;
+            last unless $i <= $#sc;
+
+            # Check for optional(Type)
+            if ($sc[$i]->isa('PPI::Token::Word') && $sc[$i]->content eq 'optional'
+                && $i + 1 <= $#sc && $sc[$i + 1]->isa('PPI::Structure::List'))
+            {
+                my $inner = $class->_list_content($sc[$i + 1]);
+                $fields->{$field_name} = $inner // 'Any';
+                push @$optional_fields, $field_name;
+                $i += 2;
+            } else {
+                # Collect type expression tokens until comma or end
+                my @type_tokens;
+                while ($i <= $#sc) {
+                    last if $sc[$i]->isa('PPI::Token::Operator') && $sc[$i]->content eq ',';
+                    last if $sc[$i]->isa('PPI::Token::Structure') && $sc[$i]->content eq ';';
+                    push @type_tokens, $sc[$i];
+                    $i++;
+                }
+                $fields->{$field_name} = join('', map { $_->content } @type_tokens)
+                    if @type_tokens;
+            }
+        }
     }
 }
 
