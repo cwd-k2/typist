@@ -310,10 +310,12 @@ sub _build_symbol_index ($extracted, $env = undef) {
     for my $name (sort keys $extracted->{effects}->%*) {
         my $info = $extracted->{effects}{$name};
         push @symbols, +{
-            name => $name,
-            kind => 'effect',
-            line => $info->{line},
-            col  => $info->{col},
+            name       => $name,
+            kind       => 'effect',
+            op_names   => $info->{op_names},
+            operations => $info->{operations},
+            line       => $info->{line},
+            col        => $info->{col},
         };
     }
 
@@ -325,6 +327,7 @@ sub _build_symbol_index ($extracted, $env = undef) {
             kind         => 'typeclass',
             var_spec     => $info->{var_spec},
             method_names => $info->{method_names},
+            methods      => $info->{methods},
             line         => $info->{line},
             col          => $info->{col},
         };

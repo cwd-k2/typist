@@ -226,7 +226,8 @@ PERL
     my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
     ok $hover, 'got hover response';
     ok $hover->{result}, 'hover has result';
-    like $hover->{result}{contents}{value}, qr/\$result: Str \(inferred\)/, 'shows inferred type with flag';
+    like $hover->{result}{contents}{value}, qr/\$result: Str/, 'shows variable type';
+    like $hover->{result}{contents}{value}, qr/\*inferred\*/, 'shows inferred annotation';
 };
 
 # ── Hover on typeclass with superclass ──────────
@@ -281,7 +282,7 @@ PERL
     ok $hover, 'got hover response';
     ok $hover->{result}, 'hover has result';
     like $hover->{result}{contents}{value}, qr/\$a: Int/, 'shows $a as Int';
-    like $hover->{result}{contents}{value}, qr/parameter of add/, 'shows parameter of add';
+    like $hover->{result}{contents}{value}, qr/parameter of.*add/, 'shows parameter of add';
 };
 
 # ── Hover on Perl builtin function ──────────────
@@ -488,6 +489,126 @@ PERL
     ok $sym2, 'found symbol for bare UserId constructor';
     is $sym2->{kind}, 'function', 'UserId is a function';
     like $sym2->{returns_expr} // '', qr/UserId/, 'UserId returns UserId';
+};
+
+# ── Hover on effect with operations ──────────────
+
+subtest 'hover shows effect with operation signatures' => sub {
+    my $source = <<'PERL';
+use v5.40;
+effect Console => +{
+    readLine  => '() -> Str',
+    writeLine => '(Str) -> Void',
+};
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 1, character => 8 },  # on 'Console'
+        }),
+    ));
+
+    my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $hover, 'got hover response';
+    ok $hover->{result}, 'hover has result';
+    my $value = $hover->{result}{contents}{value};
+    like $value, qr/effect Console/, 'contains effect name';
+    like $value, qr/readLine/, 'shows readLine operation';
+    like $value, qr/writeLine/, 'shows writeLine operation';
+    like $value, qr/\(\) -> Str/, 'shows readLine signature';
+    like $value, qr/\(Str\) -> Void/, 'shows writeLine signature';
+};
+
+# ── Hover on struct multi-line ───────────────────
+
+subtest 'hover shows struct with multi-line fields' => sub {
+    require Typist::LSP::Hover;
+
+    # Directly test the Hover formatter with a struct symbol
+    my $sym = +{
+        kind   => 'struct',
+        name   => 'Person',
+        fields => ['age: Int', 'email: Str (optional)', 'name: Str'],
+    };
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'got hover response';
+    my $value = $hover->{contents}{value};
+    like $value, qr/struct Person \{/, 'contains struct header with brace';
+    like $value, qr/\n\s+age: Int/, 'age field on its own line';
+    like $value, qr/\n\s+name: Str/, 'name field on its own line';
+    like $value, qr/\n\s+email: Str/, 'email field on its own line';
+};
+
+# ── Hover on typeclass with method signatures ────
+
+subtest 'hover shows typeclass with method signatures' => sub {
+    my $source = <<'PERL';
+use v5.40;
+typeclass Eq => 'T', +{
+    eq  => '(T, T) -> Bool',
+    neq => '(T, T) -> Bool',
+};
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 1, character => 12 },  # on 'Eq'
+        }),
+    ));
+
+    my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $hover, 'got hover response';
+    ok $hover->{result}, 'hover has result';
+    my $value = $hover->{result}{contents}{value};
+    like $value, qr/typeclass Eq/, 'contains typeclass name';
+    like $value, qr/eq:.*\(T, T\) -> Bool/, 'shows eq method with signature';
+    like $value, qr/neq:.*\(T, T\) -> Bool/, 'shows neq method with signature';
+};
+
+# ── Hover on datatype multi-line variants ────────
+
+subtest 'hover shows datatype with multi-line variants' => sub {
+    require Typist::LSP::Hover;
+
+    my $sym = +{
+        kind => 'datatype',
+        name => 'Shape',
+        type => 'Circle(Int) | Point | Rectangle(Int, Int)',
+    };
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'got hover response';
+    my $value = $hover->{contents}{value};
+    like $value, qr/datatype Shape/, 'contains datatype header';
+    like $value, qr/= Circle\(Int\)/, 'first variant with =';
+    like $value, qr/\| Point/, 'second variant with |';
+    like $value, qr/\| Rectangle\(Int, Int\)/, 'third variant with |';
+};
+
+# ── Hover declared function note outside code block ──
+
+subtest 'hover shows declared as italic note' => sub {
+    require Typist::LSP::Hover;
+
+    my $sym = +{
+        kind         => 'function',
+        name         => 'say',
+        params_expr  => ['Str'],
+        returns_expr => 'Void',
+        eff_expr     => 'Eff(Console)',
+        declared     => 1,
+    };
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'got hover response';
+    my $value = $hover->{contents}{value};
+    like $value, qr/```\n\n\*declared\*/, 'declared shown as italic note after code block';
 };
 
 done_testing;

@@ -224,15 +224,36 @@ sub symbol_at ($self, $line, $col) {
                 };
             }
             if (my $eff = $registry->lookup_effect($lookup_name)) {
+                my @op_names;
+                my %operations;
+                for my $op_name (sort keys %{$eff->ops // +{}}) {
+                    push @op_names, $op_name;
+                    my $op_type = $eff->get_op_type($op_name);
+                    $operations{$op_name} = $op_type ? $op_type->to_string : $eff->ops->{$op_name};
+                }
                 return +{
-                    name => $lookup_name,
-                    kind => 'effect',
+                    name       => $lookup_name,
+                    kind       => 'effect',
+                    op_names   => \@op_names,
+                    operations => \%operations,
                 };
             }
             if ($registry->has_typeclass($lookup_name)) {
+                my $tc = $registry->lookup_typeclass($lookup_name);
+                my @method_names;
+                my %methods;
+                if ($tc) {
+                    @method_names = sort keys %{$tc->methods // +{}};
+                    for my $m (@method_names) {
+                        $methods{$m} = $tc->methods->{$m};
+                    }
+                }
                 return +{
-                    name => $lookup_name,
-                    kind => 'typeclass',
+                    name         => $lookup_name,
+                    kind         => 'typeclass',
+                    var_spec     => $tc ? $tc->var_name : undef,
+                    method_names => \@method_names,
+                    methods      => \%methods,
                 };
             }
         }
@@ -368,8 +389,12 @@ sub inlay_hints ($self, $start_line, $end_line) {
                 line      => $line,
                 character => ($sym->{col} // 1) - 1 + length($sym->{name}),
             },
-            label => ": $sym->{type}",
-            kind  => 1,  # Type
+            label   => ": $sym->{type}",
+            kind    => 1,  # Type
+            tooltip => +{
+                kind  => 'markdown',
+                value => "```perl\n$sym->{name}: $sym->{type}\n```\n*inferred*",
+            },
         };
     }
 

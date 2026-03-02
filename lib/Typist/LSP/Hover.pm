@@ -26,81 +26,155 @@ sub _format ($class, $sym) {
     my $kind = $sym->{kind};
 
     if ($kind eq 'parameter') {
-        return "```perl\n$sym->{name}: $sym->{type} (parameter of $sym->{fn_name})\n```";
+        return _code("$sym->{name}: $sym->{type}")
+             . _note("parameter of `$sym->{fn_name}`");
     }
 
     if ($kind eq 'variable') {
-        my $display = "$sym->{name}: $sym->{type}";
-        $display .= ' (inferred)' if $sym->{inferred};
-        return "```perl\n$display\n```";
+        my $md = _code("$sym->{name}: $sym->{type}");
+        $md .= _note('inferred') if $sym->{inferred};
+        return $md;
     }
 
     if ($kind eq 'function') {
-        my $sig = "sub $sym->{name}";
-
-        # Generics
-        if ($sym->{generics} && @{$sym->{generics}}) {
-            $sig .= '<' . join(', ', @{$sym->{generics}}) . '>';
-        }
-
-        # Params in parentheses
-        my $params = join(', ', ($sym->{params_expr} // [])->@*);
-        $sig .= "($params)";
-
-        # Return type after closing paren
-        if ($sym->{returns_expr}) {
-            $sig .= " -> $sym->{returns_expr}";
-        }
-
-        # Effects
-        if ($sym->{eff_expr}) {
-            $sig .= " !$sym->{eff_expr}";
-        }
-
-        # Declared annotation
-        $sig .= ' (declared)' if $sym->{declared};
-
-        return "```perl\n$sig\n```";
+        return $class->_format_function($sym);
     }
 
     if ($kind eq 'typedef') {
-        return "```perl\ntype $sym->{name} = $sym->{type}\n```";
+        return _code("type $sym->{name} = $sym->{type}");
     }
 
     if ($kind eq 'newtype') {
-        return "```perl\nnewtype $sym->{name} = $sym->{type}\n```";
+        return _code("newtype $sym->{name} = $sym->{type}");
     }
 
     if ($kind eq 'effect') {
-        return "```perl\neffect $sym->{name}\n```";
+        return $class->_format_effect($sym);
     }
 
     if ($kind eq 'typeclass') {
-        my $display = "typeclass $sym->{name}";
-        if ($sym->{var_spec}) {
-            $display .= "<$sym->{var_spec}>";
-        }
-        if ($sym->{method_names} && @{$sym->{method_names}}) {
-            $display .= ' { ' . join(', ', @{$sym->{method_names}}) . ' }';
-        }
-        return "```perl\n$display\n```";
+        return $class->_format_typeclass($sym);
     }
 
     if ($kind eq 'datatype') {
-        my $display = "datatype $sym->{name}";
-        $display .= " = $sym->{type}" if $sym->{type};
-        return "```perl\n$display\n```";
+        return $class->_format_datatype($sym);
     }
 
     if ($kind eq 'struct') {
-        my $display = "struct $sym->{name}";
-        if ($sym->{fields}) {
-            $display .= ' { ' . join(', ', @{$sym->{fields}}) . ' }';
-        }
-        return "```perl\n$display\n```";
+        return $class->_format_struct($sym);
     }
 
     undef;
 }
+
+# ── Kind-specific formatters ─────────────────────
+
+sub _format_function ($class, $sym) {
+    my $sig = "sub $sym->{name}";
+
+    # Generics
+    if ($sym->{generics} && @{$sym->{generics}}) {
+        $sig .= '<' . join(', ', @{$sym->{generics}}) . '>';
+    }
+
+    # Params
+    my $params = join(', ', ($sym->{params_expr} // [])->@*);
+    $sig .= "($params)";
+
+    # Return type
+    $sig .= " -> $sym->{returns_expr}" if $sym->{returns_expr};
+
+    # Effects
+    $sig .= " !$sym->{eff_expr}" if $sym->{eff_expr};
+
+    my $md = _code($sig);
+    $md .= _note('declared') if $sym->{declared};
+    $md;
+}
+
+sub _format_struct ($class, $sym) {
+    my $fields = $sym->{fields} // [];
+
+    # Single-line for 0-2 fields, multi-line for 3+
+    if (@$fields <= 2) {
+        my $body = @$fields ? ' { ' . join(', ', @$fields) . ' }' : '';
+        return _code("struct $sym->{name}$body");
+    }
+
+    my $body = "struct $sym->{name} {\n";
+    for my $f (@$fields) {
+        $body .= "    $f,\n";
+    }
+    $body .= '}';
+    _code($body);
+}
+
+sub _format_datatype ($class, $sym) {
+    my $type = $sym->{type} // '';
+    my @variants = split /\s*\|\s*/, $type;
+
+    # Single-line for 0-2 variants, multi-line for 3+
+    if (@variants <= 2) {
+        my $display = "datatype $sym->{name}";
+        $display .= " = $type" if $type;
+        return _code($display);
+    }
+
+    my $body = "datatype $sym->{name}\n";
+    for my $i (0 .. $#variants) {
+        my $prefix = $i == 0 ? '    = ' : '    | ';
+        $body .= "$prefix$variants[$i]\n";
+    }
+    chomp $body;
+    _code($body);
+}
+
+sub _format_effect ($class, $sym) {
+    my $op_names   = $sym->{op_names}   // [];
+    my $operations = $sym->{operations} // +{};
+
+    unless (@$op_names) {
+        return _code("effect $sym->{name}");
+    }
+
+    my $body = "effect $sym->{name} {\n";
+    for my $op (@$op_names) {
+        my $sig = $operations->{$op} // '';
+        $body .= "    $op: $sig,\n";
+    }
+    $body .= '}';
+    _code($body);
+}
+
+sub _format_typeclass ($class, $sym) {
+    my $method_names = $sym->{method_names} // [];
+    my $methods      = $sym->{methods}      // +{};
+    my $var_spec     = $sym->{var_spec};
+
+    my $header = "typeclass $sym->{name}";
+    $header .= "<$var_spec>" if $var_spec;
+
+    # No methods or no signatures: compact form
+    unless (@$method_names && %$methods) {
+        if (@$method_names) {
+            $header .= ' { ' . join(', ', @$method_names) . ' }';
+        }
+        return _code($header);
+    }
+
+    my $body = "$header {\n";
+    for my $m (@$method_names) {
+        my $sig = $methods->{$m} // '';
+        $body .= "    $m: $sig,\n";
+    }
+    $body .= '}';
+    _code($body);
+}
+
+# ── Helpers ──────────────────────────────────────
+
+sub _code ($text) { "```perl\n$text\n```" }
+
+sub _note ($text) { "\n\n*$text*" }
 
 1;
