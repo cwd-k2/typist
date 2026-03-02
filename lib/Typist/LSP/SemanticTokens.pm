@@ -108,6 +108,10 @@ sub compute ($class, $doc) {
                 }
             }
         }
+
+        # Type names inside variant specs: '(Int)', '(Int, Int)', '(T)'
+        my %tp = map { $_ => 1 } @{$info->{type_params} // []};
+        _tokenize_quoted_types(\@tokens, \@lines, $line0, \%tp);
     }
 
     # ── struct declarations ───────────────────
@@ -129,6 +133,9 @@ sub compute ($class, $doc) {
                 }
             }
         }
+
+        # Type names inside field type strings: 'Int', 'Str', etc.
+        _tokenize_quoted_types(\@tokens, \@lines, $line0, +{}, 10);
     }
 
     # ── function definitions ──────────────────
@@ -299,14 +306,22 @@ sub _tokenize_sig_strings ($tokens, $lines, $line0, $operations, $generic_names 
                 push @$tokens, [$li, $op_pos, length($op_name), 'function', 0];
             }
         }
+    }
 
-        # Find quoted strings ('...') and tokenize their type content
+    _tokenize_quoted_types($tokens, $lines, $line0, $generic_names);
+}
+
+# Tokenize type names inside quoted strings ('...') within a declaration block.
+sub _tokenize_quoted_types ($tokens, $lines, $line0, $generic_names = +{}, $end_offset = 20) {
+    my $end = ($line0 + $end_offset < $#$lines) ? $line0 + $end_offset : $#$lines;
+
+    for my $li ($line0 .. $end) {
+        my $text = $lines->[$li];
         while ($text =~ /'([^']+)'/g) {
-            my $sig_content = $1;
+            my $content = $1;
             my $match_end = pos($text);
-            my $str_col = $match_end - length($sig_content) - 1;  # position of opening '
-            my $content_col = $str_col + 1;  # first char inside quotes
-            _tokenize_content($tokens, $li, $content_col, $sig_content, $generic_names);
+            my $content_col = $match_end - length($content) - 1;  # first char inside quotes
+            _tokenize_content($tokens, $li, $content_col, $content, $generic_names);
         }
     }
 }

@@ -412,16 +412,26 @@ PERL
     ok scalar @fn_toks >= 1, 'found writeLine as function token';
 
     # Str should be a type token (index 0) inside the sig string
+    # Source line: "effect Console => +{ writeLine => '(Str) -> Void' };"
+    #              0         1         2         3         4
+    #              0123456789012345678901234567890123456789012345678
+    # '(Str) -> Void' — opening ' at col 34, ( at 35, S at 36
     my @str_toks = grep { $_->{type} == 0 && $_->{len} == 3 } @tokens;
     ok scalar @str_toks >= 1, 'found Str type token in effect sig string';
+    my ($str_in_sig) = grep { $_->{line} == 1 && $_->{col} == 36 } @str_toks;
+    ok $str_in_sig, 'Str token at exact column 36 inside sig string';
 
-    # Void should be a type token (index 0) inside the sig string
+    # Void should be a type token (index 0) — V at col 44
     my @void_toks = grep { $_->{type} == 0 && $_->{len} == 4 } @tokens;
     ok scalar @void_toks >= 1, 'found Void type token in effect sig string';
+    my ($void_in_sig) = grep { $_->{line} == 1 && $_->{col} == 44 } @void_toks;
+    ok $void_in_sig, 'Void token at exact column 44 inside sig string';
 
-    # -> should be an operator token (index 8)
+    # -> should be an operator token (index 8) — - at col 41
     my @arrow_toks = grep { $_->{type} == 8 && $_->{len} == 2 } @tokens;
     ok scalar @arrow_toks >= 1, 'found -> operator token in effect sig string';
+    my ($arrow_in_sig) = grep { $_->{line} == 1 && $_->{col} == 41 } @arrow_toks;
+    ok $arrow_in_sig, '-> token at exact column 41 inside sig string';
 };
 
 subtest 'typeclass sig string tokens: type params and operators' => sub {
@@ -486,6 +496,91 @@ PERL
     # Log should be a type token (index 0)
     my @log_toks = grep { $_->{type} == 0 && $_->{len} == 3 } @tokens;
     ok scalar @log_toks >= 1, 'found Log as type token';
+};
+
+# ── Datatype variant type strings ─────────────────
+
+subtest 'datatype variant type strings get type tokens' => sub {
+    my $source = <<'PERL';
+use v5.40;
+datatype Shape =>
+    Circle    => '(Int)',
+    Rectangle => '(Int, Int)';
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # Int should appear as type tokens (index 0, len 3) inside variant specs
+    my @int_toks = grep { $_->{type} == 0 && $_->{len} == 3 } @tokens;
+    # Shape(5) + at least 3 Int occurrences from '(Int)' and '(Int, Int)'
+    ok scalar @int_toks >= 3, 'at least 3 type tokens for Int in variant specs';
+
+    # Verify Int tokens appear on the variant lines (line 2 and 3)
+    my @variant_ints = grep { $_->{line} >= 2 } @int_toks;
+    ok scalar @variant_ints >= 3, 'Int tokens on variant lines';
+};
+
+# ── Parameterized datatype type parameter tokens ──
+
+subtest 'parameterized datatype type params in variant specs' => sub {
+    my $source = <<'PERL';
+use v5.40;
+datatype 'Option[T]' => Some => '(T)', None => '()';
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # T inside '(T)' should be typeParameter (index 1)
+    my @tparam_toks = grep { $_->{type} == 1 && $_->{len} == 1 } @tokens;
+    ok scalar @tparam_toks >= 1, 'found T as typeParameter in variant spec';
+};
+
+# ── Struct field type string tokens ───────────────
+
+subtest 'struct field type strings get type tokens' => sub {
+    my $source = <<'PERL';
+use v5.40;
+struct Point => (x => 'Int', y => 'Int');
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # Int should appear as type tokens (index 0) from field type strings
+    my @int_toks = grep { $_->{type} == 0 && $_->{len} == 3 && $_->{line} == 1 } @tokens;
+    ok scalar @int_toks >= 2, 'at least 2 Int type tokens in struct field types';
 };
 
 done_testing;

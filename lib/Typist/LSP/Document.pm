@@ -711,14 +711,35 @@ sub _resolve_accessor_hover ($self, $line, $col, $word) {
 
     return undef unless $type_str;
     my $type = eval { Typist::Parser->parse($type_str) } // return undef;
-    $self->_walk_struct_chain($type, \@chain, $word, $registry);
+    $self->_walk_accessor_chain($type, \@chain, $word, $registry);
 }
 
-# Walk an accessor chain on a struct type, returning the final field symbol.
-sub _walk_struct_chain ($self, $type, $chain, $word, $registry) {
+# Walk an accessor chain, resolving struct fields and newtype ->base at each step.
+sub _walk_accessor_chain ($self, $type, $chain, $word, $registry) {
     for my $i (0 .. $#$chain) {
         my $field = $chain->[$i];
-        my $struct = $self->_resolve_to_struct($type, $registry) // return undef;
+
+        # Resolve alias → concrete type (newtype, struct, or datatype)
+        my $resolved = $self->_resolve_type_deep($type, $registry) // return undef;
+
+        # Newtype: only ->base is valid
+        if ($resolved->is_newtype) {
+            return undef unless $field eq 'base';
+            $type = $resolved->inner;
+            if ($i == $#$chain) {
+                return +{
+                    kind     => 'variable',
+                    name     => 'base',
+                    type     => $type->to_string,
+                    inferred => 1,
+                };
+            }
+            next;
+        }
+
+        # Struct: field accessor
+        my $struct = $resolved->is_struct ? $resolved
+                   : $self->_resolve_to_struct($resolved, $registry) // return undef;
 
         my %req = $struct->required_fields;
         my %opt = $struct->optional_fields;
@@ -745,11 +766,24 @@ sub _walk_struct_chain ($self, $type, $chain, $word, $registry) {
                     optional    => 1,
                 };
             }
+        } elsif ($field eq 'with') {
+            $type = $resolved;
+            return undef if $i == $#$chain;  # with() itself has no hover value
         } else {
             return undef;
         }
     }
     undef;
+}
+
+# Resolve a type through aliases to its concrete form (newtype, struct, datatype, etc.).
+sub _resolve_type_deep ($self, $type, $registry) {
+    return $type if $type->is_newtype || $type->is_struct;
+    if ($type->is_alias) {
+        my $resolved = eval { $registry->lookup_type($type->alias_name) };
+        return $resolved if $resolved;
+    }
+    $type;
 }
 
 # Resolve the return type of a function call from a text prefix ending with ')'.

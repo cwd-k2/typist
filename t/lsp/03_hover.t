@@ -986,6 +986,119 @@ PERL
     is $sym->{struct_name}, 'Product', 'struct via chained resolve';
 };
 
+# ── Hover on newtype ->base accessor ──────────────
+
+subtest 'hover shows inner type for newtype ->base' => sub {
+    require File::Temp;
+    require File::Path;
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib");
+
+    open my $fh, '>', "$dir/lib/Types.pm" or die;
+    print $fh <<'PERL';
+package Types;
+use v5.40;
+use Typist;
+newtype UserId => 'Int';
+1;
+PERL
+    close $fh;
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source = <<'PERL';
+package App;
+use v5.40;
+use Typist;
+use Types;
+sub get_raw :sig((UserId) -> Int) ($uid) {
+    $uid->base;
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///app.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Hover on 'base' at line 5: "    $uid->base;"
+    #                              01234567890123
+    my $sym = $doc->symbol_at(5, 11);
+    ok $sym, 'found symbol for ->base on newtype';
+    is $sym->{name}, 'base', 'name is base';
+    is $sym->{type}, 'Int', 'inner type is Int';
+    ok $sym->{inferred}, 'marked as inferred';
+
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'hover response for ->base';
+    like $hover->{contents}{value}, qr/base: Int/, 'shows base: Int';
+};
+
+# ── Hover on struct->newtype->base chain ──────────
+
+subtest 'hover shows inner type for struct->newtype->base chain' => sub {
+    require File::Temp;
+    require File::Path;
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib");
+
+    open my $fh, '>', "$dir/lib/Models.pm" or die;
+    print $fh <<'PERL';
+package Models;
+use v5.40;
+use Typist;
+newtype OrderId => 'Int';
+struct Order => (id => OrderId, total => Int);
+1;
+PERL
+    close $fh;
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source = <<'PERL';
+package App;
+use v5.40;
+use Typist;
+use Models;
+sub get_raw_id :sig((Order) -> Int) ($order) {
+    $order->id->base;
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///app.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Hover on 'id' at line 5: "    $order->id->base;"
+    #                            01234567890123456
+    my $sym_id = $doc->symbol_at(5, 12);
+    ok $sym_id, 'found symbol for ->id';
+    is $sym_id->{kind}, 'field', 'id is field';
+    is $sym_id->{name}, 'id', 'field name is id';
+    like $sym_id->{type}, qr/OrderId/, 'field type is OrderId';
+
+    # Hover on 'base' at line 5: "    $order->id->base;"
+    #                              0         1
+    #                              01234567890123456789
+    my $sym_base = $doc->symbol_at(5, 16);
+    ok $sym_base, 'found symbol for ->id->base chain';
+    is $sym_base->{name}, 'base', 'name is base';
+    is $sym_base->{type}, 'Int', 'inner type is Int through chain';
+};
+
 # ── _format_field unit test ──────────────────────
 
 subtest '_format_field unit test' => sub {
