@@ -15,6 +15,8 @@ my @TOKEN_TYPES = qw(
     enum
     enumMember
     operator
+    number
+    string
 );
 
 my @TOKEN_MODIFIERS = qw(
@@ -275,6 +277,20 @@ sub _tokenize_content ($tokens, $line0, $abs_col, $content, $generic_names) {
             next;
         }
 
+        # Numeric literal: 0, 1, 42, etc.
+        if ($rest =~ /\A(\d+)/) {
+            push @$tokens, [$line0, $abs_col + $pos, length($1), 'number', 0];
+            $pos += length($1);
+            next;
+        }
+
+        # String literal: "ok", "error", etc.
+        if ($rest =~ /\A("[^"]*")/) {
+            push @$tokens, [$line0, $abs_col + $pos, length($1), 'string', 0];
+            $pos += length($1);
+            next;
+        }
+
         # Arrow operator: ->
         if ($rest =~ /\A(->)/) {
             push @$tokens, [$line0, $abs_col + $pos, 2, 'operator', 0];
@@ -284,6 +300,20 @@ sub _tokenize_content ($tokens, $line0, $abs_col, $content, $generic_names) {
 
         # Effect operator: !
         if (substr($rest, 0, 1) eq '!') {
+            push @$tokens, [$line0, $abs_col + $pos, 1, 'operator', 0];
+            $pos += 1;
+            next;
+        }
+
+        # Variadic: ...
+        if ($rest =~ /\A(\.\.\.)/) {
+            push @$tokens, [$line0, $abs_col + $pos, 3, 'operator', 0];
+            $pos += 3;
+            next;
+        }
+
+        # Single-char punctuation: parens, brackets, angles, union, intersection, comma, colon
+        if ($rest =~ /\A([()\[\]<>|&,:])/) {
             push @$tokens, [$line0, $abs_col + $pos, 1, 'operator', 0];
             $pos += 1;
             next;

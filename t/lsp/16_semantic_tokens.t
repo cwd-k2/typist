@@ -583,6 +583,225 @@ PERL
     ok scalar @int_toks >= 2, 'at least 2 Int type tokens in struct field types';
 };
 
+# ── Punctuation tokens in annotation ──────────────
+
+subtest 'annotation tokens: punctuation as operator tokens' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub greet :sig((Int, Str) -> Void) ($a, $b) { }
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # Source: "sub greet :sig((Int, Str) -> Void) ($a, $b) { }"
+    #  :sig( at col 10, content starts at col 15
+    #  (  at col 15   → operator
+    #  I  at col 16   → type (Int)
+    #  ,  at col 19   → operator
+    #  S  at col 21   → type (Str)
+    #  )  at col 24   → operator
+    #  -> at col 26   → operator
+    #  V  at col 29   → type (Void)
+
+    # Operator tokens (index 8) on line 1
+    my @ops = grep { $_->{type} == 8 && $_->{line} == 1 } @tokens;
+
+    # Expect: ( , ) -> at minimum
+    ok scalar @ops >= 4, 'at least 4 operator tokens (parens, comma, arrow)';
+
+    # Check parentheses: len 1, operator
+    my @parens = grep { $_->{len} == 1 && ($_->{col} == 15 || $_->{col} == 24) } @ops;
+    is scalar @parens, 2, 'found ( and ) operator tokens';
+
+    # Check comma
+    my ($comma) = grep { $_->{col} == 19 && $_->{len} == 1 } @ops;
+    ok $comma, 'found comma operator token at col 19';
+
+    # Check arrow
+    my ($arrow) = grep { $_->{col} == 26 && $_->{len} == 2 } @ops;
+    ok $arrow, 'found -> operator token at col 26';
+};
+
+subtest 'annotation tokens: variadic ... as operator' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub variadic :sig((Int, ...Str) -> Void) ($x, @rest) { }
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # Find ... operator token (index 8, len 3)
+    my @dots = grep { $_->{type} == 8 && $_->{len} == 3 } @tokens;
+    ok scalar @dots >= 1, 'found ... variadic operator token';
+};
+
+subtest 'annotation tokens: brackets and angle brackets' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub poly :sig(<T>(ArrayRef[T]) -> T ![IO]) ($arr) { $arr->[0] }
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # Operator tokens on line 1
+    my @ops = grep { $_->{type} == 8 && $_->{line} == 1 } @tokens;
+
+    # Should include < > [ ] ( ) -> ! — at least 8 operators
+    ok scalar @ops >= 8, "at least 8 operator tokens for <T>(ArrayRef[T]) -> T ![IO]: got " . scalar @ops;
+
+    # Check angle brackets: len 1
+    my @angles = grep { $_->{len} == 1 } @ops;
+    ok scalar @angles >= 6, 'single-char operators include < > [ ] ( ) etc.';
+};
+
+# ── Literal type tokens ──────────────────────────
+
+subtest 'annotation tokens: numeric literals' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub flag :sig((0 | 1) -> Str) ($f) { $f ? "yes" : "no" }
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # number tokens (index 9)
+    my @nums = grep { $_->{type} == 9 && $_->{line} == 1 } @tokens;
+    is scalar @nums, 2, 'found 2 numeric literal tokens (0 and 1)';
+
+    # | operator between them (index 8)
+    my @pipes = grep { $_->{type} == 8 && $_->{line} == 1 && $_->{len} == 1 } @tokens;
+    ok((grep { $_->{col} > $nums[0]{col} && $_->{col} < $nums[1]{col} } @pipes),
+        'found | operator between numeric literals');
+};
+
+subtest 'annotation tokens: string literals' => sub {
+    my $source = <<'PERL';
+use v5.40;
+my $s :sig("ok" | "error") = "ok";
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # string tokens (index 10)
+    my @strs = grep { $_->{type} == 10 && $_->{line} == 1 } @tokens;
+    is scalar @strs, 2, 'found 2 string literal tokens ("ok" and "error")';
+    is $strs[0]{len}, 4, '"ok" token length is 4 (including quotes)';
+    is $strs[1]{len}, 7, '"error" token length is 7 (including quotes)';
+
+    # | operator between them
+    my @pipes = grep { $_->{type} == 8 && $_->{line} == 1 && $_->{len} == 1 } @tokens;
+    ok scalar @pipes >= 1, 'found | operator between string literals';
+};
+
+subtest 'annotation tokens: mixed literal union' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub code :sig((0 | 1 | "unknown") -> Void) ($c) { }
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # 2 numbers (0, 1) and 1 string ("unknown")
+    my @nums = grep { $_->{type} == 9 && $_->{line} == 1 } @tokens;
+    my @strs = grep { $_->{type} == 10 && $_->{line} == 1 } @tokens;
+    is scalar @nums, 2, '2 numeric literal tokens';
+    is scalar @strs, 1, '1 string literal token';
+
+    # 2 pipe operators
+    my @pipes = grep { $_->{type} == 8 && $_->{line} == 1 && $_->{len} == 1 } @tokens;
+    ok scalar @pipes >= 4, 'pipe and paren operators present';
+};
+
+subtest 'datatype variant specs: numeric literals in quoted strings' => sub {
+    my $source = <<'PERL';
+use v5.40;
+datatype Bit => Zero => '(0)', One => '(1)';
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # number tokens (index 9) from '(0)' and '(1)'
+    my @nums = grep { $_->{type} == 9 } @tokens;
+    is scalar @nums, 2, 'found 2 numeric literal tokens in variant specs';
+};
+
 done_testing;
 
 # ── Test Helpers ─────────────────────────────────
