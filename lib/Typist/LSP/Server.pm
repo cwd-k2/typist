@@ -258,7 +258,19 @@ sub _handle_completion ($self, $params) {
         my @typedefs    = $self->{workspace} ? $self->{workspace}->all_typedef_names    : ();
         my @effects     = $self->{workspace} ? $self->{workspace}->all_effect_names     : ();
         my @typeclasses = $self->{workspace} ? $self->{workspace}->all_typeclass_names  : ();
-        my $items = Typist::LSP::Completion->complete($ctx, \@typedefs, \@effects, \@typeclasses);
+
+        # Collect type variable names from document-level generic declarations
+        my @doc_type_vars;
+        my $result = $doc->result;
+        if ($result && $result->{extracted}) {
+            for my $fn (values $result->{extracted}{functions}->%*) {
+                push @doc_type_vars, ($fn->{generics} // [])->@*;
+            }
+        }
+
+        my $items = Typist::LSP::Completion->complete(
+            $ctx, \@typedefs, \@effects, \@typeclasses, \@doc_type_vars,
+        );
         return +{ items => $items };
     }
 
@@ -337,9 +349,10 @@ sub _handle_signature_help ($self, $params) {
     my $params_expr  = $sym->{params_expr} // [];
     my $returns_expr = $sym->{returns_expr};
 
-    # Build label: add(Int, Int) -> Int
+    # Build label: add(Int, Int) -> Int !Eff(Console)
     my $label = "$sym->{name}(" . join(', ', @$params_expr) . ')';
     $label .= " -> $returns_expr" if $returns_expr;
+    $label .= " !$sym->{eff_expr}" if $sym->{eff_expr};
 
     # Build parameter labels
     my @param_labels = map { +{ label => $_ } } @$params_expr;

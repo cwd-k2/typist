@@ -1044,4 +1044,92 @@ PERL
     is $range->{end}{character}, 7, 'range end character (add = 3 chars)';
 };
 
+# ── Hover shows unannotated note ──────────────────
+
+subtest 'hover shows unannotated note on function' => sub {
+    require Typist::LSP::Hover;
+
+    my $sym = +{
+        kind         => 'function',
+        name         => 'helper',
+        params_expr  => ['Any'],
+        returns_expr => undef,
+        eff_expr     => 'Eff(*)',
+        unannotated  => 1,
+    };
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'got hover response';
+    like $hover->{contents}{value}, qr/\*unannotated\*/, 'shows unannotated note';
+};
+
+# ── Hover shows constructor note ───────────────────
+
+subtest 'hover shows constructor note' => sub {
+    require Typist::LSP::Hover;
+
+    my $sym = +{
+        kind         => 'function',
+        name         => 'Circle',
+        params_expr  => ['Int'],
+        returns_expr => 'Shape',
+        constructor  => 1,
+    };
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'got hover response';
+    like $hover->{contents}{value}, qr/\*constructor of `Shape`\*/, 'shows constructor of Shape';
+};
+
+# ── Hover shows builtin note ──────────────────────
+
+subtest 'hover shows builtin note' => sub {
+    require Typist::LSP::Hover;
+
+    my $sym = +{
+        kind         => 'function',
+        name         => 'push',
+        params_expr  => ['ArrayRef[Any]', '...Any'],
+        returns_expr => 'Int',
+        builtin      => 1,
+    };
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'got hover response';
+    like $hover->{contents}{value}, qr/\*Perl builtin\*/, 'shows Perl builtin note';
+};
+
+# ── Hover shows unknown type ──────────────────────
+
+subtest 'hover shows unknown note for unresolvable variable' => sub {
+    require Typist::LSP::Hover;
+
+    my $sym = +{
+        kind     => 'variable',
+        name     => '$mystery',
+        type     => 'Any',
+        inferred => 1,
+        unknown  => 1,
+    };
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'got hover response';
+    like $hover->{contents}{value}, qr/\*type unknown\*/, 'shows type unknown note';
+    unlike $hover->{contents}{value}, qr/\*inferred\*/, 'does not show inferred when unknown';
+};
+
+# ── Hover shows narrowed variable ─────────────────
+
+subtest 'hover shows narrowed note for type-narrowed variable' => sub {
+    require Typist::LSP::Hover;
+
+    my $sym = +{
+        kind     => 'variable',
+        name     => '$x',
+        type     => 'Int',
+        inferred => 1,
+        narrowed => 1,
+    };
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'got hover response';
+    like $hover->{contents}{value}, qr/\*narrowed\*/, 'shows narrowed note';
+    unlike $hover->{contents}{value}, qr/\*inferred\*/, 'does not show inferred when narrowed';
+};
+
 done_testing;

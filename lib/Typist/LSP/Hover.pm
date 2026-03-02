@@ -36,7 +36,13 @@ sub _format ($class, $sym) {
 
     if ($kind eq 'variable') {
         my $md = _code("$sym->{name}: $sym->{type}");
-        $md .= _note('inferred') if $sym->{inferred};
+        if ($sym->{unknown}) {
+            $md .= _note('type unknown');
+        } elsif ($sym->{narrowed}) {
+            $md .= _note('narrowed');
+        } elsif ($sym->{inferred}) {
+            $md .= _note('inferred');
+        }
         return $md;
     }
 
@@ -96,7 +102,15 @@ sub _format_function ($class, $sym) {
     $sig .= " !$sym->{eff_expr}" if $sym->{eff_expr};
 
     my $md = _code($sig);
-    $md .= _note('declared') if $sym->{declared};
+    if ($sym->{constructor}) {
+        $md .= _note("constructor of `$sym->{returns_expr}`");
+    } elsif ($sym->{builtin}) {
+        $md .= _note('Perl builtin');
+    } elsif ($sym->{declared}) {
+        $md .= _note('declared');
+    } elsif ($sym->{unannotated}) {
+        $md .= _note('unannotated');
+    }
     $md;
 }
 
@@ -124,13 +138,22 @@ sub _format_field ($class, $sym) {
 }
 
 sub _format_datatype ($class, $sym) {
-    my $type = $sym->{type} // '';
-    my @variants = split /\s*\|\s*/, $type;
+    # Prefer structured variants array when available
+    my @variants;
+    if ($sym->{variants} && @{$sym->{variants}}) {
+        @variants = map {
+            my $spec = $_->{spec};
+            ($spec && $spec =~ /\S/) ? "$_->{tag}$spec" : $_->{tag};
+        } $sym->{variants}->@*;
+    } else {
+        my $type = $sym->{type} // '';
+        @variants = split /\s*\|\s*/, $type;
+    }
 
     # Single-line for 0-2 variants, multi-line for 3+
     if (@variants <= 2) {
         my $display = "datatype $sym->{name}";
-        $display .= " = $type" if $type;
+        $display .= ' = ' . join(' | ', @variants) if @variants;
         return _code($display);
     }
 

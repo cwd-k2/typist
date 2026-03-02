@@ -93,4 +93,62 @@ PERL
     is scalar @$hints, 0, 'no hints outside range';
 };
 
+# ── No inlay hints for unknown type variables ────
+
+subtest 'inlayHint omits variables with unknown type' => sub {
+    my $source = <<'PERL';
+use v5.40;
+my $mystery = some_unknown_thing();
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/inlayHint', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            range => +{
+                start => +{ line => 0, character => 0 },
+                end   => +{ line => 2, character => 0 },
+            },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got inlayHint response';
+    my $hints = $resp->{result};
+    my @any_hints = grep { ($_->{label} // '') =~ /Any/ } @$hints;
+    is scalar @any_hints, 0, 'no hint for unknown (Any) variables';
+};
+
+# ── Inlay hints for $_ in map block ──────────────
+
+subtest 'inlayHint shows $_ type in map block' => sub {
+    my $source = <<'PERL';
+use v5.40;
+my @nums :Type(ArrayRef[Int]) = (1, 2, 3);
+my @doubled = map { $_ * 2 } @nums;
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/inlayHint', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            range => +{
+                start => +{ line => 0, character => 0 },
+                end   => +{ line => 4, character => 0 },
+            },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got inlayHint response';
+    my $hints = $resp->{result};
+    # Expect $_ hint with Int type on the map line
+    my @underscore_hints = grep { ($_->{label} // '') =~ /Int/ } @$hints;
+    ok @underscore_hints, 'found $_ hint with Int type in map block';
+};
+
 done_testing;

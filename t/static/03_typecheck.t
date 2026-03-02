@@ -1591,4 +1591,33 @@ PERL
         'message says expected 1, got 0';
 };
 
+# ── Unless Narrowing ─────────────────────────────
+
+subtest 'narrowing: unless reverses polarity — body gets inverse' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub foo :Type((Int | Undef) -> Undef) ($x) {
+    unless (defined $x) {
+        return $x;
+    }
+    return undef;
+}
+PERL
+    is scalar @$errs, 0, 'unless body narrows to Undef (inverse of defined guard)';
+};
+
+subtest 'narrowing: unless else block gets direct narrowing' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub foo :Type((Int | Undef) -> Int) ($x) {
+    unless (defined $x) {
+        return 0;
+    } else {
+        return $x;
+    }
+}
+PERL
+    is scalar @$errs, 0, 'unless else block narrows to Int (defined guard direct)';
+};
+
 done_testing;

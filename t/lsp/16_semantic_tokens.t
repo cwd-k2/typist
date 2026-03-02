@@ -243,6 +243,45 @@ PERL
     is scalar @$data, 0, 'no tokens for plain Perl source';
 };
 
+# ── Semantic tokens for struct declaration ────────
+
+subtest 'semantic tokens for struct' => sub {
+    my $source = <<'PERL';
+use v5.40;
+struct Point => (x => 'Int', y => 'Int');
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # keyword 'struct'
+    my ($kw) = grep { $_->{type} == 4 && $_->{len} == 6 } @tokens;
+    ok $kw, 'found struct keyword';
+    is $kw->{line}, 1, 'struct keyword on line 1';
+
+    # struct name (type index 0 = type)
+    my ($st_name) = grep { $_->{type} == 0 && $_->{len} == 5 } @tokens;
+    ok $st_name, 'found type name token (Point)';
+    ok $st_name->{mods} & 2, 'type name has definition modifier';
+
+    # field names with readonly modifier (bit 2 = 4)
+    my @fields = grep { $_->{type} == 2 && ($_->{mods} & 4) } @tokens;
+    ok scalar @fields >= 2, 'at least 2 readonly field tokens';
+
+    my @lens = sort map { $_->{len} } @fields;
+    ok((grep { $_ == 1 } @lens), 'found field x or y (len 1)');
+};
+
 done_testing;
 
 # ── Test Helpers ─────────────────────────────────

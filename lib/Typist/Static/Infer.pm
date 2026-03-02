@@ -979,6 +979,24 @@ sub _infer_map_grep_sort ($word, $env) {
     # Infer source list element type from siblings after the block
     my $elem_type = _infer_source_element_type_after($block, $env);
 
+    # Record $_ binding as callback param for LSP visibility
+    if ($elem_type) {
+        my $block_line  = $block->line_number;
+        my $block_last  = $block->last_element;
+        my $block_end   = $block_last ? $block_last->line_number : $block_line;
+        my $dedup_key   = '$_:' . $block_line;
+        unless ($_CALLBACK_PARAMS_SEEN{$dedup_key}++) {
+            push @_CALLBACK_PARAMS, +{
+                name        => '$_',
+                type        => $elem_type,
+                line        => $block_line,
+                col         => 1,
+                scope_start => $block_line,
+                scope_end   => $block_end,
+            };
+        }
+    }
+
     if ($name eq 'map') {
         return undef unless $elem_type;
         # Build env with $_ bound to element type
@@ -1027,7 +1045,8 @@ sub _infer_source_element_type_after ($block, $env) {
     if ($sib->isa('PPI::Token::Symbol') && $sib->raw_type eq '@') {
         my $scalar = $sib->content;
         $scalar =~ s/\A\@/\$/;
-        my $var_type = _lookup_var($scalar, $env);
+        my $var_type = _lookup_var($scalar, $env)
+                    // _lookup_var($sib->content, $env);  # fallback: @name key
         return _unwrap_arrayref($var_type) if $var_type;
         return undef;
     }

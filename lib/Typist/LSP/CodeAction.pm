@@ -50,11 +50,84 @@ sub _suggest_add_effect ($class, $diag, $doc) {
     my ($fn_name) = $msg =~ /\AFunction (\w+)\(\)/;
     return undef unless $fn_name;
 
-    +{
+    my $action = +{
         title       => "Add effect '$effect_label' to $fn_name()",
         kind        => 'quickfix',
         diagnostics => [$class->_strip_internal($diag)],
     };
+
+    # Try to generate a WorkspaceEdit for the :Type() annotation
+    my $edit = $class->_build_effect_edit($doc, $fn_name, $effect_label);
+    $action->{edit} = $edit if $edit;
+
+    $action;
+}
+
+# Build a WorkspaceEdit that adds an effect label to a function's :Type() annotation.
+sub _build_effect_edit ($class, $doc, $fn_name, $effect_label) {
+    my $lines = $doc->lines;
+    return undef unless $lines && @$lines;
+    my $uri = $doc->uri;
+
+    # Find the :Type(...) annotation line for the target function
+    for my $i (0 .. $#$lines) {
+        my $line = $lines->[$i];
+
+        # Match: sub fn_name :Type(...) pattern on single line
+        next unless $line =~ /\bsub\s+\Q$fn_name\E\b/;
+        next unless $line =~ /:Type\(/;
+
+        # Determine edit position
+        my ($new_line, $col);
+
+        if ($line =~ /!Eff\(([^)]*)\)/) {
+            # Already has !Eff(...) — add | Label before the closing )
+            my $eff_close = index($line, ')', $-[0] + 4);
+            return undef if $eff_close < 0;
+            $new_line = substr($line, 0, $eff_close)
+                      . " | $effect_label"
+                      . substr($line, $eff_close);
+        } else {
+            # No !Eff(...) — insert before the closing ) of :Type(...)
+            # Find the last ) that closes :Type(
+            my $type_start = index($line, ':Type(');
+            return undef if $type_start < 0;
+
+            # Walk from :Type( to find matching )
+            my $depth = 0;
+            my $close_pos = -1;
+            for my $p ($type_start + 5 .. length($line) - 1) {
+                my $ch = substr($line, $p, 1);
+                if ($ch eq '(') { $depth++ }
+                elsif ($ch eq ')') {
+                    if ($depth == 0) {
+                        $close_pos = $p;
+                        last;
+                    }
+                    $depth--;
+                }
+            }
+            return undef if $close_pos < 0;
+
+            $new_line = substr($line, 0, $close_pos)
+                      . " !Eff($effect_label)"
+                      . substr($line, $close_pos);
+        }
+
+        return +{
+            changes => +{
+                $uri => [+{
+                    range => +{
+                        start => +{ line => $i, character => 0 },
+                        end   => +{ line => $i, character => length($line) },
+                    },
+                    newText => $new_line,
+                }],
+            },
+        };
+    }
+
+    undef;
 }
 
 # ── Suggestion-Based Actions ────────────────────

@@ -103,6 +103,27 @@ sub compute ($class, $doc) {
         }
     }
 
+    # ── struct declarations ───────────────────
+    for my $name (keys(($extracted->{structs} // +{})->%*)) {
+        my $info = $extracted->{structs}{$name};
+        my $line0 = ($info->{line} // 1) - 1;
+        _scan_keyword_name(\@tokens, \@lines, $line0, 'struct', $name, 'type');
+
+        # Field name tokens with readonly modifier
+        my $fields = $info->{fields} // +{};
+        for my $field_name (keys %$fields) {
+            # Fields appear in the struct definition, potentially across lines
+            my $end = ($line0 + 10 < $#lines) ? $line0 + 10 : $#lines;
+            for my $li ($line0 .. $end) {
+                my $fpos = _word_pos($lines[$li], $field_name);
+                if (defined $fpos) {
+                    push @tokens, [$li, $fpos, length($field_name), 'variable', $MOD_BIT{readonly}];
+                    last;
+                }
+            }
+        }
+    }
+
     # ── function definitions ──────────────────
     for my $name (keys $extracted->{functions}->%*) {
         my $fn = $extracted->{functions}{$name};
@@ -259,7 +280,7 @@ The following token types are registered:
 
 =item C<definition> - Function and type name definitions
 
-=item C<readonly> - (reserved)
+=item C<readonly> - Struct field names (immutable)
 
 =back
 

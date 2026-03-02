@@ -462,4 +462,54 @@ subtest 'code completion: context detection edge cases' => sub {
     is $ctx, undef, 'no code context for method call with parens';
 };
 
+# ── type_expr includes forall snippet ──────────────
+
+subtest 'type_expr completion includes forall snippet' => sub {
+    require Typist::LSP::Completion;
+
+    my $items = Typist::LSP::Completion->complete('type_expr', [], [], []);
+    my @labels = map { $_->{label} } @$items;
+    ok((grep { $_ eq 'forall' } @labels), 'forall in type_expr completions');
+
+    my ($forall) = grep { $_->{label} eq 'forall' } @$items;
+    is $forall->{insertTextFormat}, 2, 'forall is a snippet';
+    like $forall->{insertText}, qr/forall/, 'insert text contains forall';
+};
+
+# ── generic completion includes doc-level type vars ──
+
+subtest 'generic completion includes document type vars' => sub {
+    require Typist::LSP::Completion;
+
+    my $items = Typist::LSP::Completion->complete(
+        'generic', [], [], [], ['A', 'B'],
+    );
+    my @labels = map { $_->{label} } @$items;
+    ok((grep { $_ eq 'A' } @labels), 'A from document in generic completions');
+    ok((grep { $_ eq 'B' } @labels), 'B from document in generic completions');
+    ok((grep { $_ eq 'T' } @labels), 'T still present as standard type var');
+};
+
+# ── constructor names include struct and newtype ─────
+
+subtest 'constructor names include struct and newtype' => sub {
+    require Typist::LSP::Workspace;
+
+    my $ws = Typist::LSP::Workspace->new;
+    my $source = <<'PERL';
+use v5.40;
+package Types;
+struct Point => (x => 'Int', y => 'Int');
+newtype UserId => 'Int';
+datatype Shape =>
+    Circle => '(Int)';
+PERL
+    $ws->update_file('/fake/Types.pm', $source);
+
+    my @ctors = $ws->all_constructor_names;
+    ok((grep { $_ eq 'Circle' } @ctors), 'Circle from datatype');
+    ok((grep { $_ eq 'Point' }  @ctors), 'Point from struct');
+    ok((grep { $_ eq 'UserId' } @ctors), 'UserId from newtype');
+};
+
 done_testing;

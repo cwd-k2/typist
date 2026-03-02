@@ -16,13 +16,26 @@ my @TYPE_VARS    = qw(T U V K);
 #   typedefs:    arrayref of typedef names from workspace
 #   effects:     arrayref of effect names from workspace
 #   typeclasses: arrayref of typeclass names from workspace
-sub complete ($class, $context, $typedefs, $effects, $typeclasses = undef) {
-    $typedefs    //= [];
-    $effects     //= [];
-    $typeclasses //= [];
+sub complete ($class, $context, $typedefs, $effects, $typeclasses = undef, $doc_type_vars = undef) {
+    $typedefs      //= [];
+    $effects       //= [];
+    $typeclasses   //= [];
+    $doc_type_vars //= [];
 
     if ($context eq 'generic') {
-        return [map { _item($_, 'TypeParameter', "$_ type variable") } @TYPE_VARS];
+        my %seen;
+        my @items;
+        # Document-level type variable names first
+        for my $tv (@$doc_type_vars) {
+            next if $seen{$tv}++;
+            push @items, _item($tv, 'TypeParameter', "$tv type variable (from document)");
+        }
+        # Standard type variable suggestions
+        for my $tv (@TYPE_VARS) {
+            next if $seen{$tv}++;
+            push @items, _item($tv, 'TypeParameter', "$tv type variable");
+        }
+        return \@items;
     }
 
     if ($context eq 'effect') {
@@ -41,6 +54,15 @@ sub complete ($class, $context, $typedefs, $effects, $typeclasses = undef) {
 
         # Parametric types with snippet insertion
         push @items, map { _item_snippet($_, 'Class') } @PARAMETRICS;
+
+        # Quantified type snippet
+        push @items, +{
+            label            => 'forall',
+            kind             => _kind_number('Class'),
+            detail           => 'Rank-2 quantified type: forall T. ...',
+            insertText       => 'forall ${1:T}. ${2:($1) -> $1}',
+            insertTextFormat => 2,  # Snippet
+        };
 
         # Workspace typedefs
         push @items, map { _item($_, 'Class', "typedef $_") } @$typedefs;

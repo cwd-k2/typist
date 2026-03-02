@@ -301,6 +301,10 @@ sub all_constructor_names ($self) {
         for my $dt_info (values(($info->{datatypes} // +{})->%*)) {
             $seen{$_} = 1 for keys($dt_info->{variants}->%*);
         }
+        # Include struct names (constructor = struct name)
+        $seen{$_} = 1 for keys(($info->{structs} // +{})->%*);
+        # Include newtype names (constructor = newtype name)
+        $seen{$_} = 1 for keys(($info->{newtypes} // +{})->%*);
     }
     sort keys %seen;
 }

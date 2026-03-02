@@ -312,7 +312,7 @@ sub _parse_dsl_func ($name, $tokens, $pos) {
         }
     }
 
-    # Parse optional effect row: ! Label | Label | var
+    # Parse optional effect row: !Eff(Label | Label | var)
     my $effect_row;
     if ($$pos < @$tokens && $tokens->[$$pos] eq '!') {
         $$pos++;
@@ -545,7 +545,7 @@ sub parse_row ($class, $expr) {
 #   "Int"                              → { generics_raw => [], type => Atom(Int) }
 #   "(Int, Str) -> Bool"               → { generics_raw => [], type => Func }
 #   "<T: Num>(T, T) -> T"              → { generics_raw => ["T: Num"], type => Func }
-#   "<T, r: Row>(T) -> Str ! Console | r"
+#   "<T, r: Row>(T) -> Str !Eff(Console | r)"
 sub parse_annotation ($class, $input) {
     if (my $cached = $_ANNOTATION_CACHE{$input}) { return $cached }
 

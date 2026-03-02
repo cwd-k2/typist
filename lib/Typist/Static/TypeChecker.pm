@@ -22,11 +22,13 @@ sub new ($class, %args) {
         ppi_doc        => $args{ppi_doc},
         file           => $args{file} // '(buffer)',
         _loop_var_types => +{},
+        _narrowed_vars  => [],
     }, $class;
 }
 
 sub loop_var_types     ($self) { $self->{_loop_var_types} }
 sub callback_param_types ($self) { $self->{_callback_param_types} }
+sub narrowed_var_types ($self) { $self->{_narrowed_vars} }
 
 # ── Public API ───────────────────────────────────
 
@@ -741,8 +743,9 @@ sub _collect_match_callback_params ($self) {
     my $ppi_doc = $self->{ppi_doc} // return;
     my $words = $ppi_doc->find('PPI::Token::Word') || [];
 
+    my %mgs = (match => 1, map => 1, grep => 1, sort => 1);
     for my $word (@$words) {
-        next unless $word->content eq 'match';
+        next unless $mgs{$word->content};
         my $env = $self->_env_for_node($word);
         Typist::Static::Infer->infer_expr($word, $env);
     }
@@ -1009,28 +1012,44 @@ sub _narrow_env_for_block ($self, $env, $node) {
 
     return $env unless $rule;
 
-    # Then-block: apply narrowing directly
-    if ($block_index == 0) {
-        my %new_vars = $env->{variables}->%*;
-        $new_vars{$_} = $narrowing{$_} for keys %narrowing;
-        return +{ %$env, variables => \%new_vars };
+    # Detect `unless` keyword — reverses narrowing polarity
+    my ($keyword) = grep { $_->isa('PPI::Token::Word') } $compound->schildren;
+    my $is_unless = $keyword && $keyword->content eq 'unless';
+
+    # For `if`:     block 0 = then (direct), block 1+ = else (inverse)
+    # For `unless`: block 0 = body (inverse), block 1+ = else (direct)
+    my $apply_direct = $is_unless ? ($block_index > 0) : ($block_index == 0);
+
+    # Compute the narrowed variable set based on polarity
+    my %applied;
+    if ($apply_direct) {
+        %applied = %narrowing;
+    } else {
+        for my $var_name (keys %narrowing) {
+            my $original = $env->{variables}{$var_name};
+            my %inv = $self->_inverse_narrowing($rule, $var_name, $original)->%*;
+            $applied{$_} = $inv{$_} for keys %inv;
+        }
     }
 
-    # Else-block: apply inverse narrowing
-    my %inverse;
-    for my $var_name (keys %narrowing) {
-        my $original = $env->{variables}{$var_name};
-        my %inv = $self->_inverse_narrowing($rule, $var_name, $original)->%*;
-        $inverse{$_} = $inv{$_} for keys %inv;
+    return $env unless %applied;
+
+    # Record narrowed variables for LSP visibility
+    my $block_start = $block->line_number;
+    my $block_last  = $block->last_element;
+    my $block_end   = $block_last ? $block_last->line_number : $block_start;
+    for my $var_name (keys %applied) {
+        push $self->{_narrowed_vars}->@*, +{
+            name        => $var_name,
+            type        => $applied{$var_name},
+            scope_start => $block_start,
+            scope_end   => $block_end,
+        };
     }
 
-    if (%inverse) {
-        my %new_vars = $env->{variables}->%*;
-        $new_vars{$_} = $inverse{$_} for keys %inverse;
-        return +{ %$env, variables => \%new_vars };
-    }
-
-    $env;
+    my %new_vars = $env->{variables}->%*;
+    $new_vars{$_} = $applied{$_} for keys %applied;
+    +{ %$env, variables => \%new_vars };
 }
 
 # ── Early Return Narrowing ──────────────────────
@@ -1069,6 +1088,20 @@ sub _scan_early_returns ($self, $env, $node) {
     }
 
     return $env unless %narrowed_vars;
+
+    # Record narrowed variables for LSP visibility
+    my $fn_block = $parent_block;
+    my $fn_last  = $fn_block->last_element;
+    my $scope_start = $stmt->line_number;
+    my $scope_end   = $fn_last ? $fn_last->line_number : $scope_start;
+    for my $var_name (keys %narrowed_vars) {
+        push $self->{_narrowed_vars}->@*, +{
+            name        => $var_name,
+            type        => $narrowed_vars{$var_name},
+            scope_start => $scope_start,
+            scope_end   => $scope_end,
+        };
+    }
 
     my %new_vars = $env->{variables}->%*;
     $new_vars{$_} = $narrowed_vars{$_} for keys %narrowed_vars;

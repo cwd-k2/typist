@@ -71,6 +71,14 @@ PERL
     like $add_eff->{title}, qr/Add effect 'State' to caller_fn\(\)/, 'action title references function';
     is $add_eff->{kind}, 'quickfix', 'action kind is quickfix';
     ok $add_eff->{diagnostics}, 'action references diagnostics';
+
+    # WorkspaceEdit: adds | State to existing !Eff(Console)
+    ok $add_eff->{edit}, 'action has edit (WorkspaceEdit)';
+    my $changes = $add_eff->{edit}{changes};
+    ok $changes, 'edit has changes';
+    my ($text_edit) = values %$changes;
+    ok $text_edit, 'has text edits for the URI';
+    like $text_edit->[0]{newText}, qr/State/, 'new text includes State effect';
 };
 
 # ── Code action for pure-calls-effectful ────────
@@ -137,6 +145,13 @@ PERL
         if (@$actions) {
             like $actions->[0]{title}, qr/Add effect/, 'action suggests adding effect';
             is $actions->[0]{kind}, 'quickfix', 'action kind is quickfix';
+
+            # WorkspaceEdit: inserts !Eff(Console) before closing )
+            if ($actions->[0]{edit}) {
+                my $changes = $actions->[0]{edit}{changes};
+                my ($text_edit) = values %$changes;
+                like $text_edit->[0]{newText}, qr/!Eff\(Console\)/, 'inserts !Eff(Console)';
+            }
         }
     } else {
         pass 'no matching diagnostic (message format may differ)';

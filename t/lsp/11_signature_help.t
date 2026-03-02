@@ -173,4 +173,32 @@ PERL
     like $result2->{signatures}[0]{label}, qr/UserId\(Int\)/, 'label shows UserId(Int)';
 };
 
+# ── Signature help includes effect expression ────
+
+subtest 'signatureHelp shows effect in label' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub greet :Type((Str) -> Void !Eff(Console)) ($name) { say $name }
+greet(
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/signatureHelp', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 2, character => 6 },  # after 'greet('
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got signatureHelp response';
+    ok $resp->{result}, 'has result';
+    my $sigs = $resp->{result}{signatures};
+    ok $sigs && @$sigs, 'has signatures';
+    like $sigs->[0]{label}, qr/greet\(Str\) -> Void/, 'label shows params and return';
+    like $sigs->[0]{label}, qr/!Eff\(Console\)/, 'label includes effect expression';
+};
+
 done_testing;

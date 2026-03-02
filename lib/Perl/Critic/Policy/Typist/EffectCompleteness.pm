@@ -85,7 +85,7 @@ matching C<CapitalizedPkg::operation> pattern) without declaring their effects
 in the C<:Type()> annotation via the C<!> syntax.
 
 For example, a function calling C<Console::writeLine()> should have
-C<:Type((Str) -> Void ! Console)>.
+C<:Type((Str) -> Void !Eff(Console))>.
 
 =head1 CONFIGURATION
 

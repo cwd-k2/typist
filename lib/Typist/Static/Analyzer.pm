@@ -205,9 +205,11 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
         }
 
         # Fallback: unannotated variables with no inferrable type → Any
+        my $unknown = 0;
         if (!$type) {
             $type     = 'Any';
             $inferred = 1;
+            $unknown  = 1;
         }
 
         push @symbols, +{
@@ -215,6 +217,7 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
             kind     => 'variable',
             type     => $type,
             inferred => $inferred,
+            ($unknown ? (unknown => 1) : ()),
             line     => $var->{line},
             col      => $var->{col},
         };
@@ -235,6 +238,7 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
             returns_expr => $fn->{returns_expr},
             generics    => $fn->{generics},
             eff_expr    => $eff,
+            ($fn->{unannotated} ? (unannotated => 1) : ()),
             line        => $fn->{line},
             col         => $fn->{col},
         };
@@ -286,6 +290,7 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
                 kind        => 'parameter',
                 type        => $ptype,
                 fn_name     => $name,
+                ($fn->{unannotated} ? (unannotated => 1) : ()),
                 line        => $fn->{line},
                 col         => $fn->{col},
                 scope_start => $fn->{line},
@@ -342,12 +347,19 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
             my $spec = $info->{variants}{$tag};
             push @parts, ($spec && $spec =~ /\S/) ? "$tag$spec" : $tag;
         }
+        my @variants;
+        for my $tag (sort keys $info->{variants}->%*) {
+            my $spec = $info->{variants}{$tag};
+            push @variants, +{ tag => $tag, spec => $spec // '' };
+        }
+
         push @symbols, +{
-            name => $name,
-            kind => 'datatype',
-            type => join(' | ', @parts),
-            line => $info->{line},
-            col  => $info->{col},
+            name     => $name,
+            kind     => 'datatype',
+            type     => join(' | ', @parts),
+            variants => \@variants,
+            line     => $info->{line},
+            col      => $info->{col},
         };
 
         # Constructor symbols for each variant
@@ -388,9 +400,8 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
 
         my @field_descs;
         for my $f (sort keys %$fields) {
-            my $desc = "$f: $fields->{$f}";
-            $desc .= ' (optional)' if $opt_set{$f};
-            push @field_descs, $desc;
+            my $key = $opt_set{$f} ? "$f?" : $f;
+            push @field_descs, "$key: $fields->{$f}";
         }
 
         push @symbols, +{
@@ -433,6 +444,22 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
                 col         => $cp->{col},
                 scope_start => $cp->{scope_start},
                 scope_end   => $cp->{scope_end},
+            };
+        }
+    }
+
+    # Narrowed variables (from type narrowing in if/unless/early-return)
+    if ($type_checker && $type_checker->can('narrowed_var_types')) {
+        my $nvt = $type_checker->narrowed_var_types // [];
+        for my $nv (@$nvt) {
+            push @symbols, +{
+                name        => $nv->{name},
+                kind        => 'variable',
+                type        => $nv->{type}->to_string,
+                inferred    => 1,
+                narrowed    => 1,
+                scope_start => $nv->{scope_start},
+                scope_end   => $nv->{scope_end},
             };
         }
     }
