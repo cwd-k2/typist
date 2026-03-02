@@ -21,11 +21,20 @@ Typist brings static type annotations to Perl through standard attribute syntax.
 use Typist;
 use Typist::DSL;
 
-# Type aliases
+# Type aliases and records (structural)
 BEGIN {
     typedef Name   => Str;
-    typedef Config => Struct(host => Str, port => Int);
+    typedef Config => Record(host => Str, port => Int);
 }
+
+# Nominal struct types (blessed, immutable)
+BEGIN {
+    struct Person => (name => Str, age => Int, email => optional(Str));
+}
+
+my $p = Person(name => "Alice", age => 30);
+$p->name;                           # getter
+$p->with(age => 31);                # immutable update
 
 # Typed variables
 my $count :Type(Int) = 0;
@@ -70,7 +79,8 @@ sub with_log :Type(<r: Row>(Str) -> Str !Eff(Log | r)) ($msg) {
 | Union types | `A \| B` | `Int \| Str` |
 | Intersection types | `A & B` | `Readable & Writable` |
 | Function types | `(A, B) -> R` | `(Int, Int) -> Int` |
-| Struct types | `{ k => T, k? => T }` | `{ name => Str, age? => Int }` |
+| Struct types (nominal) | `struct Name => (fields)` | Blessed immutable objects with accessors |
+| Record types (structural) | `{ k => T, k? => T }` | `{ name => Str, age? => Int }` |
 | Maybe sugar | `Maybe[T]` | `Maybe[Str]` = `Str \| Undef` |
 | Literal types | `42`, `"hello"` | Singleton types for specific values |
 | Type aliases | `typedef` | `typedef Price => Int` |
@@ -210,6 +220,28 @@ BEGIN {
     typedef Json   => 'Str | Int | Bool | Undef | ArrayRef[Json] | HashRef[Str, Json]';
 }
 ```
+
+### Struct Types (Nominal)
+
+```perl
+use Typist;
+use Typist::DSL;
+
+BEGIN {
+    struct Person => (
+        name  => Str,
+        age   => Int,
+        email => optional(Str),   # omittable field
+    );
+}
+
+my $p = Person(name => "Alice", age => 30);  # Constructor validates fields
+$p->name;                                     # "Alice" — accessor method
+$p->age;                                      # 30
+$p->with(age => 31);                          # Immutable update — returns new Person
+```
+
+Struct types are **nominal**: `Person` and `Record(name => Str, age => Int)` are distinct types even with identical fields. Struct values are blessed objects with auto-generated constructors, accessors, and `with()` for immutable updates. `Struct <: Record` (structural compatibility), but `Record </: Struct` (nominal barrier).
 
 ### Nominal Types (Newtype)
 
@@ -631,12 +663,12 @@ carton exec -- perl example/07_effects.pl
 ## Testing
 
 ```sh
-# All tests (56 files)
+# All tests (58 files)
 carton exec -- prove -l t/ t/static/ t/lsp/ t/critic/
 
 # By category
-carton exec -- prove -l t/              # Core type system (25 files)
-carton exec -- prove -l t/static/       # Static analysis (11 files)
+carton exec -- prove -l t/              # Core type system (26 files)
+carton exec -- prove -l t/static/       # Static analysis (12 files)
 carton exec -- prove -l t/lsp/          # LSP server (16 files)
 carton exec -- prove -l t/critic/       # Perl::Critic policy (4 files)
 
@@ -659,7 +691,8 @@ lib/
       Union.pm               A | B — normalized, deduplicated
       Intersection.pm        A & B — normalized, deduplicated
       Func.pm                (A, B) -> R !Eff(E) — with effects
-      Struct.pm              { key => T, key? => T } — optional fields
+      Record.pm              { key => T, key? => T } — structural, optional fields
+      Struct.pm              Nominal struct type node — name + record + package
       Var.pm                 Type variables (T, U, V) — bound + kind
       Alias.pm               typedef references — lazy resolution
       Literal.pm             42, "hello" — singleton types
@@ -674,8 +707,9 @@ lib/
     Subtype.pm               Structural subtype relation + LUB
     Inference.pm             Runtime type inference + unification
     Transform.pm             Type substitution (aliases → vars)
+    Struct/Base.pm           Blessed immutable object base (with(), accessors)
     Attribute.pm             :Type() handler, sub wrapping, tie
-    DSL.pm                   Type constructors (Int, Str, Func(...), ...)
+    DSL.pm                   Type constructors (Int, Str, Func(...), Record(...), optional(), ...)
     Kind.pm                  Kind system (Star, Row, Arrow)
     KindChecker.pm           Kind inference and validation
     TypeClass.pm             Def + Inst + dispatch (single + multi-parameter)
@@ -693,6 +727,7 @@ lib/
       EffectChecker.pm       Effect mismatch detection
       Infer.pm               Static type inference from PPI
       Unify.pm               Structural type unification for generics
+      Registration.pm        Shared type registration (aliases, structs, datatypes, effects, etc.)
     LSP/
       LSP.pm                 Entry point + exit handling
       Server.pm              Lifecycle, message dispatch

@@ -22,10 +22,12 @@ Shared Infrastructure
 ──────────────────────────
 Registry, Parser, Subtype, Transform, Attribute, Prelude
 Error (value + Collector), Error::Global (singleton buffer)
-Type::{Atom,Param,Union,Intersection,Func,Struct,Var,Alias,Literal,Newtype,Row,Eff,Data}
+Type::{Atom,Param,Union,Intersection,Func,Record,Struct,Var,Alias,Literal,Newtype,Row,Eff,Data}
 Type::Fold (map_type, walk)
+Struct::Base (blessed immutable object base)
 Kind, KindChecker, TypeClass, Effect
-DSL (Type constructors: Int, Str, ArrayRef(...), Struct(...), Func(...), etc.)
+Static::Registration (shared type registration)
+DSL (Type constructors: Int, Str, ArrayRef(...), Record(...), Func(...), optional(), etc.)
 ```
 
 ### Error Detection Phases
@@ -45,19 +47,19 @@ Runtime (opt-in)| Generic instantiation      | die           | -runtime flag
 
 ### Key Modules
 
-- `Typist::DSL` — Type DSL with operator overloading. Exports atom constants (`Int`, `Str`, `Num`, ...), type variable constants (`T`, `U`, `V`, ...), and parametric constructors (`ArrayRef(...)`, `Struct(...)`, `Func(..., returns => R)`). Enables `typedef Name => Str | Int` syntax.
+- `Typist::DSL` — Type DSL with operator overloading. Exports atom constants (`Int`, `Str`, `Num`, ...), type variable constants (`T`, `U`, `V`, ...), parametric constructors (`ArrayRef(...)`, `Record(...)`, `Func(..., returns => R)`), and `optional()` for struct/record field declarations. Enables `typedef Name => Str | Int` syntax.
 - `Typist::Type` — Abstract base with `|` (union), `&` (intersection), `""` (stringify) overloads. `coerce($expr)` accepts both Type objects and strings.
 - `Typist::Error` — Value class + Collector (instance-based). `Typist::Error::Global` provides the global singleton buffer.
 - `Typist::Static::Checker` — CHECK-phase validation (alias cycles, undeclared vars, bound/kind/effect well-formedness).
 - `Typist::Prelude` — Builtin function type annotations for Perl core functions and Typist builtins (say, print, die, length, typedef, unwrap, etc. — 83 functions). Installed into CORE:: namespace via `install($registry)`. Auto-loaded by Analyzer and Workspace. User `declare` overrides entries.
 - `Typist::Static::Unify` — Type-based unification. Pairs formal (annotated) types against actual (inferred) types, extracting type-variable bindings. Used by TypeChecker for generic function instantiation.
-- `Typist::Static::Infer` — Static type inference from PPI elements (literals, variable symbols, function calls, operator expressions). Infers arithmetic/comparison/logical/concatenation/repetition operators, chained binary expressions, compound assignment operators, subscript access (`$a->[0]`, `$h->{k}`), ternary expressions, `handle { BLOCK }` return types, and `match` arm union/LUB types. Interpolated strings (`"Hello $name"`) infer as `Str`, not `Literal`. Bidirectional: accepts optional `$expected` for propagation into arrays, hashes, and ternary arms. Accepts optional `$env` for gradual typing.
-- `Typist::Static::TypeChecker` — Static type mismatch detection (variable initializers, assignments, call site args, return types). Arity checking (ArityMismatch) with default parameter support, variable reassignment checking (annotated-only), method type checking (`$self->method()`), generic instantiation via Unify, and control flow narrowing (`defined($x)`, truthiness `if ($x)`, `isa`, early return). Builds type environment for function return type propagation and variable symbol resolution.
+- `Typist::Static::Infer` — Static type inference from PPI elements (literals, variable symbols, function calls, operator expressions, anonymous subs). Infers arithmetic/comparison/logical/concatenation/repetition operators, chained binary expressions, compound assignment operators, subscript access (`$a->[0]`, `$h->{k}`), method access (`$p->name` for struct accessors), ternary expressions, `handle { BLOCK }` return types, `match` arm union/LUB types, and anonymous sub types (`sub ($x) { ... }` → Func type with param count and body return inference). Interpolated strings (`"Hello $name"`) infer as `Str`, not `Literal`. Bidirectional: accepts optional `$expected` for propagation into arrays, hashes, ternary arms, and anonymous sub param types. Accepts optional `$env` for gradual typing.
+- `Typist::Static::TypeChecker` — Static type mismatch detection (variable initializers, assignments, call site args, return types). Arity checking (ArityMismatch) with default parameter support and callback arity checking (anonymous sub param count vs expected Func type), variable reassignment checking (annotated-only), method type checking (`$self->method()`), generic instantiation via Unify, and control flow narrowing (`defined($x)`, truthiness `if ($x)`, `isa`, early return). Builds type environment for function return type propagation and variable symbol resolution.
 - `Typist::Static::EffectChecker` — PPI-based static effect checker (call graph + label inclusion, cross-package support, unannotated function detection, builtin function effect tracking via CORE:: registry). Keywords `handle`, `match`, `enum` are skipped as non-function calls.
 - `Typist::Handler` — Runtime effect handler stack (LIFO). Effect operations are dispatched as qualified calls (`Effect::op(@args)`) to the nearest handler; `handle { BODY } Effect => { handlers }` provides scoped effect processing with automatic cleanup.
 - `Typist::Type::Data` — Algebraic data type (tagged union). Supports parameterized types via `datatype 'Option[T]' => Some => '(T)', None => '()'` with covariant type arguments, type inference in constructors, and `instantiate` for concrete types. Values are blessed with `_tag`, `_values`, and optional `_type_args` fields. GADT support via `return_types` field: `is_gadt`, `constructor_return_type($tag)`, `parse_constructor_spec($spec, %opts)`.
 - `Typist::Type::Fold` — Type tree traversal utilities. `map_type($type, $cb)` rebuilds bottom-up; `walk($type, $cb)` visits top-down. Handles all type nodes including Data (variants, type_args, return_types).
-- `Typist::Subtype` — Structural subtype relation + `common_super` (LUB for atom and struct types).
+- `Typist::Subtype` — Structural subtype relation + `common_super` (LUB for atom and record types). Struct (nominal) is subtype of matching Record (structural), but not vice versa.
 - `Typist::Attribute` — Attribute handlers + `parse_generic_decl` (shared between runtime and static paths).
 - `Typist::TypeClass` — Type class Def (with `install_dispatch`, `check_instance_completeness`, `resolve`) and Inst structures.
 
@@ -69,6 +71,7 @@ Runtime (opt-in)| Generic instantiation      | die           | -runtime flag
 - Union and Intersection constructors normalize (flatten, deduplicate).
 - Sub wrapping uses direct glob assignment to replace the original.
 - Hashref literals always use `+{}` to disambiguate from blocks.
+- Two-tier composite types: **Record** (structural, plain hashrefs via `typedef Name => Record(...)`) and **struct** (nominal, blessed immutable objects via `struct Name => (fields...)`). Struct values have constructors (`Name(field => val)`), accessors (`$obj->field`), and immutable updates (`$obj->with(field => val)`). `optional(Type)` marks fields that can be omitted. Struct <: Record (structural compatibility), Record </: Struct (nominal barrier).
 - No source filters or external preprocessors.
 - Static-first: `use Typist;` = static-only (default). Runtime enforcement via `use Typist -runtime;` or `TYPIST_RUNTIME=1`. Newtype constructors and `unwrap` always validate (boundary enforcement).
 - CHECK phase runs both structural checks (Checker) and full static analysis (Analyzer with TypeChecker + EffectChecker) per loaded package. Diagnostics surface as `warn` → perlnavigator picks these up. Suppress with `TYPIST_CHECK_QUIET=1` when using typist-lsp.
@@ -137,16 +140,19 @@ Tests are numbered and ordered by dependency:
 - `t/21_datatype.t` — Algebraic data types (constructors, contains, subtype)
 - `t/22_effects_handler.t` — Effect handlers (Effect::op, handle, handler stack)
 - `t/23_gadt.t` — GADT (Generalized Algebraic Data Types: construction, forced type_args, is_gadt, match, return_types)
+- `t/25_struct.t` — Nominal struct types (constructor, accessors, with(), optional fields, type registration, subtyping)
 - `t/static/00_extractor.t` — PPI-based type extraction
 - `t/static/01_analyzer.t` — Static analysis pipeline
-- `t/static/02_infer.t` — Static type inference
-- `t/static/03_typecheck.t` — Static type mismatch detection
+- `t/static/02_infer.t` — Static type inference (including anonymous sub inference)
+- `t/static/03_typecheck.t` — Static type mismatch detection (including callback arity checking)
 - `t/static/04_effects.t` — Static effect mismatch detection
 - `t/static/05_extractor_advanced.t` — Extractor: newtype/effect/typeclass extraction
 - `t/static/06_crossfile_analyzer.t` — Cross-file type resolution via workspace registry
 - `t/static/07_method_typecheck.t` — Method type checking (is_method, -> guard, $self->method())
 - `t/static/08_prelude.t` — Builtin prelude (type checking, effect detection, user override)
 - `t/static/09_builtins_infer.t` — Typist builtin inference (handle/match return types, unwrap CORE registration)
+- `t/static/10_rank2.t` — Rank-2 polymorphism static analysis
+- `t/static/11_struct.t` — Struct static analysis (extraction, registration, inference)
 - `t/lsp/00_transport.t` — JSON-RPC transport
 - `t/lsp/01_server.t` — LSP server lifecycle
 - `t/lsp/02_diagnostics.t` — Diagnostics publishing
