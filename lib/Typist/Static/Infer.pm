@@ -17,8 +17,9 @@ use Typist::Static::Unify;
 # bindings here.  TypeChecker drains this after analysis for symbol index.
 
 my @_CALLBACK_PARAMS;
+my %_CALLBACK_PARAMS_SEEN;
 
-sub clear_callback_params ($class) { @_CALLBACK_PARAMS = () }
+sub clear_callback_params ($class) { @_CALLBACK_PARAMS = (); %_CALLBACK_PARAMS_SEEN = () }
 sub callback_params       ($class) { [@_CALLBACK_PARAMS] }
 
 # ── Public API ───────────────────────────────────
@@ -1203,6 +1204,8 @@ sub _enrich_env_with_params ($env, $sig_node, $expected_types, $block = undef) {
 
         # Record for LSP hover/inlay hints (skip Any params — no useful info)
         if ($block && !($type->is_atom && $type->name eq 'Any')) {
+            my $dedup_key = $names->[$i] . ':' . $sig_node->line_number;
+            next if $_CALLBACK_PARAMS_SEEN{$dedup_key}++;
             push @_CALLBACK_PARAMS, +{
                 name        => $names->[$i],
                 type        => $type,

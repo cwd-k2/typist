@@ -39,6 +39,7 @@ sub analyze ($self) {
     $self->_check_assignments;
     $self->_check_call_sites;
     $self->_check_return_types;
+    $self->_collect_match_callback_params;
     $self->{_callback_param_types} = Typist::Static::Infer->callback_params;
 }
 
@@ -729,6 +730,24 @@ sub _env_for_node ($self, $node) {
 }
 
 # ── Loop Variable Collection ─────────────────────
+#
+# Proactively walk standalone match expressions so their callback params
+# are collected for LSP hover/inlay hints.  Match expressions inside
+# variable initializers or return statements are already covered by the
+# existing check methods; this catches the dominant pattern in real code:
+#   match $val, Tag => sub ($x) { ... };
+#
+sub _collect_match_callback_params ($self) {
+    my $ppi_doc = $self->{ppi_doc} // return;
+    my $words = $ppi_doc->find('PPI::Token::Word') || [];
+
+    for my $word (@$words) {
+        next unless $word->content eq 'match';
+        my $env = $self->_env_for_node($word);
+        Typist::Static::Infer->infer_expr($word, $env);
+    }
+}
+
 #
 # Proactively infer loop variable types from extracted loop_variables.
 # This ensures _loop_var_types is populated for the symbol index even

@@ -244,4 +244,58 @@ PERL
     ok !$by_name{'$z'}, '$z (fallback arm) is NOT in symbol index (Any is filtered)';
 };
 
+# ═══════════════════════════════════════════════════
+# Standalone match (no assignment) — callback param collection
+# ═══════════════════════════════════════════════════
+
+subtest 'standalone match: non-parameterized ADT callback params' => sub {
+    my $syms = callback_syms(<<'PERL');
+use v5.40;
+datatype Action => Inc => '(Int)', Dec => '(Int)', Reset => '()';
+my $a = Inc(5);
+match $a,
+    Inc   => sub ($n) { $n },
+    Dec   => sub ($m) { $m },
+    Reset => sub { 0 };
+PERL
+
+    my %by_name = map { $_->{name} => $_ } @$syms;
+    ok $by_name{'$n'}, '$n (Inc arm) appears in symbol index';
+    ok $by_name{'$m'}, '$m (Dec arm) appears in symbol index';
+    is $by_name{'$n'}{type}, 'Int', '$n has type Int';
+    is $by_name{'$m'}{type}, 'Int', '$m has type Int';
+};
+
+subtest 'standalone match: parameterized ADT callback params' => sub {
+    my $syms = callback_syms(<<'PERL');
+use v5.40;
+datatype 'Result[T]' => Ok => '(T)', Err => '(Str)';
+my $r :Type(Result[Int]) = Ok(42);
+match $r,
+    Ok  => sub ($val) { $val },
+    Err => sub ($e)   { $e };
+PERL
+
+    my %by_name = map { $_->{name} => $_ } @$syms;
+    ok $by_name{'$val'}, '$val (Ok arm) appears in symbol index';
+    ok $by_name{'$e'},   '$e (Err arm) appears in symbol index';
+    is $by_name{'$val'}{type}, 'Int', '$val gets Int from Result[Int]';
+    is $by_name{'$e'}{type},   'Str', '$e gets Str from Err spec';
+};
+
+subtest 'standalone match: no duplication with assignment match' => sub {
+    my $syms = callback_syms(<<'PERL');
+use v5.40;
+datatype 'Result[T]' => Ok => '(T)', Err => '(Str)';
+my $r :Type(Result[Int]) = Ok(42);
+my $x :Type(Int) = match $r,
+    Ok  => sub ($val) { $val },
+    Err => sub ($e)   { 0 };
+PERL
+
+    # $val should appear exactly once (dedup guard prevents double entry)
+    my @vals = grep { $_->{name} eq '$val' } @$syms;
+    is scalar @vals, 1, '$val appears exactly once (no duplication)';
+};
+
 done_testing;
