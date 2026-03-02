@@ -11,7 +11,10 @@ our $VERSION = '0.01';
 sub new ($class, %args) {
     my $transitions = $args{transitions}
         // die("Protocol requires transitions\n");
-    bless +{ transitions => $transitions }, $class;
+    bless +{
+        transitions => $transitions,
+        _states     => $args{states},   # explicit states list (arrayref or undef)
+    }, $class;
 }
 
 sub transitions ($self) { $self->{transitions} }
@@ -23,7 +26,11 @@ sub next_state ($self, $state, $op) {
 }
 
 # Sorted list of all declared states.
+# Uses explicit states list if provided at construction; otherwise infers from transitions.
 sub states ($self) {
+    if ($self->{_states}) {
+        return sort $self->{_states}->@*;
+    }
     my %seen;
     for my $from (keys $self->{transitions}->%*) {
         $seen{$from} = 1;
@@ -31,6 +38,8 @@ sub states ($self) {
     }
     sort keys %seen;
 }
+
+sub has_explicit_states ($self) { defined $self->{_states} && $self->{_states}->@* > 0 }
 
 # Operations valid in a given state.
 sub ops_in ($self, $state) {

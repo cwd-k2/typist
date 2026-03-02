@@ -170,7 +170,10 @@ sub _effect ($name, @rest) {
     my $protocol;
     if (%transitions) {
         require Typist::Protocol;
-        $protocol = Typist::Protocol->new(transitions => +{%transitions});
+        $protocol = Typist::Protocol->new(
+            transitions => +{%transitions},
+            ($states ? (states => $states) : ()),
+        );
     }
 
     my $eff = Typist::Effect->new(

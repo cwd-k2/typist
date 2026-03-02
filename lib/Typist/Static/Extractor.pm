@@ -347,7 +347,9 @@ sub _extract_effects ($class, $doc, $result) {
         next unless $children[0]->isa('PPI::Token::Word')
                  && $children[0]->content eq 'effect';
 
-        my $name = $children[1]->content;
+        my $name = $children[1]->isa('PPI::Token::Quote')
+            ? $children[1]->string
+            : $children[1]->content;
 
         # Detect states list: effect Name, [qw(...)] => +{...}
         my @states;

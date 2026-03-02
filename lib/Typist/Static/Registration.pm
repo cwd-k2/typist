@@ -238,7 +238,10 @@ sub register_effects ($class, $extracted, $registry, %opts) {
         my $protocol;
         if (my $pd = $eff_info->{protocol}) {
             require Typist::Protocol;
-            $protocol = Typist::Protocol->new(transitions => $pd);
+            $protocol = Typist::Protocol->new(
+                transitions => $pd,
+                ($eff_info->{states} ? (states => $eff_info->{states}) : ()),
+            );
         }
 
         $registry->register_effect($name,

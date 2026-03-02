@@ -307,21 +307,11 @@ sub _check_protocols ($self) {
         my $protocol = $eff->protocol;
         my ($eff_line, $eff_file, $eff_col) = $self->_eff_line($name);
 
-        # Build the set of known states:
-        # - From explicit states list (if provided via extraction), or
-        # - From transition source states (fallback)
-        my %known_states;
-        my $has_explicit_states;
-        if (my $ext = $self->{extracted}) {
-            my $eff_info = $ext->{effects}{$name};
-            if ($eff_info && $eff_info->{states}) {
-                %known_states = map { $_ => 1 } $eff_info->{states}->@*;
-                $has_explicit_states = 1;
-            }
-        }
-        unless ($has_explicit_states) {
-            $known_states{$_} = 1 for keys $protocol->transitions->%*;
-        }
+        # Build the set of known states from the Protocol object.
+        # If explicit states were provided at definition, Protocol stores them;
+        # otherwise it infers from transitions (source + target states).
+        my %known_states = map { $_ => 1 } $protocol->states;
+        my $has_explicit_states = $protocol->has_explicit_states;
 
         # Check all transition targets are known states
         for my $from (keys $protocol->transitions->%*) {
