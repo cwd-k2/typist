@@ -149,3 +149,55 @@ sub infer_kind ($class, $type, $var_kinds = undef) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::KindChecker - Kind checking and inference for type expressions
+
+=head1 SYNOPSIS
+
+    use Typist::KindChecker;
+
+    my $k = Typist::KindChecker->constructor_kind('ArrayRef');  # * -> *
+    my $result = Typist::KindChecker->check_application('ArrayRef', $star);
+    my $kind = Typist::KindChecker->infer_kind($type, \%var_kinds);
+
+=head1 DESCRIPTION
+
+Validates kind-correctness of type applications (e.g., C<ArrayRef[Int]>)
+and infers kinds of type expressions. Maintains a registry of built-in
+type constructor kinds (C<ArrayRef>, C<HashRef>, C<Maybe>, C<Ref>).
+
+=head1 METHODS
+
+=head2 constructor_kind
+
+    my $kind = Typist::KindChecker->constructor_kind($name);
+
+Returns the kind of a named type constructor, or C<undef> if unknown.
+
+=head2 register_kind
+
+    Typist::KindChecker->register_kind($name, $kind);
+
+Registers a custom type constructor kind.
+
+=head2 check_application
+
+    my $result_kind = Typist::KindChecker->check_application($name, @arg_kinds);
+
+Checks that a type application C<F[A, B, ...]> is kind-correct. Returns
+the resulting kind. Dies on kind mismatch or excess arguments.
+
+=head2 infer_kind
+
+    my $kind = Typist::KindChecker->infer_kind($type, \%var_kinds);
+
+Infers the kind of a type expression. C<%var_kinds> maps type variable
+names to their kinds (defaults to C<*>).
+
+=head1 SEE ALSO
+
+L<Typist::Kind>, L<Typist::Static::Checker>
+
+=cut

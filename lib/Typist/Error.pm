@@ -89,3 +89,92 @@ sub reset ($self) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Error - Type error value object and collector
+
+=head1 SYNOPSIS
+
+    use Typist::Error;
+
+    my $err = Typist::Error->new(
+        kind    => 'TypeMismatch',
+        message => 'expected Int, got Str',
+        file    => 'lib/Foo.pm',
+        line    => 42,
+    );
+    say $err->to_string;
+
+    # Instance-based collector for isolated analysis
+    my $collector = Typist::Error->collector;
+    $collector->collect(kind => 'ArityMismatch', message => '...', file => '...', line => 1);
+    warn $collector->report if $collector->has_errors;
+
+=head1 DESCRIPTION
+
+C<Typist::Error> is an immutable value object representing a single type
+error with location information. C<Typist::Error::Collector> is an
+instance-based error accumulator for isolated analysis contexts (LSP,
+static checker).
+
+For the global singleton buffer used during CHECK-phase validation,
+see L<Typist::Error::Global>.
+
+=head1 METHODS (Typist::Error)
+
+=head2 new
+
+    my $err = Typist::Error->new(%args);
+
+Creates a new error. Keys: C<kind>, C<message>, C<file>, C<line>,
+C<col>, C<end_line>, C<end_col>, C<expected_type>, C<actual_type>,
+C<related>, C<suggestions>.
+
+=head2 kind, message, file, line, col
+
+Accessors for error attributes.
+
+=head2 to_string
+
+    my $str = $err->to_string;
+
+Formats the error as a single diagnostic string.
+
+=head1 METHODS (Typist::Error::Collector)
+
+=head2 collect
+
+    $collector->collect(%args);
+
+Creates and stores a new error.
+
+=head2 has_errors
+
+    my $bool = $collector->has_errors;
+
+Returns true if any errors have been collected.
+
+=head2 errors
+
+    my @errs = $collector->errors;
+
+Returns all collected error objects.
+
+=head2 report
+
+    my $str = $collector->report;
+
+Formats all collected errors as a human-readable report.
+
+=head2 reset
+
+    $collector->reset;
+
+Clears all collected errors.
+
+=head1 SEE ALSO
+
+L<Typist::Error::Global>, L<Typist::Static::Checker>
+
+=cut

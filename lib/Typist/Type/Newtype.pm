@@ -39,3 +39,38 @@ sub substitute ($self, $bindings) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Type::Newtype - Nominal wrapper type (newtype UserId => 'Int')
+
+=head1 SYNOPSIS
+
+    use Typist::Type::Newtype;
+
+    my $nt = Typist::Type::Newtype->new('UserId', $int_type);
+
+=head1 DESCRIPTION
+
+A nominal wrapper that creates a distinct type from an existing inner
+type. Values must be blessed into C<Typist::Newtype::$name> and the
+inner value must satisfy the inner type. Newtype boundary enforcement
+is always active, even without C<-runtime>.
+
+=head1 ABSTRACT INTERFACE
+
+Inherits from L<Typist::Type> and implements: C<is_newtype> (returns 1),
+C<name>, C<to_string>, C<equals>, C<contains>, C<free_vars>,
+C<substitute>.
+
+=head2 inner
+
+    my $inner = $nt->inner;
+
+Returns the wrapped inner type.
+
+=head1 SEE ALSO
+
+L<Typist::Type>, L<Typist>
+
+=cut

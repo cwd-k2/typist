@@ -678,6 +678,82 @@ carton exec -- perl script/lsp-verify-workspace             # Workspace verifica
 carton exec -- perl script/lsp-verify-workspace path/to/lib # Custom directory
 ```
 
+## Known Limitations
+
+### Static Analysis
+
+#### Expression Inference
+
+- String interpolation (`"Hello $name"`), regex matches, and complex dereference chains are
+  inferred at a shallow level — intermediate expression types may widen to `Any`.
+- Compound arithmetic expressions (`$a + $b * $c`) are treated as a single binary operation;
+  operator precedence does not influence the inferred type (always `Num`).
+
+#### Method Checking
+
+- Only `$self->method()` calls within the **same package** are type-checked.
+- Cross-package method calls, class method calls (`Foo->bar()`), and chained method calls
+  (`$obj->foo->bar`) are skipped under gradual typing rules.
+
+#### Type Narrowing
+
+- Supported: `defined($x)`, truthiness (`if ($x)`), `$x isa Foo`, and early return
+  (`return unless defined $x`).
+- Not supported: `ref()` checks, pattern match guards, or user-defined type predicates.
+
+#### Effect System
+
+- Effects require explicit `:Type(... ! Eff(...))` annotations — there is no effect inference.
+- Open row polymorphism (`:Generic(r: Row)`) is parsed and represented, but static verification
+  of row-polymorphic effect signatures is limited.
+
+### LSP Server
+
+#### Hover
+
+- Builtin function hovers display the static Prelude signature (e.g., `unwrap` always shows
+  `(Any) -> Any`). Call-site-specific inference results are not reflected.
+- `handle`, `match`, `map`, and other special-form inferred return types are similarly not
+  shown in hover — only the generic signature is displayed.
+
+#### Cross-File Resolution
+
+- The CHECK phase operates on a single-file scope and cannot resolve Exporter-imported
+  functions across packages. Use `TYPIST_CHECK_QUIET=1` with the LSP workspace for
+  cross-file diagnostics.
+
+#### Diagnostics
+
+- Diagnostic quality depends on PPI's parse accuracy — unusual spacing or syntax inside
+  `:Type()` attributes may cause silent misparses.
+- On file save, all open documents are re-diagnosed. This may introduce latency in projects
+  with many open files.
+
+### CHECK Phase vs LSP vs Runtime
+
+| Detection target              | CHECK | LSP | Runtime |
+|-------------------------------|:-----:|:---:|:-------:|
+| Type mismatch (var init)      |   ✓   |  ✓  |    ✓    |
+| Type mismatch (call args)     |   ✓   |  ✓  |    ✓    |
+| Type mismatch (return)        |   ✓   |  ✓  |    ✓    |
+| Arity mismatch                |   ✓   |  ✓  |    ✓    |
+| Effect mismatch               |   ✓   |  ✓  |    —    |
+| Alias cycle                   |   ✓   |  ✓  |    —    |
+| Cross-file resolution         |   —   |  ✓  |    —    |
+| Generic instantiation         |   ✓   |  ✓  |    ✓    |
+| Newtype boundary enforcement  |   —   |  —  |  ✓ (always) |
+| TypeClass constraints         |   —   |  —  |    ✓    |
+| Effect handler execution      |   —   |  —  |    ✓    |
+
+### Gradual Typing Caveats
+
+- Calls to **unannotated functions** cause effect checking to be skipped at the call site
+  (the callee is assumed `Eff(*)`).
+- Partial annotation (`:Type` present but no return type) treats the return as unknown —
+  callers that depend on the return value will see `Any` via inference fallback.
+- Completely unannotated functions are modeled as `(Any...) -> Any ! Eff(*)` — type checking
+  is skipped entirely, and effect checking flags them as potentially effectful.
+
 ## Project Structure
 
 ```

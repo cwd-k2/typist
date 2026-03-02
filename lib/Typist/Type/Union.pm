@@ -67,3 +67,38 @@ sub substitute ($self, $bindings) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Type::Union - Union type (T | U)
+
+=head1 SYNOPSIS
+
+    use Typist::Type::Union;
+
+    my $u = Typist::Type::Union->new($int_type, $str_type);
+
+=head1 DESCRIPTION
+
+A value satisfies a union type if it satisfies B<any> member.
+The constructor flattens nested unions and deduplicates members by
+structural equality. A single-member union collapses to the member
+itself.
+
+=head1 ABSTRACT INTERFACE
+
+Inherits from L<Typist::Type> and implements: C<is_union> (returns 1),
+C<name>, C<to_string>, C<equals>, C<contains>, C<free_vars>,
+C<substitute>.
+
+=head2 members
+
+    my @members = $union->members;
+
+Returns the union's member types.
+
+=head1 SEE ALSO
+
+L<Typist::Type>, L<Typist::Type::Intersection>
+
+=cut

@@ -37,3 +37,37 @@ sub substitute ($self, $bindings) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Type::Eff - Effect annotation wrapper (Eff(Console | State))
+
+=head1 SYNOPSIS
+
+    use Typist::Type::Eff;
+
+    my $eff = Typist::Type::Eff->new($row);
+
+=head1 DESCRIPTION
+
+A thin delegation layer over L<Typist::Type::Row>. Wraps a row type
+to represent function effect annotations (C<! Eff(Console | State)>).
+Effects are phantom types: C<contains> always returns true.
+
+=head1 ABSTRACT INTERFACE
+
+Inherits from L<Typist::Type> and implements: C<is_eff> (returns 1),
+C<name>, C<to_string>, C<equals>, C<contains>, C<free_vars>,
+C<substitute>.
+
+=head2 row
+
+    my $row = $eff->row;
+
+Returns the underlying L<Typist::Type::Row>.
+
+=head1 SEE ALSO
+
+L<Typist::Type>, L<Typist::Type::Row>, L<Typist::Effect>
+
+=cut

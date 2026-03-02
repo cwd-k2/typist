@@ -36,3 +36,43 @@ sub substitute ($self, $bindings) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Type::Var - Generic type variable (T, U, V, ...)
+
+=head1 SYNOPSIS
+
+    use Typist::Type::Var;
+
+    my $t = Typist::Type::Var->new('T');
+    my $bounded = Typist::Type::Var->new('T', bound => $num_type);
+
+=head1 DESCRIPTION
+
+Represents a generic type variable with optional upper bound and kind.
+Free type variables are substituted during generic instantiation.
+
+=head1 ABSTRACT INTERFACE
+
+Inherits from L<Typist::Type> and implements: C<is_var> (returns 1),
+C<name>, C<to_string>, C<equals>, C<contains>, C<free_vars>,
+C<substitute>.
+
+=head2 bound
+
+    my $bound = $var->bound;
+
+Returns the upper bound type, or C<undef> if unbounded.
+
+=head2 kind
+
+    my $kind = $var->kind;
+
+Returns the L<Typist::Kind> object, or C<undef>.
+
+=head1 SEE ALSO
+
+L<Typist::Type>, L<Typist::Type::Quantified>
+
+=cut

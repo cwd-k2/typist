@@ -41,3 +41,33 @@ sub free_vars  ($self) { () }
 sub substitute ($self, $) { $self }
 
 1;
+
+=head1 NAME
+
+Typist::Type::Atom - Primitive type atoms (Int, Str, Bool, ...)
+
+=head1 SYNOPSIS
+
+    use Typist::Type::Atom;
+
+    my $int = Typist::Type::Atom->new('Int');
+    $int->contains(42);    # true
+    $int->contains("hi");  # false
+
+=head1 DESCRIPTION
+
+Singleton flyweight type for primitive types. Each name (C<Int>, C<Str>,
+C<Num>, C<Bool>, C<Any>, C<Void>, C<Never>, C<Undef>) maps to exactly
+one blessed instance in a package-level pool.
+
+=head1 ABSTRACT INTERFACE
+
+Inherits from L<Typist::Type> and implements: C<is_atom> (returns 1),
+C<name>, C<to_string>, C<equals>, C<contains>, C<free_vars>,
+C<substitute>.
+
+=head1 SEE ALSO
+
+L<Typist::Type>, L<Typist::Type::Literal>
+
+=cut

@@ -143,3 +143,54 @@ sub walk ($class, $type, $cb) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Type::Fold - Type tree traversal utilities
+
+=head1 SYNOPSIS
+
+    use Typist::Type::Fold;
+
+    # Bottom-up rebuild
+    my $new = Typist::Type::Fold->map_type($type, sub ($node) {
+        $node->is_alias ? resolve($node) : $node;
+    });
+
+    # Top-down side-effect walk
+    Typist::Type::Fold->walk($type, sub ($node) {
+        push @vars, $node->name if $node->is_var;
+    });
+
+=head1 DESCRIPTION
+
+Provides two traversal strategies for type trees:
+
+C<map_type> rebuilds bottom-up, applying a callback to each node after
+its children have been mapped. C<walk> visits top-down, calling a
+callback for side effects.
+
+Both handle all type nodes: Param, Union, Intersection, Func, Record,
+Struct, Eff, Data (variants, type_args, return_types), and Quantified
+(body + var bounds).
+
+=head1 METHODS
+
+=head2 map_type
+
+    my $new = Typist::Type::Fold->map_type($type, \&callback);
+
+Bottom-up rebuild. C<$callback> receives a (possibly rebuilt) node
+and returns a Type.
+
+=head2 walk
+
+    Typist::Type::Fold->walk($type, \&callback);
+
+Top-down visit. C<$callback> receives each node for side effects.
+
+=head1 SEE ALSO
+
+L<Typist::Type>, L<Typist::Transform>
+
+=cut

@@ -83,3 +83,32 @@ sub substitute ($self, $bindings) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Type::Alias - Named type alias with lazy resolution
+
+=head1 SYNOPSIS
+
+    use Typist::Type::Alias;
+
+    my $alias = Typist::Type::Alias->new('UserId');
+    # Resolves lazily against Typist::Registry
+
+=head1 DESCRIPTION
+
+A named reference to a type defined via C<typedef>. Resolves lazily
+against the L<Typist::Registry> on first access, with cycle detection
+guards on C<contains>, C<free_vars>, and C<substitute>.
+
+=head1 ABSTRACT INTERFACE
+
+Inherits from L<Typist::Type> and implements: C<is_alias> (returns 1),
+C<alias_name>, C<name>, C<to_string>, C<equals>, C<contains>,
+C<free_vars>, C<substitute>.
+
+=head1 SEE ALSO
+
+L<Typist::Type>, L<Typist::Registry>
+
+=cut

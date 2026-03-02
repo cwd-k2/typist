@@ -116,3 +116,47 @@ sub substitute ($self, $bindings) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Type::Record - Structural record type ({ key => Type, ... })
+
+=head1 SYNOPSIS
+
+    use Typist::Type::Record;
+
+    my $rec = Typist::Type::Record->new(
+        name => $str_type, 'age?' => $int_type,
+    );
+
+=head1 DESCRIPTION
+
+A structural record type with required and optional fields. Optional
+fields are denoted by trailing C<?> on the key name or by wrapping
+with C<optional(Type)> from the DSL. Supports width subtyping: a
+record with more fields is a subtype of one with fewer.
+
+=head1 ABSTRACT INTERFACE
+
+Inherits from L<Typist::Type> and implements: C<is_record> (returns 1),
+C<name>, C<to_string>, C<equals>, C<contains>, C<free_vars>,
+C<substitute>.
+
+=head2 required_fields / optional_fields
+
+    my %req = $rec->required_fields;
+    my %opt = $rec->optional_fields;
+
+=head2 from_parts
+
+    my $rec = Typist::Type::Record->from_parts(
+        required => \%req, optional => \%opt,
+    );
+
+Named constructor that bypasses C<key?> encoding.
+
+=head1 SEE ALSO
+
+L<Typist::Type>, L<Typist::Type::Struct>
+
+=cut

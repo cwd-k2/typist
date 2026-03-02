@@ -318,3 +318,53 @@ sub _recover_name ($coderef) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Attribute - Attribute handlers and generic declaration parsing
+
+=head1 SYNOPSIS
+
+    use Typist::Attribute;
+
+    # Install handlers into a package
+    Typist::Attribute->install('MyPackage');
+
+    # Parse a generic declaration (shared by runtime and static paths)
+    my @generics = Typist::Attribute->parse_generic_decl(
+        'T: Num, U', registry => $registry,
+    );
+
+=head1 DESCRIPTION
+
+Installs C<MODIFY_SCALAR_ATTRIBUTES> and C<MODIFY_CODE_ATTRIBUTES>
+handlers that process C<:Type(...)> annotations on variables and
+subroutines. Handles type registration and, when runtime mode is
+enabled, ties scalars and wraps subroutines for runtime enforcement.
+
+C<parse_generic_decl> is the shared parser for generic type variable
+declarations, used by both the runtime attribute path and the static
+analyzer.
+
+=head1 METHODS
+
+=head2 install
+
+    Typist::Attribute->install($target_package);
+
+Installs attribute handlers into C<$target_package>.
+
+=head2 parse_generic_decl
+
+    my @generics = Typist::Attribute->parse_generic_decl($spec, %opts);
+
+Parses a generic declaration string (e.g., C<"T: Num, U">) into a list
+of hashrefs with keys: C<name>, C<bound_expr>, C<is_row_var>,
+C<var_kind>, C<tc_constraints>. Accepts optional C<registry> for
+type class lookup.
+
+=head1 SEE ALSO
+
+L<Typist>, L<Typist::Parser>, L<Typist::Registry>
+
+=cut

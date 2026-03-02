@@ -116,3 +116,50 @@ sub substitute ($self, $bindings) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Type::Param - Parameterized type (ArrayRef[T], HashRef[K,V], ...)
+
+=head1 SYNOPSIS
+
+    use Typist::Type::Param;
+
+    my $arr = Typist::Type::Param->new('ArrayRef', $int_type);
+
+=head1 DESCRIPTION
+
+Represents parameterized types such as C<ArrayRef[Int]>,
+C<HashRef[Str, Int]>, C<Tuple[Int, Str]>, and C<Ref[Int]>. The base
+may be a string name or a L<Typist::Type> object (for HKT variable
+application: C<F[T]>).
+
+=head1 ABSTRACT INTERFACE
+
+Inherits from L<Typist::Type> and implements: C<is_param> (returns 1),
+C<name>, C<to_string>, C<equals>, C<contains>, C<free_vars>,
+C<substitute>.
+
+=head2 base
+
+    my $base = $param->base;
+
+Returns the base type constructor name or Type object.
+
+=head2 params
+
+    my @params = $param->params;
+
+Returns the type parameters.
+
+=head2 has_var_base
+
+    my $bool = $param->has_var_base;
+
+True if the base is a type variable (HKT context).
+
+=head1 SEE ALSO
+
+L<Typist::Type>, L<Typist::KindChecker>
+
+=cut

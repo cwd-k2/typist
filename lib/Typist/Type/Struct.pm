@@ -59,3 +59,48 @@ sub substitute ($self, $bindings) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Type::Struct - Nominal struct type
+
+=head1 SYNOPSIS
+
+    use Typist::Type::Struct;
+
+    my $st = Typist::Type::Struct->new(
+        name    => 'Point',
+        record  => $record_type,
+        package => 'MyApp::Point',
+    );
+
+=head1 DESCRIPTION
+
+A nominal wrapper over L<Typist::Type::Record>. Struct types have
+name-based identity: C<StructA E<lt>: StructB> only if same name.
+Struct is a subtype of a matching Record (structural compatibility),
+but Record is never a subtype of Struct (nominal barrier).
+
+=head1 ABSTRACT INTERFACE
+
+Inherits from L<Typist::Type> and implements: C<is_struct> (returns 1),
+C<name>, C<to_string>, C<equals>, C<contains>, C<free_vars>,
+C<substitute>.
+
+=head2 record
+
+    my $rec = $struct->record;
+
+Returns the underlying L<Typist::Type::Record>.
+
+=head2 package
+
+    my $pkg = $struct->package;
+
+Returns the blessed package name.
+
+=head1 SEE ALSO
+
+L<Typist::Type>, L<Typist::Type::Record>, L<Typist::Struct::Base>
+
+=cut

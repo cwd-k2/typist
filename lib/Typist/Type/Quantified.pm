@@ -74,3 +74,44 @@ sub substitute ($self, $bindings) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Type::Quantified - Universally quantified type (forall A. A -> A)
+
+=head1 SYNOPSIS
+
+    use Typist::Type::Quantified;
+
+    my $q = Typist::Type::Quantified->new(
+        vars => [{ name => 'A' }],
+        body => $func_type,
+    );
+
+=head1 DESCRIPTION
+
+Represents rank-2 (or higher) polymorphic types. Each quantified
+variable may have an optional upper bound. Substitution is
+capture-safe: bound variables are excluded from the binding map.
+
+=head1 ABSTRACT INTERFACE
+
+Inherits from L<Typist::Type> and implements: C<is_quantified>
+(returns 1), C<name>, C<to_string>, C<equals>, C<contains>,
+C<free_vars>, C<substitute>.
+
+=head2 vars
+
+    my @vars = $q->vars;  # ({name => 'A', bound => ...}, ...)
+
+=head2 body
+
+    my $body = $q->body;
+
+Returns the quantified body type.
+
+=head1 SEE ALSO
+
+L<Typist::Type>, L<Typist::Subtype>
+
+=cut

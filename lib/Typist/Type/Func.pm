@@ -80,3 +80,52 @@ sub substitute ($self, $bindings) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Type::Func - Function type ((Int, Str) -> Bool ! Eff(IO))
+
+=head1 SYNOPSIS
+
+    use Typist::Type::Func;
+
+    my $fn = Typist::Type::Func->new(
+        [$int_type, $str_type], $bool_type, $row, variadic => 0,
+    );
+
+=head1 DESCRIPTION
+
+Represents a function type with parameter types, a return type, optional
+effect annotation (a L<Typist::Type::Row>), and a variadic flag. When
+variadic, the last parameter is the rest-element type accepting zero or
+more arguments.
+
+=head1 ABSTRACT INTERFACE
+
+Inherits from L<Typist::Type> and implements: C<is_func> (returns 1),
+C<name>, C<to_string>, C<equals>, C<contains>, C<free_vars>,
+C<substitute>.
+
+=head2 params
+
+    my @params = $func->params;
+
+=head2 returns
+
+    my $ret = $func->returns;
+
+=head2 effects
+
+    my $row = $func->effects;
+
+Returns the effect row, or C<undef> for pure functions.
+
+=head2 variadic
+
+    my $bool = $func->variadic;
+
+=head1 SEE ALSO
+
+L<Typist::Type>, L<Typist::Type::Eff>
+
+=cut

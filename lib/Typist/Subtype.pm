@@ -359,3 +359,48 @@ sub _atom_subtype ($sub_name, $super_name) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Subtype - Structural subtype relation and least upper bound
+
+=head1 SYNOPSIS
+
+    use Typist::Subtype;
+
+    my $ok  = Typist::Subtype->is_subtype($sub, $super);
+    my $lub = Typist::Subtype->common_super($a, $b);
+
+=head1 DESCRIPTION
+
+Implements the subtype relation for Typist's type system. The relation
+covers atom primitives (C<Bool E<lt>: Int E<lt>: Num E<lt>: Any>),
+unions, intersections, parametric types (covariant), function types
+(contravariant params, covariant return), records (width subtyping),
+structs (nominal identity), newtypes (nominal), data types (covariant
+type args), literals, quantified types (forall), rows, and effects.
+
+C<common_super> computes the least upper bound (LUB) in the atom
+lattice and performs field-wise LUB for record types.
+
+=head1 METHODS
+
+=head2 is_subtype
+
+    my $bool = Typist::Subtype->is_subtype($sub, $super, %opts);
+
+Returns true if C<$sub> is a subtype of C<$super>. Accepts an optional
+C<registry> parameter for alias resolution in LSP contexts.
+
+=head2 common_super
+
+    my $lub = Typist::Subtype->common_super($a, $b);
+
+Returns the least upper bound of two types. Falls back to C<Any> when
+no better common type exists.
+
+=head1 SEE ALSO
+
+L<Typist::Type>, L<Typist::Static::Unify>
+
+=cut

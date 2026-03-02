@@ -104,3 +104,60 @@ sub arity ($self) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Kind - Kind system for type constructors
+
+=head1 SYNOPSIS
+
+    use Typist::Kind;
+
+    my $star  = Typist::Kind->Star;         # *
+    my $row   = Typist::Kind->Row;          # Row
+    my $arrow = Typist::Kind->Arrow($star, $star);  # * -> *
+
+    my $kind = Typist::Kind->parse('* -> * -> *');
+
+=head1 DESCRIPTION
+
+Implements the kind system: C<Star> for concrete types, C<Row> for
+effect rows, and C<Arrow> for type constructors. Kind expressions
+like C<* -E<gt> *> describe type constructors that take one type
+argument (e.g., C<ArrayRef>).
+
+=head1 CONSTRUCTORS
+
+=head2 Star
+
+    my $k = Typist::Kind->Star;
+
+Singleton kind for concrete types (C<*>).
+
+=head2 Row
+
+    my $k = Typist::Kind->Row;
+
+Singleton kind for effect rows.
+
+=head2 Arrow
+
+    my $k = Typist::Kind->Arrow($from, $to);
+
+Arrow kind representing type constructors.
+
+=head2 parse
+
+    my $k = Typist::Kind->parse('* -> *');
+
+Parses a kind expression string. Right-associative.
+
+=head1 KIND OBJECTS
+
+All kind objects support C<to_string>, C<equals>, and C<arity>.
+
+=head1 SEE ALSO
+
+L<Typist::KindChecker>, L<Typist::TypeClass>
+
+=cut

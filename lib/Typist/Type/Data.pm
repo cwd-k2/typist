@@ -215,3 +215,76 @@ sub parse_constructor_spec ($class, $spec, %opts) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Type::Data - Algebraic data type (tagged union / ADT / GADT)
+
+=head1 SYNOPSIS
+
+    use Typist::Type::Data;
+
+    # Simple ADT
+    my $shape = Typist::Type::Data->new('Shape', +{
+        Circle    => [$int_type],
+        Rectangle => [$int_type, $int_type],
+    });
+
+    # Parameterized ADT
+    my $option = Typist::Type::Data->new('Option', +{
+        Some => [$var_t], None => [],
+    }, type_params => ['T']);
+
+=head1 DESCRIPTION
+
+Represents algebraic data types (tagged unions). Supports simple ADTs,
+parameterized ADTs (C<Option[T]>), and GADTs (per-constructor return
+types). Values are blessed into C<Typist::Data::$name> with C<_tag>,
+C<_values>, and optional C<_type_args> fields.
+
+=head1 ABSTRACT INTERFACE
+
+Inherits from L<Typist::Type> and implements: C<is_data> (returns 1),
+C<name>, C<to_string>, C<equals>, C<contains>, C<free_vars>,
+C<substitute>.
+
+=head2 variants
+
+    my $variants = $data->variants;  # { Tag => [\@types], ... }
+
+=head2 type_params / type_args
+
+    my @params = $data->type_params;  # ['T']
+    my @args   = $data->type_args;    # [Atom('Int')]
+
+=head2 is_gadt
+
+    my $bool = $data->is_gadt;
+
+True if any constructor has an explicit return type.
+
+=head2 constructor_return_type
+
+    my $type = $data->constructor_return_type($tag);
+
+Returns the return type for a specific constructor.
+
+=head2 instantiate
+
+    my $concrete = $data->instantiate(@type_args);
+
+Returns an instantiated copy with concrete type arguments.
+
+=head2 parse_constructor_spec
+
+    my ($types, $return_expr) = Typist::Type::Data->parse_constructor_spec(
+        $spec, type_params => \@params,
+    );
+
+Shared parser for constructor spec strings.
+
+=head1 SEE ALSO
+
+L<Typist::Type>, L<Typist>
+
+=cut

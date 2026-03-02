@@ -42,3 +42,41 @@ sub free_vars  ($self) { () }
 sub substitute ($self, $) { $self }
 
 1;
+
+=head1 NAME
+
+Typist::Type::Literal - Singleton literal type (42, "hello")
+
+=head1 SYNOPSIS
+
+    use Typist::Type::Literal;
+
+    my $lit = Typist::Type::Literal->new(42, 'Int');
+    $lit->contains(42);   # true
+    $lit->contains(43);   # false
+
+=head1 DESCRIPTION
+
+A literal type matches only a single specific value via string equality.
+Each literal has a C<base_type> (C<Int>, C<Str>, C<Num>) used for
+subtype hierarchy integration (C<Literal(42) E<lt>: Int E<lt>: Num>).
+
+=head1 ABSTRACT INTERFACE
+
+Inherits from L<Typist::Type> and implements: C<is_literal> (returns 1),
+C<name>, C<to_string>, C<equals>, C<contains>, C<free_vars>,
+C<substitute>.
+
+=head2 value
+
+    my $v = $lit->value;
+
+=head2 base_type
+
+    my $bt = $lit->base_type;  # "Int", "Str", "Num"
+
+=head1 SEE ALSO
+
+L<Typist::Type>, L<Typist::Type::Atom>
+
+=cut

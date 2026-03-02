@@ -88,3 +88,53 @@ sub substitute ($self, $bindings) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Type::Row - Effect row type (Remy-style row polymorphism)
+
+=head1 SYNOPSIS
+
+    use Typist::Type::Row;
+
+    my $row = Typist::Type::Row->new(
+        labels  => ['Console', 'State'],
+        row_var => 'r',
+    );
+
+=head1 DESCRIPTION
+
+An ordered set of effect labels with an optional tail variable for
+row polymorphism. Labels are sorted and deduplicated at construction.
+A closed row has no C<row_var>; an open row carries a tail variable.
+
+Rows are phantom types: C<contains> always returns true.
+
+=head1 ABSTRACT INTERFACE
+
+Inherits from L<Typist::Type> and implements: C<is_row> (returns 1),
+C<name>, C<to_string>, C<equals>, C<contains>, C<free_vars>,
+C<substitute>.
+
+=head2 labels
+
+    my @labels = $row->labels;
+
+=head2 row_var
+
+    my $var = $row->row_var;  # Typist::Type::Var or undef
+
+=head2 row_var_name
+
+    my $name = $row->row_var_name;  # string or undef
+
+=head2 is_closed / is_empty
+
+    my $closed = $row->is_closed;
+    my $empty  = $row->is_empty;
+
+=head1 SEE ALSO
+
+L<Typist::Type>, L<Typist::Type::Eff>
+
+=cut

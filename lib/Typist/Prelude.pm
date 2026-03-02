@@ -158,3 +158,51 @@ sub install ($class, $registry) {
 }
 
 1;
+
+=encoding utf8
+
+=head1 NAME
+
+Typist::Prelude - Builtin function type annotations for Perl core
+
+=head1 SYNOPSIS
+
+    use Typist::Prelude;
+
+    # Install builtins into a registry
+    Typist::Prelude->install($registry);
+
+    # Query registered builtin names
+    my @names = Typist::Prelude->builtin_names;
+
+=head1 DESCRIPTION
+
+Provides standard type annotations for 83 Perl builtin functions
+(74 core + 9 Typist builtins) and registers them under the C<CORE::>
+namespace. Also registers standard effect labels (C<IO>, C<Exn>).
+
+User C<declare> statements override prelude entries — registration
+uses plain assignment, so later writes win.
+
+=head1 METHODS
+
+=head2 install
+
+    Typist::Prelude->install($registry);
+
+Registers all builtin function signatures and standard effect labels
+into the given L<Typist::Registry> instance.
+
+=head2 builtin_names
+
+    my @names = Typist::Prelude->builtin_names;
+
+Returns the list of all registered builtin function names. This is the
+single source of truth used by L<Typist::LSP::Document> and
+L<Typist::Static::EffectChecker>.
+
+=head1 SEE ALSO
+
+L<Typist>, L<Typist::Registry>, L<Typist::Parser>
+
+=cut

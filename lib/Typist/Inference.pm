@@ -193,3 +193,46 @@ sub _unify_rows ($formal, $actual, $bindings) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Inference - Runtime type inference and generic instantiation
+
+=head1 SYNOPSIS
+
+    use Typist::Inference;
+
+    my $type = Typist::Inference->infer_value(42);       # Atom('Int')
+    my $type = Typist::Inference->infer_value([1, 2]);   # ArrayRef[Int]
+
+    my $bindings = Typist::Inference->instantiate($sig, \@arg_types);
+
+=head1 DESCRIPTION
+
+Infers the most specific type from runtime Perl values and performs
+generic function instantiation via HM-style unification. Used by the
+runtime enforcement layer (C<Typist::Attribute> sub wrappers) and
+type class dispatch (C<Typist::TypeClass::Def>).
+
+=head1 METHODS
+
+=head2 infer_value
+
+    my $type = Typist::Inference->infer_value($value);
+
+Returns the inferred L<Typist::Type> for a Perl runtime value.
+Scalars narrow to C<Bool>, C<Int>, C<Num>, or C<Str>; arrayrefs
+and hashrefs infer element types via common supertype.
+
+=head2 instantiate
+
+    my $bindings = Typist::Inference->instantiate($sig, \@arg_types);
+
+Given a generic function signature and actual argument types, produces
+a hashref of type variable bindings via structural unification.
+
+=head1 SEE ALSO
+
+L<Typist::Subtype>, L<Typist::Attribute>, L<Typist::Static::Infer>
+
+=cut

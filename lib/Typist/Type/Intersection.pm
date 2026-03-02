@@ -65,3 +65,37 @@ sub substitute ($self, $bindings) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Type::Intersection - Intersection type (T & U)
+
+=head1 SYNOPSIS
+
+    use Typist::Type::Intersection;
+
+    my $i = Typist::Type::Intersection->new($type_a, $type_b);
+
+=head1 DESCRIPTION
+
+A value satisfies an intersection type if it satisfies B<all> members.
+The constructor flattens nested intersections and deduplicates members.
+A single-member intersection collapses to the member itself.
+
+=head1 ABSTRACT INTERFACE
+
+Inherits from L<Typist::Type> and implements: C<is_intersection>
+(returns 1), C<name>, C<to_string>, C<equals>, C<contains>,
+C<free_vars>, C<substitute>.
+
+=head2 members
+
+    my @members = $intersection->members;
+
+Returns the intersection's member types.
+
+=head1 SEE ALSO
+
+L<Typist::Type>, L<Typist::Type::Union>
+
+=cut

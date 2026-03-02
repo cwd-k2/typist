@@ -216,3 +216,86 @@ sub type_exprs ($self) {
 sub get_method ($self, $name) { $self->{methods}{$name} }
 
 1;
+
+=head1 NAME
+
+Typist::TypeClass - Type class definitions and instances
+
+=head1 SYNOPSIS
+
+    use Typist::TypeClass;
+
+    my $def = Typist::TypeClass->new_class(
+        name    => 'Show',
+        var     => 'T',
+        methods => +{ show => '(T) -> Str' },
+    );
+
+    my $inst = Typist::TypeClass->new_instance(
+        class     => 'Show',
+        type_expr => 'Int',
+        methods   => +{ show => sub ($x) { "$x" } },
+    );
+
+=head1 DESCRIPTION
+
+Provides type class definitions (C<Def>) and instances (C<Inst>).
+A type class defines an interface over one or more type variables;
+instances supply concrete implementations for specific types.
+
+Supports single-parameter classes (C<Show>), multi-parameter classes
+(C<Convertible[T, U]>), superclass constraints (C<T: Eq>), and
+higher-kinded type variables (C<F: * -E<gt> *>).
+
+=head1 METHODS
+
+=head2 new_class
+
+    my $def = Typist::TypeClass->new_class(%args);
+
+Creates a C<Typist::TypeClass::Def>. Required: C<name>. Optional:
+C<var> (default C<"T">), C<methods>, C<supers>.
+
+=head2 new_instance
+
+    my $inst = Typist::TypeClass->new_instance(%args);
+
+Creates a C<Typist::TypeClass::Inst>. Required: C<class>, C<type_expr>.
+Optional: C<methods>.
+
+=head1 Typist::TypeClass::Def
+
+=head2 install_dispatch
+
+    $def->install_dispatch($caller_package);
+
+Installs runtime dispatch functions for all methods into the caller's
+namespace. Dispatch infers the argument type and resolves the matching
+instance from the registry.
+
+=head2 check_instance_completeness
+
+    $def->check_instance_completeness($type_expr, %methods);
+
+Dies if any required method is missing from the provided methods hash.
+
+=head2 resolve
+
+    my $inst = Typist::TypeClass::Def->resolve($class_name, $type, $instances);
+
+Resolves an instance for the given type(s) from the instance list.
+C<$type> may be a single Type object or an arrayref (multi-parameter).
+
+=head1 Typist::TypeClass::Inst
+
+=head2 get_method
+
+    my $coderef = $inst->get_method($method_name);
+
+Returns the implementation coderef for the named method.
+
+=head1 SEE ALSO
+
+L<Typist>, L<Typist::Registry>, L<Typist::Inference>
+
+=cut
