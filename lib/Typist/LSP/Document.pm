@@ -230,6 +230,7 @@ sub symbol_at ($self, $line, $col) {
             if (my $sig = $registry->lookup_function('CORE', $builtin_name)) {
                 my $sym = _synthesize_function_symbol($builtin_name, $sig);
                 $sym->{builtin} = 1;
+                $sym->{typist_builtin} = 1 if Typist::Prelude->is_typist_builtin($builtin_name);
                 return $with_range->($sym);
             }
         }
@@ -240,6 +241,7 @@ sub symbol_at ($self, $line, $col) {
             returns_expr => 'Any',
             eff_expr     => 'Eff(*)',
             builtin      => 1,
+            (Typist::Prelude->is_typist_builtin($builtin_name) ? (typist_builtin => 1) : ()),
         });
     }
 

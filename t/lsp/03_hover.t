@@ -1096,6 +1096,25 @@ subtest 'hover shows builtin note' => sub {
     like $hover->{contents}{value}, qr/\*Perl builtin\*/, 'shows Perl builtin note';
 };
 
+# ── Hover shows Typist builtin note ───────────────
+
+subtest 'hover shows Typist builtin note' => sub {
+    require Typist::LSP::Hover;
+
+    my $sym = +{
+        kind            => 'function',
+        name            => 'unwrap',
+        params_expr     => ['Any'],
+        returns_expr    => 'Any',
+        builtin         => 1,
+        typist_builtin  => 1,
+    };
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'got hover response';
+    like $hover->{contents}{value}, qr/\*Typist builtin\*/, 'shows Typist builtin note';
+    unlike $hover->{contents}{value}, qr/\*Perl builtin\*/, 'does not show Perl builtin';
+};
+
 # ── Hover shows unknown type ──────────────────────
 
 subtest 'hover shows unknown note for unresolvable variable' => sub {

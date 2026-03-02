@@ -121,9 +121,16 @@ my %BUILTINS = (
 
 my @EFFECTS = qw(IO Exn Decl);
 
+my @TYPIST_BUILTINS = qw(
+    typedef newtype effect typeclass instance declare datatype enum struct unwrap
+);
+my %TYPIST_BUILTIN_SET = map { $_ => 1 } @TYPIST_BUILTINS;
+
 # ── Public API ───────────────────────────────────
 
 sub builtin_names ($class) { keys %BUILTINS }
+
+sub is_typist_builtin ($class, $name) { $TYPIST_BUILTIN_SET{$name} }
 
 sub install ($class, $registry) {
     # Register standard effect labels

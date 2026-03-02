@@ -105,7 +105,7 @@ sub _format_function ($class, $sym) {
     if ($sym->{constructor}) {
         $md .= _note("constructor of `$sym->{returns_expr}`");
     } elsif ($sym->{builtin}) {
-        $md .= _note('Perl builtin');
+        $md .= _note($sym->{typist_builtin} ? 'Typist builtin' : 'Perl builtin');
     } elsif ($sym->{declared}) {
         $md .= _note('declared');
     } elsif ($sym->{unannotated}) {
