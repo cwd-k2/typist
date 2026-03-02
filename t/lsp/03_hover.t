@@ -491,6 +491,61 @@ PERL
     like $sym2->{returns_expr} // '', qr/UserId/, 'UserId returns UserId';
 };
 
+# ── Hover on qualified name: no hover on package part ──
+
+subtest 'hover on package part of qualified call returns null' => sub {
+    require File::Temp;
+    require File::Path;
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib/Util");
+
+    open my $fh, '>', "$dir/lib/Util/Math.pm" or die;
+    print $fh <<'PERL';
+package Util::Math;
+use v5.40;
+use Typist;
+sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+1;
+PERL
+    close $fh;
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source = <<'PERL';
+package App;
+use v5.40;
+use Util::Math;
+my $x = Util::Math::add(1, 2);
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///app.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Hover on 'add' part (after Util::Math::)
+    # Line 3: "my $x = Util::Math::add(1, 2);"
+    #          0123456789012345678901234
+    #                                ^^ add starts at col 20
+    my $sym_func = $doc->symbol_at(3, 21);  # on 'add'
+    ok $sym_func, 'found symbol on function name part';
+    is $sym_func->{kind}, 'function', 'resolved as function';
+
+    # Hover on 'Util' part
+    my $sym_pkg = $doc->symbol_at(3, 9);  # on 'Util'
+    ok !$sym_pkg, 'no hover on package name part';
+
+    # Hover on 'Math' part (still in package portion)
+    my $sym_mid = $doc->symbol_at(3, 15);  # on 'Math'
+    ok !$sym_mid, 'no hover on middle package segment';
+};
+
 # ── Hover on effect with operations ──────────────
 
 subtest 'hover shows effect with operation signatures' => sub {

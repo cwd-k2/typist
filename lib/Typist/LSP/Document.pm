@@ -127,6 +127,36 @@ sub _word_at ($self, $line, $col) {
     $word;
 }
 
+# Check if the cursor is on the function name part of a qualified name (Pkg::func).
+# Returns true if cursor ($col) is on or after the last :: separator.
+sub _cursor_on_func_part ($self, $line, $col, $word) {
+    my $lines = $self->_lines;
+    return 1 unless $line < @$lines;  # fallback: treat as func part
+
+    my $text = $lines->[$line];
+
+    # Find where the word starts by scanning left from $col
+    my $start = $col;
+    while ($start > 0) {
+        my $ch = substr($text, $start - 1, 1);
+        if ($ch =~ /[\w\$\@%]/) {
+            $start--;
+        } elsif ($ch eq ':' && $start >= 2 && substr($text, $start - 2, 1) eq ':') {
+            $start -= 2;
+        } else {
+            last;
+        }
+    }
+
+    # Find the position of the last :: in the word
+    my $last_sep = rindex($word, '::');
+    return 1 if $last_sep < 0;  # no :: found
+
+    # Function name starts at: $start + $last_sep + 2
+    my $func_start = $start + $last_sep + 2;
+    $col >= $func_start;
+}
+
 # Find the symbol at a given line/col (0-indexed).
 sub symbol_at ($self, $line, $col) {
     my $result = $self->{result} // return undef;
@@ -162,7 +192,9 @@ sub symbol_at ($self, $line, $col) {
             my $lookup_name = $bare // $word;
 
             if ($word =~ /::/) {
-                # Qualified name: Pkg::func
+                # Qualified name: Pkg::func — only show hover on function name part
+                return undef unless $self->_cursor_on_func_part($line, $col, $word);
+
                 my ($pkg, $fname) = $word =~ /\A(.+)::(\w+)\z/;
                 if ($pkg && $fname) {
                     if (my $sig = $registry->lookup_function($pkg, $fname)) {

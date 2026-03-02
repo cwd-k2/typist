@@ -699,9 +699,16 @@ sub _chase_subscript_chain ($type, $start_node, $env = undef) {
 sub _infer_method_access ($receiver_type, $method_word, $env = undef) {
     my $method_name = $method_word->content;
 
+    # Resolve alias to concrete type (e.g., Alias("Customer") → Struct)
+    my $resolved = $receiver_type;
+    if ($resolved->is_alias && $env && $env->{registry}) {
+        my $looked_up = $env->{registry}->lookup_type($resolved->alias_name);
+        $resolved = $looked_up if $looked_up;
+    }
+
     # Struct accessor: resolve field type from the inner record
-    if ($receiver_type->is_struct) {
-        my $record = $receiver_type->record;
+    if ($resolved->is_struct) {
+        my $record = $resolved->record;
         my $req = $record->required_ref;
         my $opt = $record->optional_ref;
 
@@ -715,13 +722,13 @@ sub _infer_method_access ($receiver_type, $method_word, $env = undef) {
         }
 
         # with() returns the same struct type
-        return $receiver_type if $method_name eq 'with';
+        return $resolved if $method_name eq 'with';
     }
 
     # Fallback: look up method in registry if available
     if ($env && $env->{registry}) {
-        my $pkg = ref $receiver_type && $receiver_type->is_struct
-            ? $receiver_type->package : undef;
+        my $pkg = ref $resolved && $resolved->is_struct
+            ? $resolved->package : undef;
         if ($pkg) {
             my $sig = $env->{registry}->lookup_method($pkg, $method_name);
             return $sig->{returns} if $sig && $sig->{returns};

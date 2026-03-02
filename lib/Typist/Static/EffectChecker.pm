@@ -70,6 +70,7 @@ sub analyze ($self) {
                     file    => $self->{file},
                     line    => $call->{line},
                     col     => $call->{col} // 0,
+                    end_col => ($call->{col} // 0) + length($call->{name}),
                 );
                 next;
             }
@@ -84,6 +85,7 @@ sub analyze ($self) {
                     file    => $self->{file},
                     line    => $call->{line},
                     col     => $call->{col} // 0,
+                    end_col => ($call->{col} // 0) + length($call->{name}),
                 );
                 next;
             }
@@ -199,6 +201,7 @@ sub _check_effect_inclusion ($self, $caller_eff, $callee_eff, $caller_name, $cal
                 file    => $self->{file},
                 line    => $line,
                 col     => $col,
+                end_col => $col + length($callee_name),
             );
         }
     }

@@ -527,7 +527,8 @@ sub _publish_diagnostics ($self, $doc) {
                     uri   => $_->{uri} // $doc->uri,
                     range => +{
                         start => +{ line => ($_->{line} // 1) - 1, character => ($_->{col} // 1) - 1 },
-                        end   => +{ line => ($_->{line} // 1) - 1, character => ($_->{col} // 1) + 19 },
+                        end   => +{ line => ($_->{line} // 1) - 1,
+                                    character => defined $_->{end_col} ? ($_->{end_col} - 1) : (($_->{col} // 1) + 19) },
                     },
                 },
                 message => $_->{message},

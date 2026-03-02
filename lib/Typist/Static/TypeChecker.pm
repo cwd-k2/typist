@@ -57,6 +57,7 @@ sub _check_variable_initializers ($self) {
                 file          => $self->{file},
                 line          => $var->{line},
                 col           => $var->{col} // 0,
+                end_col       => ($var->{col} // 0) + length($var->{name}),
                 expected_type => $declared->to_string,
                 actual_type   => $inferred->to_string,
             );
@@ -106,8 +107,9 @@ sub _check_assignments ($self) {
                 kind          => 'TypeMismatch',
                 message       => "Assignment to $var_name: expected ${\$declared_type->to_string}, got ${\$inferred->to_string}",
                 file          => $self->{file},
-                line          => $op->line_number,
-                col           => $op->column_number,
+                line          => $lhs->line_number,
+                col           => $lhs->column_number,
+                end_col       => $lhs->column_number + length($lhs->content),
                 expected_type => $declared_type->to_string,
                 actual_type   => $inferred->to_string,
             );
@@ -214,6 +216,7 @@ sub _check_call_sites ($self) {
                 file    => $self->{file},
                 line    => $word->line_number,
                 col     => $word->column_number,
+                end_col => $word->column_number + length($word->content),
             );
             next;
         }
@@ -225,6 +228,7 @@ sub _check_call_sites ($self) {
                 file    => $self->{file},
                 line    => $word->line_number,
                 col     => $word->column_number,
+                end_col => $word->column_number + length($word->content),
             );
         }
 
@@ -254,9 +258,10 @@ sub _check_call_sites ($self) {
                         kind    => 'ArityMismatch',
                         message => "Callback argument " . ($i + 1)
                             . " of $name(): expected $expected_arity parameter(s), got $actual_arity",
-                        file => $self->{file},
-                        line => $word->line_number,
-                        col  => $word->column_number,
+                        file    => $self->{file},
+                        line    => $word->line_number,
+                        col     => $word->column_number,
+                        end_col => $word->column_number + length($word->content),
                     );
                     next;
                 }
@@ -273,6 +278,7 @@ sub _check_call_sites ($self) {
                     file          => $self->{file},
                     line          => $word->line_number,
                     col           => $word->column_number,
+                    end_col       => $word->column_number + length($word->content),
                     expected_type => $declared->to_string,
                     actual_type   => $inferred->to_string,
                 );
@@ -323,6 +329,7 @@ sub _check_method_call ($self, $word, $arrow) {
             file    => $self->{file},
             line    => $word->line_number,
             col     => $word->column_number,
+            end_col => $word->column_number + length($word->content),
         );
         return if @args < $min_args;
     }
@@ -347,6 +354,7 @@ sub _check_method_call ($self, $word, $arrow) {
                 file          => $self->{file},
                 line          => $word->line_number,
                 col           => $word->column_number,
+                end_col       => $word->column_number + length($word->content),
                 expected_type => $declared->to_string,
                 actual_type   => $inferred->to_string,
             );
@@ -389,8 +397,9 @@ sub _check_return_types ($self) {
                     kind          => 'TypeMismatch',
                     message       => "Return value of $name(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
                     file          => $self->{file},
-                    line          => $ret->line_number,
-                    col           => $ret->column_number,
+                    line          => $val->line_number,
+                    col           => $val->column_number,
+                    end_col       => $val->column_number + length($val->content),
                     expected_type => $declared->to_string,
                     actual_type   => $inferred->to_string,
                 );
@@ -446,6 +455,7 @@ sub _check_implicit_return_of_stmt ($self, $stmt, $env, $declared, $name) {
             file          => $self->{file},
             line          => $first->line_number,
             col           => $first->column_number,
+            end_col       => $first->column_number + length($first->content),
             expected_type => $declared->to_string,
             actual_type   => $inferred->to_string,
         );
@@ -496,6 +506,7 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
             file          => $self->{file},
             line          => $word->line_number,
             col           => $word->column_number,
+            end_col       => $word->column_number + length($word->content),
             expected_type => $param_types[$failed_at]->to_string,
             actual_type   => $arg_types[$failed_at]->to_string,
         );
@@ -514,6 +525,7 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
                 file          => $self->{file},
                 line          => $word->line_number,
                 col           => $word->column_number,
+                end_col       => $word->column_number + length($word->content),
                 expected_type => $bound->to_string,
                 actual_type   => $actual->to_string,
             );
@@ -532,6 +544,7 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
                 file          => $self->{file},
                 line          => $word->line_number,
                 col           => $word->column_number,
+                end_col       => $word->column_number + length($word->content),
                 expected_type => $concrete->to_string,
                 actual_type   => $arg_types[$i]->to_string,
             );

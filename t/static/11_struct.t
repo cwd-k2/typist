@@ -198,4 +198,64 @@ PERL
         'Person(...)->name infers as Str';
 };
 
+subtest 'infer accessor on cross-package function returning alias' => sub {
+    # Simulate: Pkg::find() returns Alias("Person"), ->name resolves to Str
+    my $source = <<'PERL';
+package TestPkg;
+use Typist;
+use Typist::DSL;
+struct Person => (name => Str, age => Int);
+sub find :Type((Int) -> Person) ($id) { Person(name => "x", age => $id) }
+PERL
+    my $extracted = Typist::Static::Extractor->extract($source);
+    my $registry  = Typist::Registry->new;
+    Typist::Static::Registration->register_all($extracted, $registry);
+
+    # Infer from another package's perspective
+    my $env = +{
+        variables => +{},
+        functions => +{},
+        registry  => $registry,
+        package   => 'main',
+    };
+
+    # TestPkg::find(1)->name should infer as Str
+    my $ppi = PPI::Document->new(\q{ TestPkg::find(1)->name });
+    my $word = $ppi->find_first('PPI::Token::Word');
+    my $result = Typist::Static::Infer->infer_expr($word, $env);
+    ok $result, 'cross-package chained accessor infers a type';
+    ok $result->is_atom && $result->name eq 'Str',
+        'TestPkg::find(1)->name infers as Str (not Any)';
+};
+
+subtest 'infer accessor on alias-typed variable' => sub {
+    # When a function returns Alias("Person"), the variable inherits the alias,
+    # and ->age should still resolve through alias resolution.
+    my $source = <<'PERL';
+package TestPkg;
+use Typist;
+use Typist::DSL;
+struct Person => (name => Str, age => Int);
+sub find :Type((Int) -> Person) ($id) { Person(name => "x", age => $id) }
+PERL
+    my $extracted = Typist::Static::Extractor->extract($source);
+    my $registry  = Typist::Registry->new;
+    Typist::Static::Registration->register_all($extracted, $registry);
+
+    my $env = +{
+        variables => +{},
+        functions => +{},
+        registry  => $registry,
+        package   => 'main',
+    };
+
+    # TestPkg::find(1)->age should infer as Int
+    my $ppi = PPI::Document->new(\q{ TestPkg::find(1)->age });
+    my $word = $ppi->find_first('PPI::Token::Word');
+    my $result = Typist::Static::Infer->infer_expr($word, $env);
+    ok $result, 'cross-package accessor infers a type';
+    ok $result->is_atom && $result->name eq 'Int',
+        'TestPkg::find(1)->age infers as Int';
+};
+
 done_testing;
