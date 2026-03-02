@@ -76,49 +76,37 @@ sub with_log :Type(<r: Row>(Str) -> Str !Eff(Log | r)) ($msg) {
 |---------|--------|---------|
 | Primitive types | `Int`, `Str`, `Bool`, `Num`, `Any`, `Void`, `Never`, `Undef` | `my $x :Type(Int) = 42` |
 | Parameterized types | `Name[T, ...]` | `ArrayRef[Int]`, `HashRef[Str, Int]` |
-| Union types | `A \| B` | `Int \| Str` |
-| Intersection types | `A & B` | `Readable & Writable` |
+| Union / Intersection | `A \| B`, `A & B` | `Int \| Str`, `Readable & Writable` |
 | Function types | `(A, B) -> R` | `(Int, Int) -> Int` |
-| Struct types (nominal) | `struct Name => (fields)` | Blessed immutable objects with accessors |
-| Record types (structural) | `{ k => T, k? => T }` | `{ name => Str, age? => Int }` |
-| Maybe sugar | `Maybe[T]` | `Maybe[Str]` = `Str \| Undef` |
+| Struct (nominal) | `struct Name => (fields)` | Blessed immutable objects with accessors |
+| Record (structural) | `{ k => T, k? => T }` | `{ name => Str, age? => Int }` |
+| Maybe | `Maybe[T]` | `Maybe[Str]` = `Str \| Undef` |
 | Literal types | `42`, `"hello"` | Singleton types for specific values |
 | Type aliases | `typedef` | `typedef Price => Int` |
 | Nominal types | `newtype` / `unwrap` | `newtype UserId => Int` |
-| Algebraic data types | `datatype` | Tagged unions with auto-generated constructors |
+| ADT / GADT | `datatype` | Tagged unions, per-constructor return types |
 | Enumerations | `enum` | `enum Color => qw(Red Green Blue)` |
-| GADT | `datatype` with `->` | `IntLit => '(Int) -> Expr[Int]'` |
-| Recursive types | Self-referential `typedef` | `typedef Json => Str \| Int \| ArrayRef[Json]` |
-| Generics | `<T>`, `<T, U>` | `<T>(ArrayRef[T]) -> T` |
-| Bounded quantification | `<T: Bound>` | `<T: Num>(T, T) -> T` |
+| Generics | `<T>`, `<T: Bound>` | `<T: Num>(T, T) -> T` |
 | Rank-2 polymorphism | `forall` | `forall A. (A) -> A` |
 | Variadic functions | `...Type` | `(Int, ...Str) -> Void` |
-| Type classes | `typeclass` / `instance` | Ad-hoc polymorphism with dispatch |
-| Multi-parameter type classes | `typeclass Name => 'T, U'` | `Convertible T, U` with multiple type variables |
-| Higher-kinded types | `F: * -> *` | Type constructor abstraction with `F[T]` application |
+| Type classes / HKT | `typeclass` / `instance` | Ad-hoc polymorphism, `F: * -> *` |
 | Algebraic effects | `effect` / `!Eff(...)` | `!Eff(Console \| Log)` |
 | Row polymorphism | `<r: Row>` / `Eff(E \| r)` | Effect row extension |
-| Effect handlers | `Effect::op(...)` / `handle` | Direct effect dispatch and scoped handling |
+| Effect handlers | `Effect::op(...)` / `handle` | Direct dispatch + scoped handling |
 
 ### Analysis
 
 | Feature | Description |
 |---------|-------------|
-| CHECK-phase analysis | Type/effect errors detected at compile time via `warn` |
-| LSP server | Hover, completion, diagnostics, document symbols, go-to-definition, signature help, inlay hints, find references, rename, code actions, semantic tokens |
-| Perl::Critic policy | `Typist::TypeCheck` policy bridges static analysis into PerlNavigator |
+| CHECK-phase analysis | Type/effect errors at compile time via `warn` |
+| CLI checker | Terminal-based static analysis with colored output |
+| LSP server | Hover, completion, diagnostics, go-to-definition, references, rename, code actions, semantic tokens, and more |
 | Cross-file checking | Workspace-level type resolution across modules |
 | Gradual typing | Annotation density determines check strictness |
-| Bidirectional type inference | Expected types propagated downward to guide inference of literals and expressions |
-| Control flow narrowing | `defined($x)` narrows `Maybe[T]` to `T`; truthiness narrows to non-`Undef`; `isa` narrows to the tested class; early `return` narrows the else branch |
-| Arity checking | Argument count mismatch detected as ArityMismatch |
-| Expression type inference | Arithmetic (`Num`), comparison (`Bool`), string concat (`Str`), subscript access, ternary (Union/LUB) |
-| Variable reassignment tracking | Type mismatch on re-assignment to `:Type`-annotated variables |
-| Method type checking | `$self->method()` argument types and arity checked within the same package |
-| Generic static type checking | Type variables instantiated from call-site arguments for concrete type verification |
-| Builtin prelude | 84 builtins (74 Perl core + 10 Typist) with pre-installed type annotations and three standard effect labels (`IO`, `Exn`, `Decl`) |
+| Type inference | Bidirectional inference, control flow narrowing (`defined`, truthiness, `isa`, early return) |
+| Builtin prelude | 81 builtins with type annotations and three standard effect labels (`IO`, `Exn`, `Decl`) |
 
-### Architecture
+### Modes
 
 | Mode | Cost | Behavior |
 |------|------|----------|
@@ -164,15 +152,6 @@ make test
 make install  # Installs typist-check and typist-lsp
 ```
 
-### Development setup
-
-For development with Carton (includes optional dependencies):
-
-```sh
-carton install
-carton install --with-recommends  # For Perl::Critic integration
-```
-
 ## CLI Tools
 
 ### typist-check
@@ -204,10 +183,6 @@ Exit codes: `0` = clean, `1` = errors, `2` = warnings only.
 
 Color is disabled automatically when stdout is not a TTY, `--no-color` is passed, or `NO_COLOR` is set.
 
-### typist-lsp
-
-See [Editor Integration](#editor-integration) below.
-
 ## Annotation Syntax
 
 Typist uses a single unified `:Type(...)` attribute for all type annotations.
@@ -235,33 +210,13 @@ sub first :Type(<T>(ArrayRef[T]) -> T) ($arr) { $arr->[0] }
 # With bounded quantification
 sub max_of :Type(<T: Num>(T, T) -> T) ($a, $b) { $a > $b ? $a : $b }
 
-# With generic row variable
-sub with_log :Type(<r: Row>(Str) -> Str !Eff(Log | r)) ($msg) { $msg }
-
 # Variadic arguments
 sub log_all :Type((Str, ...Any) -> Void !Eff(Console)) ($fmt, @args) { }
-
-# No parameters, no return value
-sub noop :Type(() -> Void) () { }
-```
-
-### Type Aliases
-
-```perl
-BEGIN {
-    typedef Name   => 'Str';             # String form
-    typedef Name   => Str;               # DSL form (with Typist::DSL)
-    typedef Person => '{ name => Str, age => Int }';
-    typedef Json   => 'Str | Int | Bool | Undef | ArrayRef[Json] | HashRef[Str, Json]';
-}
 ```
 
 ### Struct Types (Nominal)
 
 ```perl
-use Typist;
-use Typist::DSL;
-
 BEGIN {
     struct Person => (
         name  => Str,
@@ -270,13 +225,12 @@ BEGIN {
     );
 }
 
-my $p = Person(name => "Alice", age => 30);  # Constructor validates fields
-$p->name;                                     # "Alice" — accessor method
-$p->age;                                      # 30
-$p->with(age => 31);                          # Immutable update — returns new Person
+my $p = Person(name => "Alice", age => 30);
+$p->name;                    # "Alice"
+$p->with(age => 31);         # immutable update
 ```
 
-Struct types are **nominal**: `Person` and `Record(name => Str, age => Int)` are distinct types even with identical fields. Struct values are blessed objects with auto-generated constructors, accessors, and `with()` for immutable updates. `Struct <: Record` (structural compatibility), but `Record </: Struct` (nominal barrier).
+Struct types are **nominal**: `Struct <: Record` (structural compatibility), but `Record </: Struct` (nominal barrier).
 
 ### Nominal Types (Newtype)
 
@@ -290,7 +244,7 @@ my $uid = UserId(42);       # Constructor validates inner type
 my $raw = unwrap($uid);     # Extracts inner value: 42
 ```
 
-### Algebraic Data Types (Datatype)
+### Algebraic Data Types
 
 ```perl
 BEGIN {
@@ -298,25 +252,14 @@ BEGIN {
         Circle    => '(Int)',
         Rectangle => '(Int, Int)',
         Point     => '';
+
+    enum Color => qw(Red Green Blue);   # Nullary-only ADT
 }
 
-my $c = Circle(5);            # Auto-generated constructor, validates argument types
-my $r = Rectangle(3, 4);
-my $p = Point();
+my $c = Circle(5);          # Auto-generated constructor
 ```
 
-Constructors perform runtime validation: arity is checked and each argument is verified against the declared type. Values are blessed into `Typist::Data::$name` with `_tag` and `_values` fields.
-
-### Enumerations
-
-```perl
-BEGIN {
-    enum Color => qw(Red Green Blue);
-}
-# Equivalent to: datatype Color => Red => '', Green => '', Blue => '';
-```
-
-### GADT (Generalized Algebraic Data Types)
+GADT constructors specify per-constructor return types:
 
 ```perl
 BEGIN {
@@ -327,9 +270,7 @@ BEGIN {
 }
 ```
 
-Constructors with `->` specify per-constructor return types, enabling type-safe interpreters and expression trees.
-
-### Effects
+### Effects and Handlers
 
 ```perl
 BEGIN {
@@ -342,56 +283,21 @@ BEGIN {
 # Function declares its effects
 sub io_greet :Type((Str) -> Void !Eff(Console)) ($name) { say "Hi, $name" }
 
-# Caller must declare at least callee's effects
-sub main :Type(() -> Void !Eff(Console)) () { io_greet("Alice") }
-```
+# Effect operations are called as qualified subs
+Console::writeLine("hello");
 
-### Effect Handlers (Effect::op / handle)
-
-Effect definitions auto-install qualified subs for each operation. These dispatch to the nearest handler on the runtime stack.
-
-```perl
-use Typist -runtime;
-
-BEGIN {
-    effect Console => +{
-        log => '(Str) -> Void',
-    };
-
-    effect State => +{
-        get => '() -> Int',
-        put => '(Int) -> Void',
-    };
-}
-
-# Effect operations are called as qualified subs: Effect::op(...)
-sub greet :Type((Str) -> Str !Eff(Console)) ($name) {
-    Console::log("Hello, $name!");
-    "greeted $name";
-}
-
-# handle installs scoped handlers, executes a body, then pops them
-my $state = 0;
+# handle installs scoped handlers and executes a body
 my $result = handle {
-    Console::log("start");
-    State::put(10);
-    State::get();
+    Console::writeLine("start");
+    42;
 } Console => +{
-    log => sub ($msg) { say $msg },
-}, State => +{
-    get => sub ()  { $state },
-    put => sub ($n) { $state = $n; undef },
+    writeLine => sub ($msg) { say $msg },
 };
-# $result is 10; handlers are automatically popped after the block
 ```
-
-Handlers form a LIFO stack. Inner `handle` blocks shadow outer ones for the same effect. Handlers are always popped on normal exit and on exception.
 
 ### Type Classes
 
 ```perl
-use Typist::DSL;
-
 BEGIN {
     typeclass Show => T, +{
         show => '(T) -> Str',
@@ -400,93 +306,20 @@ BEGIN {
     instance Show => Int, +{
         show => sub ($x) { "$x" },
     };
-
-    instance Show => Str, +{
-        show => sub ($x) { qq{"$x"} },
-    };
 }
 
 say Show::show(42);      # "42"
-say Show::show("hello"); # "\"hello\""
 ```
 
-Multi-parameter type classes support multiple type variables:
+### Declare and Suppress
 
 ```perl
-BEGIN {
-    typeclass Convertible => 'T, U', +{
-        convert => '(T) -> U',
-    };
+# Annotate external functions for type/effect checking
+declare say => '(Str) -> Void !Eff(Console)';
 
-    instance Convertible => 'Int, Str', +{
-        convert => sub ($x) { "$x" },
-    };
-}
-```
-
-### Control Flow Narrowing
-
-Typist narrows types inside conditional branches based on the guard expression:
-
-```perl
-# defined() narrows Maybe[T] to T
-sub safe_length :Type((Maybe[Str]) -> Int) ($s) {
-    if (defined $s) {
-        # $s narrowed from Str | Undef to Str
-        return length($s);
-    }
-    return 0;
-}
-
-# Truthiness narrows union types by removing Undef
-sub process :Type((Str | Undef) -> Str) ($s) {
-    if ($s) {
-        # $s narrowed to Str
-        return $s;
-    }
-    return "default";
-}
-
-# Early return narrows the else branch
-sub require_str :Type((Maybe[Str]) -> Str) ($s) {
-    return "" unless defined $s;
-    # $s is Str here (Undef eliminated by early return)
-    $s;
-}
-```
-
-### Method Type Checking
-
-Methods with `$self` as the first parameter are recognized and type-checked within the same package:
-
-```perl
-package Calculator;
-use Typist;
-
-sub add :Type((Int, Int) -> Int) ($self, $a, $b) {
-    $a + $b;
-}
-
-sub compute :Type((Int) -> Int) ($self, $n) {
-    $self->add($n, $n);  # Argument types and arity checked
-}
-```
-
-### Declare (External Function Annotations)
-
-```perl
-# Annotate builtins or external functions for effect checking
-declare say    => '(Str) -> Void !Eff(Console)';
-declare length => '(Str) -> Int';                  # Pure builtin
-declare die    => '(Any) -> Never !Eff(Abort)';
-```
-
-### Suppressing Diagnostics
-
-```perl
 sub handler :Type((Str) -> Str !Eff(Console)) ($s) {
     # @typist-ignore
-    some_unannotated_function($s);  # No EffectMismatch warning
+    some_unannotated_function($s);  # Diagnostic suppressed
 }
 ```
 
@@ -501,48 +334,6 @@ Typist enforces checks proportional to annotation density:
 | Partially annotated (no `:Eff`) | As declared | Treated as pure |
 | Completely unannotated | Skipped (`Any -> Any`) | Treated as `Eff(*)` — flags in callers |
 
-```perl
-# Fully annotated — all checks apply
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
-
-# Partially annotated — params checked, return unknown
-sub compute :Type((Int) -> Any) ($n) { $n * $n }
-
-# Unannotated — treated as (Any...) -> Any ! Eff(*)
-sub helper ($x) { $x }
-```
-
-## Static-First Architecture
-
-By default, `use Typist;` provides **zero runtime overhead**:
-
-```
-Compile Time                          Runtime
-─────────────────────────────────     ───────────────────
-:Type(...) parsed → Registry          Original sub runs
-CHECK { Checker → Analyzer }          No wrappers
-warn diagnostics → STDERR             No tie overhead
-```
-
-### Enabling Runtime Enforcement
-
-```perl
-use Typist -runtime;    # Flag in code
-# or
-TYPIST_RUNTIME=1        # Environment variable
-```
-
-Runtime mode adds `tie` to typed scalars and wraps typed subs with validation closures.
-
-### Environment Variables
-
-| Variable | Effect |
-|----------|--------|
-| `TYPIST_RUNTIME` | Enable runtime enforcement (`1` = on) |
-| `TYPIST_CHECK_QUIET` | Suppress CHECK-phase diagnostics (`1` = quiet) |
-| `TYPIST_LSP_LOG` | LSP log level (`off`/`error`/`warn`/`info`/`debug`/`trace`) |
-| `TYPIST_LSP_TRACE` | Path to JSONL trace file for LSP message recording |
-
 ## Editor Integration
 
 ### LSP Server
@@ -553,7 +344,7 @@ The standalone LSP server provides a comprehensive editing experience:
 |------------|-------------|
 | Diagnostics | Type mismatch, arity mismatch, effect mismatch, alias cycles |
 | Hover | Type signatures for functions, variables, constructors, typedefs |
-| Completion | Type annotation completion and type-aware code completion (struct fields, methods, effect operations) |
+| Completion | Type annotation completion and type-aware code completion |
 | Go to Definition | Same-file and cross-file definition lookup |
 | Find References | Word-boundary search across open documents and workspace |
 | Rename | Symbol rename across all workspace files |
@@ -600,7 +391,7 @@ Use the `vscode-languageclient` extension:
 }
 ```
 
-### Perl::Critic Policy (via PerlNavigator)
+### Perl::Critic Policy
 
 ```ini
 # .perlcriticrc
@@ -608,68 +399,15 @@ Use the `vscode-languageclient` extension:
 severity = 2
 ```
 
-```json
-// VS Code settings
-{
-  "perlnavigator.perlcriticEnabled": true,
-  "perlnavigator.perlcriticProfile": ".perlcriticrc"
-}
-```
+## Environment Variables
 
-## Debugging the LSP Server
-
-### Logging
-
-```sh
-TYPIST_LSP_LOG=debug typist-lsp
-```
-
-| Level | Output |
-|-------|--------|
-| `off` | No output |
-| `error` | Errors only |
-| `warn` | Errors + warnings |
-| `info` | Lifecycle events (default) |
-| `debug` | Message dispatch, diagnostics |
-| `trace` | Full message content |
-
-### Message Tracing
-
-```sh
-TYPIST_LSP_TRACE=/tmp/trace.jsonl typist-lsp
-```
-
-Each line is a JSON object with direction, timestamp, and message:
-
-```json
-{"dir":"recv","ts":"12:34:56.789","msg":{"jsonrpc":"2.0","method":"initialize",...}}
-{"dir":"send","ts":"12:34:56.790","msg":{"jsonrpc":"2.0","id":1,"result":{...}}}
-```
-
-### Trace Replay
-
-```sh
-perl script/lsp-replay trace.jsonl
-perl script/lsp-replay --compare trace.jsonl   # Golden-file regression
-perl script/lsp-replay --verbose trace.jsonl   # Show each message
-```
-
-### Editor Debug Configuration
-
-**Neovim** — redirect stderr to a log file:
-
-```lua
-cmd = { 'sh', '-c', 'TYPIST_LSP_LOG=debug typist-lsp 2>/tmp/typist-lsp.log' },
-```
-
-**VS Code** — add environment variables to server settings:
-
-```json
-{
-  "typist-lsp.command": "sh",
-  "typist-lsp.args": ["-c", "TYPIST_LSP_LOG=debug TYPIST_LSP_TRACE=/tmp/trace.jsonl typist-lsp 2>/tmp/typist-lsp.log"]
-}
-```
+| Variable | Effect |
+|----------|--------|
+| `TYPIST_RUNTIME` | Enable runtime enforcement (`1` = on) |
+| `TYPIST_CHECK_QUIET` | Suppress CHECK-phase diagnostics (`1` = quiet) |
+| `TYPIST_LSP_LOG` | LSP log level (`off`/`error`/`warn`/`info`/`debug`/`trace`) |
+| `TYPIST_LSP_TRACE` | Path to JSONL trace file for LSP message recording |
+| `NO_COLOR` | Disable colored output in `typist-check` |
 
 ## Examples
 
@@ -677,192 +415,43 @@ See `example/` for runnable demonstrations:
 
 | File | Topics |
 |------|--------|
-| `01_foundations.pl` | Type aliases, typed variables/functions, runtime error handling |
+| `01_foundations.pl` | Type aliases, typed variables/functions |
 | `02_composite_types.pl` | Struct, Union, Maybe, parameterized types |
-| `03_generics.pl` | Generic functions, bounded quantification, union types |
+| `03_generics.pl` | Generic functions, bounded quantification |
 | `04_nominal_types.pl` | Newtypes, literal types, recursive types |
 | `05_algebraic_types.pl` | Datatype/ADT, pattern matching, enum |
 | `06_typeclasses.pl` | Type classes, HKT, Functor |
 | `07_effects.pl` | Effect system, perform/handle |
 | `08_gradual_typing.pl` | Gradual typing, flow typing |
 | `09_dsl.pl` | DSL operators, constructors |
-| `lsp/demo.pm` | LSP hover, completion, diagnostic targets |
-| `lsp/effects.pm` | LSP effect checking demonstrations |
+| `10_higher_order.pl` | Higher-order function inference |
 
 ```sh
 carton exec -- perl example/01_foundations.pl
-carton exec -- perl example/03_generics.pl
-carton exec -- perl example/07_effects.pl
 ```
 
 ## Testing
 
 ```sh
-# All tests (58 files)
+# All tests (61 files)
 carton exec -- prove -l t/ t/static/ t/lsp/ t/critic/
 
 # By category
-carton exec -- prove -l t/              # Core type system (26 files)
-carton exec -- prove -l t/static/       # Static analysis (12 files)
-carton exec -- prove -l t/lsp/          # LSP server (16 files)
-carton exec -- prove -l t/critic/       # Perl::Critic policy (4 files)
-
-# Integration tests
-carton exec -- perl t/lsp/e2e_smoke.pl                     # LSP E2E smoke test
-carton exec -- perl script/lsp-verify-workspace             # Workspace verification
-carton exec -- perl script/lsp-verify-workspace path/to/lib # Custom directory
+carton exec -- prove -l t/              # Core type system
+carton exec -- prove -l t/static/       # Static analysis
+carton exec -- prove -l t/lsp/          # LSP server
+carton exec -- prove -l t/critic/       # Perl::Critic policy
 ```
 
 ## Known Limitations
 
-### Static Analysis
-
-#### Expression Inference
-
-- String interpolation (`"Hello $name"`), regex matches, and complex dereference chains are
-  inferred at a shallow level — intermediate expression types may widen to `Any`.
-- Compound arithmetic expressions (`$a + $b * $c`) are treated as a single binary operation;
-  operator precedence does not influence the inferred type (always `Num`).
-
-#### Method Checking
-
-- Only `$self->method()` calls within the **same package** are type-checked.
-- Cross-package method calls, class method calls (`Foo->bar()`), and chained method calls
-  (`$obj->foo->bar`) are skipped under gradual typing rules.
-
-#### Type Narrowing
-
-- Supported: `defined($x)`, truthiness (`if ($x)`), `$x isa Foo`, and early return
-  (`return unless defined $x`).
-- Not supported: `ref()` checks, pattern match guards, or user-defined type predicates.
-
-#### Effect System
-
-- Effects require explicit `:Type(... ! Eff(...))` annotations — there is no effect inference.
-- Three standard effect labels are provided by Prelude: `IO` (I/O, time, randomness),
-  `Exn` (exceptions, eval, exit), and `Decl` (type/effect/struct declarations).
-- Open row polymorphism (`:Generic(r: Row)`) is parsed and represented, but static verification
-  of row-polymorphic effect signatures is limited.
-
-### LSP Server
-
-#### Hover
-
-- Builtin function hovers display the static Prelude signature (e.g., `unwrap` always shows
-  `(Any) -> Any`). Call-site-specific inference results are not reflected.
-- `handle`, `match`, `map`, and other special-form inferred return types are similarly not
-  shown in hover — only the generic signature is displayed.
-
-#### Cross-File Resolution
-
-- The CHECK phase operates on a single-file scope and cannot resolve Exporter-imported
-  functions across packages. Use `TYPIST_CHECK_QUIET=1` with the LSP workspace for
-  cross-file diagnostics.
-
-#### Diagnostics
-
-- Diagnostic quality depends on PPI's parse accuracy — unusual spacing or syntax inside
-  `:Type()` attributes may cause silent misparses.
-- On file save, all open documents are re-diagnosed. This may introduce latency in projects
-  with many open files.
-
-### CHECK Phase vs LSP vs Runtime
-
-| Detection target              | CHECK | LSP | Runtime |
-|-------------------------------|:-----:|:---:|:-------:|
-| Type mismatch (var init)      |   ✓   |  ✓  |    ✓    |
-| Type mismatch (call args)     |   ✓   |  ✓  |    ✓    |
-| Type mismatch (return)        |   ✓   |  ✓  |    ✓    |
-| Arity mismatch                |   ✓   |  ✓  |    ✓    |
-| Effect mismatch               |   ✓   |  ✓  |    —    |
-| Alias cycle                   |   ✓   |  ✓  |    —    |
-| Cross-file resolution         |   —   |  ✓  |    —    |
-| Generic instantiation         |   ✓   |  ✓  |    ✓    |
-| Newtype boundary enforcement  |   —   |  —  |  ✓ (always) |
-| TypeClass constraints         |   —   |  —  |    ✓    |
-| Effect handler execution      |   —   |  —  |    ✓    |
-
-### Gradual Typing Caveats
-
-- Calls to **unannotated functions** cause effect checking to be skipped at the call site
-  (the callee is assumed `Eff(*)`).
-- Partial annotation (`:Type` present but no return type) treats the return as unknown —
-  callers that depend on the return value will see `Any` via inference fallback.
-- Completely unannotated functions are modeled as `(Any...) -> Any ! Eff(*)` — type checking
-  is skipped entirely, and effect checking flags them as potentially effectful.
-
-## Project Structure
-
-```
-lib/
-  Typist.pm                  Entry point, CHECK phase, exports
-  Typist/
-    Type.pm                  Abstract base (overloads: |, &, "")
-    Type/
-      Atom.pm                Primitives (Int, Str, ...) — flyweight pool
-      Param.pm               Parameterized (ArrayRef[T], HashRef[K,V])
-      Union.pm               A | B — normalized, deduplicated
-      Intersection.pm        A & B — normalized, deduplicated
-      Func.pm                (A, B) -> R !Eff(E) — with effects
-      Record.pm              { key => T, key? => T } — structural, optional fields
-      Struct.pm              Nominal struct type node — name + record + package
-      Var.pm                 Type variables (T, U, V) — bound + kind
-      Alias.pm               typedef references — lazy resolution
-      Literal.pm             42, "hello" — singleton types
-      Newtype.pm             Nominal wrappers — name-based identity
-      Data.pm                Tagged unions (datatype/GADT) — variant constructors
-      Quantified.pm          forall A B. body — rank-2 polymorphism
-      Row.pm                 Effect rows — sorted labels + tail var
-      Eff.pm                 Eff(Row) wrapper
-      Fold.pm                map_type (bottom-up), walk (top-down)
-    Parser.pm                Recursive-descent type expression parser
-    Registry.pm              Type/function/effect/method store (class + instance)
-    Subtype.pm               Structural subtype relation + LUB
-    Inference.pm             Runtime type inference + unification
-    Transform.pm             Type substitution (aliases → vars)
-    Struct/Base.pm           Blessed immutable object base (with(), accessors)
-    Attribute.pm             :Type() handler, sub wrapping, tie
-    Check.pm                 CLI static analysis runner
-    DSL.pm                   Type constructors (Int, Str, Func(...), Record(...), optional(), ...)
-    Kind.pm                  Kind system (Star, Row, Arrow)
-    KindChecker.pm           Kind inference and validation
-    TypeClass.pm             Def + Inst + dispatch (single + multi-parameter)
-    Effect.pm                Effect definitions with typed operations
-    Handler.pm               Runtime effect handler stack (Effect::op/handle)
-    Prelude.pm               Builtin function type annotations (83 entries)
-    Error.pm                 Error value + Collector (instance-based)
-    Error/Global.pm          Singleton error buffer
-    Tie/Scalar.pm            Runtime scalar type enforcement
-    Static/
-      Analyzer.pm            Pipeline coordinator (per-file)
-      Extractor.pm           PPI-based annotation extraction
-      Checker.pm             Structural checks (cycles, vars, kinds)
-      TypeChecker.pm         Type mismatch + arity + assignment + method checks
-      EffectChecker.pm       Effect mismatch detection
-      Infer.pm               Static type inference from PPI
-      Unify.pm               Structural type unification for generics
-      Registration.pm        Shared type registration (aliases, structs, datatypes, effects, etc.)
-    LSP/
-      LSP.pm                 Entry point + exit handling
-      Server.pm              Lifecycle, message dispatch
-      Transport.pm           JSON-RPC with Content-Length framing
-      Document.pm            Per-file analysis cache + query interface
-      Workspace.pm           Cross-file registry + scanning
-      Hover.pm               Type signature display
-      Completion.pm          Type annotation + code completion
-      CodeAction.pm          Quick-fix code action generation
-      SemanticTokens.pm      Semantic token classification
-      Logger.pm              Configurable stderr logging
-bin/
-  typist-check               Static analysis CLI
-  typist-lsp                 LSP server executable
-script/
-  lsp-replay                 JSONL trace replay tool
-  lsp-verify-workspace       Workspace integration verifier
-example/                     Runnable demonstrations
-t/                           Test suite (56 files)
-docs/                        Architecture and type system reference
-```
+- **Expression inference** — String interpolation, regex, and complex dereference chains may widen to `Any`. Operator precedence does not influence inferred types.
+- **Method checking** — Only `$self->method()` within the same package is checked. Cross-package and chained method calls are skipped under gradual typing.
+- **Type narrowing** — Supports `defined($x)`, truthiness, `isa`, and early return. Does not support `ref()` checks or user-defined predicates.
+- **Effect system** — Effects require explicit annotations; there is no effect inference. Row-polymorphic verification is limited.
+- **Cross-file CHECK** — The CHECK phase is single-file. Use `TYPIST_CHECK_QUIET=1` with the LSP or CLI for cross-file diagnostics.
+- **Hover** — Builtin and special-form hovers show static Prelude signatures, not call-site-specific inferred types.
+- **PPI dependency** — Diagnostic quality depends on PPI's parse accuracy.
 
 ## License
 
