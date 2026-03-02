@@ -141,6 +141,33 @@ sub compute ($class, $doc) {
         _tokenize_quoted_types(\@tokens, \@lines, $line0, +{}, 10);
     }
 
+    # ── declare declarations ─────────────────
+    for my $name (keys(($extracted->{declares} // +{})->%*)) {
+        my $decl = $extracted->{declares}{$name};
+        my $line0 = ($decl->{line} // 1) - 1;
+        next unless $line0 < @lines;
+
+        # 'declare' keyword
+        my $kw_pos = _word_pos($lines[$line0], 'declare');
+        push @tokens, [$line0, $kw_pos, 7, 'keyword', 0] if defined $kw_pos;
+
+        # Function name (bare word or inside quotes)
+        my $fn = $decl->{func_name};
+        my $fn_pos = _word_pos($lines[$line0], $fn);
+        push @tokens, [$line0, $fn_pos, length($fn), 'function', 0] if defined $fn_pos;
+
+        # Type expression — find exact type_expr on line, tokenize content
+        my $type_expr = $decl->{type_expr};
+        my $type_start = index($lines[$line0], $type_expr);
+        if ($type_start >= 0) {
+            my %gen;
+            if ($type_expr =~ /\A<([^>]+)>/) {
+                %gen = map { s/\s*:.*//r => 1 } split /,\s*/, $1;
+            }
+            _tokenize_content(\@tokens, $line0, $type_start, $type_expr, \%gen);
+        }
+    }
+
     # ── function definitions ──────────────────
     for my $name (keys $extracted->{functions}->%*) {
         my $fn = $extracted->{functions}{$name};

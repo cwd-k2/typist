@@ -861,6 +861,115 @@ PERL
     ok scalar @pipes >= 1, 'found | operator in typedef value string';
 };
 
+# ── Semantic tokens for declare ────────────────
+
+subtest 'semantic tokens for bare declare' => sub {
+    my $source = <<'PERL';
+use v5.40;
+declare say => '(Str) -> Void';
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # keyword 'declare' (type index 4, len 7)
+    my ($kw) = grep { $_->{type} == 4 && $_->{len} == 7 } @tokens;
+    ok $kw, 'found declare keyword';
+    is $kw->{line}, 1, 'declare keyword on line 1';
+
+    # function name 'say' (type index 3)
+    my ($fn) = grep { $_->{type} == 3 && $_->{len} == 3 } @tokens;
+    ok $fn, 'found say as function token';
+
+    # Type tokens: Str and Void
+    my @type_toks = grep { $_->{type} == 0 && $_->{line} == 1 } @tokens;
+    ok scalar @type_toks >= 2, 'at least 2 type tokens (Str, Void)';
+
+    # Arrow operator
+    my @arrows = grep { $_->{type} == 8 && $_->{len} == 2 && $_->{line} == 1 } @tokens;
+    ok scalar @arrows >= 1, 'found -> operator token';
+};
+
+subtest 'semantic tokens for qualified declare' => sub {
+    my $source = <<'PERL';
+use v5.40;
+declare 'JSON::encode_json' => '(Any) -> Str';
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # keyword 'declare'
+    my ($kw) = grep { $_->{type} == 4 && $_->{len} == 7 } @tokens;
+    ok $kw, 'found declare keyword';
+
+    # function name 'encode_json' (bare word match from func_name)
+    my ($fn) = grep { $_->{type} == 3 && $_->{len} == 11 } @tokens;
+    ok $fn, 'found encode_json as function token';
+
+    # Type tokens: Any and Str inside '(Any) -> Str'
+    my @type_toks = grep { $_->{type} == 0 && $_->{line} == 1 } @tokens;
+    ok scalar @type_toks >= 2, 'at least 2 type tokens (Any, Str)';
+
+    # Ensure 'JSON' from the quoted name is NOT tokenized as a type
+    my @json_toks = grep { $_->{type} == 0 && $_->{len} == 4 } @type_toks;
+    is scalar @json_toks, 0, 'JSON in quoted name is not tokenized as type';
+};
+
+subtest 'semantic tokens for generic declare' => sub {
+    my $source = <<'PERL';
+use v5.40;
+declare 'List::Util::first' => '<T>(CodeRef, ArrayRef[T]) -> T';
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # T should be typeParameter (index 1) — appears in <T>, (…T), and -> T
+    my @tparam_toks = grep { $_->{type} == 1 && $_->{len} == 1 } @tokens;
+    ok scalar @tparam_toks >= 3, 'found T as typeParameter token (at least 3 occurrences)';
+
+    # CodeRef and ArrayRef as type tokens (index 0)
+    my @coderef = grep { $_->{type} == 0 && $_->{len} == 7 } @tokens;
+    ok scalar @coderef >= 1, 'found CodeRef as type token';
+    my @arrayref = grep { $_->{type} == 0 && $_->{len} == 8 } @tokens;
+    ok scalar @arrayref >= 1, 'found ArrayRef as type token';
+
+    # Ensure 'List' and 'Util' from the quoted name are NOT type tokens
+    my @list_toks = grep { $_->{type} == 0 && $_->{len} == 4 && $_->{line} == 1 } @tokens;
+    is scalar @list_toks, 0, 'List in quoted name is not tokenized as type';
+};
+
 done_testing;
 
 # ── Test Helpers ─────────────────────────────────
