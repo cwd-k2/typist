@@ -208,6 +208,13 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
     }
 
     # Variables
+    # Build dedup set from local_var_types (function-scoped re-inference)
+    # to avoid duplicate inlay hints for the same variable at the same position.
+    my %local_var_keys;
+    if ($type_checker && $type_checker->can('local_var_types')) {
+        %local_var_keys = map { $_ => 1 } keys($type_checker->local_var_types->%*);
+    }
+
     for my $var ($extracted->{variables}->@*) {
         my $type     = $var->{type_expr};
         my $inferred = 0;
@@ -225,6 +232,10 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
             $inferred = 1;
             $unknown  = 1;
         }
+
+        # Skip if local_var_types has a scoped re-inference for this variable
+        my $dedup_key = $var->{name} . ':' . $var->{line};
+        next if $inferred && $local_var_keys{$dedup_key};
 
         push @symbols, +{
             name     => $var->{name},

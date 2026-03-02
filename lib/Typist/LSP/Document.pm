@@ -287,13 +287,12 @@ sub symbol_at ($self, $line, $col) {
             });
         }
         if ($registry->has_alias($lookup_name)) {
-            my %aliases = $registry->all_aliases;
-            my $direct = $aliases{$lookup_name};
-            if ($direct) {
+            my $resolved = $registry->lookup_type($lookup_name);
+            if ($resolved) {
                 return $with_range->(+{
                     name => $lookup_name,
                     kind => 'typedef',
-                    type => $direct->to_string,
+                    type => $resolved->to_string,
                 });
             }
         }
@@ -478,6 +477,7 @@ sub inlay_hints ($self, $start_line, $end_line) {
         next unless ($sym->{kind} // '') eq 'variable';
         next unless $sym->{inferred};
         next if $sym->{unknown};
+        next if $sym->{narrowed};
 
         my $line = ($sym->{line} // 1) - 1;
         next if $line < $start_line || $line > $end_line;
