@@ -1,0 +1,44 @@
+{
+  "name": "typist",
+  "displayName": "Typist",
+  "description": "Typist — a static type system for Perl 5",
+  "version": "0.0.1",
+  "publisher": "cwd-k2",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cwd-k2/typist.git",
+    "directory": "editors/vscode"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": ["Programming Languages"],
+  "activationEvents": ["onLanguage:perl"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Typist",
+      "properties": {
+        "typist.server.path": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to `typist-lsp`. If empty, looks for `local/bin/typist-lsp` in the workspace, then `$PATH`."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node",
+    "watch": "npm run build -- --watch",
+    "package": "npm run build && vsce package"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.75.0",
+    "esbuild": "^0.25.0",
+    "@vscode/vsce": "^3.0.0"
+  }
+}
