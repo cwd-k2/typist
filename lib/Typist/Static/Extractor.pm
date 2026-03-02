@@ -316,8 +316,11 @@ sub _extract_struct_fields ($class, $list, $fields, $optional_fields) {
                     push @type_tokens, $sc[$i];
                     $i++;
                 }
-                $fields->{$field_name} = join('', map { $_->content } @type_tokens)
-                    if @type_tokens;
+                if (@type_tokens == 1 && $type_tokens[0]->isa('PPI::Token::Quote')) {
+                    $fields->{$field_name} = $type_tokens[0]->string;
+                } elsif (@type_tokens) {
+                    $fields->{$field_name} = join('', map { $_->content } @type_tokens);
+                }
             }
         }
     }

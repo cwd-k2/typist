@@ -7,14 +7,14 @@ use Typist::DSL;
 # ═══════════════════════════════════════════════════════════
 #  02 — Composite Types
 #
-#  Building complex types from primitives: Struct, Union,
-#  Maybe, ArrayRef, HashRef, Tuple, optional fields, and
-#  nesting.
+#  Building complex types from primitives: Record, struct,
+#  Union, Maybe, ArrayRef, HashRef, Tuple, optional fields,
+#  and nesting.
 # ═══════════════════════════════════════════════════════════
 
-# ── Struct ────────────────────────────────────────────────
+# ── Record (structural typing) ────────────────────────────
 #
-# Record(k => T, ...) defines a record type.
+# Record(k => T, ...) defines a structural record type.
 # Values are plain hashrefs — Typist checks field presence and types.
 
 BEGIN {
@@ -59,6 +59,30 @@ say "config with debug: $cfg->{host}:$cfg->{port} debug=$cfg->{debug}";
 # Optional field present but wrong type
 eval { $cfg = +{ host => "h", port => 80, debug => "yes" } };
 say "Config debug=Str:  $@" if $@;
+
+# ── Struct (nominal typing) ───────────────────────────────
+#
+# struct Name => (fields...) declares a nominal type.
+# Values are blessed immutable objects with constructors and accessors.
+
+struct Person2 => (name => Str, age => Int, email => optional(Str));
+
+my $bob = Person2(name => "Bob", age => 25);
+say "struct: ${\$bob->name}, age ${\$bob->age}";
+
+# Immutable update with with()
+my $older_bob = $bob->with(age => 26);
+say "updated: ${\$older_bob->name}, age ${\$older_bob->age}";
+say "original unchanged: ${\$bob->age}";
+
+# Optional field
+my $carol = Person2(name => "Carol", age => 28, email => "carol\@example.com");
+say "email: ${\($carol->email // '(none)')}";
+say "no email: ${\($bob->email // '(none)')}";
+
+# Missing required field
+eval { Person2(name => "Dave") };
+say "struct w/o age:    $@" if $@;
 
 # ── Union Types ───────────────────────────────────────────
 #
