@@ -9,7 +9,7 @@ WriteMakefile(
     AUTHOR           => 'cwd-k2',
     LICENSE          => 'mit',
     MIN_PERL_VERSION => 'v5.40',
-    EXE_FILES        => ['bin/typist-lsp'],
+    EXE_FILES        => ['bin/typist-check', 'bin/typist-lsp'],
     PREREQ_PM        => {
         'PPI' => 0,
     },

@@ -1,0 +1,82 @@
+#!/usr/bin/env perl
+use v5.40;
+use FindBin;
+use lib "$FindBin::Bin/../lib";
+use Typist::Check;
+Typist::Check->run(@ARGV);
+
+__END__
+
+=head1 NAME
+
+typist-check - Static type checker for Perl files using Typist
+
+=head1 SYNOPSIS
+
+    typist-check                         # Scan lib/ for .pm files
+    typist-check lib/Shop/Order.pm       # Check specific file(s)
+    typist-check --root src/             # Custom workspace root
+    typist-check --no-color              # Disable colored output
+    typist-check --verbose               # Show clean files too
+
+=head1 DESCRIPTION
+
+Runs Typist static analysis (type checking and effect checking) on Perl
+source files and reports diagnostics to the terminal with colored output.
+Uses the same cross-file workspace registry as the LSP server for
+accurate cross-package resolution.
+
+If no files are specified, scans C<lib/> (or the current directory if
+C<lib/> does not exist) for C<.pm> files.
+
+=head1 OPTIONS
+
+=over 4
+
+=item C<--root DIR>
+
+Set the workspace root directory for cross-file type resolution.
+Defaults to C<lib/> if it exists, otherwise the current directory.
+
+=item C<--no-color>
+
+Disable ANSI color codes in output. Also disabled automatically when
+C<NO_COLOR> environment variable is set or stdout is not a terminal.
+
+=item C<-v>, C<--verbose>
+
+Show all checked files, including those with no diagnostics.
+
+=item C<-h>, C<--help>
+
+Print usage information and exit.
+
+=back
+
+=head1 EXIT CODES
+
+=over 4
+
+=item C<0> - All clean (no diagnostics)
+
+=item C<1> - Errors found (severity 1-2: TypeMismatch, ArityMismatch, etc.)
+
+=item C<2> - Warnings only (severity 3-4: UndeclaredTypeVar, UnknownType, etc.)
+
+=back
+
+=head1 ENVIRONMENT
+
+=over 4
+
+=item C<NO_COLOR>
+
+When set, disables colored output (L<https://no-color.org>).
+
+=back
+
+=head1 SEE ALSO
+
+L<Typist>, L<Typist::Check>, L<typist-lsp>
+
+=cut

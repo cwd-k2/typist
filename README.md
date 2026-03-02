@@ -7,12 +7,12 @@ Typist brings static type annotations to Perl through standard attribute syntax.
 ```
                   `:Type(...)` attribute
                         |
-      +-----------------+-----------------+
-      |                 |                 |
-  CHECK phase       LSP Server     Runtime (opt-in)
-  (compile-time)    (editor)       (-runtime flag)
-      |                 |                 |
-  warn to STDERR   Diagnostics     die on mismatch
+      +----------+------+------+----------+
+      |          |             |           |
+  CHECK phase  CLI Check   LSP Server  Runtime (opt-in)
+  (compile)    (terminal)  (editor)    (-runtime flag)
+      |          |             |           |
+  warn STDERR  exit code   Diagnostics  die on mismatch
 ```
 
 ## Synopsis
@@ -161,7 +161,7 @@ cd typist
 perl Makefile.PL
 make
 make test
-make install
+make install  # Installs typist-check and typist-lsp
 ```
 
 ### Development setup
@@ -172,6 +172,41 @@ For development with Carton (includes optional dependencies):
 carton install
 carton install --with-recommends  # For Perl::Critic integration
 ```
+
+## CLI Tools
+
+### typist-check
+
+Static type checker for the terminal. Uses the same analysis engine as the LSP server.
+
+```sh
+typist-check                         # Scan lib/ for .pm files
+typist-check lib/Shop/Order.pm       # Check specific file(s)
+typist-check --root src/             # Custom workspace root
+typist-check --no-color              # Disable colored output
+typist-check --verbose               # Show clean files too
+```
+
+Output example:
+
+```
+lib/Shop/Order.pm
+  42:5    error    expected Int, got Str in argument 1  [TypeMismatch]
+  58:1    error    wrong number of arguments             [ArityMismatch]
+
+lib/Shop/Payment.pm
+  17:1    warning  undeclared type variable 'T'          [UndeclaredTypeVar]
+
+2 error(s), 1 warning(s) in 2 file(s) (4 files checked)
+```
+
+Exit codes: `0` = clean, `1` = errors, `2` = warnings only.
+
+Color is disabled automatically when stdout is not a TTY, `--no-color` is passed, or `NO_COLOR` is set.
+
+### typist-lsp
+
+See [Editor Integration](#editor-integration) below.
 
 ## Annotation Syntax
 
@@ -787,6 +822,7 @@ lib/
     Transform.pm             Type substitution (aliases → vars)
     Struct/Base.pm           Blessed immutable object base (with(), accessors)
     Attribute.pm             :Type() handler, sub wrapping, tie
+    Check.pm                 CLI static analysis runner
     DSL.pm                   Type constructors (Int, Str, Func(...), Record(...), optional(), ...)
     Kind.pm                  Kind system (Star, Row, Arrow)
     KindChecker.pm           Kind inference and validation
@@ -818,6 +854,7 @@ lib/
       SemanticTokens.pm      Semantic token classification
       Logger.pm              Configurable stderr logging
 bin/
+  typist-check               Static analysis CLI
   typist-lsp                 LSP server executable
 script/
   lsp-replay                 JSONL trace replay tool

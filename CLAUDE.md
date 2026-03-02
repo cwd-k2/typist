@@ -7,9 +7,9 @@ Typist is a pure Perl type system for Perl 5.40+. It provides type annotations v
 ## Architecture
 
 ```
-Static-First (default)       Runtime (opt-in: -runtime)    LSP Layer
-──────────────────────       ─────────────────────────     ──────────────
-Typist.pm (entry+CHECK)      Tie::Scalar                   LSP::Server
+Static-First (default)       Runtime (opt-in: -runtime)    LSP Layer         CLI
+──────────────────────       ─────────────────────────     ──────────────    ──────────
+Typist.pm (entry+CHECK)      Tie::Scalar                   LSP::Server       Check.pm
 Static::Checker              Attribute._wrap_sub            LSP::Document
 Static::Analyzer (CHECK)     Inference.pm                   LSP::Workspace
 Static::TypeChecker          Handler (Effect::op/handle)    LSP::Hover
@@ -101,6 +101,7 @@ Runtime (opt-in)| Generic instantiation      | die           | -runtime flag
 ## Commands
 
 ```sh
+mise run check             # Run typist-check static analysis
 mise run deps              # Install dependencies
 mise run test              # Run all tests (parallel)
 mise run test:core         # Core type system tests
@@ -148,6 +149,7 @@ Tests are numbered and ordered by dependency:
 - `t/22_effects_handler.t` — Effect handlers (Effect::op, handle, handler stack)
 - `t/23_gadt.t` — GADT (Generalized Algebraic Data Types: construction, forced type_args, is_gadt, match, return_types)
 - `t/25_struct.t` — Nominal struct types (constructor, accessors, with(), optional fields, type registration, subtyping)
+- `t/26_check_cli.t` — CLI typist-check (subprocess-based: clean/error/warning exit codes, --no-color, --verbose, file args)
 - `t/static/00_extractor.t` — PPI-based type extraction
 - `t/static/01_analyzer.t` — Static analysis pipeline
 - `t/static/02_infer.t` — Static type inference (including anonymous sub inference)

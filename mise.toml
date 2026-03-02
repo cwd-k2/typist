@@ -1,3 +1,7 @@
+[tasks.check]
+description = "Run typist-check static analysis"
+run = "carton exec -- perl bin/typist-check"
+
 [tasks.deps]
 description = "Install dependencies"
 run = "carton install"
