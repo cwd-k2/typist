@@ -3,6 +3,8 @@ use v5.40;
 
 our $VERSION = '0.01';
 
+use Scalar::Util 'refaddr';
+use Typist::Static::Extractor;
 use Typist::Static::Infer;
 use Typist::Static::Unify;
 use Typist::Parser;
@@ -29,6 +31,7 @@ sub loop_var_types ($self) { $self->{_loop_var_types} }
 
 sub analyze ($self) {
     $self->{env} = $self->_build_env;
+    $self->{_fn_env_cache} = +{};
     $self->_collect_loop_var_types;
     $self->_check_variable_initializers;
     $self->_check_assignments;
@@ -693,6 +696,11 @@ sub _env_for_node ($self, $node) {
     my $ancestor = $node->parent;
     while ($ancestor) {
         if ($ancestor->isa('PPI::Structure::Block')) {
+            my $addr = refaddr($ancestor);
+            if (exists $self->{_fn_env_cache}{$addr}) {
+                $env = $self->{_fn_env_cache}{$addr};
+                last;
+            }
             # Check if this block belongs to a known function
             my $sub_stmt = $ancestor->parent;
             if ($sub_stmt && $sub_stmt->isa('PPI::Statement::Sub')) {
@@ -701,6 +709,7 @@ sub _env_for_node ($self, $node) {
                     my $fn = $self->{extracted}{functions}{$fn_name};
                     if ($fn->{block} && $fn->{block} == $ancestor) {
                         $env = $self->_fn_env($fn);
+                        $self->{_fn_env_cache}{$addr} = $env;
                         last;
                     }
                 }
@@ -787,41 +796,13 @@ sub _inject_loop_vars ($self, $env, $node) {
         my $compound = $ancestor->parent;
         next unless $compound && $compound->isa('PPI::Statement::Compound');
 
-        my @children = $compound->schildren;
-        next unless @children >= 4;
-
-        my $i = 0;
-        next unless $children[$i]->isa('PPI::Token::Word')
-                 && ($children[$i]->content eq 'for' || $children[$i]->content eq 'foreach');
-        $i++;
-        next unless $children[$i]->isa('PPI::Token::Word')
-                 && $children[$i]->content eq 'my';
-        $i++;
-        next unless $children[$i]->isa('PPI::Token::Symbol');
-        my $var_sym = $children[$i];
-        $i++;
-
-        # Find the List and verify this is the correct Block
-        my $list;
-        for my $j ($i .. $#children) {
-            if ($children[$j]->isa('PPI::Structure::List') && !$list) {
-                $list = $children[$j];
-            }
-            last if $children[$j]->isa('PPI::Structure::Block');
-        }
-        next unless $list;
+        my $parsed = Typist::Static::Extractor->parse_loop_compound($compound)
+            // next;
 
         # Verify the block matches the ancestor
-        my $block;
-        for my $j ($i .. $#children) {
-            if ($children[$j]->isa('PPI::Structure::Block')) {
-                $block = $children[$j];
-                last;
-            }
-        }
-        next unless $block && $block == $ancestor;
+        next unless $parsed->{block} == $ancestor;
 
-        unshift @loop_vars, +{ var_sym => $var_sym, list => $list, block => $block };
+        unshift @loop_vars, $parsed;
     }
 
     return $env unless @loop_vars;

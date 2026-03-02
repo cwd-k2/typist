@@ -326,10 +326,11 @@ sub _instantiate_check ($quant, $target, $registry) {
         my @tp = $target->params;
         return undef unless @bp == @tp;
 
+        require Typist::Static::Unify;
         for my $i (0 .. $#bp) {
-            _collect_bindings($bp[$i], $tp[$i], \%bindings) or return undef;
+            Typist::Static::Unify->collect_bindings($bp[$i], $tp[$i], \%bindings) or return undef;
         }
-        _collect_bindings($body->returns, $target->returns, \%bindings) or return undef;
+        Typist::Static::Unify->collect_bindings($body->returns, $target->returns, \%bindings) or return undef;
 
         # Verify bounds
         for my $v ($quant->vars) {
@@ -344,39 +345,6 @@ sub _instantiate_check ($quant, $target, $registry) {
     }
 
     undef;
-}
-
-# Collect type variable bindings by structural matching.
-sub _collect_bindings ($formal, $actual, $bindings) {
-    if ($formal->is_var) {
-        my $name = $formal->name;
-        if (exists $bindings->{$name}) {
-            return $bindings->{$name}->equals($actual) ? 1 : 0;
-        }
-        $bindings->{$name} = $actual;
-        return 1;
-    }
-    if ($formal->is_func && $actual->is_func) {
-        my @fp = $formal->params;
-        my @ap = $actual->params;
-        return 0 unless @fp == @ap;
-        for my $i (0 .. $#fp) {
-            _collect_bindings($fp[$i], $ap[$i], $bindings) or return 0;
-        }
-        return _collect_bindings($formal->returns, $actual->returns, $bindings);
-    }
-    if ($formal->is_param && $actual->is_param) {
-        return 0 unless $formal->base eq $actual->base;
-        my @fp = $formal->params;
-        my @ap = $actual->params;
-        return 0 unless @fp == @ap;
-        for my $i (0 .. $#fp) {
-            _collect_bindings($fp[$i], $ap[$i], $bindings) or return 0;
-        }
-        return 1;
-    }
-    # Non-variable leaf: must be structurally equal
-    $formal->equals($actual) ? 1 : 0;
 }
 
 sub _atom_subtype ($sub_name, $super_name) {

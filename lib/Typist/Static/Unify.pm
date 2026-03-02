@@ -122,6 +122,43 @@ sub unify ($class, $formal, $actual, $bindings = +{}, %opts) {
     undef;
 }
 
+# ── Binding Collection ──────────────────────────
+#
+# Recursively collect type variable bindings by structural matching.
+# Returns 1 on success, 0 on conflict. Populates $bindings hashref.
+
+sub collect_bindings ($class, $formal, $actual, $bindings) {
+    if ($formal->is_var) {
+        my $name = $formal->name;
+        if (exists $bindings->{$name}) {
+            return $bindings->{$name}->equals($actual) ? 1 : 0;
+        }
+        $bindings->{$name} = $actual;
+        return 1;
+    }
+    if ($formal->is_func && $actual->is_func) {
+        my @fp = $formal->params;
+        my @ap = $actual->params;
+        return 0 unless @fp == @ap;
+        for my $i (0 .. $#fp) {
+            $class->collect_bindings($fp[$i], $ap[$i], $bindings) or return 0;
+        }
+        return $class->collect_bindings($formal->returns, $actual->returns, $bindings);
+    }
+    if ($formal->is_param && $actual->is_param) {
+        return 0 unless $formal->base eq $actual->base;
+        my @fp = $formal->params;
+        my @ap = $actual->params;
+        return 0 unless @fp == @ap;
+        for my $i (0 .. $#fp) {
+            $class->collect_bindings($fp[$i], $ap[$i], $bindings) or return 0;
+        }
+        return 1;
+    }
+    # Non-variable leaf: must be structurally equal
+    $formal->equals($actual) ? 1 : 0;
+}
+
 # ── Substitution ────────────────────────────────
 #
 # Replace type variables with their bindings.

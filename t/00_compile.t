@@ -46,6 +46,15 @@ my @modules = qw(
     Typist::LSP::Hover
     Typist::LSP::Completion
     Typist::LSP::CodeAction
+    Typist::LSP::Logger
+    Typist::LSP::SemanticTokens
+    Typist::Prelude
+    Typist::Static::Registration
+    Typist::Static::Unify
+    Typist::Struct::Base
+    Typist::Type::Fold
+    Typist::Type::Quantified
+    Typist::Type::Struct
 );
 
 for my $mod (@modules) {

@@ -15,8 +15,9 @@ Static::Analyzer (CHECK)     Inference.pm                   LSP::Workspace
 Static::TypeChecker          Handler (Effect::op/handle)    LSP::Hover
 Static::EffectChecker                                       LSP::Completion
 Static::Extractor                                           LSP::Transport
-Static::Infer
-Static::Unify
+Static::Infer                                               LSP::CodeAction
+Static::Unify                                               LSP::SemanticTokens
+                                                            LSP::Logger
 
 Shared Infrastructure
 ──────────────────────────
@@ -153,6 +154,7 @@ Tests are numbered and ordered by dependency:
 - `t/static/09_builtins_infer.t` — Typist builtin inference (handle/match return types, unwrap CORE registration)
 - `t/static/10_rank2.t` — Rank-2 polymorphism static analysis
 - `t/static/11_struct.t` — Struct static analysis (extraction, registration, inference)
+- `t/static/12_loop_inference.t` — Loop variable inference (for-loop extraction, iterable element types)
 - `t/lsp/00_transport.t` — JSON-RPC transport
 - `t/lsp/01_server.t` — LSP server lifecycle
 - `t/lsp/02_diagnostics.t` — Diagnostics publishing

@@ -67,30 +67,6 @@ sub _make_suggestion_action ($class, $diag, $suggestion, $doc) {
     };
 }
 
-# ── Annotation Suggestion Actions ───────────────
-
-# Suggest type annotations for partially annotated functions.
-sub suggest_annotations ($class, $doc, $registry) {
-    my $result = $doc->{result} // return [];
-    my $extracted = $result->{extracted} // return [];
-
-    my @actions;
-    my $functions = $extracted->{functions} // +{};
-
-    for my $name (sort keys %$functions) {
-        my $fn = $functions->{$name};
-        next if $fn->{returns_expr};  # already has return annotation
-        next if $fn->{unannotated};   # completely unannotated — intentional
-
-        push @actions, +{
-            title => "Add type annotation to $name()",
-            kind  => 'quickfix',
-        };
-    }
-
-    \@actions;
-}
-
 # ── Internal Helpers ────────────────────────────
 
 # Strip internal data field before sending diagnostic references back.
@@ -143,13 +119,6 @@ Generate code actions for the given diagnostics. Currently supports:
 =back
 
 Returns an arrayref of LSP CodeAction objects with C<kind =E<gt> 'quickfix'>.
-
-=head2 suggest_annotations
-
-    my $actions = Typist::LSP::CodeAction->suggest_annotations($doc, $registry);
-
-Suggest type annotations for partially annotated functions that lack
-a return type. Returns an arrayref of code action objects.
 
 =head1 SEE ALSO
 

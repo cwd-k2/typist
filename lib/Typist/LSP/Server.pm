@@ -48,6 +48,10 @@ sub new ($class, %args) {
     }, $class;
 }
 
+# ── Accessors ────────────────────────────────────
+
+sub _ws_registry ($self) { $self->{workspace} && $self->{workspace}->registry }
+
 # ── Main Loop ────────────────────────────────────
 
 sub run ($self) {
@@ -234,7 +238,7 @@ sub _handle_hover ($self, $params) {
     my $col  = $pos->{character};
 
     # Ensure document is analyzed
-    $doc->analyze(workspace_registry => $self->{workspace} && $self->{workspace}->registry);
+    $doc->analyze(workspace_registry => $self->_ws_registry);
 
     my $sym = $doc->symbol_at($line, $col);
     Typist::LSP::Hover->hover($sym);
@@ -260,9 +264,9 @@ sub _handle_completion ($self, $params) {
 
     # Code completion context (type-aware)
     if (my $code_ctx = $doc->code_completion_at($line, $col)) {
-        $doc->analyze(workspace_registry => $self->{workspace} && $self->{workspace}->registry)
-            unless $doc->{result};
-        my $registry = $self->{workspace} ? $self->{workspace}->registry : undef;
+        $doc->analyze(workspace_registry => $self->_ws_registry)
+            unless $doc->result;
+        my $registry = $self->_ws_registry;
         my $items = Typist::LSP::Completion->complete_code($code_ctx, $doc, $registry);
         return +{ isIncomplete => \0, items => $items } if @$items;
     }
@@ -285,7 +289,7 @@ sub _handle_inlay_hint ($self, $params) {
     my $doc   = $self->{documents}{$uri} // return [];
     my $range = $params->{range};
 
-    $doc->analyze(workspace_registry => $self->{workspace} && $self->{workspace}->registry);
+    $doc->analyze(workspace_registry => $self->_ws_registry);
 
     my $start = $range->{start}{line};
     my $end   = $range->{end}{line};
@@ -299,7 +303,7 @@ sub _handle_semantic_tokens ($self, $params) {
     my $uri = $params->{textDocument}{uri};
     my $doc = $self->{documents}{$uri} // return +{ data => [] };
 
-    $doc->analyze(workspace_registry => $self->{workspace} && $self->{workspace}->registry);
+    $doc->analyze(workspace_registry => $self->_ws_registry);
 
     Typist::LSP::SemanticTokens->compute($doc);
 }
@@ -313,15 +317,15 @@ sub _handle_signature_help ($self, $params) {
     my $line = $pos->{line};
     my $col  = $pos->{character};
 
-    $doc->analyze(workspace_registry => $self->{workspace} && $self->{workspace}->registry);
+    $doc->analyze(workspace_registry => $self->_ws_registry);
 
     my $ctx = $doc->signature_context($line, $col) // return undef;
     my $sym = $doc->find_function_symbol($ctx->{name});
 
     # Fallback: search workspace registry for imported/cross-package functions
-    if (!$sym && $self->{workspace}) {
-        my $reg = $self->{workspace}->registry;
-        my $sig = $reg->search_function_by_name($ctx->{name});
+    if (!$sym) {
+        my $reg = $self->_ws_registry;
+        my $sig = $reg && $reg->search_function_by_name($ctx->{name});
         if ($sig) {
             $sym = Typist::LSP::Document::_synthesize_function_symbol($ctx->{name}, $sig);
         }
@@ -359,7 +363,7 @@ sub _handle_definition ($self, $params) {
     my $line = $pos->{line};
     my $col  = $pos->{character};
 
-    $doc->analyze(workspace_registry => $self->{workspace} && $self->{workspace}->registry);
+    $doc->analyze(workspace_registry => $self->_ws_registry);
 
     # Try same-file definition first
     if (my $def = $doc->definition_at($line, $col)) {
@@ -398,7 +402,7 @@ sub _handle_document_symbol ($self, $params) {
     my $uri = $params->{textDocument}{uri};
     my $doc = $self->{documents}{$uri} // return [];
 
-    $doc->analyze(workspace_registry => $self->{workspace} && $self->{workspace}->registry);
+    $doc->analyze(workspace_registry => $self->_ws_registry);
     $doc->document_symbols;
 }
 
@@ -469,7 +473,7 @@ sub _handle_code_action ($self, $params) {
 
     my $diagnostics = $context->{diagnostics} // [];
 
-    my $registry = $self->{workspace} && $self->{workspace}->registry;
+    my $registry = $self->_ws_registry;
     Typist::LSP::CodeAction->actions_for_diagnostics($diagnostics, $doc, $registry);
 }
 
@@ -478,7 +482,7 @@ sub _handle_code_action ($self, $params) {
 sub _publish_diagnostics ($self, $doc) {
     my $result = eval {
         $doc->analyze(
-            workspace_registry => $self->{workspace} && $self->{workspace}->registry,
+            workspace_registry => $self->_ws_registry,
         );
     };
     if ($@) {
@@ -553,12 +557,7 @@ sub _lsp_severity ($internal) {
 
 # ── URI Utilities ───────────────────────────────
 
-# Convert file:// URI to filesystem path with percent-decoding.
-sub _uri_to_path ($uri) {
-    $uri =~ s{^file://}{};
-    $uri =~ s/%([0-9A-Fa-f]{2})/chr(hex($1))/ge;
-    $uri;
-}
+sub _uri_to_path ($uri) { Typist::LSP::Transport::uri_to_path($uri) }
 
 1;
 

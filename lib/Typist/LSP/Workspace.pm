@@ -5,6 +5,7 @@ our $VERSION = '0.01';
 
 use File::Find;
 use Typist::Registry;
+use Typist::LSP::Document;
 use Typist::Static::Extractor;
 use Typist::Static::Registration;
 use Typist::Prelude;
@@ -74,13 +75,15 @@ sub _index_file ($self, $path) {
 # ── Incremental Update ──────────────────────────
 
 sub update_file ($self, $path, $source) {
-    if (exists $self->{files}{$path}) {
-        delete $self->{files}{$path};
-        $self->_rebuild_registry;
-    }
+    my $old_info = $self->{files}{$path};
 
     my $extracted = eval { Typist::Static::Extractor->extract($source) };
     return if $@;
+
+    # Differential update: unregister old, register new
+    if ($old_info) {
+        $self->_unregister_file_types($old_info);
+    }
 
     $self->{files}{$path} = +{
         aliases     => $extracted->{aliases},
@@ -95,6 +98,64 @@ sub update_file ($self, $path, $source) {
     };
 
     $self->_register_file_types($extracted);
+}
+
+sub _unregister_file_types ($self, $old_info) {
+    my $reg = $self->{registry};
+    my $pkg = $old_info->{package} // 'main';
+
+    # Unregister functions
+    for my $name (keys(($old_info->{functions} // +{})->%*)) {
+        my $fn = $old_info->{functions}{$name};
+        if ($fn->{is_method}) {
+            # Methods are in the method store — skip for now (method unregister not yet needed)
+        } else {
+            $reg->unregister_function($pkg, $name);
+        }
+    }
+
+    # Unregister newtype constructors
+    for my $name (keys(($old_info->{newtypes} // +{})->%*)) {
+        $reg->unregister_function($pkg, $name);
+    }
+
+    # Unregister datatype constructors
+    for my $dt_name (keys(($old_info->{datatypes} // +{})->%*)) {
+        my $dt = $old_info->{datatypes}{$dt_name};
+        for my $tag (keys(($dt->{variants} // +{})->%*)) {
+            $reg->unregister_function($pkg, $tag);
+        }
+    }
+
+    # Unregister struct constructors
+    for my $name (keys(($old_info->{structs} // +{})->%*)) {
+        $reg->unregister_function($pkg, $name);
+    }
+
+    # Unregister effect operations
+    for my $eff_name (keys(($old_info->{effects} // +{})->%*)) {
+        my $eff = $old_info->{effects}{$eff_name};
+        for my $op_name (keys(($eff->{operations} // +{})->%*)) {
+            $reg->unregister_function($eff_name, $op_name);
+        }
+    }
+
+    # Unregister typeclass methods
+    for my $tc_name (keys(($old_info->{typeclasses} // +{})->%*)) {
+        my $tc = $old_info->{typeclasses}{$tc_name};
+        for my $method_name (keys(($tc->{methods} // +{})->%*)) {
+            $reg->unregister_function($tc_name, $method_name);
+        }
+    }
+
+    # Unregister declare entries
+    for my $name (keys(($old_info->{declares} // +{})->%*)) {
+        my $decl = $old_info->{declares}{$name};
+        $reg->unregister_function($decl->{package}, $decl->{func_name});
+    }
+
+    # Clear resolved cache since aliases/types may have changed
+    $reg->{resolved} = +{};
 }
 
 sub _register_file_types ($self, $extracted) {
@@ -216,29 +277,8 @@ sub find_all_references ($self, $name, $open_documents = +{}) {
 
         my $content = eval { _read_file($path) } // next;
         my @lines = split /\n/, $content, -1;
-
-        for my $i (0 .. $#lines) {
-            my $text = $lines[$i];
-            my $offset = 0;
-            while ((my $pos = index($text, $name, $offset)) >= 0) {
-                my $before = $pos > 0 ? substr($text, $pos - 1, 1) : '';
-                my $after_pos = $pos + length($name);
-                my $after = $after_pos < length($text) ? substr($text, $after_pos, 1) : '';
-
-                my $is_boundary = ($before eq '' || $before =~ /[^a-zA-Z0-9_]/)
-                               && ($after  eq '' || $after  =~ /[^a-zA-Z0-9_]/);
-
-                if ($is_boundary) {
-                    push @all_refs, +{
-                        uri  => $uri,
-                        line => $i,
-                        col  => $pos,
-                        len  => length($name),
-                    };
-                }
-                $offset = $pos + 1;
-            }
-        }
+        my $hits = Typist::LSP::Document->_find_word_occurrences(\@lines, $name);
+        push @all_refs, map { +{ %$_, uri => $uri } } @$hits;
     }
 
     \@all_refs;

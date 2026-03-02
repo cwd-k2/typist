@@ -28,14 +28,25 @@ my %DSL_CONSTRUCTORS = (
     (map { $_ => \&_parse_dsl_param } qw(ArrayRef HashRef Maybe Tuple Ref CodeRef)),
 );
 
+# ── Parse Cache ──────────────────────────────────
+
+my %_PARSE_CACHE;
+my %_ANNOTATION_CACHE;
+my $_CACHE_LIMIT = 1000;
+
 # ── Public API ────────────────────────────────────
 
 sub parse ($class, $expr) {
+    if (my $cached = $_PARSE_CACHE{$expr}) { return $cached }
+
     my @tokens = _tokenize($expr);
     my $pos    = 0;
     my $result = _parse_union(\@tokens, \$pos);
     die "Typist::Parser: unexpected token '$tokens[$pos]' at position $pos in '$expr'"
         if $pos < @tokens;
+
+    %_PARSE_CACHE = () if keys %_PARSE_CACHE > $_CACHE_LIMIT;
+    $_PARSE_CACHE{$expr} = $result;
     $result;
 }
 
@@ -536,6 +547,8 @@ sub parse_row ($class, $expr) {
 #   "<T: Num>(T, T) -> T"              → { generics_raw => ["T: Num"], type => Func }
 #   "<T, r: Row>(T) -> Str ! Console | r"
 sub parse_annotation ($class, $input) {
+    if (my $cached = $_ANNOTATION_CACHE{$input}) { return $cached }
+
     my @generics_raw;
     my $trimmed = $input;
     $trimmed =~ s/\A\s+//;
@@ -592,7 +605,10 @@ sub parse_annotation ($class, $input) {
     die "Typist::Parser: unexpected token '$tokens[$pos]' in annotation '$input'"
         if $pos < @tokens;
 
-    +{ generics_raw => \@generics_raw, type => $type };
+    my $result = +{ generics_raw => \@generics_raw, type => $type };
+    %_ANNOTATION_CACHE = () if keys %_ANNOTATION_CACHE > $_CACHE_LIMIT;
+    $_ANNOTATION_CACHE{$input} = $result;
+    $result;
 }
 
 # Split generic declaration string on commas, respecting <> and () nesting.

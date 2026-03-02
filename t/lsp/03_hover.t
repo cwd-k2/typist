@@ -1012,4 +1012,34 @@ subtest '_format_field unit test' => sub {
     like $opt_hover->{contents}{value}, qr/\(User\) email\?: Str/, 'optional field format with ?';
 };
 
+# ── Hover includes word range ─────────────────────
+
+subtest 'hover response includes range for highlighted word' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+add(1, 2);
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 1, character => 5 },  # on 'add' definition
+        }),
+    ));
+
+    my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $hover, 'got hover response';
+    ok $hover->{result}, 'hover has result';
+    my $range = $hover->{result}{range};
+    ok $range, 'hover result includes range';
+    is $range->{start}{line}, 1, 'range start line';
+    is $range->{start}{character}, 4, 'range start character (s-u-b-space-a)';
+    is $range->{end}{line}, 1, 'range end line';
+    is $range->{end}{character}, 7, 'range end character (add = 3 chars)';
+};
+
 done_testing;

@@ -80,6 +80,37 @@ PERL
     ok !$resp->{result}, 'result is null outside function call';
 };
 
+# ── Signature help on multi-line call ─────────────
+
+subtest 'signatureHelp works across multiple lines' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub greet :Type((Str, Int, Str) -> Str) ($name, $age, $city) { "$name ($age) from $city" }
+greet(
+    "Alice",
+    30,
+
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/signatureHelp', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 5, character => 4 },  # blank line after '30,' — waiting for 3rd arg
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got signatureHelp response';
+    ok $resp->{result}, 'has result for multi-line call';
+    my $sigs = $resp->{result}{signatures};
+    ok $sigs && @$sigs, 'has signatures';
+    like $sigs->[0]{label}, qr/greet\(Str, Int, Str\)/, 'label shows full signature';
+    is $resp->{result}{activeParameter}, 2, 'active parameter is 2 (third)';
+};
+
 # ── Signature help for cross-package constructor ──
 
 subtest 'signatureHelp resolves imported constructor via workspace' => sub {

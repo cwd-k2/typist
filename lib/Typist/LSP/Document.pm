@@ -5,25 +5,12 @@ our $VERSION = '0.01';
 
 use Typist::Static::Analyzer;
 use Typist::Parser;
+use Typist::Prelude;
+use Typist::LSP::Transport;
 
 # ── Perl Builtins ───────────────────────────────
 
-my %BUILTINS = map { $_ => 1 } qw(
-    say print printf sprintf warn die exit
-    chomp chop lc uc lcfirst ucfirst length substr index rindex
-    push pop shift unshift splice reverse sort
-    keys values each exists delete
-    map grep join split
-    open close read write seek tell eof binmode truncate
-    stat lstat rename unlink mkdir rmdir chdir chmod chown
-    defined ref tied tie untie bless
-    abs int sqrt rand srand hex oct
-    chr ord pack unpack
-    pos quotemeta
-    scalar wantarray caller
-    eval require
-    sleep time alarm
-);
+my %BUILTINS = map { $_ => 1 } Typist::Prelude->builtin_names;
 
 # ── Constructor ──────────────────────────────────
 
@@ -42,6 +29,7 @@ sub new ($class, %args) {
 sub uri     ($self) { $self->{uri} }
 sub content ($self) { $self->{content} }
 sub version ($self) { $self->{version} }
+sub result  ($self) { $self->{result} }
 
 sub update ($self, $content, $version) {
     $self->{content} = $content;
@@ -60,9 +48,7 @@ sub invalidate ($self) {
 sub analyze ($self, %opts) {
     return $self->{result} if $self->{result};
 
-    my $file = $self->{uri};
-    $file =~ s{^file://}{};
-    $file =~ s/%([0-9A-Fa-f]{2})/chr(hex($1))/ge;
+    my $file = Typist::LSP::Transport::uri_to_path($self->{uri});
 
     $self->{result} = Typist::Static::Analyzer->analyze(
         $self->{content},
@@ -78,6 +64,8 @@ sub analyze ($self, %opts) {
 sub _lines ($self) {
     $self->{lines} //= [split /\n/, $self->{content}, -1];
 }
+
+sub lines ($self) { $self->_lines }
 
 # ── Position Queries ─────────────────────────────
 
@@ -128,6 +116,48 @@ sub _word_at ($self, $line, $col) {
     $word;
 }
 
+# Like _word_at but also returns word boundaries as { word, start, end }.
+sub _word_range_at ($self, $line, $col) {
+    my $lines = $self->_lines;
+    return undef unless $line < @$lines;
+
+    my $text = $lines->[$line];
+    my $len  = length $text;
+    return undef unless $col < $len;
+
+    my $start = $col;
+    while ($start > 0) {
+        my $ch = substr($text, $start - 1, 1);
+        if ($ch =~ /[\w\$\@%]/) {
+            $start--;
+        } elsif ($ch eq ':' && $start >= 2 && substr($text, $start - 2, 1) eq ':') {
+            $start -= 2;
+        } else {
+            last;
+        }
+    }
+
+    my $end = $col;
+    while ($end < $len) {
+        my $ch = substr($text, $end, 1);
+        if ($ch =~ /\w/) {
+            $end++;
+        } elsif ($ch eq ':' && $end + 1 < $len && substr($text, $end + 1, 1) eq ':') {
+            $end += 2;
+        } else {
+            last;
+        }
+    }
+
+    return undef if $start == $end;
+
+    my $word = substr($text, $start, $end - $start);
+    return undef if $word =~ /^[\$\@%]$/;
+    return undef if $word eq '::';
+
+    +{ word => $word, start => $start, end => $end };
+}
+
 # Check if the cursor is on the function name part of a qualified name (Pkg::func).
 # Returns true if cursor ($col) is on or after the last :: separator.
 sub _cursor_on_func_part ($self, $line, $col, $word) {
@@ -164,136 +194,147 @@ sub symbol_at ($self, $line, $col) {
     my $symbols = $result->{symbols} // return undef;
 
     # Primary: match by word under cursor
-    if (my $word = $self->_word_at($line, $col)) {
-        # Accessor check: $var->field resolves struct field types
-        if (my $field_sym = $self->_resolve_accessor_hover($line, $col, $word)) {
-            return $field_sym;
-        }
+    my $wr = $self->_word_range_at($line, $col) // return undef;
+    my $word = $wr->{word};
+    my $range = +{
+        start => +{ line => $line, character => $wr->{start} },
+        end   => +{ line => $line, character => $wr->{end} },
+    };
 
-        my $sym = $self->_find_best_symbol($symbols, $word, $line);
-        return $sym if $sym;
+    # Helper to attach range to a symbol and return it
+    my $with_range = sub ($sym) {
+        $sym->{range} = $range;
+        $sym;
+    };
 
-        # Try without sigil (e.g. cursor on "foo" matches function "foo")
-        (my $bare = $word) =~ s/^[\$\@%]//;
-        if ($bare ne $word) {
-            my $sym = $self->_find_best_symbol($symbols, $bare, $line);
-            return $sym if $sym;
-        }
+    # Accessor check: $var->field resolves struct field types
+    if (my $field_sym = $self->_resolve_accessor_hover($line, $col, $word)) {
+        return $with_range->($field_sym);
+    }
 
-        # Fallback: synthesize symbol for Perl builtins
-        my $builtin_name = $bare // $word;
-        if ($BUILTINS{$builtin_name}) {
-            return +{
-                name         => $builtin_name,
-                kind         => 'function',
-                params_expr  => ['Any...'],
-                returns_expr => 'Any',
-                eff_expr     => 'Eff(*)',
-                builtin      => 1,
-            };
-        }
+    my $sym = $self->_find_best_symbol($symbols, $word, $line);
+    return $with_range->($sym) if $sym;
 
-        # Fallback: registry lookup for cross-package or constructor symbols
-        if (my $registry = $result->{registry}) {
-            my $lookup_name = $bare // $word;
+    # Try without sigil (e.g. cursor on "foo" matches function "foo")
+    (my $bare = $word) =~ s/^[\$\@%]//;
+    if ($bare ne $word) {
+        my $sym = $self->_find_best_symbol($symbols, $bare, $line);
+        return $with_range->($sym) if $sym;
+    }
 
-            if ($word =~ /::/) {
-                # Qualified name: Pkg::func — only show hover on function name part
-                return undef unless $self->_cursor_on_func_part($line, $col, $word);
+    # Fallback: synthesize symbol for Perl builtins
+    my $builtin_name = $bare // $word;
+    if ($BUILTINS{$builtin_name}) {
+        return $with_range->(+{
+            name         => $builtin_name,
+            kind         => 'function',
+            params_expr  => ['Any...'],
+            returns_expr => 'Any',
+            eff_expr     => 'Eff(*)',
+            builtin      => 1,
+        });
+    }
 
-                my ($pkg, $fname) = $word =~ /\A(.+)::(\w+)\z/;
-                if ($pkg && $fname) {
-                    if (my $sig = $registry->lookup_function($pkg, $fname)) {
-                        return _synthesize_function_symbol($fname, $sig);
-                    }
-                }
-            } else {
-                # Unqualified: try current package first
-                my $pkg = $result->{extracted}{package} // 'main';
-                if (my $sig = $registry->lookup_function($pkg, $lookup_name)) {
-                    return _synthesize_function_symbol($lookup_name, $sig);
-                }
+    # Fallback: registry lookup for cross-package or constructor symbols
+    if (my $registry = $result->{registry}) {
+        my $lookup_name = $bare // $word;
 
-                # Then search all packages (Exporter-imported constructors, etc.)
-                if (my $sig = $registry->search_function_by_name($lookup_name)) {
-                    return _synthesize_function_symbol($lookup_name, $sig);
+        if ($word =~ /::/) {
+            # Qualified name: Pkg::func — only show hover on function name part
+            return undef unless $self->_cursor_on_func_part($line, $col, $word);
+
+            my ($pkg, $fname) = $word =~ /\A(.+)::(\w+)\z/;
+            if ($pkg && $fname) {
+                if (my $sig = $registry->lookup_function($pkg, $fname)) {
+                    return $with_range->(_synthesize_function_symbol($fname, $sig));
                 }
             }
+        } else {
+            # Unqualified: try current package first
+            my $pkg = $result->{extracted}{package} // 'main';
+            if (my $sig = $registry->lookup_function($pkg, $lookup_name)) {
+                return $with_range->(_synthesize_function_symbol($lookup_name, $sig));
+            }
 
-            # Type-level symbols: newtype, typedef, datatype, effect, typeclass
-            if (my $nt = $registry->lookup_newtype($lookup_name)) {
-                return +{
+            # Then search all packages (Exporter-imported constructors, etc.)
+            if (my $sig = $registry->search_function_by_name($lookup_name)) {
+                return $with_range->(_synthesize_function_symbol($lookup_name, $sig));
+            }
+        }
+
+        # Type-level symbols: newtype, typedef, datatype, effect, typeclass
+        if (my $nt = $registry->lookup_newtype($lookup_name)) {
+            return $with_range->(+{
+                name => $lookup_name,
+                kind => 'newtype',
+                type => $nt->inner->to_string,
+            });
+        }
+        if ($registry->has_alias($lookup_name)) {
+            my $resolved = eval { $registry->lookup_type($lookup_name) };
+            if ($resolved && !$resolved->is_alias) {
+                return $with_range->(+{
                     name => $lookup_name,
-                    kind => 'newtype',
-                    type => $nt->inner->to_string,
-                };
+                    kind => 'typedef',
+                    type => $resolved->to_string,
+                });
             }
-            if ($registry->has_alias($lookup_name)) {
-                my $resolved = eval { $registry->lookup_type($lookup_name) };
-                if ($resolved && !$resolved->is_alias) {
-                    return +{
-                        name => $lookup_name,
-                        kind => 'typedef',
-                        type => $resolved->to_string,
-                    };
+        }
+        if (my $dt = $registry->lookup_datatype($lookup_name)) {
+            return $with_range->(+{
+                name => $lookup_name,
+                kind => 'datatype',
+                type => $dt->to_string,
+            });
+        }
+        if (my $st = $registry->lookup_struct($lookup_name)) {
+            my @field_descs;
+            my %req = $st->record->required_fields;
+            my %opt = $st->record->optional_fields;
+            for my $f (sort keys %req) {
+                push @field_descs, "$f: " . $req{$f}->to_string;
+            }
+            for my $f (sort keys %opt) {
+                push @field_descs, "$f?: " . $opt{$f}->to_string;
+            }
+            return $with_range->(+{
+                name   => $lookup_name,
+                kind   => 'struct',
+                fields => \@field_descs,
+            });
+        }
+        if (my $eff = $registry->lookup_effect($lookup_name)) {
+            my @op_names;
+            my %operations;
+            for my $op_name (sort keys %{$eff->ops // +{}}) {
+                push @op_names, $op_name;
+                my $op_type = $eff->get_op_type($op_name);
+                $operations{$op_name} = $op_type ? $op_type->to_string : $eff->ops->{$op_name};
+            }
+            return $with_range->(+{
+                name       => $lookup_name,
+                kind       => 'effect',
+                op_names   => \@op_names,
+                operations => \%operations,
+            });
+        }
+        if ($registry->has_typeclass($lookup_name)) {
+            my $tc = $registry->lookup_typeclass($lookup_name);
+            my @method_names;
+            my %methods;
+            if ($tc) {
+                @method_names = sort keys %{$tc->methods // +{}};
+                for my $m (@method_names) {
+                    $methods{$m} = $tc->methods->{$m};
                 }
             }
-            if (my $dt = $registry->lookup_datatype($lookup_name)) {
-                return +{
-                    name => $lookup_name,
-                    kind => 'datatype',
-                    type => $dt->to_string,
-                };
-            }
-            if (my $st = $registry->lookup_struct($lookup_name)) {
-                my @field_descs;
-                my %req = $st->record->required_fields;
-                my %opt = $st->record->optional_fields;
-                for my $f (sort keys %req) {
-                    push @field_descs, "$f: " . $req{$f}->to_string;
-                }
-                for my $f (sort keys %opt) {
-                    push @field_descs, "$f?: " . $opt{$f}->to_string;
-                }
-                return +{
-                    name   => $lookup_name,
-                    kind   => 'struct',
-                    fields => \@field_descs,
-                };
-            }
-            if (my $eff = $registry->lookup_effect($lookup_name)) {
-                my @op_names;
-                my %operations;
-                for my $op_name (sort keys %{$eff->ops // +{}}) {
-                    push @op_names, $op_name;
-                    my $op_type = $eff->get_op_type($op_name);
-                    $operations{$op_name} = $op_type ? $op_type->to_string : $eff->ops->{$op_name};
-                }
-                return +{
-                    name       => $lookup_name,
-                    kind       => 'effect',
-                    op_names   => \@op_names,
-                    operations => \%operations,
-                };
-            }
-            if ($registry->has_typeclass($lookup_name)) {
-                my $tc = $registry->lookup_typeclass($lookup_name);
-                my @method_names;
-                my %methods;
-                if ($tc) {
-                    @method_names = sort keys %{$tc->methods // +{}};
-                    for my $m (@method_names) {
-                        $methods{$m} = $tc->methods->{$m};
-                    }
-                }
-                return +{
-                    name         => $lookup_name,
-                    kind         => 'typeclass',
-                    var_spec     => $tc ? $tc->var_name : undef,
-                    method_names => \@method_names,
-                    methods      => \%methods,
-                };
-            }
+            return $with_range->(+{
+                name         => $lookup_name,
+                kind         => 'typeclass',
+                var_spec     => $tc ? $tc->var_name : undef,
+                method_names => \@method_names,
+                methods      => \%methods,
+            });
         }
     }
 
@@ -376,36 +417,37 @@ sub find_function_symbol ($self, $name) {
 
 # ── Find References ─────────────────────────────
 
-# Find all occurrences of $name in this document (word-boundary matching).
-# Returns arrayref of +{ uri, line, col, len }.
-sub find_references ($self, $name) {
-    my $lines = $self->_lines;
-    my @refs;
+# Find all word-boundary occurrences of $name in the given lines.
+# Returns arrayref of +{ line, col, len } (no uri — caller provides).
+sub _find_word_occurrences ($class_or_self, $lines, $name) {
+    my @hits;
+    my $name_len = length($name);
 
     for my $i (0 .. $#$lines) {
         my $text = $lines->[$i];
         my $offset = 0;
         while ((my $pos = index($text, $name, $offset)) >= 0) {
             my $before = $pos > 0 ? substr($text, $pos - 1, 1) : '';
-            my $after_pos = $pos + length($name);
+            my $after_pos = $pos + $name_len;
             my $after = $after_pos < length($text) ? substr($text, $after_pos, 1) : '';
 
             my $is_boundary = ($before eq '' || $before =~ /[^a-zA-Z0-9_]/)
                            && ($after  eq '' || $after  =~ /[^a-zA-Z0-9_]/);
 
-            if ($is_boundary) {
-                push @refs, +{
-                    uri  => $self->{uri},
-                    line => $i,
-                    col  => $pos,
-                    len  => length($name),
-                };
-            }
+            push @hits, +{ line => $i, col => $pos, len => $name_len } if $is_boundary;
             $offset = $pos + 1;
         }
     }
 
-    \@refs;
+    \@hits;
+}
+
+# Find all occurrences of $name in this document (word-boundary matching).
+# Returns arrayref of +{ uri, line, col, len }.
+sub find_references ($self, $name) {
+    my $hits = $self->_find_word_occurrences($self->_lines, $name);
+    my $uri = $self->{uri};
+    [ map { +{ %$_, uri => $uri } } @$hits ];
 }
 
 # ── Inlay Hints ─────────────────────────────────
@@ -445,42 +487,44 @@ sub signature_context ($self, $line, $col) {
     my $lines = $self->_lines;
     return undef unless $line < @$lines;
 
-    my $text = substr($lines->[$line], 0, $col);
-
-    # Scan backwards for unmatched opening paren
+    # Scan backwards across lines (up to 20) for unmatched opening paren
     my $depth  = 0;
     my $commas = 0;
-    my $paren_pos;
+    my $max_lookback = 20;
 
-    for my $i (reverse 0 .. length($text) - 1) {
-        my $ch = substr($text, $i, 1);
-        if ($ch eq ')') {
-            $depth++;
-        }
-        elsif ($ch eq '(') {
-            if ($depth > 0) {
-                $depth--;
+    my $start_line = $line - $max_lookback < 0 ? 0 : $line - $max_lookback;
+    for my $scan_line (reverse($start_line .. $line)) {
+        next unless $scan_line < @$lines;
+        my $text = $scan_line == $line
+            ? substr($lines->[$scan_line], 0, $col)
+            : $lines->[$scan_line];
+
+        for my $i (reverse 0 .. length($text) - 1) {
+            my $ch = substr($text, $i, 1);
+            if ($ch eq ')') {
+                $depth++;
             }
-            else {
-                $paren_pos = $i;
-                last;
+            elsif ($ch eq '(') {
+                if ($depth > 0) {
+                    $depth--;
+                }
+                else {
+                    # Found unmatched opening paren
+                    my $before = substr($text, 0, $i);
+                    return undef unless $before =~ /(\w+)\s*\z/;
+                    return +{
+                        name             => $1,
+                        active_parameter => $commas,
+                    };
+                }
             }
-        }
-        elsif ($ch eq ',' && $depth == 0) {
-            $commas++;
+            elsif ($ch eq ',' && $depth == 0) {
+                $commas++;
+            }
         }
     }
 
-    return undef unless defined $paren_pos;
-
-    # Extract function name: the word immediately before the opening paren
-    my $before = substr($text, 0, $paren_pos);
-    return undef unless $before =~ /(\w+)\s*\z/;
-
-    +{
-        name             => $1,
-        active_parameter => $commas,
-    };
+    undef;
 }
 
 # ── Document Symbols ────────────────────────────

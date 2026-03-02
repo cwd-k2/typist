@@ -8,6 +8,14 @@ use Time::HiRes ();
 
 my $JSON = JSON::PP->new->utf8->canonical;
 
+# ── URI Utilities ───────────────────────────────
+
+sub uri_to_path ($uri) {
+    $uri =~ s{^file://}{};
+    $uri =~ s/%([0-9A-Fa-f]{2})/chr(hex($1))/ge;
+    $uri;
+}
+
 # ── Constructor ──────────────────────────────────
 
 sub new ($class, %args) {

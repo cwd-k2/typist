@@ -121,7 +121,7 @@ sub _complete_methods ($class, $context, $doc, $registry) {
     return [] unless $registry;
 
     # Find the current package from the document analysis
-    my $result = $doc->{result} // return [];
+    my $result = $doc->result // return [];
     my $pkg    = $result->{extracted}{package} // 'main';
 
     my @items;

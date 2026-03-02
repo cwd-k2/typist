@@ -9,6 +9,7 @@ use Typist::Type::Record;
 use Typist::Type::Literal;
 use Typist::Type::Union;
 use Typist::Subtype;
+use Typist::Static::Unify;
 
 # ── Public API ───────────────────────────────────
 
@@ -218,31 +219,12 @@ sub _maybe_instantiate_return ($sig, $env, $list_element) {
     my @params = @{$sig->{params}};
     for my $i (0 .. $#params) {
         last if $i > $#arg_types;
-        _collect_bindings($params[$i], $arg_types[$i], \%bindings);
+        Typist::Static::Unify->collect_bindings($params[$i], $arg_types[$i], \%bindings);
     }
     return $ret unless %bindings;
 
     # Substitute bindings into return type
     $ret->substitute(\%bindings);
-}
-
-# Recursively collect type variable bindings by matching formal vs actual types.
-sub _collect_bindings ($formal, $actual, $bindings) {
-    if ($formal->is_var) {
-        $bindings->{$formal->name} //= $actual;
-        return;
-    }
-    # Param[X] vs Param[Int] → recurse into type args
-    if ($formal->is_param && $actual->is_param
-        && $formal->base eq $actual->base)
-    {
-        my @fp = $formal->params;
-        my @ap = $actual->params;
-        for my $i (0 .. $#fp) {
-            last if $i > $#ap;
-            _collect_bindings($fp[$i], $ap[$i], $bindings);
-        }
-    }
 }
 
 # ── Block Return Type Inference ─────────────────

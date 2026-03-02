@@ -12,12 +12,16 @@ sub hover ($class, $symbol) {
     my $md = $class->_format($symbol);
     return undef unless $md;
 
-    +{
+    my $hover = +{
         contents => +{
             kind  => 'markdown',
             value => $md,
         },
     };
+
+    $hover->{range} = $symbol->{range} if $symbol->{range};
+
+    $hover;
 }
 
 # ── Formatting ───────────────────────────────────

@@ -42,9 +42,9 @@ sub legend ($class) {
 # Compute semantic tokens for an analyzed document.
 # Returns a hashref with a `data` key containing the delta-encoded integer array.
 sub compute ($class, $doc) {
-    my $result = $doc->{result} // return +{ data => [] };
+    my $result = $doc->result // return +{ data => [] };
     my $extracted = $result->{extracted} // return +{ data => [] };
-    my @lines = split /\n/, $doc->content, -1;
+    my @lines = $doc->lines->@*;
 
     my @tokens;
 

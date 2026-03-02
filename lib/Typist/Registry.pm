@@ -28,6 +28,7 @@ sub new ($class, %args) {
         datatypes   => +{},
         structs     => +{},
         effects     => +{},
+        name_index  => +{},
     }, $class;
 }
 
@@ -179,12 +180,24 @@ sub _unregister_variable ($invocant, $key) {
 
 sub register_function ($invocant, $pkg, $name, $sig) {
     my $self = _self($invocant);
-    $self->{functions}{"${pkg}::${name}"} = $sig;
+    my $fqn = "${pkg}::${name}";
+    $self->{functions}{$fqn} = $sig;
+    push @{$self->{name_index}{$name} //= []}, $fqn;
 }
 
 sub lookup_function ($invocant, $pkg, $name) {
     my $self = _self($invocant);
     $self->{functions}{"${pkg}::${name}"};
+}
+
+sub unregister_function ($invocant, $pkg, $name) {
+    my $self = _self($invocant);
+    my $fqn = "${pkg}::${name}";
+    delete $self->{functions}{$fqn};
+    if (my $entries = $self->{name_index}{$name}) {
+        @$entries = grep { $_ ne $fqn } @$entries;
+        delete $self->{name_index}{$name} unless @$entries;
+    }
 }
 
 sub all_functions ($invocant) {
@@ -193,16 +206,12 @@ sub all_functions ($invocant) {
 }
 
 # Search all packages for a function matching a bare name.
-# Returns ($sig) or undef.
+# Returns ($sig) or undef.  Uses name_index for O(1) lookup.
 sub search_function_by_name ($invocant, $name) {
     my $self = _self($invocant);
-    my $suffix = "::${name}";
-    for my $fqn (keys $self->{functions}->%*) {
-        if (substr($fqn, -length($suffix)) eq $suffix) {
-            return $self->{functions}{$fqn};
-        }
-    }
-    undef;
+    my $entries = $self->{name_index}{$name} // return undef;
+    return undef unless @$entries;
+    $self->{functions}{$entries->[0]};
 }
 
 # ── Method Tracking ─────────────────────────────
@@ -297,7 +306,11 @@ sub merge ($self, $other) {
         $self->{aliases}{$name} //= $other->{aliases}{$name};
     }
     for my $fqn (keys $other->{functions}->%*) {
-        $self->{functions}{$fqn} //= $other->{functions}{$fqn};
+        unless (exists $self->{functions}{$fqn}) {
+            $self->{functions}{$fqn} = $other->{functions}{$fqn};
+            my ($name) = $fqn =~ /::(\w+)\z/;
+            push @{$self->{name_index}{$name} //= []}, $fqn if $name;
+        }
     }
     for my $fqn (keys $other->{methods}->%*) {
         $self->{methods}{$fqn} //= $other->{methods}{$fqn};
@@ -342,6 +355,7 @@ sub reset ($invocant) {
         $invocant->{typeclasses} = +{};
         $invocant->{instances}   = +{};
         $invocant->{effects}     = +{};
+        $invocant->{name_index}  = +{};
     } else {
         $DEFAULT = undef;
     }

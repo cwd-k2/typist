@@ -122,6 +122,8 @@ my @EFFECTS = qw(IO Exn);
 
 # ── Public API ───────────────────────────────────
 
+sub builtin_names ($class) { keys %BUILTINS }
+
 sub install ($class, $registry) {
     # Register standard effect labels
     for my $eff_name (@EFFECTS) {

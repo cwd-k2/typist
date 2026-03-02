@@ -5,24 +5,11 @@ our $VERSION = '0.01';
 
 use Typist::Type::Row;
 use Typist::Type::Eff;
+use Typist::Prelude;
 
 # ── Perl Builtins (unannotated → Eff(*)) ────────
 
-my %BUILTINS = map { $_ => 1 } qw(
-    say print printf sprintf warn die exit
-    chomp chop lc uc lcfirst ucfirst length substr index rindex
-    push pop shift unshift splice reverse sort
-    keys values each exists delete
-    map grep join split
-    open close read write seek tell eof binmode truncate
-    stat lstat rename unlink mkdir rmdir chdir chmod chown
-    defined ref tied tie untie bless
-    abs int sqrt rand srand hex oct
-    chr ord pack unpack
-    pos quotemeta
-    scalar wantarray caller
-    sleep time alarm
-);
+my %BUILTINS = map { $_ => 1 } Typist::Prelude->builtin_names;
 
 # PPI-based static effect checker.
 # Verifies that each function's body only calls functions whose effects
