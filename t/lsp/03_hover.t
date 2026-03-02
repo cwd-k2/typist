@@ -666,4 +666,194 @@ subtest 'hover shows declared as italic note' => sub {
     like $value, qr/```\n\n\*declared\*/, 'declared shown as italic note after code block';
 };
 
+# ── Hover on struct accessor ──────────────────────
+
+subtest 'hover shows struct field type for simple accessor' => sub {
+    require File::Temp;
+    require File::Path;
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib");
+
+    open my $fh, '>', "$dir/lib/Models.pm" or die;
+    print $fh <<'PERL';
+package Models;
+use v5.40;
+use Typist;
+struct Customer => (name => Str, tier => Str);
+1;
+PERL
+    close $fh;
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source = <<'PERL';
+package App;
+use v5.40;
+use Typist;
+use Models;
+sub show_tier :Type((Customer) -> Str) ($customer) {
+    $customer->tier;
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///app.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Hover on 'tier' at line 5: "    $customer->tier;"
+    #                              0123456789012345678
+    my $sym = $doc->symbol_at(5, 16);
+    ok $sym, 'found symbol for accessor';
+    is $sym->{kind}, 'field', 'kind is field';
+    is $sym->{name}, 'tier', 'field name is tier';
+    is $sym->{type}, 'Str', 'field type is Str';
+    is $sym->{struct_name}, 'Customer', 'struct name is Customer';
+    ok !$sym->{optional}, 'field is not optional';
+
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'hover response for accessor';
+    like $hover->{contents}{value}, qr/\(Customer\) tier: Str/, 'shows (Customer) tier: Str';
+};
+
+# ── Hover on chained accessor ────────────────────
+
+subtest 'hover shows struct field type for chained accessor' => sub {
+    require File::Temp;
+    require File::Path;
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib");
+
+    open my $fh, '>', "$dir/lib/Shop.pm" or die;
+    print $fh <<'PERL';
+package Shop;
+use v5.40;
+use Typist;
+struct Product => (name => Str, price => Int);
+struct Order   => (product => Product, quantity => Int);
+1;
+PERL
+    close $fh;
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source = <<'PERL';
+package App;
+use v5.40;
+use Typist;
+use Shop;
+sub product_name :Type((Order) -> Str) ($order) {
+    $order->product->name;
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///app.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Hover on 'name' at line 5: "    $order->product->name;"
+    #                              0123456789012345678901234
+    my $sym = $doc->symbol_at(5, 24);
+    ok $sym, 'found symbol for chained accessor';
+    is $sym->{kind}, 'field', 'kind is field';
+    is $sym->{name}, 'name', 'field name is name';
+    is $sym->{type}, 'Str', 'field type is Str';
+    is $sym->{struct_name}, 'Product', 'struct name is Product (from chain)';
+};
+
+# ── Hover on optional struct field accessor ──────
+
+subtest 'hover shows optional struct field type' => sub {
+    require File::Temp;
+    require File::Path;
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib");
+
+    open my $fh, '>', "$dir/lib/Contact.pm" or die;
+    print $fh <<'PERL';
+package Contact;
+use v5.40;
+use Typist;
+struct Customer => (name => Str, phone => optional(Str));
+1;
+PERL
+    close $fh;
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source = <<'PERL';
+package App;
+use v5.40;
+use Typist;
+use Contact;
+sub get_phone :Type((Customer) -> Str | Undef) ($c) {
+    $c->phone;
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///app.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Hover on 'phone' at line 5: "    $c->phone;"
+    #                               01234567890
+    my $sym = $doc->symbol_at(5, 8);
+    ok $sym, 'found symbol for optional accessor';
+    is $sym->{kind}, 'field', 'kind is field';
+    is $sym->{name}, 'phone', 'field name is phone';
+    ok $sym->{optional}, 'field is optional';
+
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'hover response for optional accessor';
+    like $hover->{contents}{value}, qr/\(Customer\) phone\?: Str/, 'shows (Customer) phone?: Str';
+};
+
+# ── _format_field unit test ──────────────────────
+
+subtest '_format_field unit test' => sub {
+    require Typist::LSP::Hover;
+
+    my $sym = +{
+        kind        => 'field',
+        name        => 'age',
+        type        => 'Int',
+        struct_name => 'Person',
+        optional    => 0,
+    };
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'hover response for field';
+    like $hover->{contents}{value}, qr/\(Person\) age: Int/, 'required field format';
+
+    my $opt_sym = +{
+        kind        => 'field',
+        name        => 'email',
+        type        => 'Str',
+        struct_name => 'User',
+        optional    => 1,
+    };
+    my $opt_hover = Typist::LSP::Hover->hover($opt_sym);
+    ok $opt_hover, 'hover response for optional field';
+    like $opt_hover->{contents}{value}, qr/\(User\) email\?: Str/, 'optional field format with ?';
+};
+
 done_testing;

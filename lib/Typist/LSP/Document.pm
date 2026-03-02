@@ -4,6 +4,7 @@ use v5.40;
 our $VERSION = '0.01';
 
 use Typist::Static::Analyzer;
+use Typist::Parser;
 
 # ── Perl Builtins ───────────────────────────────
 
@@ -164,6 +165,11 @@ sub symbol_at ($self, $line, $col) {
 
     # Primary: match by word under cursor
     if (my $word = $self->_word_at($line, $col)) {
+        # Accessor check: $var->field resolves struct field types
+        if (my $field_sym = $self->_resolve_accessor_hover($line, $col, $word)) {
+            return $field_sym;
+        }
+
         my $sym = $self->_find_best_symbol($symbols, $word, $line);
         return $sym if $sym;
 
@@ -583,6 +589,84 @@ sub _resolve_var_type ($self, $var_name) {
         next unless $kind eq 'variable' || $kind eq 'parameter';
         next unless ($sym->{name} // '') eq $var_name;
         return $sym->{type} if $sym->{type};
+    }
+    undef;
+}
+
+# Resolve struct field type for accessor hover ($var->field1->field2).
+# Returns a symbol hashref with kind => 'field' or undef.
+sub _resolve_accessor_hover ($self, $line, $col, $word) {
+    my $lines = $self->_lines;
+    return undef unless $line < @$lines;
+
+    my $result   = $self->{result} // return undef;
+    my $registry = $result->{registry} // return undef;
+
+    # Find the end of the word under cursor (skip past $col to end of \w chars)
+    my $full_line = $lines->[$line];
+    my $word_end = $col;
+    $word_end++ while $word_end < length($full_line) && substr($full_line, $word_end, 1) =~ /\w/;
+    my $text = substr($full_line, 0, $word_end);
+
+    # Match $var->field1->field2 pattern
+    return undef unless $text =~ /(\$\w+)((?:\s*->\s*\w+)+)\s*$/;
+    my ($var_name, $chain_str) = ($1, $2);
+
+    # Parse the chain into field names
+    my @chain = ($chain_str =~ /->\s*(\w+)/g);
+    return undef unless @chain;
+
+    # Last chain element must match the word under cursor
+    return undef unless $chain[-1] eq $word;
+
+    # Resolve the variable's type
+    my $type_str = $self->_resolve_var_type($var_name) // return undef;
+    my $type = eval { Typist::Parser->parse($type_str) } // return undef;
+
+    # Walk the accessor chain
+    for my $i (0 .. $#chain) {
+        my $field = $chain[$i];
+        my $struct = $self->_resolve_to_struct($type, $registry) // return undef;
+
+        my %req = $struct->required_fields;
+        my %opt = $struct->optional_fields;
+
+        if (exists $req{$field}) {
+            $type = $req{$field};
+            if ($i == $#chain) {
+                return +{
+                    kind        => 'field',
+                    name        => $field,
+                    type        => $type->to_string,
+                    struct_name => $struct->name,
+                    optional    => 0,
+                };
+            }
+        } elsif (exists $opt{$field}) {
+            $type = $opt{$field};
+            if ($i == $#chain) {
+                return +{
+                    kind        => 'field',
+                    name        => $field,
+                    type        => $type->to_string,
+                    struct_name => $struct->name,
+                    optional    => 1,
+                };
+            }
+        } else {
+            return undef;
+        }
+    }
+
+    undef;
+}
+
+# Resolve a type to a Struct via alias/registry lookup.
+sub _resolve_to_struct ($self, $type, $registry) {
+    return $type if $type->is_struct;
+    if ($type->is_alias) {
+        my $resolved = eval { $registry->lookup_type($type->alias_name) };
+        return $resolved if $resolved && $resolved->is_struct;
     }
     undef;
 }

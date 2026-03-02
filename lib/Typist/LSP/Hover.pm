@@ -36,6 +36,10 @@ sub _format ($class, $sym) {
         return $md;
     }
 
+    if ($kind eq 'field') {
+        return $class->_format_field($sym);
+    }
+
     if ($kind eq 'function') {
         return $class->_format_function($sym);
     }
@@ -107,6 +111,12 @@ sub _format_struct ($class, $sym) {
     }
     $body .= '}';
     _code($body);
+}
+
+sub _format_field ($class, $sym) {
+    my $opt  = $sym->{optional} ? '?' : '';
+    my $name = "$sym->{name}${opt}";
+    _code("($sym->{struct_name}) $name: $sym->{type}");
 }
 
 sub _format_datatype ($class, $sym) {
