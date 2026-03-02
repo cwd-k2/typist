@@ -376,6 +376,29 @@ sub _build_symbol_index ($extracted, $env = undef) {
         }
     }
 
+    # Structs
+    for my $name (sort keys(($extracted->{structs} // +{})->%*)) {
+        my $info = $extracted->{structs}{$name};
+        my $fields = $info->{fields} // +{};
+        my @opt_names = ($info->{optional_fields} // [])->@*;
+        my %opt_set = map { $_ => 1 } @opt_names;
+
+        my @field_descs;
+        for my $f (sort keys %$fields) {
+            my $desc = "$f: $fields->{$f}";
+            $desc .= ' (optional)' if $opt_set{$f};
+            push @field_descs, $desc;
+        }
+
+        push @symbols, +{
+            name   => $name,
+            kind   => 'struct',
+            fields => \@field_descs,
+            line   => $info->{line},
+            col    => $info->{col},
+        };
+    }
+
     # Typeclass method symbols
     for my $tc_name (sort keys $extracted->{typeclasses}->%*) {
         my $tc_info = $extracted->{typeclasses}{$tc_name};

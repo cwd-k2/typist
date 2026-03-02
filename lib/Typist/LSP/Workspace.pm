@@ -61,6 +61,7 @@ sub _index_file ($self, $path) {
         functions   => $extracted->{functions},
         newtypes    => $extracted->{newtypes},
         datatypes   => $extracted->{datatypes},
+        structs     => $extracted->{structs},
         effects     => $extracted->{effects},
         typeclasses => $extracted->{typeclasses},
         declares    => $extracted->{declares},
@@ -86,6 +87,7 @@ sub update_file ($self, $path, $source) {
         functions   => $extracted->{functions},
         newtypes    => $extracted->{newtypes},
         datatypes   => $extracted->{datatypes},
+        structs     => $extracted->{structs},
         effects     => $extracted->{effects},
         typeclasses => $extracted->{typeclasses},
         declares    => $extracted->{declares},
@@ -113,6 +115,7 @@ sub _rebuild_registry ($self) {
             functions   => $info->{functions}   // +{},
             newtypes    => $info->{newtypes}    // +{},
             datatypes   => $info->{datatypes}   // +{},
+            structs     => $info->{structs}     // +{},
             effects     => $info->{effects}     // +{},
             typeclasses => $info->{typeclasses} // +{},
             declares    => $info->{declares}    // +{},
@@ -127,7 +130,7 @@ sub find_definition ($self, $name) {
     for my $path (sort keys $self->{files}->%*) {
         my $info = $self->{files}{$path};
 
-        for my $section (qw(aliases newtypes datatypes effects typeclasses)) {
+        for my $section (qw(aliases newtypes datatypes structs effects typeclasses)) {
             my $entries = $info->{$section} // next;
             if (my $entry = $entries->{$name}) {
                 return +{
@@ -172,6 +175,7 @@ sub all_typedef_names ($self) {
         $seen{$_} = 1 for keys($info->{aliases}->%*);
         $seen{$_} = 1 for keys($info->{newtypes}->%*);
         $seen{$_} = 1 for keys(($info->{datatypes} // +{})->%*);
+        $seen{$_} = 1 for keys(($info->{structs} // +{})->%*);
     }
     sort keys %seen;
 }

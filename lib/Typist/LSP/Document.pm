@@ -207,6 +207,22 @@ sub symbol_at ($self, $line, $col) {
                     type => $dt->to_string,
                 };
             }
+            if (my $st = $registry->lookup_struct($lookup_name)) {
+                my @field_descs;
+                my %req = $st->record->required_fields;
+                my %opt = $st->record->optional_fields;
+                for my $f (sort keys %req) {
+                    push @field_descs, "$f: " . $req{$f}->to_string;
+                }
+                for my $f (sort keys %opt) {
+                    push @field_descs, "$f?: " . $opt{$f}->to_string;
+                }
+                return +{
+                    name   => $lookup_name,
+                    kind   => 'struct',
+                    fields => \@field_descs,
+                };
+            }
             if (my $eff = $registry->lookup_effect($lookup_name)) {
                 return +{
                     name => $lookup_name,
@@ -411,6 +427,7 @@ my %SYMBOL_KIND = (
     variable  => 13,  # Variable
     typedef   => 5,   # Class (type alias)
     newtype   => 5,   # Class (nominal type)
+    struct    => 23,  # Struct
     effect    => 14,  # Namespace
     typeclass => 11,  # Interface
     datatype  => 10,  # Enum (algebraic data type)
@@ -460,6 +477,10 @@ sub _symbol_detail ($self, $sym) {
 
     return $sym->{type} if $kind eq 'variable' || $kind eq 'typedef'
                          || $kind eq 'newtype' || $kind eq 'datatype';
+
+    if ($kind eq 'struct') {
+        return $sym->{fields} ? join(', ', @{$sym->{fields}}) : undef;
+    }
 
     undef;
 }

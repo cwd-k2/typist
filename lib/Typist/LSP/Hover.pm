@@ -92,6 +92,14 @@ sub _format ($class, $sym) {
         return "```perl\n$display\n```";
     }
 
+    if ($kind eq 'struct') {
+        my $display = "struct $sym->{name}";
+        if ($sym->{fields}) {
+            $display .= ' { ' . join(', ', @{$sym->{fields}}) . ' }';
+        }
+        return "```perl\n$display\n```";
+    }
+
     undef;
 }
 
