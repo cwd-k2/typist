@@ -492,7 +492,7 @@ sub inlay_hints ($self, $start_line, $end_line) {
             kind    => 1,  # Type
             tooltip => +{
                 kind  => 'markdown',
-                value => "```\n$sym->{name}: $display\n```\n*inferred*",
+                value => "```typist\n$sym->{name}: $display\n```\n*inferred*",
             },
         };
     }

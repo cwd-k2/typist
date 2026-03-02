@@ -17,6 +17,19 @@
   "activationEvents": ["onLanguage:perl"],
   "main": "./out/extension.js",
   "contributes": {
+    "languages": [
+      {
+        "id": "typist",
+        "aliases": ["Typist"]
+      }
+    ],
+    "grammars": [
+      {
+        "language": "typist",
+        "scopeName": "source.typist",
+        "path": "./syntaxes/typist-hover.tmLanguage.json"
+      }
+    ],
     "configuration": {
       "title": "Typist",
       "properties": {

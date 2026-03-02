@@ -262,7 +262,7 @@ sub _format_typeclass ($class, $sym) {
 
 # ── Helpers ──────────────────────────────────────
 
-sub _code ($text) { "```\n$text\n```" }
+sub _code ($text) { "```typist\n$text\n```" }
 
 sub _note ($text) { "\n\n*$text*" }
 
