@@ -137,8 +137,14 @@ sub _extract_datatypes ($class, $doc, $result) {
             $base_name = $name_raw;
         }
 
-        # Parse variant pairs from remaining children
+        # Parse variant pairs from remaining children.
+        # Parenthesised form: datatype Name => (Tag => '()', ...)
+        # produces a PPI::Structure::List wrapping the pairs.
         my @rest = @children[3 .. $#children];
+        if (@rest && $rest[0]->isa('PPI::Structure::List')) {
+            my $expr = $rest[0]->schild(0);
+            @rest = $expr ? $expr->schildren : ();
+        }
         my %variants;
         my $i = 0;
         while ($i < @rest) {
