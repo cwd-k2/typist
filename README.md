@@ -104,7 +104,7 @@ sub with_log :sig(<r: Row>(Str) -> Str ![Log, r]) ($msg) {
 | Cross-file checking | Workspace-level type resolution across modules |
 | Gradual typing | Annotation density determines check strictness |
 | Type inference | Bidirectional inference, control flow narrowing (`defined`, truthiness, `isa`, early return) |
-| Builtin prelude | 81 builtins with type annotations and three standard effect labels (`IO`, `Exn`, `Decl`) |
+| Builtin prelude | 80 builtins with type annotations and three standard effect labels (`IO`, `Exn`, `Decl`) |
 
 ### Modes
 
@@ -419,11 +419,29 @@ Use the `vscode-languageclient` extension:
 }
 ```
 
-### Perl::Critic Policy
+### Perl::Critic Policies
+
+Four policies for code quality enforcement:
+
+| Policy | Description | Default Severity |
+|--------|-------------|-----------------|
+| `Typist::TypeCheck` | Static type checking via Typist analyzer | 2 |
+| `Typist::AnnotationStyle` | Require `:sig()` on public subs | 2 |
+| `Typist::EffectCompleteness` | Require effect declarations for effectful functions | 3 |
+| `Typist::ExhaustivenessCheck` | Warn on non-exhaustive `match` expressions | 2 |
 
 ```ini
 # .perlcriticrc
 [Typist::TypeCheck]
+severity = 2
+
+[Typist::AnnotationStyle]
+severity = 2
+
+[Typist::EffectCompleteness]
+severity = 3
+
+[Typist::ExhaustivenessCheck]
 severity = 2
 ```
 
@@ -453,6 +471,8 @@ See `example/` for runnable demonstrations:
 | `08_gradual_typing.pl` | Gradual typing, flow typing |
 | `09_dsl.pl` | DSL operators, constructors |
 | `10_higher_order.pl` | Higher-order function inference |
+| `11_static_errors.pl` | Intentional type errors for static analysis demo |
+| `12_method_chains.pl` | Struct accessors, immutable updates, newtype chains |
 
 ```sh
 carton exec -- perl example/01_foundations.pl
@@ -461,7 +481,7 @@ carton exec -- perl example/01_foundations.pl
 ## Testing
 
 ```sh
-# All tests (61 files)
+# All tests (65 files)
 carton exec -- prove -l t/ t/static/ t/lsp/ t/critic/
 
 # By category

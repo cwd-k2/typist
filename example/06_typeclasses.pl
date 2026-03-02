@@ -23,7 +23,7 @@ use Typist::DSL;
 # Dispatch namespace: Name::method(value)
 
 BEGIN {
-    typeclass Show => T, +{
+    typeclass Show => 'T', +{
         show => '(T) -> Str',
     };
 
@@ -51,7 +51,7 @@ say "Show::show([]):  $@" if $@;
 # ── Multiple Methods ──────────────────────────────────────
 
 BEGIN {
-    typeclass Eq => T, +{
+    typeclass Eq => 'T', +{
         eq  => '(T, T) -> Bool',
         neq => '(T, T) -> Bool',
     };

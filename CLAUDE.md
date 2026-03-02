@@ -154,6 +154,7 @@ Tests are numbered and ordered by dependency:
 - `t/21_datatype.t` — Algebraic data types (constructors, contains, subtype)
 - `t/22_effects_handler.t` — Effect handlers (Effect::op, handle, handler stack)
 - `t/23_gadt.t` — GADT (Generalized Algebraic Data Types: construction, forced type_args, is_gadt, match, return_types)
+- `t/24_rank2.t` — Rank-2 polymorphism (Type::Quantified, forall, instantiation, subtyping)
 - `t/25_struct.t` — Nominal struct types (constructor, accessors, with(), optional fields, type registration, subtyping)
 - `t/26_check_cli.t` — CLI typist-check (subprocess-based: clean/error/warning exit codes, --no-color, --verbose, file args)
 - `t/27_protocol.t` — Protocol FSM (construction, next_state, states, ops_in, validate)
@@ -171,6 +172,7 @@ Tests are numbered and ordered by dependency:
 - `t/static/10_rank2.t` — Rank-2 polymorphism static analysis
 - `t/static/11_struct.t` — Struct static analysis (extraction, registration, inference)
 - `t/static/12_loop_inference.t` — Loop variable inference (for-loop extraction, iterable element types)
+- `t/static/13_hof_inference.t` — Higher-order function inference (callback return types, generic instantiation)
 - `t/static/14_protocol.t` — Protocol static analysis (sequence verification, state mismatch, composition, hints)
 - `t/lsp/00_transport.t` — JSON-RPC transport
 - `t/lsp/01_server.t` — LSP server lifecycle

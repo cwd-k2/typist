@@ -19,8 +19,8 @@ BEGIN {
     struct Product => (name => Str, price => Int);
 
     struct Order => (
-        id      => Alias('ProductId'),
-        product => Alias('Product'),
+        id      => 'ProductId',
+        product => 'Product',
         qty     => Int,
     );
 
