@@ -25,18 +25,21 @@ sub new ($class, %args) {
     }, $class;
 }
 
-sub loop_var_types ($self) { $self->{_loop_var_types} }
+sub loop_var_types     ($self) { $self->{_loop_var_types} }
+sub callback_param_types ($self) { $self->{_callback_param_types} }
 
 # ── Public API ───────────────────────────────────
 
 sub analyze ($self) {
     $self->{env} = $self->_build_env;
     $self->{_fn_env_cache} = +{};
+    Typist::Static::Infer->clear_callback_params;
     $self->_collect_loop_var_types;
     $self->_check_variable_initializers;
     $self->_check_assignments;
     $self->_check_call_sites;
     $self->_check_return_types;
+    $self->{_callback_param_types} = Typist::Static::Infer->callback_params;
 }
 
 sub env ($self) { $self->{env} }

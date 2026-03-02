@@ -28,7 +28,7 @@ run = "carton exec -- perl t/lsp/e2e_smoke.pl"
 
 [tasks.example]
 description = "Run all examples"
-depends = ["example:foundations", "example:composite", "example:generics", "example:nominal", "example:algebraic", "example:typeclasses", "example:effects", "example:gradual", "example:dsl"]
+depends = ["example:foundations", "example:composite", "example:generics", "example:nominal", "example:algebraic", "example:typeclasses", "example:effects", "example:gradual", "example:dsl", "example:hof"]
 
 [tasks."example:foundations"]
 description = "Run foundations example (types, aliases, functions)"
@@ -65,3 +65,7 @@ run = "carton exec -- perl example/08_gradual_typing.pl"
 [tasks."example:dsl"]
 description = "Run DSL example (type constructors, operators)"
 run = "carton exec -- perl example/09_dsl.pl"
+
+[tasks."example:hof"]
+description = "Run higher-order function inference example"
+run = "carton exec -- perl example/10_higher_order.pl"

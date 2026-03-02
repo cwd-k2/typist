@@ -420,6 +420,23 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
         }
     }
 
+    # Callback parameters (from match arms, HOF callbacks)
+    if ($type_checker && $type_checker->can('callback_param_types')) {
+        my $cpt = $type_checker->callback_param_types // [];
+        for my $cp (@$cpt) {
+            push @symbols, +{
+                name        => $cp->{name},
+                kind        => 'variable',
+                type        => $cp->{type}->to_string,
+                inferred    => 1,
+                line        => $cp->{line},
+                col         => $cp->{col},
+                scope_start => $cp->{scope_start},
+                scope_end   => $cp->{scope_end},
+            };
+        }
+    }
+
     # Typeclass method symbols
     for my $tc_name (sort keys $extracted->{typeclasses}->%*) {
         my $tc_info = $extracted->{typeclasses}{$tc_name};

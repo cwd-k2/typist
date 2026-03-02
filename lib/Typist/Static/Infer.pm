@@ -11,6 +11,16 @@ use Typist::Type::Union;
 use Typist::Subtype;
 use Typist::Static::Unify;
 
+# ── Callback Param Collector ─────────────────────
+#
+# During inference, _enrich_env_with_params records callback parameter
+# bindings here.  TypeChecker drains this after analysis for symbol index.
+
+my @_CALLBACK_PARAMS;
+
+sub clear_callback_params ($class) { @_CALLBACK_PARAMS = () }
+sub callback_params       ($class) { [@_CALLBACK_PARAMS] }
+
 # ── Public API ───────────────────────────────────
 
 # Infer a Typist type from a PPI element (static analysis counterpart of
@@ -261,28 +271,141 @@ sub _infer_block_return ($block, $env, $expected = undef) {
     __PACKAGE__->infer_expr($first, $env, $expected) // __PACKAGE__->infer_expr($last, $env, $expected);
 }
 
+# ── Data Type Resolution ─────────────────────────
+#
+# Resolves an inferred type to a Data definition + type variable bindings.
+# Returns ($data_def, \%bindings) or (undef, undef).
+
+sub _resolve_data_type ($type, $env) {
+    return (undef, undef) unless $type && $env && $env->{registry};
+    my $registry = $env->{registry};
+
+    # Direct Data object (rare in static analysis, but possible)
+    if ($type->is_data) {
+        my $dt = $registry->lookup_datatype($type->name);
+        return (undef, undef) unless $dt;
+        my %bindings;
+        my @params = $dt->type_params;
+        my @args   = $type->type_args;
+        for my $i (0 .. $#params) {
+            $bindings{$params[$i]} = $args[$i] if $i <= $#args && $args[$i];
+        }
+        return ($dt, \%bindings);
+    }
+
+    # Param type: Result[Int] → base 'Result', params [Int]
+    if ($type->is_param) {
+        my $base_name = $type->base;
+        $base_name = "$base_name" if ref $base_name;
+        my $dt = $registry->lookup_datatype($base_name);
+        return (undef, undef) unless $dt;
+        my %bindings;
+        my @params     = $dt->type_params;
+        my @type_args  = $type->params;
+        for my $i (0 .. $#params) {
+            $bindings{$params[$i]} = $type_args[$i] if $i <= $#type_args && $type_args[$i];
+        }
+        return ($dt, \%bindings);
+    }
+
+    # Alias: resolve through registry, recurse
+    if ($type->is_alias) {
+        my $resolved = eval { $registry->lookup_type($type->alias_name) };
+        if ($resolved && !$resolved->is_alias) {
+            return _resolve_data_type($resolved, $env);
+        }
+    }
+
+    # Atom: non-parameterized ADT (e.g., Shape, OrderStatus)
+    if ($type->is_atom) {
+        my $dt = $registry->lookup_datatype($type->name);
+        return ($dt, +{}) if $dt;
+    }
+
+    (undef, undef);
+}
+
+# Build expected Func type for a match arm callback from variant definition.
+sub _build_match_arm_expected ($data_def, $tag, $bindings, $outer_expected) {
+    return undef unless $data_def && $tag;
+    return undef if $tag eq '_';
+
+    my $variants = $data_def->variants;
+    return undef unless $variants && exists $variants->{$tag};
+
+    my @variant_types = @{$variants->{$tag}};
+    return undef unless @variant_types;
+
+    # Substitute type variable bindings for parameterized ADTs
+    if ($bindings && %$bindings) {
+        @variant_types = map { $_->substitute($bindings) } @variant_types;
+    }
+
+    my $ret = $outer_expected // Typist::Type::Atom->new('Any');
+    Typist::Type::Func->new(\@variant_types, $ret);
+}
+
 # ── Match Return Type Inference ──────────────────
 #
 # Walks siblings after `match` to find all handler blocks
 # (sub { ... }), infers each handler's return type, then
-# computes the union/LUB.
+# computes the union/LUB.  When the matched value resolves
+# to a Data type, propagates variant inner types to arm callbacks.
 
 sub _infer_match_return ($match_word, $env, $expected = undef) {
+    # Infer matched value type and resolve to Data definition
+    my $val_sib = $match_word->snext_sibling;
+    my ($data_def, $bindings);
+
+    if ($val_sib && $env) {
+        my $val_type = __PACKAGE__->infer_expr($val_sib, $env);
+        ($data_def, $bindings) = _resolve_data_type($val_type, $env) if $val_type;
+    }
+
     my @arm_types;
     my $sib = $match_word->snext_sibling;
+    my $current_tag;
 
     while ($sib) {
         last if $sib->isa('PPI::Token::Structure') && $sib->content eq ';';
 
-        # Look for Word("sub") followed by optional Prototype then Block
+        # Track current tag: Word(TagName) or Magic(_) followed by =>
+        # PPI parses `_` as PPI::Token::Magic (special filehandle),
+        # so we must also check for it as the match fallback arm.
+        if (($sib->isa('PPI::Token::Word') && $sib->content ne 'sub')
+            || ($sib->isa('PPI::Token::Magic') && $sib->content eq '_'))
+        {
+            my $after_tag = $sib->snext_sibling;
+            if ($after_tag && $after_tag->isa('PPI::Token::Operator') && $after_tag->content eq '=>') {
+                $current_tag = $sib->content;
+            }
+        }
+
+        # Look for Word("sub") followed by optional signature then Block
         if ($sib->isa('PPI::Token::Word') && $sib->content eq 'sub') {
             my $after = $sib->snext_sibling;
-            # Skip prototype: sub (...) { ... }
-            if ($after && $after->isa('PPI::Token::Prototype')) {
+            # Skip signature: PPI::Token::Prototype or PPI::Structure::List
+            if ($after && ($after->isa('PPI::Token::Prototype')
+                        || $after->isa('PPI::Structure::List')))
+            {
                 $after = $after->snext_sibling;
             }
             if ($after && $after->isa('PPI::Structure::Block')) {
-                my $arm_type = _infer_block_return($after, $env, $expected);
+                my $arm_expected;
+                if ($data_def && $current_tag) {
+                    $arm_expected = _build_match_arm_expected(
+                        $data_def, $current_tag, $bindings, $expected,
+                    );
+                }
+
+                my $arm_type;
+                if ($arm_expected) {
+                    # Use _infer_anon_sub to get full bidirectional inference
+                    my $func = _infer_anon_sub($sib, $env, $arm_expected);
+                    $arm_type = $func->returns if $func && $func->is_func;
+                } else {
+                    $arm_type = _infer_block_return($after, $env, $expected);
+                }
                 push @arm_types, $arm_type if defined $arm_type;
             }
         }
@@ -965,11 +1088,13 @@ sub _infer_unwrap ($list_element, $env) {
 # parameter types and checks arity. Infers return type from block body.
 sub _infer_anon_sub ($element, $env = undef, $expected = undef) {
     my $param_count = 0;
+    my $sig_node;
     my $block;
     my $next = $element->snext_sibling;
 
     # Signature (PPI parses as Prototype for anonymous subs)
     if ($next && ($next->isa('PPI::Structure::List') || $next->isa('PPI::Token::Prototype'))) {
+        $sig_node = $next;
         $param_count = _count_sub_params($next);
         $next = $next->snext_sibling;
     }
@@ -991,10 +1116,13 @@ sub _infer_anon_sub ($element, $env = undef, $expected = undef) {
             @params = map { Typist::Type::Atom->new('Any') } 1 .. $param_count;
         }
 
-        # Infer return type from block body
+        # Infer return type from block body with param types injected into env
         my $ret_type = $expected->returns;
         if ($block && $env) {
-            my $body_type = _infer_block_return($block, $env, $ret_type);
+            my $body_env = ($sig_node && $arity_match)
+                ? _enrich_env_with_params($env, $sig_node, \@params, $block)
+                : $env;
+            my $body_type = _infer_block_return($block, $body_env, $ret_type);
             $ret_type = $body_type if $body_type;
         }
 
@@ -1036,6 +1164,72 @@ sub _count_sub_params ($sig) {
         $count++ if $tok->isa('PPI::Token::Symbol') && $tok->content =~ /\A[\$\@%]/;
     }
     $count;
+}
+
+# Extract parameter names from a sub signature node.
+# Returns ['$x', '$y'] etc.  Mirrors _count_sub_params but returns names.
+sub _extract_param_names ($sig) {
+    if ($sig->isa('PPI::Token::Prototype')) {
+        my $content = $sig->content;
+        my @names;
+        push @names, $1 while $content =~ /([\$\@%]\w+)/g;
+        return \@names;
+    }
+
+    my $expr = $sig->schild(0);
+    return [] unless $expr;
+
+    my @names;
+    for my $tok ($expr->schildren) {
+        push @names, $tok->content
+            if $tok->isa('PPI::Token::Symbol') && $tok->content =~ /\A[\$\@%]/;
+    }
+    \@names;
+}
+
+# Build a new env with parameter name → type bindings injected into {variables}.
+# When $block is provided, records param info in the collector for LSP symbol index.
+sub _enrich_env_with_params ($env, $sig_node, $expected_types, $block = undef) {
+    return $env unless $env && $sig_node && $expected_types && @$expected_types;
+
+    my $names = _extract_param_names($sig_node);
+    return $env unless $names && @$names;
+
+    my %new_vars = ($env->{variables} // +{})->%*;
+    for my $i (0 .. $#$names) {
+        last if $i > $#$expected_types;
+        my $type = $expected_types->[$i];
+        $new_vars{$names->[$i]} = $type;
+
+        # Record for LSP hover/inlay hints (skip Any params — no useful info)
+        if ($block && !($type->is_atom && $type->name eq 'Any')) {
+            push @_CALLBACK_PARAMS, +{
+                name        => $names->[$i],
+                type        => $type,
+                line        => $sig_node->line_number,
+                col         => _param_col($sig_node, $names->[$i]),
+                scope_start => $block->line_number,
+                scope_end   => $block->last_token->line_number,
+            };
+        }
+    }
+    +{ %$env, variables => \%new_vars };
+}
+
+# Find column number of a specific parameter name within a signature node.
+sub _param_col ($sig_node, $name) {
+    if ($sig_node->isa('PPI::Token::Prototype')) {
+        my $content = $sig_node->content;
+        my $offset = index($content, $name);
+        return $sig_node->column_number + ($offset >= 0 ? $offset : 0);
+    }
+    my $expr = $sig_node->schild(0);
+    return $sig_node->column_number unless $expr;
+    for my $tok ($expr->schildren) {
+        return $tok->column_number
+            if $tok->isa('PPI::Token::Symbol') && $tok->content eq $name;
+    }
+    $sig_node->column_number;
 }
 
 1;
