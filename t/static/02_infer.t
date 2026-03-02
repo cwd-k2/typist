@@ -683,90 +683,7 @@ use Typist::Registry;
 use Typist::Type::Newtype;
 use Typist::Type::Alias;
 
-subtest 'unwrap: infers newtype inner type' => sub {
-    # Register newtype UserId => Int
-    my $registry = Typist::Registry->new;
-    $registry->register_newtype('UserId',
-        Typist::Type::Newtype->new('UserId', Typist::Type::Atom->new('Int')));
-    # Register UserId constructor as function returning Alias('UserId')
-    $registry->register_function('main', 'UserId', +{
-        params  => [Typist::Type::Atom->new('Int')],
-        returns => Typist::Type::Alias->new('UserId'),
-    });
-
-    my $env = +{
-        variables => +{},
-        functions => +{},
-        known     => +{},
-        registry  => $registry,
-        package   => 'main',
-    };
-
-    # unwrap(UserId(42)) → Int
-    my $doc = PPI::Document->new(\'unwrap(UserId(42))');
-    my $word = $doc->find_first(sub {
-        $_[1]->isa('PPI::Token::Word') && $_[1]->content eq 'unwrap'
-    });
-    ok $word, 'found unwrap keyword';
-    my $t = Typist::Static::Infer->infer_expr($word, $env);
-    ok $t, 'inferred';
-    ok $t->is_atom, 'is atom';
-    is $t->name, 'Int', 'unwrap(UserId(42)) → Int';
-};
-
-subtest 'unwrap: unknown argument falls through to Any' => sub {
-    # Registry with no newtypes — _infer_unwrap returns undef,
-    # falls through to _infer_call → completely unannotated → Any (gradual)
-    my $registry = Typist::Registry->new;
-    my $env = +{
-        variables => +{},
-        functions => +{},
-        known     => +{},
-        registry  => $registry,
-        package   => 'main',
-    };
-
-    my $doc = PPI::Document->new(\'unwrap($x)');
-    my $word = $doc->find_first(sub {
-        $_[1]->isa('PPI::Token::Word') && $_[1]->content eq 'unwrap'
-    });
-    my $t = Typist::Static::Infer->infer_expr($word, $env);
-    ok $t, 'inferred (fallthrough)';
-    is $t->name, 'Any', 'unwrap($unknown) → Any (gradual fallback)';
-};
-
-subtest 'unwrap: alias chain resolves through to newtype inner' => sub {
-    # newtype UserId => Int, typedef MyId => UserId
-    my $registry = Typist::Registry->new;
-    $registry->register_newtype('UserId',
-        Typist::Type::Newtype->new('UserId', Typist::Type::Atom->new('Int')));
-    $registry->define_alias('MyId', 'UserId');
-    # Register MyId constructor returning Alias('MyId')
-    $registry->register_function('main', 'MyId', +{
-        params  => [Typist::Type::Atom->new('Int')],
-        returns => Typist::Type::Alias->new('MyId'),
-    });
-
-    my $env = +{
-        variables => +{},
-        functions => +{},
-        known     => +{},
-        registry  => $registry,
-        package   => 'main',
-    };
-
-    # unwrap(MyId(42)) → MyId is alias → lookup → resolves to UserId (Newtype) → Int
-    my $doc = PPI::Document->new(\'unwrap(MyId(42))');
-    my $word = $doc->find_first(sub {
-        $_[1]->isa('PPI::Token::Word') && $_[1]->content eq 'unwrap'
-    });
-    my $t = Typist::Static::Infer->infer_expr($word, $env);
-    ok $t, 'inferred through alias chain';
-    ok $t->is_atom, 'is atom';
-    is $t->name, 'Int', 'unwrap(MyId(42)) → Int (alias → newtype → inner)';
-};
-
-subtest 'unwrap: variable with known newtype' => sub {
+subtest '->base: infers newtype inner type from variable' => sub {
     my $registry = Typist::Registry->new;
     $registry->register_newtype('UserId',
         Typist::Type::Newtype->new('UserId', Typist::Type::Atom->new('Int')));
@@ -779,15 +696,38 @@ subtest 'unwrap: variable with known newtype' => sub {
         package   => 'main',
     };
 
-    # unwrap($uid) where $uid: UserId → Int
-    my $doc = PPI::Document->new(\'unwrap($uid)');
-    my $word = $doc->find_first(sub {
-        $_[1]->isa('PPI::Token::Word') && $_[1]->content eq 'unwrap'
-    });
-    my $t = Typist::Static::Infer->infer_expr($word, $env);
+    # $uid->base where $uid: UserId → Int
+    my $doc = PPI::Document->new(\'$uid->base');
+    my $sym = $doc->find_first('PPI::Token::Symbol');
+    ok $sym, 'found $uid symbol';
+    my $t = Typist::Static::Infer->infer_expr($sym, $env);
     ok $t, 'inferred from variable type';
     ok $t->is_atom, 'is atom';
-    is $t->name, 'Int', 'unwrap($uid) → Int';
+    is $t->name, 'Int', '$uid->base → Int';
+};
+
+subtest '->base: alias chain resolves through to newtype inner' => sub {
+    # newtype UserId => Int, typedef MyId => UserId
+    my $registry = Typist::Registry->new;
+    $registry->register_newtype('UserId',
+        Typist::Type::Newtype->new('UserId', Typist::Type::Atom->new('Int')));
+    $registry->define_alias('MyId', 'UserId');
+
+    my $env = +{
+        variables => +{ '$id' => Typist::Type::Alias->new('MyId') },
+        functions => +{},
+        known     => +{},
+        registry  => $registry,
+        package   => 'main',
+    };
+
+    # $id->base where $id: MyId → MyId alias → UserId Newtype → Int
+    my $doc = PPI::Document->new(\'$id->base');
+    my $sym = $doc->find_first('PPI::Token::Symbol');
+    my $t = Typist::Static::Infer->infer_expr($sym, $env);
+    ok $t, 'inferred through alias chain';
+    ok $t->is_atom, 'is atom';
+    is $t->name, 'Int', '$id->base → Int (alias → newtype → inner)';
 };
 
 done_testing;

@@ -25,35 +25,35 @@ use Typist::DSL;
 #
 # All params and return type known → full checking.
 
-sub greet :Type((Str) -> Str) ($name) {
+sub greet :sig((Str) -> Str) ($name) {
     "Hello, $name!";
 }
 
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     $a + $b;
 }
 
 # Return type propagates into variable initialization:
 # greet() returns Str, so $msg is typed as Str at the call site.
-my $msg :Type(Str) = greet("Alice");
+my $msg :sig(Str) = greet("Alice");
 say $msg;
 
 # ── 2. Variable Symbol Resolution ────────────────────────
 #
 # Static checker resolves annotated variable types at call sites.
 
-sub loud :Type((Str) -> Str) ($s) {
+sub loud :sig((Str) -> Str) ($s) {
     uc($s);
 }
 
-# $msg was declared :Type(Str), loud() accepts Str → OK
+# $msg was declared :sig(Str), loud() accepts Str → OK
 say loud($msg);
 
 # ── 3. Nested Calls ──────────────────────────────────────
 #
 # Return types chain through call nesting.
 
-sub double :Type((Int) -> Int) ($x) {
+sub double :sig((Int) -> Int) ($x) {
     $x * 2;
 }
 
@@ -67,12 +67,12 @@ say "3*2 + 10 = ", add(double(3), 10);
 
 # Any return type — params are still checked, but return
 # type is unknown to callers.
-sub compute :Type((Int) -> Any) ($n) {
+sub compute :sig((Int) -> Any) ($n) {
     $n * $n;
 }
 
 # Return type Any → assignment check skipped (no false positive)
-my $result :Type(Int) = compute(5);
+my $result :sig(Int) = compute(5);
 say "5^2 = $result";
 
 # ── 5. Unannotated Functions ─────────────────────────────
@@ -86,7 +86,7 @@ sub helper ($x) {
 }
 
 # Return type is Any → assignment check skipped
-my $val :Type(Int) = helper(42);
+my $val :sig(Int) = helper(42);
 say "helper: $val";
 
 # ── 6. Flow Typing (Inferred Variables) ──────────────────
@@ -95,7 +95,7 @@ say "helper: $val";
 # Typist infers the type of the variable it flows into —
 # even without an explicit :Type annotation.
 
-sub format_name :Type((Str) -> Str) ($name) {
+sub format_name :sig((Str) -> Str) ($name) {
     "[$name]";
 }
 
@@ -117,7 +117,7 @@ say "doubled: ", add(double($count), $count);
 #
 # defined($x) in an if-condition narrows Maybe[T] to T.
 
-sub safe_length :Type((Maybe[Str]) -> Int) ($s) {
+sub safe_length :sig((Maybe[Str]) -> Int) ($s) {
     if (defined($s)) {
         # Inside: $s narrowed from Maybe[Str] to Str
         length($s);
@@ -134,7 +134,7 @@ say "safe_length(undef):  ", safe_length(undef);
 # `if ($x)` narrows Maybe[T] by removing Undef from the union.
 # Simpler than `defined($x)` but achieves the same effect.
 
-sub display_name :Type((Maybe[Str]) -> Str) ($name) {
+sub display_name :sig((Maybe[Str]) -> Str) ($name) {
     if ($name) {
         # Inside: $name narrowed from Maybe[Str] to Str
         "Name: $name";
@@ -151,7 +151,7 @@ say display_name(undef);
 # `return ... unless defined($x)` narrows $x to T for
 # the rest of the function body (after the guard).
 
-sub greet_customer :Type((Maybe[Str]) -> Str) ($name) {
+sub greet_customer :sig((Maybe[Str]) -> Str) ($name) {
     return "Hello, stranger!" unless defined($name);
     # After early return: $name is narrowed to Str
     "Hello, $name! Welcome back.";
@@ -166,7 +166,7 @@ say greet_customer(undef);
 # if defined($x) narrows to T in then-block,
 # the else-block knows $x is Undef.
 
-sub format_or_default :Type((Maybe[Int]) -> Str) ($n) {
+sub format_or_default :sig((Maybe[Int]) -> Str) ($n) {
     if (defined($n)) {
         # then: $n is Int
         "Value: $n";

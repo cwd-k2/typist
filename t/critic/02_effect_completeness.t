@@ -27,7 +27,7 @@ sub critique_source ($source) {
 subtest 'sub with declared effect has no violations' => sub {
     my @violations = critique_source(<<'PERL');
 use v5.40;
-sub greet :Type((Str) -> Void ![Console]) ($name) {
+sub greet :sig((Str) -> Void ![Console]) ($name) {
     Console::writeLine("Hello $name");
 }
 PERL
@@ -40,7 +40,7 @@ PERL
 subtest 'pure sub has no violations' => sub {
     my @violations = critique_source(<<'PERL');
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 PERL
 
     is scalar @violations, 0, 'no violations for pure sub';
@@ -51,7 +51,7 @@ PERL
 subtest 'sub calling effect op without declaration produces violation' => sub {
     my @violations = critique_source(<<'PERL');
 use v5.40;
-sub greet :Type((Str) -> Void) ($name) {
+sub greet :sig((Str) -> Void) ($name) {
     Console::writeLine("Hello $name");
 }
 PERL
@@ -83,7 +83,7 @@ PERL
 subtest 'calls to well-known packages are not flagged' => sub {
     my @violations = critique_source(<<'PERL');
 use v5.40;
-sub helper :Type((Str) -> Str) ($x) {
+sub helper :sig((Str) -> Str) ($x) {
     Test::ok(1);
     Carp::croak("fail");
     return $x;

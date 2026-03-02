@@ -19,7 +19,7 @@ subtest 'match: non-parameterized ADT arm param type' => sub {
 use v5.40;
 datatype Action => Inc => '(Int)', Dec => '(Int)', Reset => '()';
 my $a = Inc(5);
-my $x :Type(Int) = match $a,
+my $x :sig(Int) = match $a,
     Inc   => sub ($n) { $n },
     Dec   => sub ($n) { $n },
     Reset => sub { 0 };
@@ -32,8 +32,8 @@ subtest 'match: parameterized ADT (Result[Int]) — Ok arm' => sub {
     my $errs = diags_of(<<'PERL', 'TypeMismatch');
 use v5.40;
 datatype 'Result[T]' => Ok => '(T)', Err => '(Str)';
-my $r :Type(Result[Int]) = Ok(42);
-my $x :Type(Int) = match $r,
+my $r :sig(Result[Int]) = Ok(42);
+my $x :sig(Int) = match $r,
     Ok  => sub ($val) { $val },
     Err => sub ($msg) { 0 };
 PERL
@@ -45,8 +45,8 @@ subtest 'match: parameterized ADT — Err arm param is Str' => sub {
     my $errs = diags_of(<<'PERL', 'TypeMismatch');
 use v5.40;
 datatype 'Result[T]' => Ok => '(T)', Err => '(Str)';
-my $r :Type(Result[Int]) = Ok(42);
-my $x :Type(Str) = match $r,
+my $r :sig(Result[Int]) = Ok(42);
+my $x :sig(Str) = match $r,
     Ok  => sub ($val) { "ok" },
     Err => sub ($msg) { $msg };
 PERL
@@ -58,8 +58,8 @@ subtest 'match: param type mismatch in arm body' => sub {
     my $errs = diags_of(<<'PERL', 'TypeMismatch');
 use v5.40;
 datatype 'Result[T]' => Ok => '(T)', Err => '(Str)';
-my $r :Type(Result[Int]) = Ok(42);
-my $x :Type(Str) = match $r,
+my $r :sig(Result[Int]) = Ok(42);
+my $x :sig(Str) = match $r,
     Ok  => sub ($val) { $val },
     Err => sub ($msg) { $msg };
 PERL
@@ -74,7 +74,7 @@ subtest 'match: fallback _ arm — params stay Any' => sub {
 use v5.40;
 datatype Action => Inc => '(Int)', Dec => '(Int)', Reset => '()';
 my $a = Inc(5);
-my $x :Type(Int) = match $a,
+my $x :sig(Int) = match $a,
     Inc => sub ($n) { $n },
     _   => sub { 0 };
 PERL
@@ -87,7 +87,7 @@ subtest 'match: multi-value variant' => sub {
 use v5.40;
 datatype Shape => Circle => '(Int)', Rectangle => '(Int, Int)';
 my $s = Rectangle(3, 4);
-my $x :Type(Int) = match $s,
+my $x :sig(Int) = match $s,
     Circle    => sub ($r)     { $r },
     Rectangle => sub ($w, $h) { $w };
 PERL
@@ -103,7 +103,7 @@ subtest 'anon sub: param types propagated into body via declare' => sub {
     my $errs = diags_of(<<'PERL', 'TypeMismatch');
 use v5.40;
 declare apply_int => '((Int) -> Int, Int) -> Int';
-my $x :Type(Int) = apply_int(sub ($n) { $n }, 42);
+my $x :sig(Int) = apply_int(sub ($n) { $n }, 42);
 PERL
 
     is scalar @$errs, 0, 'callback $n gets Int, body returns Int — no error';
@@ -113,7 +113,7 @@ subtest 'anon sub: param type mismatch in callback body' => sub {
     my $errs = diags_of(<<'PERL', 'TypeMismatch');
 use v5.40;
 declare apply_int => '((Int) -> Str, Int) -> Str';
-my $x :Type(Str) = apply_int(sub ($n) { $n }, 42);
+my $x :sig(Str) = apply_int(sub ($n) { $n }, 42);
 PERL
 
     # $n gets Int from expected (Int) -> Str, but body returns Int not Str
@@ -132,8 +132,8 @@ PERL
 subtest 'map: infers ArrayRef[Num] from $_ * 2' => sub {
     my $errs = diags_of(<<'PERL', 'TypeMismatch');
 use v5.40;
-my $nums :Type(ArrayRef[Int]) = [1, 2, 3];
-my $doubled :Type(ArrayRef[Num]) = map { $_ * 2 } @$nums;
+my $nums :sig(ArrayRef[Int]) = [1, 2, 3];
+my $doubled :sig(ArrayRef[Num]) = map { $_ * 2 } @$nums;
 PERL
 
     is scalar @$errs, 0, 'map { $_ * 2 } @$nums → ArrayRef[Num] — no error';
@@ -142,8 +142,8 @@ PERL
 subtest 'grep: infers ArrayRef[ElemType]' => sub {
     my $errs = diags_of(<<'PERL', 'TypeMismatch');
 use v5.40;
-my $nums :Type(ArrayRef[Int]) = [1, 2, 3, 4];
-my $evens :Type(ArrayRef[Int]) = grep { $_ % 2 == 0 } @$nums;
+my $nums :sig(ArrayRef[Int]) = [1, 2, 3, 4];
+my $evens :sig(ArrayRef[Int]) = grep { $_ % 2 == 0 } @$nums;
 PERL
 
     is scalar @$errs, 0, 'grep preserves element type — no error';
@@ -152,8 +152,8 @@ PERL
 subtest 'sort: infers ArrayRef[ElemType]' => sub {
     my $errs = diags_of(<<'PERL', 'TypeMismatch');
 use v5.40;
-my $nums :Type(ArrayRef[Int]) = [3, 1, 2];
-my $sorted :Type(ArrayRef[Int]) = sort { $a <=> $b } @$nums;
+my $nums :sig(ArrayRef[Int]) = [3, 1, 2];
+my $sorted :sig(ArrayRef[Int]) = sort { $a <=> $b } @$nums;
 PERL
 
     is scalar @$errs, 0, 'sort preserves element type — no error';
@@ -162,8 +162,8 @@ PERL
 subtest 'map: type mismatch when expecting wrong type' => sub {
     my $errs = diags_of(<<'PERL', 'TypeMismatch');
 use v5.40;
-my $nums :Type(ArrayRef[Int]) = [1, 2, 3];
-my $result :Type(ArrayRef[Str]) = map { $_ * 2 } @$nums;
+my $nums :sig(ArrayRef[Int]) = [1, 2, 3];
+my $result :sig(ArrayRef[Str]) = map { $_ * 2 } @$nums;
 PERL
 
     is scalar @$errs, 1, 'map returns ArrayRef[Num] but var expects ArrayRef[Str]';
@@ -187,8 +187,8 @@ subtest 'LSP: match arm params appear in symbol index' => sub {
     my $syms = callback_syms(<<'PERL');
 use v5.40;
 datatype 'Result[T]' => Ok => '(T)', Err => '(Str)';
-my $r :Type(Result[Int]) = Ok(42);
-my $x :Type(Int) = match $r,
+my $r :sig(Result[Int]) = Ok(42);
+my $x :sig(Int) = match $r,
     Ok  => sub ($val) { $val },
     Err => sub ($msg) { 0 };
 PERL
@@ -204,7 +204,7 @@ subtest 'LSP: HOF callback params appear in symbol index' => sub {
     my $syms = callback_syms(<<'PERL');
 use v5.40;
 declare apply_int => '((Int) -> Int, Int) -> Int';
-my $x :Type(Int) = apply_int(sub ($n) { $n }, 42);
+my $x :sig(Int) = apply_int(sub ($n) { $n }, 42);
 PERL
 
     is scalar @$syms, 1, 'one callback param symbol';
@@ -217,7 +217,7 @@ subtest 'LSP: multi-value variant params in symbol index' => sub {
 use v5.40;
 datatype Shape => Circle => '(Int)', Rectangle => '(Int, Int)';
 my $s = Rectangle(3, 4);
-my $area :Type(Int) = match $s,
+my $area :sig(Int) = match $s,
     Circle    => sub ($r)     { $r },
     Rectangle => sub ($w, $h) { $w };
 PERL
@@ -234,7 +234,7 @@ subtest 'LSP: fallback arm params not in symbol index (stay Any)' => sub {
 use v5.40;
 datatype Action => Inc => '(Int)';
 my $a = Inc(5);
-my $x :Type(Int) = match $a,
+my $x :sig(Int) = match $a,
     Inc => sub ($n) { $n },
     _   => sub ($z) { 0 };
 PERL
@@ -270,7 +270,7 @@ subtest 'standalone match: parameterized ADT callback params' => sub {
     my $syms = callback_syms(<<'PERL');
 use v5.40;
 datatype 'Result[T]' => Ok => '(T)', Err => '(Str)';
-my $r :Type(Result[Int]) = Ok(42);
+my $r :sig(Result[Int]) = Ok(42);
 match $r,
     Ok  => sub ($val) { $val },
     Err => sub ($e)   { $e };
@@ -287,8 +287,8 @@ subtest 'standalone match: no duplication with assignment match' => sub {
     my $syms = callback_syms(<<'PERL');
 use v5.40;
 datatype 'Result[T]' => Ok => '(T)', Err => '(Str)';
-my $r :Type(Result[Int]) = Ok(42);
-my $x :Type(Int) = match $r,
+my $r :sig(Result[Int]) = Ok(42);
+my $x :sig(Int) = match $r,
     Ok  => sub ($val) { $val },
     Err => sub ($e)   { 0 };
 PERL

@@ -10,7 +10,7 @@ subtest 'didOpen publishes clean diagnostics' => sub {
     my $source = <<'PERL';
 use v5.40;
 typedef Age => 'Int';
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 PERL
 
     my @results = run_session(init_shutdown_wrap(
@@ -64,12 +64,12 @@ PERL
 subtest 'didChange updates diagnostics' => sub {
     my $bad_source = <<'PERL';
 use v5.40;
-sub bad :Type((T) -> T) ($x) { $x }
+sub bad :sig((T) -> T) ($x) { $x }
 PERL
 
     my $good_source = <<'PERL';
 use v5.40;
-sub good :Type(<T>(T) -> T) ($x) { $x }
+sub good :sig(<T>(T) -> T) ($x) { $x }
 PERL
 
     my @results = run_session(init_shutdown_wrap(
@@ -103,21 +103,21 @@ use v5.40;
 effect Console => +{};
 effect State   => +{};
 
-sub write_msg :Type((Str) -> Str ![Console]) ($s) { $s }
+sub write_msg :sig((Str) -> Str ![Console]) ($s) { $s }
 
-sub stateful :Type((Str) -> Str ![Console, State]) ($x) { $x }
+sub stateful :sig((Str) -> Str ![Console, State]) ($x) { $x }
 
-sub caller_fn :Type(() -> Str ![Console]) () {
+sub caller_fn :sig(() -> Str ![Console]) () {
     stateful("hello");
 }
 
-sub pure_fn :Type((Str) -> Str) ($x) {
+sub pure_fn :sig((Str) -> Str) ($x) {
     write_msg($x);
 }
 
 sub helper ($x) { $x }
 
-sub safe_fn :Type((Str) -> Str ![Console]) ($s) {
+sub safe_fn :sig((Str) -> Str ![Console]) ($s) {
     helper($s);
 }
 PERL
@@ -161,7 +161,7 @@ PERL
 subtest 'diagnostic range has column precision' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) { "not int" }
+sub add :sig((Int, Int) -> Int) ($a, $b) { "not int" }
 PERL
 
     my @results = run_session(init_shutdown_wrap(

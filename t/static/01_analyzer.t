@@ -14,7 +14,7 @@ use v5.40;
 
 typedef Age => 'Int';
 
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 PERL
@@ -41,7 +41,7 @@ PERL
 subtest 'detects undeclared type variables' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 use v5.40;
-sub bad :Type((T) -> T) ($x) { $x }
+sub bad :sig((T) -> T) ($x) { $x }
 PERL
 
     my @undecl = grep { $_->{kind} eq 'UndeclaredTypeVar' } @{$result->{diagnostics}};
@@ -51,7 +51,7 @@ PERL
 subtest 'declared generics are clean' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 use v5.40;
-sub identity :Type(<T>(T) -> T) ($x) { $x }
+sub identity :sig(<T>(T) -> T) ($x) { $x }
 PERL
 
     my @undecl = grep { $_->{kind} eq 'UndeclaredTypeVar' } @{$result->{diagnostics}};
@@ -63,7 +63,7 @@ PERL
 subtest 'detects unknown type aliases in functions' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 use v5.40;
-sub greet :Type((Username) -> Str) ($name) { "Hi $name" }
+sub greet :sig((Username) -> Str) ($name) { "Hi $name" }
 PERL
 
     my @unknown = grep { $_->{kind} eq 'UnknownType' } @{$result->{diagnostics}};
@@ -79,8 +79,8 @@ package SymTest;
 use v5.40;
 
 typedef Score => 'Int';
-my $val :Type(Str);
-sub calc :Type((Int) -> Int) ($n) { $n * 2 }
+my $val :sig(Str);
+sub calc :sig((Int) -> Int) ($n) { $n * 2 }
 PERL
 
     my @syms = @{$result->{symbols}};
@@ -100,7 +100,7 @@ subtest 'workspace registry provides cross-file aliases' => sub {
 
     my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws);
 use v5.40;
-sub find_user :Type((UserId) -> Str) ($id) { "user_$id" }
+sub find_user :sig((UserId) -> Str) ($id) { "user_$id" }
 PERL
 
     my @unknown = grep { $_->{kind} eq 'UnknownType' } @{$result->{diagnostics}};
@@ -174,9 +174,9 @@ typedef GoodAlias => 'Int';
 typedef BadCycle1 => 'BadCycle2';
 typedef BadCycle2 => 'BadCycle1';
 
-sub undecl :Type((T) -> T) ($x) { $x }
+sub undecl :sig((T) -> T) ($x) { $x }
 
-sub unknown :Type((MissingType) -> Str) ($x) { "hi" }
+sub unknown :sig((MissingType) -> Str) ($x) { "hi" }
 PERL
 
     my @diags = @{$result->{diagnostics}};

@@ -14,6 +14,7 @@ my @TOKEN_TYPES = qw(
     class
     enum
     enumMember
+    operator
 );
 
 my @TOKEN_MODIFIERS = qw(
@@ -143,17 +144,16 @@ sub compute ($class, $doc) {
             push @tokens, [$line0, $name_pos, length($name), 'function', $mods];
         }
 
-        # Type variables from generics
+        # Tokenize :sig() annotation content
+        my %generic_set;
         my $generics = $fn->{generics} // [];
         for my $g (@$generics) {
             my $gname = ref $g eq 'HASH' ? $g->{name} // $g : ref $g ? "$g" : $g;
-            next unless defined $gname && length $gname;
-            # Search in the :Type() annotation on the function line
-            my $gpos = _word_pos($lines[$line0], $gname);
-            if (defined $gpos) {
-                push @tokens, [$line0, $gpos, length($gname), 'typeParameter', 0];
-            }
+            # Strip bound (e.g. "T: Num" → "T", "r: Row" → "r")
+            $gname =~ s/\s*:.*\z// if defined $gname;
+            $generic_set{$gname} = 1 if defined $gname && length $gname;
         }
+        _tokenize_annotation(\@tokens, $line0, $lines[$line0], \%generic_set);
     }
 
     # ── variables ─────────────────────────────
@@ -168,6 +168,9 @@ sub compute ($class, $doc) {
             my $mods = $MOD_BIT{declaration};
             push @tokens, [$line0, $vpos, length($vname), 'variable', $mods];
         }
+
+        # Tokenize :sig() annotation content on variable lines
+        _tokenize_annotation(\@tokens, $line0, $lines[$line0], +{});
     }
 
     # ── Delta Encoding ────────────────────────
@@ -210,6 +213,67 @@ sub _scan_keyword_name ($tokens, $lines, $line0, $keyword, $name, $name_type) {
     if (defined $name_pos) {
         my $mods = $MOD_BIT{definition};
         push @$tokens, [$line0, $name_pos, length($name), $name_type, $mods];
+    }
+}
+
+# Tokenize type names and operators inside a :sig() annotation string.
+sub _tokenize_annotation ($tokens, $line0, $line_text, $generic_names) {
+    # Find :sig( in the line
+    my $sig_start = index($line_text, ':sig(');
+    return unless $sig_start >= 0;
+
+    # Walk from the opening ( to find the matching )
+    my $content_start = $sig_start + 5;  # first char after '('
+    my $depth = 0;
+    my $content_end = -1;
+    for my $p ($content_start .. length($line_text) - 1) {
+        my $ch = substr($line_text, $p, 1);
+        if    ($ch eq '(') { $depth++ }
+        elsif ($ch eq ')') {
+            if ($depth == 0) { $content_end = $p; last }
+            $depth--;
+        }
+    }
+    return if $content_end < 0;
+
+    my $content = substr($line_text, $content_start, $content_end - $content_start);
+
+    # Scan the content string for type names and operators
+    my $pos = 0;
+    while ($pos < length($content)) {
+        my $rest = substr($content, $pos);
+
+        # Identifier: word chars starting with a letter
+        if ($rest =~ /\A([a-zA-Z][a-zA-Z0-9]*)/) {
+            my $name = $1;
+            my $col = $content_start + $pos;
+            if ($generic_names->{$name}) {
+                # Known generic parameter (T, U, r, etc.)
+                push @$tokens, [$line0, $col, length($name), 'typeParameter', 0];
+            } elsif ($name =~ /\A[A-Z]/) {
+                # Uppercase-starting: type name
+                push @$tokens, [$line0, $col, length($name), 'type', 0];
+            }
+            # Lowercase non-generic identifiers are skipped (keywords like 'forall')
+            $pos += length($name);
+            next;
+        }
+
+        # Arrow operator: ->
+        if ($rest =~ /\A(->)/) {
+            push @$tokens, [$line0, $content_start + $pos, 2, 'operator', 0];
+            $pos += 2;
+            next;
+        }
+
+        # Effect operator: !
+        if (substr($rest, 0, 1) eq '!') {
+            push @$tokens, [$line0, $content_start + $pos, 1, 'operator', 0];
+            $pos += 1;
+            next;
+        }
+
+        $pos++;
     }
 }
 

@@ -127,7 +127,7 @@ typeclass Printable => T, +{
     display => '(T) -> Str',
 };
 
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     $a + $b;
 }
 

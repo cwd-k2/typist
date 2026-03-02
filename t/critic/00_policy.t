@@ -28,7 +28,7 @@ subtest 'clean code has no violations' => sub {
     my @violations = critique_source(<<'PERL');
 use v5.40;
 typedef Age => 'Int';
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 PERL
 
     is scalar @violations, 0, 'no violations';
@@ -52,7 +52,7 @@ PERL
 subtest 'undeclared type var produces violations' => sub {
     my @violations = critique_source(<<'PERL');
 use v5.40;
-sub bad :Type((T) -> T) ($x) { $x }
+sub bad :sig((T) -> T) ($x) { $x }
 PERL
 
     ok scalar @violations > 0, 'has violations';
@@ -64,7 +64,7 @@ PERL
 subtest 'unknown type alias produces violations' => sub {
     my @violations = critique_source(<<'PERL');
 use v5.40;
-sub greet :Type((Username) -> Str) ($n) { "Hi $n" }
+sub greet :sig((Username) -> Str) ($n) { "Hi $n" }
 PERL
 
     ok scalar @violations > 0, 'has violations';
@@ -76,7 +76,7 @@ PERL
 subtest 'declared generic produces no violations' => sub {
     my @violations = critique_source(<<'PERL');
 use v5.40;
-sub identity :Type(<T>(T) -> T) ($x) { $x }
+sub identity :sig(<T>(T) -> T) ($x) { $x }
 PERL
 
     is scalar @violations, 0, 'no violations for declared generic';

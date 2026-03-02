@@ -36,7 +36,7 @@ subtest '!~ operator infers Bool' => sub {
 subtest 'extractor: extracts for-loop variables' => sub {
     my $source = <<'PERL';
 use v5.40;
-my $items :Type(ArrayRef[Int]) = [1, 2, 3];
+my $items :sig(ArrayRef[Int]) = [1, 2, 3];
 for my $item (@$items) {
     say $item;
 }
@@ -135,7 +135,7 @@ subtest 'infer iterable: single $ref unwraps ArrayRef' => sub {
 subtest 'analyzer: loop variable appears in symbol index' => sub {
     my $source = <<'PERL';
 use v5.40;
-my $items :Type(ArrayRef[Int]) = [1, 2, 3];
+my $items :sig(ArrayRef[Int]) = [1, 2, 3];
 for my $item (@$items) {
     say $item;
 }
@@ -153,7 +153,7 @@ subtest 'analyzer: loop variable type from struct ArrayRef' => sub {
     my $source = <<'PERL';
 use v5.40;
 struct Product => (name => Str, price => Int);
-my $products :Type(ArrayRef[Product]) = [];
+my $products :sig(ArrayRef[Product]) = [];
 for my $p (@$products) {
     say $p;
 }
@@ -170,9 +170,9 @@ PERL
 subtest 'type check inside for loop: no false positive' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub process_items :Type((ArrayRef[Int]) -> Void) ($items) {
+sub process_items :sig((ArrayRef[Int]) -> Void) ($items) {
     for my $item (@$items) {
-        my $result :Type(Int) = $item;
+        my $result :sig(Int) = $item;
     }
 }
 PERL
@@ -184,9 +184,9 @@ PERL
 subtest 'type check inside for loop: detect mismatch' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub process_items :Type((ArrayRef[Int]) -> Void) ($items) {
+sub process_items :sig((ArrayRef[Int]) -> Void) ($items) {
     for my $item (@$items) {
-        my $result :Type(Str) = $item;
+        my $result :sig(Str) = $item;
     }
 }
 PERL

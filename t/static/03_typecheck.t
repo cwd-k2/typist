@@ -21,7 +21,7 @@ sub arity_errors ($source) {
 subtest 'variable: detects type mismatch' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-my $x :Type(Int) = "hello";
+my $x :sig(Int) = "hello";
 PERL
 
     is scalar @$errs, 1, 'one error';
@@ -31,7 +31,7 @@ PERL
 subtest 'variable: no error on matching type' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-my $x :Type(Int) = 42;
+my $x :sig(Int) = 42;
 PERL
 
     is scalar @$errs, 0, 'no errors';
@@ -40,7 +40,7 @@ PERL
 subtest 'variable: subtype is allowed (Bool → Int)' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-my $x :Type(Int) = 0;
+my $x :sig(Int) = 0;
 PERL
 
     is scalar @$errs, 0, 'Bool is subtype of Int';
@@ -49,7 +49,7 @@ PERL
 subtest 'variable: Str to Int mismatch' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-my $name :Type(Int) = "alice";
+my $name :sig(Int) = "alice";
 PERL
 
     is scalar @$errs, 1, 'one error';
@@ -58,7 +58,7 @@ PERL
 subtest 'variable: ArrayRef element mismatch' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-my $xs :Type(ArrayRef[Int]) = [1, "two"];
+my $xs :sig(ArrayRef[Int]) = [1, "two"];
 PERL
 
     is scalar @$errs, 1, 'one error';
@@ -68,7 +68,7 @@ PERL
 subtest 'variable: ArrayRef matching' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-my $xs :Type(ArrayRef[Int]) = [1, 2, 3];
+my $xs :sig(ArrayRef[Int]) = [1, 2, 3];
 PERL
 
     is scalar @$errs, 0, 'no errors for matching ArrayRef';
@@ -77,7 +77,7 @@ PERL
 subtest 'variable: no init → skip' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-my $x :Type(Int);
+my $x :sig(Int);
 PERL
 
     is scalar @$errs, 0, 'no errors when no initializer';
@@ -88,7 +88,7 @@ PERL
 subtest 'call: detects argument mismatch' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 add("hello", 2);
@@ -101,7 +101,7 @@ PERL
 subtest 'call: no error on matching args' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 add(3, 4);
@@ -113,7 +113,7 @@ PERL
 subtest 'call: subtype arg is allowed' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub process :Type((Num) -> Num) ($x) {
+sub process :sig((Num) -> Num) ($x) {
     return $x;
 }
 process(42);
@@ -127,7 +127,7 @@ PERL
 subtest 'return: detects mismatch' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Type((Str) -> Int) ($name) {
+sub greet :sig((Str) -> Int) ($name) {
     return "hello";
 }
 PERL
@@ -139,7 +139,7 @@ PERL
 subtest 'return: no error on matching type' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub double :Type((Int) -> Int) ($x) {
+sub double :sig((Int) -> Int) ($x) {
     return 42;
 }
 PERL
@@ -150,7 +150,7 @@ PERL
 subtest 'return: Any return type → skip' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub foo :Type((Int) -> Any) ($x) {
+sub foo :sig((Int) -> Any) ($x) {
     return "anything";
 }
 PERL
@@ -164,7 +164,7 @@ subtest 'typedef: resolves alias for checking' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
 typedef Age => 'Int';
-my $age :Type(Age) = "young";
+my $age :sig(Age) = "young";
 PERL
 
     is scalar @$errs, 1, 'one error';
@@ -175,7 +175,7 @@ subtest 'typedef: matching alias' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
 typedef Age => 'Int';
-my $age :Type(Age) = 25;
+my $age :sig(Age) = 25;
 PERL
 
     is scalar @$errs, 0, 'no errors';
@@ -187,7 +187,7 @@ subtest 'skip: variable reference as initializer' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
 my $other = 42;
-my $x :Type(Int) = $other;
+my $x :sig(Int) = $other;
 PERL
 
     is scalar @$errs, 0, 'skip non-inferable initializer';
@@ -196,7 +196,7 @@ PERL
 subtest 'skip: function call as initializer' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-my $x :Type(Int) = get_value();
+my $x :sig(Int) = get_value();
 PERL
 
     is scalar @$errs, 0, 'skip function call initializer';
@@ -205,7 +205,7 @@ PERL
 subtest 'generic: detects structural mismatch' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub first :Type(<T>(ArrayRef[T]) -> T) ($arr) {
+sub first :sig(<T>(ArrayRef[T]) -> T) ($arr) {
     return $arr->[0];
 }
 first("hello");
@@ -220,7 +220,7 @@ PERL
 subtest 'generic: successful instantiation' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub first :Type(<T>(ArrayRef[T]) -> T) ($arr) {
+sub first :sig(<T>(ArrayRef[T]) -> T) ($arr) {
     return $arr->[0];
 }
 first([1, 2, 3]);
@@ -232,7 +232,7 @@ PERL
 subtest 'generic: non-inferable argument → skip' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub first :Type(<T>(ArrayRef[T]) -> T) ($arr) {
+sub first :sig(<T>(ArrayRef[T]) -> T) ($arr) {
     return $arr->[0];
 }
 first($unknown_var);
@@ -244,7 +244,7 @@ PERL
 subtest 'generic: bounded quantification OK' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub max_of :Type(<T: Num>(T, T) -> T) ($a, $b) {
+sub max_of :sig(<T: Num>(T, T) -> T) ($a, $b) {
     return $a > $b ? $a : $b;
 }
 max_of(1, 2);
@@ -256,7 +256,7 @@ PERL
 subtest 'generic: bounded quantification violation' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub max_of :Type(<T: Num>(T, T) -> T) ($a, $b) {
+sub max_of :sig(<T: Num>(T, T) -> T) ($a, $b) {
     return $a > $b ? $a : $b;
 }
 max_of("a", "b");
@@ -269,7 +269,7 @@ PERL
 subtest 'generic: multiple type variables' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub pair :Type(<T, U>(T, U) -> Str) ($a, $b) {
+sub pair :sig(<T, U>(T, U) -> Str) ($a, $b) {
     return "$a $b";
 }
 pair(1, "hello");
@@ -283,9 +283,9 @@ PERL
 subtest 'literal: numeric literal matches declared type' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-my $x :Type(Int) = 42;
-my $y :Type(Num) = 3.14;
-my $z :Type(Bool) = 1;
+my $x :sig(Int) = 42;
+my $y :sig(Num) = 3.14;
+my $z :sig(Bool) = 1;
 PERL
 
     is scalar @$errs, 0, 'no errors for matching literals';
@@ -294,7 +294,7 @@ PERL
 subtest 'literal: Bool literal matches Int (subtype)' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-my $x :Type(Int) = 1;
+my $x :sig(Int) = 1;
 PERL
 
     is scalar @$errs, 0, 'Bool literal is subtype of Int';
@@ -303,7 +303,7 @@ PERL
 subtest 'literal: string literal matches Str' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-my $x :Type(Str) = "hello";
+my $x :sig(Str) = "hello";
 PERL
 
     is scalar @$errs, 0, 'string literal matches Str';
@@ -312,7 +312,7 @@ PERL
 subtest 'literal: ArrayRef with mixed literals infers common super' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-my $xs :Type(ArrayRef[Int]) = [1, 2, 3];
+my $xs :sig(ArrayRef[Int]) = [1, 2, 3];
 PERL
 
     is scalar @$errs, 0, 'array of int literals matches ArrayRef[Int]';
@@ -323,10 +323,10 @@ PERL
 subtest 'call: infers return type of called function' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Type((Str) -> Str) ($name) {
+sub greet :sig((Str) -> Str) ($name) {
     return "hello $name";
 }
-my $x :Type(Str) = greet("world");
+my $x :sig(Str) = greet("world");
 PERL
 
     is scalar @$errs, 0, 'greet() returns Str, assigned to Str — no error';
@@ -335,10 +335,10 @@ PERL
 subtest 'call: detects return-type vs variable-type mismatch' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Type((Str) -> Str) ($name) {
+sub greet :sig((Str) -> Str) ($name) {
     return "hello $name";
 }
-my $x :Type(Int) = greet("world");
+my $x :sig(Int) = greet("world");
 PERL
 
     is scalar @$errs, 1, 'one error';
@@ -348,10 +348,10 @@ PERL
 subtest 'call: nested call type propagation' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Type((Str) -> Str) ($name) {
+sub greet :sig((Str) -> Str) ($name) {
     return "hello $name";
 }
-sub loud :Type((Str) -> Str) ($s) {
+sub loud :sig((Str) -> Str) ($s) {
     return $s;
 }
 loud(greet("world"));
@@ -363,10 +363,10 @@ PERL
 subtest 'call: nested call type mismatch' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Type((Str) -> Str) ($name) {
+sub greet :sig((Str) -> Str) ($name) {
     return "hello $name";
 }
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 add(greet("world"), 42);
@@ -379,10 +379,10 @@ PERL
 subtest 'call: nested call with correct arg count' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub double :Type((Int) -> Int) ($x) {
+sub double :sig((Int) -> Int) ($x) {
     return $x * 2;
 }
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 add(double(3), 42);
@@ -396,10 +396,10 @@ PERL
 subtest 'variable: symbol resolves to declared type' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub loud :Type((Str) -> Str) ($s) {
+sub loud :sig((Str) -> Str) ($s) {
     return $s;
 }
-my $x :Type(Str) = "hi";
+my $x :sig(Str) = "hi";
 loud($x);
 PERL
 
@@ -409,10 +409,10 @@ PERL
 subtest 'variable: symbol type mismatch at call site' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
-my $name :Type(Str) = "alice";
+my $name :sig(Str) = "alice";
 add($name, 42);
 PERL
 
@@ -423,7 +423,7 @@ PERL
 subtest 'variable: unannotated variable → skip' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 my $x = 42;
@@ -441,7 +441,7 @@ use v5.40;
 sub get_value ($x) {
     return $x;
 }
-my $y :Type(Int) = get_value(42);
+my $y :sig(Int) = get_value(42);
 PERL
 
     is scalar @$errs, 0, 'unannotated function → skip (unknown return type)';
@@ -453,7 +453,7 @@ use v5.40;
 sub make_thing ($x) {
     return $x;
 }
-sub process :Type((Int) -> Int) ($n) {
+sub process :sig((Int) -> Int) ($n) {
     return $n;
 }
 process(make_thing(42));
@@ -465,10 +465,10 @@ PERL
 subtest 'skip: partially annotated function (no return type in annotation)' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub compute :Type((Int) -> Any) ($n) {
+sub compute :sig((Int) -> Any) ($n) {
     return $n * 2;
 }
-my $x :Type(Int) = compute(42);
+my $x :sig(Int) = compute(42);
 PERL
 
     is scalar @$errs, 0, 'Any return type → return type unknown, skip';
@@ -479,10 +479,10 @@ PERL
 subtest 'flow: inferred variable from function call' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Type((Str) -> Str) ($name) {
+sub greet :sig((Str) -> Str) ($name) {
     return "hello $name";
 }
-sub loud :Type((Str) -> Str) ($s) {
+sub loud :sig((Str) -> Str) ($s) {
     return uc($s);
 }
 my $result = greet("Alice");
@@ -495,10 +495,10 @@ PERL
 subtest 'flow: inferred variable type mismatch' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Type((Str) -> Str) ($name) {
+sub greet :sig((Str) -> Str) ($name) {
     return "hello $name";
 }
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 my $result = greet("Alice");
@@ -512,7 +512,7 @@ PERL
 subtest 'flow: inferred variable from literal' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 my $x = 42;
@@ -525,7 +525,7 @@ PERL
 subtest 'flow: inferred variable literal mismatch' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 my $name = "hello";
@@ -539,14 +539,14 @@ PERL
 subtest 'flow: inferred variable used in typed init' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Type((Str) -> Str) ($name) {
+sub greet :sig((Str) -> Str) ($name) {
     return "hello $name";
 }
 my $result = greet("Alice");
-my $x :Type(Int) = $result;
+my $x :sig(Int) = $result;
 PERL
 
-    # $result is inferred as Str, assigned to :Type(Int) → mismatch
+    # $result is inferred as Str, assigned to :sig(Int) → mismatch
     # Note: this depends on variable-to-variable propagation working
     # Currently _check_variable_initializers infers $result from env
     # which sees it as Str, so Int vs Str is flagged
@@ -558,7 +558,7 @@ PERL
 subtest 'symbols: inferred variable type appears in symbol index' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 use v5.40;
-sub greet :Type((Str) -> Str) ($name) {
+sub greet :sig((Str) -> Str) ($name) {
     return "hello $name";
 }
 my $result = greet("Alice");
@@ -590,7 +590,7 @@ PERL
 subtest 'return: param type enables return type mismatch detection' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Type((Str) -> Int) ($name) {
+sub greet :sig((Str) -> Int) ($name) {
     return $name;
 }
 PERL
@@ -602,7 +602,7 @@ PERL
 subtest 'return: param type matches return type' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub identity :Type((Int) -> Int) ($x) {
+sub identity :sig((Int) -> Int) ($x) {
     return $x;
 }
 PERL
@@ -613,10 +613,10 @@ PERL
 subtest 'call: param type used in inner call site check' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
-sub wrong :Type((Str) -> Int) ($s) {
+sub wrong :sig((Str) -> Int) ($s) {
     return add($s, 1);
 }
 PERL
@@ -632,7 +632,7 @@ PERL
 subtest 'implicit return: detects mismatch' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Type((Str) -> Int) ($name) {
+sub greet :sig((Str) -> Int) ($name) {
     "hello"
 }
 PERL
@@ -644,7 +644,7 @@ PERL
 subtest 'implicit return: no error on matching type' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub answer :Type(() -> Int) () {
+sub answer :sig(() -> Int) () {
     42
 }
 PERL
@@ -655,7 +655,7 @@ PERL
 subtest 'implicit return: explicit return does not duplicate' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub double :Type((Int) -> Int) ($x) {
+sub double :sig((Int) -> Int) ($x) {
     return $x
 }
 PERL
@@ -666,7 +666,7 @@ PERL
 subtest 'implicit return: control structure ending is skipped' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub maybe :Type((Int) -> Int) ($x) {
+sub maybe :sig((Int) -> Int) ($x) {
     if ($x > 0) {
         return $x;
     }
@@ -679,7 +679,7 @@ PERL
 subtest 'implicit return: param variable type mismatch' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub wrong :Type((Str) -> Int) ($name) {
+sub wrong :sig((Str) -> Int) ($name) {
     $name
 }
 PERL
@@ -693,7 +693,7 @@ PERL
 subtest '@typist-ignore suppresses TypeMismatch' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 # @typist-ignore
 my $x = add("hello", "world");
 PERL
@@ -703,7 +703,7 @@ PERL
 subtest '@typist-ignore does not suppress other lines' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 # @typist-ignore
 my $x = add("hello", "world");
 my $y = add("oops", "bad");
@@ -716,7 +716,7 @@ PERL
 subtest 'arity: too few arguments' => sub {
     my $errs = arity_errors(<<'PERL');
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 add(1);
@@ -729,7 +729,7 @@ PERL
 subtest 'arity: too many arguments' => sub {
     my $errs = arity_errors(<<'PERL');
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 add(1, 2, 3);
@@ -742,7 +742,7 @@ PERL
 subtest 'arity: correct argument count' => sub {
     my $errs = arity_errors(<<'PERL');
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 add(1, 2);
@@ -754,7 +754,7 @@ PERL
 subtest 'arity: zero-argument function called with no args' => sub {
     my $errs = arity_errors(<<'PERL');
 use v5.40;
-sub answer :Type(() -> Int) () {
+sub answer :sig(() -> Int) () {
     return 42;
 }
 answer();
@@ -766,7 +766,7 @@ PERL
 subtest 'arity: zero-argument function called with args' => sub {
     my $errs = arity_errors(<<'PERL');
 use v5.40;
-sub answer :Type(() -> Int) () {
+sub answer :sig(() -> Int) () {
     return 42;
 }
 answer(1, 2);
@@ -779,7 +779,7 @@ PERL
 subtest 'arity: variadic (last param ArrayRef) allows extra args' => sub {
     my $errs = arity_errors(<<'PERL');
 use v5.40;
-sub collect :Type((Str, ArrayRef[Int]) -> Str) ($label, $nums) {
+sub collect :sig((Str, ArrayRef[Int]) -> Str) ($label, $nums) {
     return $label;
 }
 collect("test", [1, 2, 3]);
@@ -791,7 +791,7 @@ PERL
 subtest 'arity: too few still caught with type mismatch on excess' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 add(1);
@@ -803,10 +803,10 @@ PERL
 subtest 'arity: nested call counts as one argument' => sub {
     my $errs = arity_errors(<<'PERL');
 use v5.40;
-sub double :Type((Int) -> Int) ($x) {
+sub double :sig((Int) -> Int) ($x) {
     return $x * 2;
 }
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 add(double(3), 42);
@@ -820,7 +820,7 @@ PERL
 subtest 'assignment: detects type mismatch on reassignment' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-my $x :Type(Int) = 0;
+my $x :sig(Int) = 0;
 $x = "hello";
 PERL
 
@@ -831,7 +831,7 @@ PERL
 subtest 'assignment: no error on matching reassignment' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-my $x :Type(Int) = 0;
+my $x :sig(Int) = 0;
 $x = 42;
 PERL
 
@@ -841,7 +841,7 @@ PERL
 subtest 'assignment: does not duplicate with variable initializer' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-my $x :Type(Int) = "hello";
+my $x :sig(Int) = "hello";
 PERL
 
     is scalar @$errs, 1, 'only one error from initializer, not duplicated by assignment check';
@@ -860,7 +860,7 @@ PERL
 subtest 'assignment: subtype is allowed on reassignment' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-my $x :Type(Num) = 3.14;
+my $x :sig(Num) = 3.14;
 $x = 42;
 PERL
 
@@ -870,8 +870,8 @@ PERL
 subtest 'assignment: inside function body respects param env' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-my $x :Type(Int) = 0;
-sub mutate :Type(() -> Void) () {
+my $x :sig(Int) = 0;
+sub mutate :sig(() -> Void) () {
     $x = "oops";
 }
 PERL
@@ -885,7 +885,7 @@ PERL
 subtest 'branch return: if/else implicit — one branch mismatch' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub classify :Type((Int) -> Str) ($n) {
+sub classify :sig((Int) -> Str) ($n) {
     if ($n > 0) {
         "positive"
     } else {
@@ -901,7 +901,7 @@ PERL
 subtest 'branch return: if/else implicit — both branches match' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub classify :Type((Int) -> Str) ($n) {
+sub classify :sig((Int) -> Str) ($n) {
     if ($n > 0) {
         "positive"
     } else {
@@ -916,7 +916,7 @@ PERL
 subtest 'branch return: if only (no else) — branch matches' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub maybe :Type((Int) -> Str) ($n) {
+sub maybe :sig((Int) -> Str) ($n) {
     if ($n > 0) {
         "positive"
     }
@@ -929,7 +929,7 @@ PERL
 subtest 'branch return: if/elsif/else — last branch mismatch' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub classify :Type((Int) -> Str) ($n) {
+sub classify :sig((Int) -> Str) ($n) {
     if ($n > 0) {
         "positive"
     } elsif ($n == 0) {
@@ -947,7 +947,7 @@ PERL
 subtest 'branch return: nested if inside else' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub deep :Type((Int) -> Str) ($n) {
+sub deep :sig((Int) -> Str) ($n) {
     if ($n > 0) {
         "positive"
     } else {
@@ -967,7 +967,7 @@ PERL
 subtest 'branch return: explicit return in branches already caught' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub classify :Type((Int) -> Str) ($n) {
+sub classify :sig((Int) -> Str) ($n) {
     if ($n > 0) {
         return "positive";
     } else {
@@ -985,10 +985,10 @@ PERL
 subtest 'narrowing: Maybe[Str] narrowed to Str inside defined guard' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Type((Str) -> Str) ($name) {
+sub greet :sig((Str) -> Str) ($name) {
     return "hello $name";
 }
-my $x :Type(Maybe[Str]) = "alice";
+my $x :sig(Maybe[Str]) = "alice";
 if (defined $x) {
     greet($x);
 }
@@ -1000,10 +1000,10 @@ PERL
 subtest 'narrowing: Maybe[Str] not narrowed outside defined guard' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Type((Str) -> Str) ($name) {
+sub greet :sig((Str) -> Str) ($name) {
     return "hello $name";
 }
-my $x :Type(Maybe[Str]) = "alice";
+my $x :sig(Maybe[Str]) = "alice";
 greet($x);
 PERL
 
@@ -1014,10 +1014,10 @@ PERL
 subtest 'narrowing: truthiness condition narrows Maybe to T' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Type((Str) -> Str) ($name) {
+sub greet :sig((Str) -> Str) ($name) {
     return "hello $name";
 }
-my $x :Type(Maybe[Str]) = "alice";
+my $x :sig(Maybe[Str]) = "alice";
 if ($x) {
     greet($x);
 }
@@ -1029,10 +1029,10 @@ PERL
 subtest 'narrowing: Union(Int, Str, Undef) narrowed to Union(Int, Str)' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub process :Type((Int | Str) -> Str) ($v) {
+sub process :sig((Int | Str) -> Str) ($v) {
     return "$v";
 }
-my $x :Type(Int | Str | Undef) = 42;
+my $x :sig(Int | Str | Undef) = 42;
 if (defined $x) {
     process($x);
 }
@@ -1044,10 +1044,10 @@ PERL
 subtest 'narrowing: defined $x (space-separated form)' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Type((Str) -> Str) ($name) {
+sub greet :sig((Str) -> Str) ($name) {
     return "hello $name";
 }
-my $x :Type(Maybe[Str]) = "alice";
+my $x :sig(Maybe[Str]) = "alice";
 if (defined $x) {
     greet($x);
 }
@@ -1061,7 +1061,7 @@ PERL
 subtest 'variadic: accepts minimum args' => sub {
     my $errs = arity_errors(<<'PERL');
 use v5.40;
-sub vfunc :Type((Int, ...Str) -> Int) ($n, @rest) { $n }
+sub vfunc :sig((Int, ...Str) -> Int) ($n, @rest) { $n }
 vfunc(1);
 PERL
     is scalar @$errs, 0, 'no error: minimum args ok';
@@ -1070,7 +1070,7 @@ PERL
 subtest 'variadic: accepts extra args' => sub {
     my $errs = arity_errors(<<'PERL');
 use v5.40;
-sub vfunc :Type((Int, ...Str) -> Int) ($n, @rest) { $n }
+sub vfunc :sig((Int, ...Str) -> Int) ($n, @rest) { $n }
 vfunc(1, "a", "b", "c");
 PERL
     is scalar @$errs, 0, 'no error: extra variadic args ok';
@@ -1079,7 +1079,7 @@ PERL
 subtest 'variadic: detects too few args' => sub {
     my $errs = arity_errors(<<'PERL');
 use v5.40;
-sub vfunc :Type((Int, ...Str) -> Int) ($n, @rest) { $n }
+sub vfunc :sig((Int, ...Str) -> Int) ($n, @rest) { $n }
 vfunc();
 PERL
     is scalar @$errs, 1, 'one arity error';
@@ -1089,7 +1089,7 @@ PERL
 subtest 'variadic: rest-only function' => sub {
     my $errs = arity_errors(<<'PERL');
 use v5.40;
-sub vfunc :Type((...Int) -> Int) (@nums) { 0 }
+sub vfunc :sig((...Int) -> Int) (@nums) { 0 }
 vfunc();
 vfunc(1);
 vfunc(1, 2, 3);
@@ -1100,7 +1100,7 @@ PERL
 subtest 'variadic: type check on variadic args' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub vfunc :Type((Int, ...Str) -> Int) ($n, @rest) { $n }
+sub vfunc :sig((Int, ...Str) -> Int) ($n, @rest) { $n }
 vfunc(1, "a", "b");
 PERL
     is scalar @$errs, 0, 'no error: correct variadic arg types';
@@ -1112,7 +1112,7 @@ subtest 'datatype: constructor return type inferred as Data type' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
 datatype Shape => Circle => '(Int)', Rect => '(Int, Int)';
-sub take_int :Type((Int) -> Int) ($x) { $x }
+sub take_int :sig((Int) -> Int) ($x) { $x }
 my $r = take_int(Circle(5));
 PERL
 
@@ -1134,7 +1134,7 @@ subtest 'datatype: Shape accepted where Shape expected' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
 datatype Shape => Circle => '(Int)', Rect => '(Int, Int)';
-sub area :Type((Shape) -> Int) ($s) { 42 }
+sub area :sig((Shape) -> Int) ($s) { 42 }
 my $r = area(Circle(5));
 PERL
 
@@ -1146,7 +1146,7 @@ subtest 'datatype: variable init type checked against constructor' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
 datatype Shape => Circle => '(Int)', Rect => '(Int, Int)';
-my $c :Type(Int) = Circle(5);
+my $c :sig(Int) = Circle(5);
 PERL
 
     ok @$errs > 0, 'Shape is not subtype of Int in variable init';
@@ -1160,7 +1160,7 @@ use v5.40;
 typeclass Eq => T => (
     eq => '(T, T) -> Bool',
 );
-sub check :Type(() -> Bool) () {
+sub check :sig(() -> Bool) () {
     Eq::eq(1, 2);
 }
 PERL
@@ -1174,7 +1174,7 @@ use v5.40;
 typeclass Eq => T => (
     eq => '(T, T) -> Bool',
 );
-sub check :Type(() -> Bool) () {
+sub check :sig(() -> Bool) () {
     Eq::eq(1);
 }
 PERL
@@ -1188,7 +1188,7 @@ use v5.40;
 typeclass Showable => T => (
     show => '(ArrayRef[T]) -> Str',
 );
-sub test :Type(() -> Str) () {
+sub test :sig(() -> Str) () {
     Showable::show("not_array");
 }
 PERL
@@ -1214,7 +1214,7 @@ subtest 'newtype: constructor return type is nominal' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
 newtype UserId => 'Int';
-sub take_str :Type((Str) -> Str) ($x) { $x }
+sub take_str :sig((Str) -> Str) ($x) { $x }
 my $r = take_str(UserId(42));
 PERL
 
@@ -1235,7 +1235,7 @@ subtest 'newtype: correct usage produces no error' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
 newtype UserId => 'Int';
-sub take_id :Type((UserId) -> Int) ($id) { 0 }
+sub take_id :sig((UserId) -> Int) ($id) { 0 }
 my $r = take_id(UserId(42));
 PERL
 
@@ -1251,7 +1251,7 @@ use Typist;
 datatype 'Expr[A]' =>
     IntLit  => '(Int) -> Expr[Int]',
     BoolLit => '(Bool) -> Expr[Bool]';
-sub take_str :Type((Str) -> Str) ($x) { $x }
+sub take_str :sig((Str) -> Str) ($x) { $x }
 my $r = take_str(IntLit(42));
 PERL
     my @errs = grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@*;
@@ -1290,7 +1290,7 @@ datatype 'Expr[A]' =>
     IntLit  => '(Int) -> Expr[Int]',
     BoolLit => '(Bool) -> Expr[Bool]',
     Var     => '(Str)';
-sub take_int :Type((Int) -> Int) ($x) { $x }
+sub take_int :sig((Int) -> Int) ($x) { $x }
 my $r = take_int(Var("x"));
 PERL
     my @errs = grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@*;
@@ -1310,7 +1310,7 @@ PERL
 subtest 'anonymous sub as argument: correct arity' => sub {
     my $errs = arity_errors(<<'PERL');
 use v5.40;
-sub apply :Type((ArrayRef[Int], CodeRef[Int -> Int]) -> ArrayRef[Int]) ($arr, $f) {
+sub apply :sig((ArrayRef[Int], CodeRef[Int -> Int]) -> ArrayRef[Int]) ($arr, $f) {
     [map { $f->($_) } @$arr]
 }
 my $r = apply([1, 2, 3], sub ($x) { $x * 2 });
@@ -1336,7 +1336,7 @@ PERL
 subtest 'bounded generic body: T:Num used with int()' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub halve :Type(<T: Num>(T) -> T) ($x) {
+sub halve :sig(<T: Num>(T) -> T) ($x) {
     int($x / 2);
 }
 PERL
@@ -1347,7 +1347,7 @@ PERL
 subtest 'bounded generic body: T:Num used with arithmetic' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub double_it :Type(<T: Num>(T) -> T) ($x) {
+sub double_it :sig(<T: Num>(T) -> T) ($x) {
     return $x * 2;
 }
 PERL
@@ -1360,7 +1360,7 @@ PERL
 subtest 'diagnostic: col and expected/actual_type on variable mismatch' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 use v5.40;
-my $x :Type(Int) = "hello";
+my $x :sig(Int) = "hello";
 PERL
 
     my @errs = grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@*;
@@ -1373,7 +1373,7 @@ PERL
 subtest 'diagnostic: col on call site argument mismatch' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 add("hello", 2);
 PERL
 
@@ -1387,7 +1387,7 @@ PERL
 subtest 'diagnostic: col on arity mismatch' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 add(1);
 PERL
 
@@ -1399,7 +1399,7 @@ PERL
 subtest 'diagnostic: col and expected/actual_type on return mismatch' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 use v5.40;
-sub greet :Type((Str) -> Int) ($name) {
+sub greet :sig((Str) -> Int) ($name) {
     return "hello";
 }
 PERL
@@ -1414,7 +1414,7 @@ PERL
 subtest 'diagnostic: col and expected/actual_type on implicit return mismatch' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 use v5.40;
-sub greet :Type((Str) -> Int) ($name) {
+sub greet :sig((Str) -> Int) ($name) {
     "hello"
 }
 PERL
@@ -1429,7 +1429,7 @@ PERL
 subtest 'diagnostic: col on assignment mismatch' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 use v5.40;
-my $x :Type(Int) = 0;
+my $x :sig(Int) = 0;
 $x = "hello";
 PERL
 
@@ -1445,7 +1445,7 @@ PERL
 subtest 'bidirectional: hash matches expected struct via return type' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub get_config :Type(() -> Record(name => Str, count => Int)) () {
+sub get_config :sig(() -> Record(name => Str, count => Int)) () {
     +{ name => "test", count => 42 }
 }
 PERL
@@ -1456,7 +1456,7 @@ PERL
 subtest 'bidirectional: hash mismatch detected via expected struct' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub get_config :Type(() -> Record(name => Str, count => Int)) () {
+sub get_config :sig(() -> Record(name => Str, count => Int)) () {
     +{ name => "test", count => "wrong" }
 }
 PERL
@@ -1468,7 +1468,7 @@ PERL
 subtest 'bidirectional: variable init passes expected type' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-my $cfg :Type(Record(x => Int, y => Int)) = +{ x => 1, y => 2 };
+my $cfg :sig(Record(x => Int, y => Int)) = +{ x => 1, y => 2 };
 PERL
 
     is scalar @$errs, 0, 'no mismatch when hash matches expected struct in variable init';
@@ -1477,7 +1477,7 @@ PERL
 subtest 'bidirectional: array matches expected ArrayRef element type' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-my $xs :Type(ArrayRef[Int]) = [1, 2, 3];
+my $xs :sig(ArrayRef[Int]) = [1, 2, 3];
 PERL
 
     is scalar @$errs, 0, 'no mismatch for array matching expected ArrayRef';
@@ -1486,7 +1486,7 @@ PERL
 subtest 'bidirectional: expected type flows to call site arg' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub take_struct :Type((Record(a => Int)) -> Int) ($s) { 0 }
+sub take_struct :sig((Record(a => Int)) -> Int) ($s) { 0 }
 take_struct(+{ a => 42 });
 PERL
 
@@ -1498,7 +1498,7 @@ PERL
 subtest 'narrowing: truthiness removes Undef' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub foo :Type((Int | Undef) -> Int) ($x) {
+sub foo :sig((Int | Undef) -> Int) ($x) {
     if ($x) {
         return $x;
     }
@@ -1513,7 +1513,7 @@ PERL
 subtest 'narrowing: isa narrows to specific type' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub foo :Type((Int | Str) -> Int) ($x) {
+sub foo :sig((Int | Str) -> Int) ($x) {
     if ($x isa Int) {
         return $x;
     }
@@ -1528,7 +1528,7 @@ PERL
 subtest 'narrowing: return unless defined narrows scope' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub foo :Type((Int | Undef) -> Int) ($x) {
+sub foo :sig((Int | Undef) -> Int) ($x) {
     return 0 unless defined $x;
     $x
 }
@@ -1541,7 +1541,7 @@ PERL
 subtest 'narrowing: else block has inverse narrowing' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub foo :Type((Int | Undef) -> Undef) ($x) {
+sub foo :sig((Int | Undef) -> Undef) ($x) {
     if (defined $x) {
         return undef;
     } else {
@@ -1557,7 +1557,7 @@ PERL
 subtest 'callback: correct arity passes' => sub {
     my $errs = arity_errors(<<'PERL');
 use v5.40;
-sub apply :Type(((Int) -> Int, Int) -> Int) ($f, $x) {
+sub apply :sig(((Int) -> Int, Int) -> Int) ($f, $x) {
     $f->($x);
 }
 apply(sub ($n) { $n + 1 }, 42);
@@ -1568,7 +1568,7 @@ PERL
 subtest 'callback: wrong arity detected' => sub {
     my $errs = arity_errors(<<'PERL');
 use v5.40;
-sub apply :Type(((Int) -> Int, Int) -> Int) ($f, $x) {
+sub apply :sig(((Int) -> Int, Int) -> Int) ($f, $x) {
     $f->($x);
 }
 apply(sub ($a, $b) { $a + $b }, 42);
@@ -1581,7 +1581,7 @@ PERL
 subtest 'callback: zero params when one expected' => sub {
     my $errs = arity_errors(<<'PERL');
 use v5.40;
-sub apply :Type(((Int) -> Int, Int) -> Int) ($f, $x) {
+sub apply :sig(((Int) -> Int, Int) -> Int) ($f, $x) {
     $f->($x);
 }
 apply(sub { 42 }, 10);
@@ -1596,7 +1596,7 @@ PERL
 subtest 'narrowing: unless reverses polarity — body gets inverse' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub foo :Type((Int | Undef) -> Undef) ($x) {
+sub foo :sig((Int | Undef) -> Undef) ($x) {
     unless (defined $x) {
         return $x;
     }
@@ -1609,7 +1609,7 @@ PERL
 subtest 'narrowing: unless else block gets direct narrowing' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub foo :Type((Int | Undef) -> Int) ($x) {
+sub foo :sig((Int | Undef) -> Int) ($x) {
     unless (defined $x) {
         return 0;
     } else {

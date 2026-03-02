@@ -12,8 +12,8 @@ use v5.40;
 typedef Age => 'Int';
 newtype UserId => Int;
 effect Console => {};
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
-my $x :Type(Str) = "hello";
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
+my $x :sig(Str) = "hello";
 PERL
 
     my @results = run_session(init_shutdown_wrap(
@@ -60,7 +60,7 @@ PERL
 subtest 'documentSymbol has correct positions' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub greet :Type((Str) -> Str) ($name) { "Hello, $name" }
+sub greet :sig((Str) -> Str) ($name) { "Hello, $name" }
 PERL
 
     my @results = run_session(init_shutdown_wrap(

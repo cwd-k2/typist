@@ -36,12 +36,12 @@ subtest 'parse_annotation: forall with generics' => sub {
     is_deeply $ann->{generics_raw}, ['T'], 'generic T extracted';
 };
 
-# ── Extractor: forall in :Type() annotations ──
+# ── Extractor: forall in :sig() annotations ──
 
 subtest 'Extractor: rank-2 function extraction' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub apply_twice :Type((forall A. A -> A, Int) -> Int) ($f, $x) {
+sub apply_twice :sig((forall A. A -> A, Int) -> Int) ($f, $x) {
     $f->($f->($x));
 }
 PERL
@@ -62,7 +62,7 @@ subtest 'TypeChecker: rank-2 param accepts quantified-subtype argument' => sub {
     # unless we can infer it, so we primarily verify no crashes.
     my $diags = all_diagnostics(<<'PERL');
 use v5.40;
-sub apply_twice :Type((forall A. A -> A, Int) -> Int) ($f, $x) {
+sub apply_twice :sig((forall A. A -> A, Int) -> Int) ($f, $x) {
     42;
 }
 PERL
@@ -74,7 +74,7 @@ PERL
 subtest 'TypeChecker: rank-2 function return type check' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub apply_twice :Type((forall A. A -> A, Int) -> Int) ($f, $x) {
+sub apply_twice :sig((forall A. A -> A, Int) -> Int) ($f, $x) {
     return "hello";
 }
 PERL

@@ -126,11 +126,11 @@ BEGIN {
     typedef IdOrName => Str | Int;
 }
 
-say "Registered aliases accessible via :Type()";
+say "Registered aliases accessible via :sig()";
 
-my $p :Type(Person) = +{ name => "Alice", age => 30 };
+my $p :sig(Person) = +{ name => "Alice", age => 30 };
 say "person: $p->{name}";
 
-my $id :Type(IdOrName) = 42;
+my $id :sig(IdOrName) = 42;
 $id = "Alice";
 say "id: $id";

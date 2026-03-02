@@ -9,7 +9,7 @@ use Test::Typist::LSP qw(run_session lsp_request lsp_notification init_shutdown_
 subtest 'rename produces WorkspaceEdit for all occurrences' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub greet :Type((Str) -> Str) ($name) {
+sub greet :sig((Str) -> Str) ($name) {
     return "hello $name";
 }
 greet("world");
@@ -51,7 +51,7 @@ PERL
 subtest 'rename spans multiple open documents' => sub {
     my $source_a = <<'PERL';
 use v5.40;
-sub helper :Type((Int) -> Int) ($n) { $n + 1 }
+sub helper :sig((Int) -> Int) ($n) { $n + 1 }
 PERL
 
     my $source_b = <<'PERL';
@@ -119,8 +119,8 @@ PERL
 subtest 'rename does not affect similarly-prefixed names' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub foo :Type(( ) -> Int) () { 1 }
-sub foobar :Type(( ) -> Int) () { 2 }
+sub foo :sig(( ) -> Int) () { 1 }
+sub foobar :sig(( ) -> Int) () { 2 }
 foo();
 foobar();
 PERL

@@ -6,7 +6,7 @@ use Typist -runtime;
 # ── End-to-end: typed scalars ────────────────────
 
 subtest 'typed scalar lifecycle' => sub {
-    my $count :Type(Int) = 0;
+    my $count :sig(Int) = 0;
     is $count, 0, 'initial value';
 
     $count = 10;
@@ -20,11 +20,11 @@ subtest 'typed scalar lifecycle' => sub {
 # ── End-to-end: typed functions ──────────────────
 
 subtest 'typed function pipeline' => sub {
-    sub double :Type((Int) -> Int) ($n) {
+    sub double :sig((Int) -> Int) ($n) {
         return $n * 2;
     }
 
-    sub to_greeting :Type((Str) -> Str) ($name) {
+    sub to_greeting :sig((Str) -> Str) ($name) {
         return "Hello, $name!";
     }
 
@@ -40,7 +40,7 @@ subtest 'typed function pipeline' => sub {
 subtest 'typedef integration' => sub {
     typedef Age => 'Int';
 
-    my $age :Type(Age) = 25;
+    my $age :sig(Age) = 25;
     is $age, 25, 'Age accepted 25';
 
     $age = 30;
@@ -53,7 +53,7 @@ subtest 'typedef integration' => sub {
 # ── End-to-end: parameterized + functions ────────
 
 subtest 'parameterized function' => sub {
-    sub sum_list :Type((ArrayRef[Int]) -> Int) ($list) {
+    sub sum_list :sig((ArrayRef[Int]) -> Int) ($list) {
         my $sum = 0;
         $sum += $_ for @$list;
         return $sum;
@@ -69,7 +69,7 @@ subtest 'parameterized function' => sub {
 # ── End-to-end: generic function ─────────────────
 
 subtest 'generic function' => sub {
-    sub first :Type(<T>(ArrayRef[T]) -> T) ($arr) {
+    sub first :sig(<T>(ArrayRef[T]) -> T) ($arr) {
         return $arr->[0];
     }
 
@@ -80,7 +80,7 @@ subtest 'generic function' => sub {
 # ── End-to-end: Maybe types ─────────────────────
 
 subtest 'Maybe type flow' => sub {
-    my $opt :Type(Maybe[Int]) = 42;
+    my $opt :sig(Maybe[Int]) = 42;
     is $opt, 42, 'Maybe[Int] holds 42';
 
     $opt = undef;
@@ -93,11 +93,11 @@ subtest 'Maybe type flow' => sub {
 # ── End-to-end: struct validation ────────────────
 
 subtest 'struct type on scalar' => sub {
-    my $person :Type({ name => Str, age => Int }) = +{ name => "Alice", age => 30 };
+    my $person :sig({ name => Str, age => Int }) = +{ name => "Alice", age => 30 };
     is $person->{name}, "Alice", 'struct field access';
 
     eval {
-        my $bad :Type({ name => Str, age => Int }) = +{ name => "Bob" };
+        my $bad :sig({ name => Str, age => Int }) = +{ name => "Bob" };
     };
     like $@, qr/type error/, 'struct rejects missing field';
 };
@@ -105,7 +105,7 @@ subtest 'struct type on scalar' => sub {
 # ── End-to-end: union types ──────────────────────
 
 subtest 'union type on scalar' => sub {
-    my $val :Type(Int | Str) = 42;
+    my $val :sig(Int | Str) = 42;
     is $val, 42, 'union accepted Int';
 
     $val = "hello";

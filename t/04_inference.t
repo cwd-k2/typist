@@ -40,7 +40,7 @@ subtest 'code inference' => sub {
 # ── Generic instantiation ────────────────────────
 
 subtest 'generic instantiation' => sub {
-    # Simulate :Type(<T>(ArrayRef[T]) -> T)
+    # Simulate :sig(<T>(ArrayRef[T]) -> T)
     my $sig = +{
         params   => [parse('ArrayRef[T]')],
         returns  => parse('T'),
@@ -73,7 +73,7 @@ subtest 'generic with strings' => sub {
 };
 
 subtest 'multi-param generic' => sub {
-    # :Type(<K, V>(HashRef[K, V]) -> ArrayRef[V])
+    # :sig(<K, V>(HashRef[K, V]) -> ArrayRef[V])
     my $sig = +{
         params   => [parse('HashRef[T]')],
         returns  => parse('ArrayRef[T]'),

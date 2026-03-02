@@ -63,7 +63,7 @@ GADT 実装の基盤として、既存の静的解析パイプラインにある
 
 ### 根本原因: DSL キーワードが生成する呼び出し可能エンティティの静的表現が欠落
 
-Analyzer が関数として認識するのは `:Type(...)` アトリビュート付き `sub` と `declare` 文のみ。
+Analyzer が関数として認識するのは `:sig(...)` アトリビュート付き `sub` と `declare` 文のみ。
 以下の DSL キーワードがランタイムで名前空間にインストールする関数は、静的解析では**完全に不可視**:
 
 | DSL キーワード | ランタイムで生成 | 静的解析での認識 |
@@ -73,7 +73,7 @@ Analyzer が関数として認識するのは `:Type(...)` アトリビュート
 | `typeclass` | ディスパッチ関数（`Eq::eq` 等） | **不可視** — `Any` に推論 |
 | `enum` | 定数関数（`Red`, `Green` 等） | **不可視** — `Any` に推論 |
 
-加えて、`datatype` で宣言された型名（`Shape`, `Option` 等）自体も Analyzer の Registry に登録されないため、`:Type((Shape) -> Int)` で `UnknownType` エラーになる。
+加えて、`datatype` で宣言された型名（`Shape`, `Option` 等）自体も Analyzer の Registry に登録されないため、`:sig((Shape) -> Int)` で `UnknownType` エラーになる。
 
 実際に検証した結果:
 
@@ -84,7 +84,7 @@ $ perl -Ilib -e '... Typist::Static::Analyzer->analyze(...)'
 [UnknownType] L6: Type alias 'Shape' is not defined (in main::area)
 
 # 2. Circle(5) の推論結果が Any（コンストラクタが関数登録されていないため）:
-#    → my $c :Type(Int) = Circle(5) でも TypeMismatch が出ない
+#    → my $c :sig(Int) = Circle(5) でも TypeMismatch が出ない
 
 # 3. Eq::eq(Int, Str) でも TypeMismatch が出ない（typeclass メソッドが登録されていない）
 
@@ -134,7 +134,7 @@ elsif ($type->is_data) {
 **現状**: `analyze()` はエイリアス、newtype、effect、typeclass、declare、function を Registry に登録するが、`extracted->{datatypes}` を登録するコードがない。Workspace 経由で他ファイルからマージされた datatype のみが見える。
 
 **影響**:
-- `Shape` が `:Type((Shape) -> Int)` の引数型として使えない（`UnknownType` エラー）
+- `Shape` が `:sig((Shape) -> Int)` の引数型として使えない（`UnknownType` エラー）
 - `Registry->lookup_type('Shape')` が `undef` を返すため、TypeChecker の `_resolve_type` でも解決できない
 - `Registry->has_alias('Shape')` も `false`（`has_alias` は `datatypes` をチェックするが、`datatypes` ハッシュが空なため）
 
@@ -170,7 +170,7 @@ for my $name (sort keys(($extracted->{datatypes} // +{})->%*)) {
 ```
 
 **テスト**: 以下を検証:
-- `Shape` が `:Type((Shape) -> Int)` で `UnknownType` にならない
+- `Shape` が `:sig((Shape) -> Int)` で `UnknownType` にならない
 - `Registry->lookup_type('Shape')` が `Data` オブジェクトを返す
 - `Registry->has_alias('Shape')` が `true` を返す
 
@@ -208,7 +208,7 @@ my $type = Typist::Type::Data->new($name, \%parsed_variants,
 2. **`_check_call_sites`** → `extracted->{functions}` にない → Registry にもない → **スキップ**（TypeChecker.pm:156）
 3. **`_check_variable_initializers`** → `Circle(5)` の推論が `Any` → **`Any` ガードでスキップ**（TypeChecker.pm:43）
 
-つまり `my $c :Type(Int) = Circle(5)` でも **TypeMismatch が出ない**。
+つまり `my $c :sig(Int) = Circle(5)` でも **TypeMismatch が出ない**。
 
 **修正**: フェーズ 0-2 の datatype 登録に続けて、各コンストラクタを関数として登録する:
 
@@ -253,7 +253,7 @@ for my $name (sort keys(($extracted->{datatypes} // +{})->%*)) {
 **これにより**:
 - `_infer_call('Circle', $env)` → Registry から `Circle` の署名を取得 → 戻り型 `Shape` を返す
 - `_check_call_sites` → `Circle(5)` の引数型チェックが有効になる（`Int` 期待に対して `Int` が渡されるか）
-- `_check_variable_initializers` → `my $c :Type(Int) = Circle(5)` で `Shape <: Int` が偽 → **TypeMismatch 検出**
+- `_check_variable_initializers` → `my $c :sig(Int) = Circle(5)` で `Shape <: Int` が偽 → **TypeMismatch 検出**
 - parameterized ADT: `Some(42)` → Unify で `T=Int` → 戻り型 `Option[Int]`
 
 **テスト**: `t/static/03_typecheck.t` に追加:
@@ -263,7 +263,7 @@ subtest 'datatype: constructor return type inferred as Data type' => sub {
 use v5.40;
 use Typist;
 datatype Shape => Circle => '(Int)', Rect => '(Int, Int)';
-sub take_int :Type((Int) -> Int) ($x) { $x }
+sub take_int :sig((Int) -> Int) ($x) { $x }
 my $r = take_int(Circle(5));
 PERL
     my @errs = grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@*;
@@ -287,7 +287,7 @@ subtest 'datatype: Shape accepted where Shape expected' => sub {
 use v5.40;
 use Typist;
 datatype Shape => Circle => '(Int)', Rect => '(Int, Int)';
-sub area :Type((Shape) -> Int) ($s) { 42 }
+sub area :sig((Shape) -> Int) ($s) { 42 }
 my $r = area(Circle(5));
 PERL
     my @errs = grep { $_->{kind} =~ /Mismatch/ } $result->{diagnostics}->@*;
@@ -412,7 +412,7 @@ use Typist;
 typeclass Eq => T => (
     eq => '(T, T) -> Bool',
 );
-sub check :Type(() -> Bool) () {
+sub check :sig(() -> Bool) () {
     Eq::eq(1, "hello");
 }
 PERL
@@ -429,7 +429,7 @@ PERL
 
 結果:
 - `UserId(42)` の推論が `Any`
-- `my $id :Type(Str) = UserId(42)` で TypeMismatch が出ない
+- `my $id :sig(Str) = UserId(42)` で TypeMismatch が出ない
 
 **修正**: 2b（newtypes 登録）の後に、newtype コンストラクタを関数として登録:
 ```perl
@@ -455,7 +455,7 @@ subtest 'newtype: constructor return type is nominal' => sub {
 use v5.40;
 use Typist;
 newtype UserId => 'Int';
-sub take_str :Type((Str) -> Str) ($x) { $x }
+sub take_str :sig((Str) -> Str) ($x) { $x }
 my $r = take_str(UserId(42));
 PERL
     my @errs = grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@*;
@@ -977,7 +977,7 @@ datatype 'Expr[A]' =>
     IntLit  => '(Int) -> Expr[Int]',
     BoolLit => '(Bool) -> Expr[Bool]';
 
-sub eval_int :Type((Expr[Int]) -> Int) ($e) {
+sub eval_int :sig((Expr[Int]) -> Int) ($e) {
     match $e,
         IntLit => sub ($n) { $n };
 }
@@ -995,7 +995,7 @@ datatype 'Expr[A]' =>
     IntLit  => '(Int) -> Expr[Int]',
     BoolLit => '(Bool) -> Expr[Bool]';
 
-sub bad :Type((Expr[Str]) -> Str) ($e) {
+sub bad :sig((Expr[Str]) -> Str) ($e) {
     match $e,
         IntLit => sub ($n) { $n };  # IntLit produces Expr[Int], not Expr[Str]
 }
@@ -1030,7 +1030,7 @@ datatype 'Expr[A]' =>
     Add     => '(Expr[Int], Expr[Int]) -> Expr[Int]',
     If      => '(Expr[Bool], Expr[A], Expr[A]) -> Expr[A]';
 
-sub eval_expr :Type(<A>(Expr[A]) -> A) ($expr) {
+sub eval_expr :sig(<A>(Expr[A]) -> A) ($expr) {
     match $expr,
         IntLit  => sub ($n)       { $n },
         BoolLit => sub ($b)       { $b },

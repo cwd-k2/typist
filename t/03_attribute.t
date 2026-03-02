@@ -5,8 +5,8 @@ use Typist -runtime;
 
 # ── :Type on scalars ─────────────────────────────
 
-subtest 'scalar :Type(Int)' => sub {
-    my $x :Type(Int) = 42;
+subtest 'scalar :sig(Int)' => sub {
+    my $x :sig(Int) = 42;
     is $x, 42, 'Int accepted 42';
 
     eval { $x = 99 };
@@ -18,24 +18,24 @@ subtest 'scalar :Type(Int)' => sub {
     is $x, 99, 'value unchanged after rejection';
 };
 
-subtest 'scalar :Type(Str)' => sub {
-    my $s :Type(Str) = "world";
+subtest 'scalar :sig(Str)' => sub {
+    my $s :sig(Str) = "world";
     is $s, "world", 'Str accepted "world"';
 
     eval { $s = [1,2,3] };
     like $@, qr/type error/, 'Str rejected arrayref';
 };
 
-subtest 'scalar :Type(Num)' => sub {
-    my $n :Type(Num) = 3.14;
+subtest 'scalar :sig(Num)' => sub {
+    my $n :sig(Num) = 3.14;
     is $n, 3.14, 'Num accepted 3.14';
 
     eval { $n = 42 };
     is $@, '', 'Num accepted 42 (Int is Num)';
 };
 
-subtest 'scalar :Type(Bool)' => sub {
-    my $b :Type(Bool) = 1;
+subtest 'scalar :sig(Bool)' => sub {
+    my $b :sig(Bool) = 1;
     is $b, 1, 'Bool accepted 1';
 
     $b = 0;
@@ -47,8 +47,8 @@ subtest 'scalar :Type(Bool)' => sub {
 
 # ── :Type with parameterized types ───────────────
 
-subtest 'scalar :Type(ArrayRef[Int])' => sub {
-    my $arr :Type(ArrayRef[Int]) = [1, 2, 3];
+subtest 'scalar :sig(ArrayRef[Int])' => sub {
+    my $arr :sig(ArrayRef[Int]) = [1, 2, 3];
     is_deeply $arr, [1, 2, 3], 'ArrayRef[Int] accepted [1,2,3]';
 
     eval { $arr = [1, "two", 3] };
@@ -60,8 +60,8 @@ subtest 'scalar :Type(ArrayRef[Int])' => sub {
 
 # ── :Type with Maybe (union) ─────────────────────
 
-subtest 'scalar :Type(Maybe[Str])' => sub {
-    my $m :Type(Maybe[Str]) = "hello";
+subtest 'scalar :sig(Maybe[Str])' => sub {
+    my $m :sig(Maybe[Str]) = "hello";
     is $m, "hello", 'Maybe[Str] accepted "hello"';
 
     $m = undef;
@@ -74,7 +74,7 @@ subtest 'scalar :Type(Maybe[Str])' => sub {
 # ── :Type on subs ────────────────────────────────
 
 subtest 'sub :Type function annotation' => sub {
-    sub add :Type((Int, Int) -> Int) ($a, $b) {
+    sub add :sig((Int, Int) -> Int) ($a, $b) {
         return $a + $b;
     }
 
@@ -88,7 +88,7 @@ subtest 'sub :Type function annotation' => sub {
 };
 
 subtest 'sub with return type violation' => sub {
-    sub bad_return :Type((Int) -> Int) ($n) {
+    sub bad_return :sig((Int) -> Int) ($n) {
         return "not a number";
     }
 
@@ -101,7 +101,7 @@ subtest 'sub with return type violation' => sub {
 subtest 'typedef' => sub {
     typedef Name => 'Str';
 
-    my $name :Type(Name) = "Alice";
+    my $name :sig(Name) = "Alice";
     is $name, "Alice", 'typedef Name (=Str) accepted "Alice"';
 
     eval { $name = [1] };
@@ -113,7 +113,7 @@ subtest 'typedef' => sub {
 subtest 'wrapper propagates calling context' => sub {
     # A context-sensitive function: returns different values
     # depending on list vs scalar context
-    sub ctx_sensitive :Type((Int) -> Str) ($n) {
+    sub ctx_sensitive :sig((Int) -> Str) ($n) {
         return wantarray ? "list" : "scalar";
     }
 
@@ -127,7 +127,7 @@ subtest 'wrapper propagates calling context' => sub {
 subtest 'wrapper void context does not die' => sub {
     our $void_called = 0;
 
-    sub void_ok :Type((Int) -> Int) ($n) {
+    sub void_ok :sig((Int) -> Int) ($n) {
         $void_called = 1;
         return $n;
     }
@@ -138,7 +138,7 @@ subtest 'wrapper void context does not die' => sub {
 
 subtest 'wrapper context with wantarray-dependent return' => sub {
     # Returns count in scalar context, elements in list context
-    sub multi_return :Type((Str) -> Str) ($s) {
+    sub multi_return :sig((Str) -> Str) ($s) {
         return wantarray ? ($s, "${s}2") : $s;
     }
 

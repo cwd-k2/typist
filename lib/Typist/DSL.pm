@@ -29,6 +29,14 @@ our @EXPORT = qw(
 
 our @EXPORT_OK = @EXPORT;
 
+sub export_map ($class) {
+    state $map = do {
+        no strict 'refs';
+        +{ map { $_ => \&{"Typist::DSL::$_"} } @EXPORT };
+    };
+    $map;
+}
+
 our %EXPORT_TAGS = (
     types => [qw(
         Int Str Num Bool Any Void Never Undef

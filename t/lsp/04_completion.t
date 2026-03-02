@@ -4,10 +4,10 @@ use lib 'lib', 't/lib';
 
 use Test::Typist::LSP qw(run_session lsp_request lsp_notification init_shutdown_wrap);
 
-# ── Completion inside :Type( ─────────────────────
+# ── Completion inside :sig( ─────────────────────
 
-subtest 'completion inside :Type(' => sub {
-    my $source = "use v5.40;\nsub foo :Type(";
+subtest 'completion inside :sig(' => sub {
+    my $source = "use v5.40;\nsub foo :sig(";
 
     my @results = run_session(init_shutdown_wrap(
         lsp_notification('textDocument/didOpen', +{
@@ -15,7 +15,7 @@ subtest 'completion inside :Type(' => sub {
         }),
         lsp_request(2, 'textDocument/completion', +{
             textDocument => +{ uri => 'file:///test.pm' },
-            position => +{ line => 1, character => length('sub foo :Type(') },
+            position => +{ line => 1, character => length('sub foo :sig(') },
         }),
     ));
 
@@ -29,10 +29,10 @@ subtest 'completion inside :Type(' => sub {
     ok((grep { $_ eq 'ArrayRef' } @labels), 'ArrayRef in completions');
 };
 
-# ── Completion inside :Type(< ─────────────────
+# ── Completion inside :sig(< ─────────────────
 
-subtest 'completion inside :Type(<' => sub {
-    my $source = "use v5.40;\nsub foo :Type(<";
+subtest 'completion inside :sig(<' => sub {
+    my $source = "use v5.40;\nsub foo :sig(<";
 
     my @results = run_session(init_shutdown_wrap(
         lsp_notification('textDocument/didOpen', +{
@@ -40,7 +40,7 @@ subtest 'completion inside :Type(<' => sub {
         }),
         lsp_request(2, 'textDocument/completion', +{
             textDocument => +{ uri => 'file:///test.pm' },
-            position => +{ line => 1, character => length('sub foo :Type(<') },
+            position => +{ line => 1, character => length('sub foo :sig(<') },
         }),
     ));
 
@@ -75,10 +75,10 @@ subtest 'no completion outside type context' => sub {
     is scalar @{$comp->{result}{items}}, 0, 'no completions outside type context';
 };
 
-# ── Completion inside :Type(... ! ────────────────
+# ── Completion inside :sig(... ! ────────────────
 
-subtest 'completion inside :Type(... !' => sub {
-    my $source = "use v5.40;\nsub foo :Type(() -> Void ! ";
+subtest 'completion inside :sig(... !' => sub {
+    my $source = "use v5.40;\nsub foo :sig(() -> Void ! ";
 
     my @results = run_session(init_shutdown_wrap(
         lsp_notification('textDocument/didOpen', +{
@@ -86,7 +86,7 @@ subtest 'completion inside :Type(... !' => sub {
         }),
         lsp_request(2, 'textDocument/completion', +{
             textDocument => +{ uri => 'file:///test.pm' },
-            position => +{ line => 1, character => length('sub foo :Type(() -> Void ! ') },
+            position => +{ line => 1, character => length('sub foo :sig(() -> Void ! ') },
         }),
     ));
 
@@ -104,10 +104,10 @@ subtest 'completion inside :Type(... !' => sub {
     ok((grep { $_ eq 'Decl' } @labels), 'Decl in effect completions (from Prelude)');
 };
 
-# ── Completion inside :Type(<T: — constraint context ──
+# ── Completion inside :sig(<T: — constraint context ──
 
-subtest 'completion inside :Type(<T: ' => sub {
-    my $source = "use v5.40;\nsub foo :Type(<T: ";
+subtest 'completion inside :sig(<T: ' => sub {
+    my $source = "use v5.40;\nsub foo :sig(<T: ";
 
     my @results = run_session(init_shutdown_wrap(
         lsp_notification('textDocument/didOpen', +{
@@ -115,7 +115,7 @@ subtest 'completion inside :Type(<T: ' => sub {
         }),
         lsp_request(2, 'textDocument/completion', +{
             textDocument => +{ uri => 'file:///test.pm' },
-            position => +{ line => 1, character => length('sub foo :Type(<T: ') },
+            position => +{ line => 1, character => length('sub foo :sig(<T: ') },
         }),
     ));
 
@@ -133,7 +133,7 @@ subtest 'completion inside :Type(<T: ' => sub {
 
 subtest 'constructor completion in code context' => sub {
     # Need workspace with a datatype for constructors to be available.
-    # The completion handler returns constructors when no :Type() context is detected.
+    # The completion handler returns constructors when no :sig() context is detected.
     # Create a workspace by using a mock workspace setup via Server internals.
     use Typist::LSP::Server;
     use Typist::LSP::Transport;
@@ -167,7 +167,7 @@ subtest 'code completion: struct field' => sub {
     my $source = <<'PERL';
 use v5.40;
 package TestPkg;
-my $point :Type({ x => Int, y => Int }) = +{ x => 1, y => 2 };
+my $point :sig({ x => Int, y => Int }) = +{ x => 1, y => 2 };
 $point->{
 PERL
 
@@ -211,7 +211,7 @@ subtest 'code completion: struct field with prefix' => sub {
     my $source = <<'PERL';
 use v5.40;
 package TestPkg2;
-my $rec :Type({ name => Str, age => Int, address => Str }) = +{};
+my $rec :sig({ name => Str, age => Int, address => Str }) = +{};
 $rec->{a
 PERL
 
@@ -236,7 +236,7 @@ subtest 'code completion: struct optional fields' => sub {
     my $source = <<'PERL';
 use v5.40;
 package TestPkg3;
-my $user :Type({ name => Str, email? => Str }) = +{ name => "alice" };
+my $user :sig({ name => Str, email? => Str }) = +{ name => "alice" };
 $user->{
 PERL
 
@@ -267,15 +267,15 @@ subtest 'code completion: method' => sub {
 use v5.40;
 package Counter;
 
-sub new :Type(() -> Counter) ($class) {
+sub new :sig(() -> Counter) ($class) {
     bless +{ count => 0 }, $class;
 }
 
-sub increment :Type((Int) -> Void) ($self, $n) {
+sub increment :sig((Int) -> Void) ($self, $n) {
     $self->{count} += $n;
 }
 
-sub get_count :Type(() -> Int) ($self) {
+sub get_count :sig(() -> Int) ($self) {
     $self->{count};
 }
 PERL
@@ -286,19 +286,19 @@ PERL
 use v5.40;
 package Counter;
 
-sub new :Type(() -> Counter) ($class) {
+sub new :sig(() -> Counter) ($class) {
     bless +{ count => 0 }, $class;
 }
 
-sub increment :Type((Int) -> Void) ($self, $n) {
+sub increment :sig((Int) -> Void) ($self, $n) {
     $self->{count} += $n;
 }
 
-sub get_count :Type(() -> Int) ($self) {
+sub get_count :sig(() -> Int) ($self) {
     $self->{count};
 }
 
-sub reset :Type(() -> Void) ($self) {
+sub reset :sig(() -> Void) ($self) {
     $self->
 }
 PERL
@@ -333,9 +333,9 @@ subtest 'code completion: method with prefix' => sub {
 use v5.40;
 package Animal;
 
-sub speak :Type(() -> Str) ($self) { "..." }
-sub sleep :Type(() -> Void) ($self) { }
-sub eat :Type((Str) -> Void) ($self, $food) { }
+sub speak :sig(() -> Str) ($self) { "..." }
+sub sleep :sig(() -> Void) ($self) { }
+sub eat :sig((Str) -> Void) ($self, $food) { }
 PERL
     $ws->update_file('/fake/Animal.pm', $pkg_source);
 
@@ -343,11 +343,11 @@ PERL
 use v5.40;
 package Animal;
 
-sub speak :Type(() -> Str) ($self) { "..." }
-sub sleep :Type(() -> Void) ($self) { }
-sub eat :Type((Str) -> Void) ($self, $food) { }
+sub speak :sig(() -> Str) ($self) { "..." }
+sub sleep :sig(() -> Void) ($self) { }
+sub eat :sig((Str) -> Void) ($self, $food) { }
 
-sub run :Type(() -> Void) ($self) {
+sub run :sig(() -> Void) ($self) {
     $self->s
 }
 PERL

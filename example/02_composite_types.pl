@@ -22,18 +22,18 @@ BEGIN {
     typedef Person => Record(name => Str, age => Int);
 }
 
-my $origin :Type(Point) = +{ x => 0, y => 0 };
+my $origin :sig(Point) = +{ x => 0, y => 0 };
 say "origin: ($origin->{x}, $origin->{y})";
 
-my $alice :Type(Person) = +{ name => "Alice", age => 30 };
+my $alice :sig(Person) = +{ name => "Alice", age => 30 };
 say "person: $alice->{name}, age $alice->{age}";
 
 # Missing required field
-eval { my $bad :Type(Person) = +{ name => "Bob" } };
+eval { my $bad :sig(Person) = +{ name => "Bob" } };
 say "Person w/o age:   $@" if $@;
 
 # Wrong field type
-eval { my $bad :Type(Person) = +{ name => "Carol", age => "young" } };
+eval { my $bad :sig(Person) = +{ name => "Carol", age => "young" } };
 say "Person age=Str:   $@" if $@;
 
 # ── Optional Struct Fields ────────────────────────────────
@@ -50,7 +50,7 @@ BEGIN {
     );
 }
 
-my $cfg :Type(Config) = +{ host => "localhost", port => 8080 };
+my $cfg :sig(Config) = +{ host => "localhost", port => 8080 };
 say "config: $cfg->{host}:$cfg->{port}";
 
 $cfg = +{ host => "0.0.0.0", port => 443, debug => 1 };
@@ -88,7 +88,7 @@ say "struct w/o age:    $@" if $@;
 #
 # T | U accepts values matching either type.
 
-my $id :Type(Int | Str) = 42;
+my $id :sig(Int | Str) = 42;
 say "id (Int): $id";
 
 $id = "ABC-123";
@@ -100,7 +100,7 @@ say "Int|Str <- ArrayRef:  $@" if $@;
 # Union of more types
 BEGIN { typedef Status => Str; }
 
-my $result :Type(Int | Str | Undef) = undef;
+my $result :sig(Int | Str | Undef) = undef;
 $result = 200;
 $result = "OK";
 say "result: $result";
@@ -109,7 +109,7 @@ say "result: $result";
 #
 # Maybe[T] desugars to T | Undef.
 
-my $score :Type(Maybe[Int]) = undef;
+my $score :sig(Maybe[Int]) = undef;
 $score = 95;
 say "score: ", $score // "(none)";
 
@@ -123,7 +123,7 @@ say "Maybe[Int] <- Str:  $@" if $@;
 #
 # Homogeneous arrays. Every element must match T.
 
-my $nums :Type(ArrayRef[Int]) = [1, 2, 3];
+my $nums :sig(ArrayRef[Int]) = [1, 2, 3];
 say "nums: @$nums";
 
 eval { $nums = [1, "two", 3] };
@@ -136,7 +136,7 @@ say "ArrayRef[Int] <- Str:    $@" if $@;
 #
 # Two-parameter form: key type K, value type V.
 
-my $ages :Type(HashRef[Str, Int]) = +{ alice => 30, bob => 25 };
+my $ages :sig(HashRef[Str, Int]) = +{ alice => 30, bob => 25 };
 say "ages: alice=$ages->{alice}";
 
 eval { $ages = +{ alice => "thirty" } };
@@ -146,20 +146,20 @@ say "HashRef[Str,Int] value=Str:  $@" if $@;
 #
 # Fixed-length array with per-position types.
 
-my $pair :Type(Tuple[Str, Int]) = ["Alice", 30];
+my $pair :sig(Tuple[Str, Int]) = ["Alice", 30];
 say "tuple: ($pair->[0], $pair->[1])";
 
-eval { my $bad :Type(Tuple[Str, Int]) = ["Alice", "thirty"] };
+eval { my $bad :sig(Tuple[Str, Int]) = ["Alice", "thirty"] };
 say "Tuple[Str,Int] <- [Str,Str]:  $@" if $@;
 
 # ── Ref[T] ────────────────────────────────────────────────
 #
 # Scalar reference to a value of type T.
 
-my $ref :Type(Ref[Int]) = \42;
+my $ref :sig(Ref[Int]) = \42;
 say "ref: $$ref";
 
-eval { my $bad :Type(Ref[Int]) = \"hello" };
+eval { my $bad :sig(Ref[Int]) = \"hello" };
 say "Ref[Int] <- \\Str:  $@" if $@;
 
 # ── Nesting ───────────────────────────────────────────────
@@ -171,7 +171,7 @@ BEGIN {
     typedef Matrix   => ArrayRef(ArrayRef(Int));
 }
 
-my $users :Type(UserList) = [
+my $users :sig(UserList) = [
     +{ name => "Alice", age => 30 },
     +{ name => "Bob",   age => 25 },
 ];
@@ -186,5 +186,5 @@ eval {
 };
 say "UserList missing age:  $@" if $@;
 
-my $mat :Type(Matrix) = [[1, 2], [3, 4]];
+my $mat :sig(Matrix) = [[1, 2], [3, 4]];
 say "matrix[0][1] = $mat->[0][1]";

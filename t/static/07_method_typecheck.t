@@ -23,7 +23,7 @@ sub arity_errors ($source) {
 subtest 'method call: no false positive when method name matches local function' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Type((Str) -> Str) ($name) {
+sub greet :sig((Str) -> Str) ($name) {
     return "hello $name";
 }
 my $obj = bless {}, 'Foo';
@@ -36,7 +36,7 @@ PERL
 subtest 'method call: function still checked normally' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub greet :Type((Str) -> Str) ($name) {
+sub greet :sig((Str) -> Str) ($name) {
     return "hello $name";
 }
 greet(42);
@@ -49,7 +49,7 @@ PERL
 subtest 'method call: chained dereference not confused with method' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub process :Type((Int) -> Int) ($x) {
+sub process :sig((Int) -> Int) ($x) {
     return $x;
 }
 process(42);
@@ -61,7 +61,7 @@ PERL
 subtest 'method call: arity check not triggered for method calls' => sub {
     my $errs = arity_errors(<<'PERL');
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 my $obj = bless {}, 'Calc';
@@ -78,7 +78,7 @@ subtest 'extractor: instance method detected ($self)' => sub {
     my $result = Typist::Static::Extractor->extract(<<'PERL');
 package Greeter;
 use v5.40;
-sub greet :Type((Str) -> Str) ($self, $name) {
+sub greet :sig((Str) -> Str) ($self, $name) {
     return "hello $name";
 }
 PERL
@@ -93,7 +93,7 @@ subtest 'extractor: class method detected ($class)' => sub {
     my $result = Typist::Static::Extractor->extract(<<'PERL');
 package Factory;
 use v5.40;
-sub create :Type((Str) -> Str) ($class, $name) {
+sub create :sig((Str) -> Str) ($class, $name) {
     return "new $name";
 }
 PERL
@@ -107,7 +107,7 @@ PERL
 subtest 'extractor: regular function not marked as method' => sub {
     my $result = Typist::Static::Extractor->extract(<<'PERL');
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 PERL
@@ -155,7 +155,7 @@ subtest 'extractor: annotated method params_expr from :Type annotation' => sub {
     my $result = Typist::Static::Extractor->extract(<<'PERL');
 package Greeter;
 use v5.40;
-sub greet :Type((Str) -> Str) ($self, $name) {
+sub greet :sig((Str) -> Str) ($self, $name) {
     return "hello $name";
 }
 PERL
@@ -171,7 +171,7 @@ PERL
 subtest 'extractor: no-param function not a method' => sub {
     my $result = Typist::Static::Extractor->extract(<<'PERL');
 use v5.40;
-sub answer :Type(() -> Int) () {
+sub answer :sig(() -> Int) () {
     return 42;
 }
 PERL
@@ -247,11 +247,11 @@ subtest 'analyzer: methods registered separately from functions' => sub {
 package Calculator;
 use v5.40;
 
-sub add :Type((Int, Int) -> Int) ($self, $a, $b) {
+sub add :sig((Int, Int) -> Int) ($self, $a, $b) {
     return $a + $b;
 }
 
-sub multiply :Type((Int, Int) -> Int) ($a, $b) {
+sub multiply :sig((Int, Int) -> Int) ($a, $b) {
     return $a * $b;
 }
 PERL
@@ -274,11 +274,11 @@ subtest 'method call: $self->greet("hello") OK' => sub {
 package Greeter;
 use v5.40;
 
-sub greet :Type((Str) -> Str) ($self, $name) {
+sub greet :sig((Str) -> Str) ($self, $name) {
     return "Hello, $name";
 }
 
-sub run :Type(() -> Void) ($self) {
+sub run :sig(() -> Void) ($self) {
     $self->greet("hello");
 }
 PERL
@@ -291,11 +291,11 @@ subtest 'method call: $self->greet(42) TypeMismatch' => sub {
 package Greeter;
 use v5.40;
 
-sub greet :Type((Str) -> Str) ($self, $name) {
+sub greet :sig((Str) -> Str) ($self, $name) {
     return "Hello, $name";
 }
 
-sub run :Type(() -> Void) ($self) {
+sub run :sig(() -> Void) ($self) {
     $self->greet(42);
 }
 PERL
@@ -309,11 +309,11 @@ subtest 'method call: $self->add(1, 2) multi-param OK' => sub {
 package Calculator;
 use v5.40;
 
-sub add :Type((Int, Int) -> Int) ($self, $a, $b) {
+sub add :sig((Int, Int) -> Int) ($self, $a, $b) {
     return $a + $b;
 }
 
-sub run :Type(() -> Void) ($self) {
+sub run :sig(() -> Void) ($self) {
     $self->add(1, 2);
 }
 PERL
@@ -326,11 +326,11 @@ subtest 'method call: $self->add(1, "x") TypeMismatch on second arg' => sub {
 package Calculator;
 use v5.40;
 
-sub add :Type((Int, Int) -> Int) ($self, $a, $b) {
+sub add :sig((Int, Int) -> Int) ($self, $a, $b) {
     return $a + $b;
 }
 
-sub run :Type(() -> Void) ($self) {
+sub run :sig(() -> Void) ($self) {
     $self->add(1, "x");
 }
 PERL
@@ -344,11 +344,11 @@ subtest 'method call: arity mismatch — too many args' => sub {
 package Greeter;
 use v5.40;
 
-sub greet :Type((Str) -> Str) ($self, $name) {
+sub greet :sig((Str) -> Str) ($self, $name) {
     return "Hello, $name";
 }
 
-sub run :Type(() -> Void) ($self) {
+sub run :sig(() -> Void) ($self) {
     $self->greet("hello", "extra");
 }
 PERL
@@ -362,11 +362,11 @@ subtest 'method call: arity mismatch — too few args' => sub {
 package Calculator;
 use v5.40;
 
-sub add :Type((Int, Int) -> Int) ($self, $a, $b) {
+sub add :sig((Int, Int) -> Int) ($self, $a, $b) {
     return $a + $b;
 }
 
-sub run :Type(() -> Void) ($self) {
+sub run :sig(() -> Void) ($self) {
     $self->add(1);
 }
 PERL
@@ -380,7 +380,7 @@ subtest 'method call: unknown method skipped (gradual typing)' => sub {
 package Foo;
 use v5.40;
 
-sub run :Type(() -> Void) ($self) {
+sub run :sig(() -> Void) ($self) {
     $self->unknown_method(42);
 }
 PERL
@@ -393,11 +393,11 @@ subtest 'method call: non-$self receiver skipped' => sub {
 package Greeter;
 use v5.40;
 
-sub greet :Type((Str) -> Str) ($self, $name) {
+sub greet :sig((Str) -> Str) ($self, $name) {
     return "Hello, $name";
 }
 
-sub run :Type(() -> Void) ($self) {
+sub run :sig(() -> Void) ($self) {
     my $other = bless {}, 'Greeter';
     $other->greet(42);
 }
@@ -411,11 +411,11 @@ subtest 'method call: no-arg method OK' => sub {
 package Widget;
 use v5.40;
 
-sub reset :Type(() -> Void) ($self) {
+sub reset :sig(() -> Void) ($self) {
     return;
 }
 
-sub run :Type(() -> Void) ($self) {
+sub run :sig(() -> Void) ($self) {
     $self->reset();
 }
 PERL

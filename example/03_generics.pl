@@ -21,11 +21,11 @@ use Typist::DSL;
 # from the call site via unification; runtime validates
 # concrete types at the boundary.
 
-sub identity :Type(<T>(T) -> T) ($x) {
+sub identity :sig(<T>(T) -> T) ($x) {
     $x;
 }
 
-sub first :Type(<T>(ArrayRef[T]) -> T) ($arr) {
+sub first :sig(<T>(ArrayRef[T]) -> T) ($arr) {
     $arr->[0];
 }
 
@@ -39,11 +39,11 @@ say "first(['a','b','c']):    ", first(["a", "b", "c"]);
 #
 # <T, U> declares independent type variables.
 
-sub pair :Type(<T, U>(T, U) -> Tuple[T, U]) ($a, $b) {
+sub pair :sig(<T, U>(T, U) -> Tuple[T, U]) ($a, $b) {
     [$a, $b];
 }
 
-sub swap :Type(<T, U>(Tuple[T, U]) -> Tuple[U, T]) ($t) {
+sub swap :sig(<T, U>(Tuple[T, U]) -> Tuple[U, T]) ($t) {
     [$t->[1], $t->[0]];
 }
 
@@ -58,11 +58,11 @@ say "swap: ($s->[0], $s->[1])";
 # <T: Num> constrains T to subtypes of Num (Int, Num itself).
 # Str, ArrayRef, etc. are rejected at the call site.
 
-sub add :Type(<T: Num>(T, T) -> T) ($a, $b) {
+sub add :sig(<T: Num>(T, T) -> T) ($a, $b) {
     $a + $b;
 }
 
-sub mul :Type(<T: Num>(T, T) -> T) ($a, $b) {
+sub mul :sig(<T: Num>(T, T) -> T) ($a, $b) {
     $a * $b;
 }
 
@@ -77,7 +77,7 @@ eval { add([1], [2]) };
 say "add([1],[2]):  $@" if $@;
 
 # <T: Int> — even stricter: only Int is accepted.
-sub increment :Type(<T: Int>(T) -> T) ($x) {
+sub increment :sig(<T: Int>(T) -> T) ($x) {
     $x + 1;
 }
 
@@ -88,14 +88,14 @@ say "increment(3.14): $@" if $@;
 
 # ── Generics with Composite Types ────────────────────────
 
-sub head_or_default :Type(<T>(ArrayRef[T], T) -> T) ($arr, $default) {
+sub head_or_default :sig(<T>(ArrayRef[T], T) -> T) ($arr, $default) {
     @$arr ? $arr->[0] : $default;
 }
 
 say "head_or_default([1,2], 0):    ", head_or_default([1, 2], 0);
 say "head_or_default([], 'none'):  ", head_or_default([], "none");
 
-sub zip :Type(<T, U>(ArrayRef[T], ArrayRef[U]) -> ArrayRef[Tuple[T, U]]) ($xs, $ys) {
+sub zip :sig(<T, U>(ArrayRef[T], ArrayRef[U]) -> ArrayRef[Tuple[T, U]]) ($xs, $ys) {
     my $len = @$xs < @$ys ? @$xs : @$ys;
     [ map { [$xs->[$_], $ys->[$_]] } 0 .. $len - 1 ];
 }

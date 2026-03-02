@@ -15,9 +15,9 @@ use v5.40;
 effect Console => +{};
 effect State   => +{};
 
-sub stateful :Type((Str) -> Str ![Console, State]) ($x) { $x }
+sub stateful :sig((Str) -> Str ![Console, State]) ($x) { $x }
 
-sub caller_fn :Type(() -> Str ![Console]) () {
+sub caller_fn :sig(() -> Str ![Console]) () {
     stateful("hello");
 }
 PERL
@@ -90,9 +90,9 @@ use v5.40;
 
 effect Console => +{};
 
-sub write_msg :Type((Str) -> Str ![Console]) ($s) { $s }
+sub write_msg :sig((Str) -> Str ![Console]) ($s) { $s }
 
-sub pure_fn :Type((Str) -> Str) ($x) {
+sub pure_fn :sig((Str) -> Str) ($x) {
     write_msg($x);
 }
 PERL
@@ -164,7 +164,7 @@ subtest 'code action returns empty for no diagnostics' => sub {
     my $source = <<'PERL';
 use v5.40;
 typedef Age => 'Int';
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 PERL
 
     my @results = run_session(init_shutdown_wrap(
@@ -222,7 +222,7 @@ subtest 'code action for unknown document returns empty' => sub {
 subtest 'published diagnostics include data field with kind' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) { "not int" }
+sub add :sig((Int, Int) -> Int) ($a, $b) { "not int" }
 PERL
 
     my @results = run_session(init_shutdown_wrap(
@@ -253,7 +253,7 @@ subtest 'code action with suggestions from TypeMismatch' => sub {
     # Construct a synthetic diagnostic with suggestions to test the suggestion path
     my $source = <<'PERL';
 use v5.40;
-sub identity :Type((Int) -> Int) ($x) { $x }
+sub identity :sig((Int) -> Int) ($x) { $x }
 PERL
 
     my $synthetic_diag = +{

@@ -42,8 +42,8 @@ PERL
 subtest 'extracts typed variables' => sub {
     my $result = Typist::Static::Extractor->extract(<<'PERL');
 use v5.40;
-my $count :Type(Int) = 0;
-my $name :Type(Str);
+my $count :sig(Int) = 0;
+my $name :sig(Str);
 PERL
 
     my $vars = $result->{variables};
@@ -59,8 +59,8 @@ PERL
 subtest 'extracts parameterized types on variables' => sub {
     my $result = Typist::Static::Extractor->extract(<<'PERL');
 use v5.40;
-my $items :Type(ArrayRef[Int]) = [];
-my $maybe :Type(Maybe[Str]);
+my $items :sig(ArrayRef[Int]) = [];
+my $maybe :sig(Maybe[Str]);
 PERL
 
     my $vars = $result->{variables};
@@ -73,7 +73,7 @@ PERL
 subtest 'extracts function annotations' => sub {
     my $result = Typist::Static::Extractor->extract(<<'PERL');
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 PERL
@@ -91,7 +91,7 @@ PERL
 subtest 'extracts generic functions' => sub {
     my $result = Typist::Static::Extractor->extract(<<'PERL');
 use v5.40;
-sub first :Type(<T>(ArrayRef[T]) -> T) ($arr) {
+sub first :sig(<T>(ArrayRef[T]) -> T) ($arr) {
     return $arr->[0];
 }
 PERL
@@ -126,9 +126,9 @@ use v5.40;
 
 typedef Email => 'Str';
 
-my $count :Type(Int) = 0;
+my $count :sig(Int) = 0;
 
-sub greet :Type((Str) -> Str) ($name) {
+sub greet :sig((Str) -> Str) ($name) {
     return "Hello, $name!";
 }
 PERL
@@ -180,7 +180,7 @@ PERL
 subtest 'extracts param_names from annotated function' => sub {
     my $result = Typist::Static::Extractor->extract(<<'PERL');
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 PERL
@@ -206,7 +206,7 @@ PERL
 subtest 'extracts end_line for function block' => sub {
     my $result = Typist::Static::Extractor->extract(<<'PERL');
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 PERL

@@ -30,13 +30,13 @@ sub violates ($self, $doc_elem, $doc) {
 
         # Check for :Type attribute
         my $attrs = $sub_stmt->find('PPI::Token::Attribute') || [];
-        my $has_type = grep { $_->content =~ /\AType\b/ } @$attrs;
+        my $has_type = grep { $_->content =~ /\Asig\b/ } @$attrs;
 
         next if $has_type;
 
         push @violations, $self->violation(
-            "Public sub '$name' lacks :Type() annotation",
-            "All public subroutines should have a :Type() annotation for static type checking",
+            "Public sub '$name' lacks :sig() annotation",
+            "All public subroutines should have a :sig() annotation for static type checking",
             $sub_stmt,
         );
     }
@@ -50,12 +50,12 @@ __END__
 
 =head1 NAME
 
-Perl::Critic::Policy::Typist::AnnotationStyle - Require :Type() on public subs
+Perl::Critic::Policy::Typist::AnnotationStyle - Require :sig() on public subs
 
 =head1 DESCRIPTION
 
 This policy detects public subroutines (not starting with C<_>) that lack
-a C<:Type()> annotation. In a Typist codebase, every public function should
+a C<:sig()> annotation. In a Typist codebase, every public function should
 carry a type signature for static analysis and documentation.
 
 =head1 CONFIGURATION

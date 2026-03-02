@@ -44,12 +44,12 @@ BEGIN {
 #
 # ![Name] declares that a function may perform an effect.
 
-sub greet :Type((Str) -> Str ![Console]) ($name) {
+sub greet :sig((Str) -> Str ![Console]) ($name) {
     Console::writeLine("Hello, $name!");
     "greeted $name";
 }
 
-sub log_msg :Type((Str) -> Str ![Logger]) ($msg) {
+sub log_msg :sig((Str) -> Str ![Logger]) ($msg) {
     Logger::log("[LOG] $msg");
     $msg;
 }
@@ -107,7 +107,7 @@ say "  collected: ", join(", ", @logs);
 # ![A, B] declares a function using multiple effects.
 # handle blocks can compose.
 
-sub greet_logged :Type((Str) -> Str ![Console, Logger]) ($name) {
+sub greet_logged :sig((Str) -> Str ![Console, Logger]) ($name) {
     Logger::log("greeting $name");
     Console::writeLine("Hello, $name!");
     "greeted $name";
@@ -131,7 +131,7 @@ handle {
 #
 # Effects can model mutable state with get/put.
 
-sub counter :Type(() -> Int ![State]) () {
+sub counter :sig(() -> Int ![State]) () {
     my $n = State::get();
     State::put($n + 1);
     State::put(State::get() + 1);
@@ -158,7 +158,7 @@ say "  final state: $final";
 # whatever r adds."  Callers can instantiate r with
 # additional effects.
 
-sub with_log :Type(<r: Row>(Str) -> Str ![Logger, r]) ($msg) {
+sub with_log :sig(<r: Row>(Str) -> Str ![Logger, r]) ($msg) {
     Logger::log($msg);
     $msg;
 }
@@ -207,18 +207,18 @@ BEGIN {
 }
 
 # setup transitions: Disconnected → Connected → Authenticated
-sub db_setup :Type(() -> Void ![Database<Disconnected -> Authenticated>]) () {
+sub db_setup :sig(() -> Void ![Database<Disconnected -> Authenticated>]) () {
     Database::connect("localhost");
     Database::auth("admin", "secret");
 }
 
 # query is invariant: Authenticated → Authenticated
-sub db_query :Type((Str) -> Str ![Database<Authenticated>]) ($sql) {
+sub db_query :sig((Str) -> Str ![Database<Authenticated>]) ($sql) {
     Database::query($sql);
 }
 
 # Full session: Disconnected → Authenticated → Disconnected
-sub db_session :Type(() -> Str ![Database<Disconnected -> Disconnected>]) () {
+sub db_session :sig(() -> Str ![Database<Disconnected -> Disconnected>]) () {
     db_setup();
     my $result = db_query("SELECT 1");
     Database::disconnect();
@@ -251,7 +251,7 @@ say "  result: $db_result";
 say "";
 say "── Pure function (no effects) ─────────────────";
 
-sub pure_add :Type((Int, Int) -> Int) ($a, $b) {
+sub pure_add :sig((Int, Int) -> Int) ($a, $b) {
     $a + $b;
 }
 

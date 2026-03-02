@@ -35,9 +35,9 @@ datatype Shape =>
 
 say "── match: Result[Int] ──────────────────";
 
-my $result :Type(Result[Int]) = Ok(42);
+my $result :sig(Result[Int]) = Ok(42);
 
-my $output :Type(Str) = match $result,
+my $output :sig(Str) = match $result,
     Ok  => sub ($val) { "Success: $val" },
     Err => sub ($msg) { "Error: $msg" };
 
@@ -47,9 +47,9 @@ say $output;
 
 say "\n── match: Option[Str] ──────────────────";
 
-my $name :Type(Option[Str]) = Some("Alice");
+my $name :sig(Option[Str]) = Some("Alice");
 
-my $greeting :Type(Str) = match $name,
+my $greeting :sig(Str) = match $name,
     Some => sub ($n)  { "Hello, $n!" },
     None => sub       { "Hello, stranger!" };
 
@@ -59,9 +59,9 @@ say $greeting;
 
 say "\n── match: Shape ────────────────────────";
 
-my $shape :Type(Shape) = Rectangle(3, 4);
+my $shape :sig(Shape) = Rectangle(3, 4);
 
-my $area :Type(Int) = match $shape,
+my $area :sig(Int) = match $shape,
     Circle    => sub ($r)     { $r * $r },
     Rectangle => sub ($w, $h) { $w * $h };
 
@@ -71,40 +71,40 @@ say "Area: $area";
 
 say "\n── HOF: apply ──────────────────────────";
 
-sub apply :Type(((Int) -> Int, Int) -> Int) ($f, $x) {
+sub apply :sig(((Int) -> Int, Int) -> Int) ($f, $x) {
     $f->($x);
 }
 
-my $doubled :Type(Int) = apply(sub ($n) { $n * 2 }, 21);
+my $doubled :sig(Int) = apply(sub ($n) { $n * 2 }, 21);
 say "apply(double, 21) = $doubled";
 
-sub transform :Type(((Str) -> Str, Str) -> Str) ($f, $s) {
+sub transform :sig(((Str) -> Str, Str) -> Str) ($f, $s) {
     $f->($s);
 }
 
-my $upper :Type(Str) = transform(sub ($s) { uc($s) }, "hello");
+my $upper :sig(Str) = transform(sub ($s) { uc($s) }, "hello");
 say "transform(uc, hello) = $upper";
 
 # ── Map/Grep with Typed $_ ──────────────────────────────
 
 say "\n── map/grep ────────────────────────────";
 
-my $nums :Type(ArrayRef[Int]) = [1, 2, 3, 4, 5];
+my $nums :sig(ArrayRef[Int]) = [1, 2, 3, 4, 5];
 
-my $squares :Type(ArrayRef[Num]) = [map { $_ * $_ } @$nums];
+my $squares :sig(ArrayRef[Num]) = [map { $_ * $_ } @$nums];
 say "squares: @$squares";
 
-my $evens :Type(ArrayRef[Int]) = [grep { $_ % 2 == 0 } @$nums];
+my $evens :sig(ArrayRef[Int]) = [grep { $_ % 2 == 0 } @$nums];
 say "evens: @$evens";
 
-my $sorted :Type(ArrayRef[Int]) = [sort { $a <=> $b } reverse @$nums];
+my $sorted :sig(ArrayRef[Int]) = [sort { $a <=> $b } reverse @$nums];
 say "sorted: @$sorted";
 
 # ── Composition ──────────────────────────────────────────
 
 say "\n── composition ─────────────────────────";
 
-my $results :Type(ArrayRef[Result[Int]]) = [Ok(1), Ok(2), Err("nope"), Ok(4)];
+my $results :sig(ArrayRef[Result[Int]]) = [Ok(1), Ok(2), Err("nope"), Ok(4)];
 
 my @values;
 for my $r (@$results) {

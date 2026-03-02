@@ -9,7 +9,7 @@ use Test::Typist::LSP qw(run_session lsp_request lsp_notification init_shutdown_
 subtest 'inlayHint shows inferred type for unannotated variable' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub greet :Type((Str) -> Str) ($name) { "Hello, $name" }
+sub greet :sig((Str) -> Str) ($name) { "Hello, $name" }
 my $result = greet("Alice");
 PERL
 
@@ -43,7 +43,7 @@ PERL
 subtest 'inlayHint omits annotated variables' => sub {
     my $source = <<'PERL';
 use v5.40;
-my $x :Type(Int) = 42;
+my $x :sig(Int) = 42;
 PERL
 
     my @results = run_session(init_shutdown_wrap(
@@ -70,7 +70,7 @@ PERL
 subtest 'inlayHint respects requested range' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub greet :Type((Str) -> Str) ($name) { "Hello, $name" }
+sub greet :sig((Str) -> Str) ($name) { "Hello, $name" }
 my $result = greet("Alice");
 PERL
 
@@ -126,7 +126,7 @@ PERL
 subtest 'inlayHint shows $_ type in map block' => sub {
     my $source = <<'PERL';
 use v5.40;
-my @nums :Type(ArrayRef[Int]) = (1, 2, 3);
+my @nums :sig(ArrayRef[Int]) = (1, 2, 3);
 my @doubled = map { $_ * 2 } @nums;
 PERL
 

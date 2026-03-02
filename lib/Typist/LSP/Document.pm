@@ -839,15 +839,15 @@ sub completion_context ($self, $line, $col) {
 
     my $text = substr($lines->[$line], 0, $col);
 
-    # Inside :Type(<...>) generics — constraint context after "T: "
-    return 'constraint' if $text =~ /:Type\(<[^>]*\w+\s*:\s*(?:\w+\s*\+\s*)*\z/;
+    # Inside :sig(<...>) generics — constraint context after "T: "
+    return 'constraint' if $text =~ /:sig\(<[^>]*\w+\s*:\s*(?:\w+\s*\+\s*)*\z/;
 
-    # Inside :Type(<...>) generics
-    return 'generic' if $text =~ /:Type\(<[^>]*\z/;
+    # Inside :sig(<...>) generics
+    return 'generic' if $text =~ /:sig\(<[^>]*\z/;
 
-    # Inside :Type(...) after "!" — effect context
+    # Inside :sig(...) after "!" — effect context
     # Two-stage: regex match, then paren-depth check to handle nested parens
-    if ($text =~ /:Type\((.*)!\s*(?:\w+\s*(?:\(\s*)?(?:\w+\s*(?:\|\s*)?)*)?(?:\)\s*)?\z/) {
+    if ($text =~ /:sig\((.*)!\s*(?:\w+\s*(?:\(\s*)?(?:\w+\s*(?:\|\s*)?)*)?(?:\)\s*)?\z/) {
         my $between = $1;
         my $depth = 0;
         my $valid = 1;
@@ -859,8 +859,8 @@ sub completion_context ($self, $line, $col) {
         return 'effect' if $valid;
     }
 
-    # Inside :Type(...) — paren-depth aware
-    if ($text =~ /:Type\((.*)\z/) {
+    # Inside :sig(...) — paren-depth aware
+    if ($text =~ /:sig\((.*)\z/) {
         my $inside = $1;
         my $depth = 0;
         my $valid = 1;

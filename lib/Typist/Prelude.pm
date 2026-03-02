@@ -111,7 +111,6 @@ my %BUILTINS = (
     datatype  => '(...Any) -> Void ![Decl]',
     enum      => '(...Any) -> Void ![Decl]',
     struct    => '(...Any) -> Void ![Decl]',
-    unwrap    => '(Any) -> Any',
 );
 
 # ── Standard Effect Labels ───────────────────────
@@ -122,7 +121,7 @@ my %BUILTINS = (
 my @EFFECTS = qw(IO Exn Decl);
 
 my @TYPIST_BUILTINS = qw(
-    typedef newtype effect typeclass instance declare datatype enum struct unwrap
+    typedef newtype effect typeclass instance declare datatype enum struct
 );
 my %TYPIST_BUILTIN_SET = map { $_ => 1 } @TYPIST_BUILTINS;
 

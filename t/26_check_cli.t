@@ -35,7 +35,7 @@ subtest 'clean file exits 0 with All clean' => sub {
     use v5.40;
     use Typist;
 
-    sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+    sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 
     1;
     PERL
@@ -54,9 +54,9 @@ subtest 'TypeMismatch detected exits 1' => sub {
     use v5.40;
     use Typist;
 
-    sub greet :Type((Str) -> Str) ($name) { "Hello, $name!" }
+    sub greet :sig((Str) -> Str) ($name) { "Hello, $name!" }
 
-    my $x :Type(Str) = greet(42);
+    my $x :sig(Str) = greet(42);
 
     1;
     PERL
@@ -76,7 +76,7 @@ subtest 'warning only exits 2' => sub {
     use v5.40;
     use Typist;
 
-    sub foo :Type(<T>(T) -> Q) ($x) { $x }
+    sub foo :sig(<T>(T) -> Q) ($x) { $x }
 
     1;
     PERL
@@ -95,9 +95,9 @@ subtest '--no-color disables ANSI' => sub {
     use v5.40;
     use Typist;
 
-    sub greet :Type((Str) -> Str) ($name) { "Hello, $name!" }
+    sub greet :sig((Str) -> Str) ($name) { "Hello, $name!" }
 
-    my $x :Type(Str) = greet(42);
+    my $x :sig(Str) = greet(42);
 
     1;
     PERL
@@ -115,7 +115,7 @@ subtest '--verbose shows clean files' => sub {
     use v5.40;
     use Typist;
 
-    sub id :Type((Int) -> Int) ($x) { $x }
+    sub id :sig((Int) -> Int) ($x) { $x }
 
     1;
     PERL
@@ -134,7 +134,7 @@ subtest 'explicit file arguments' => sub {
     use v5.40;
     use Typist;
 
-    sub id :Type((Int) -> Int) ($x) { $x }
+    sub id :sig((Int) -> Int) ($x) { $x }
 
     1;
     PERL
@@ -144,9 +144,9 @@ subtest 'explicit file arguments' => sub {
     use v5.40;
     use Typist;
 
-    sub greet :Type((Str) -> Str) ($name) { "Hello, $name!" }
+    sub greet :sig((Str) -> Str) ($name) { "Hello, $name!" }
 
-    my $x :Type(Str) = greet(42);
+    my $x :sig(Str) = greet(42);
 
     1;
     PERL

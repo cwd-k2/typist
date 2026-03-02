@@ -42,7 +42,7 @@ effect DB, [qw(None Connected Authed)] => +{
     auth    => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
 };
 
-sub setup :Type(() -> Void ![DB<None -> Authed>]) () {
+sub setup :sig(() -> Void ![DB<None -> Authed>]) () {
     DB::connect("localhost");
     DB::auth("user", "pass");
 }

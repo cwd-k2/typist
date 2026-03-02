@@ -9,7 +9,7 @@ use Test::Typist::LSP qw(run_session lsp_request lsp_notification init_shutdown_
 subtest 'definition jumps to function declaration' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 my $result = add(1, 2);
 PERL
 
@@ -36,7 +36,7 @@ subtest 'definition jumps to typedef' => sub {
     my $source = <<'PERL';
 use v5.40;
 typedef Age => 'Int';
-sub get_age :Type(( ) -> Age) () { 42 }
+sub get_age :sig(( ) -> Age) () { 42 }
 PERL
 
     my @results = run_session(init_shutdown_wrap(

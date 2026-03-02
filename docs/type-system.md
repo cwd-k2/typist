@@ -69,11 +69,11 @@ Never <: T (for all T)
 ### Usage
 
 ```perl
-my $x :Type(Int) = 42;
-my $s :Type(Str) = "hello";
-my $b :Type(Bool) = 1;
-my $n :Type(Num) = 3.14;
-my $u :Type(Undef) = undef;
+my $x :sig(Int) = 42;
+my $s :sig(Str) = "hello";
+my $b :sig(Bool) = 1;
+my $n :sig(Num) = 3.14;
+my $u :sig(Undef) = undef;
 ```
 
 ---
@@ -103,10 +103,10 @@ HashRef[Str, Int] <: HashRef[Str, Num]
 ### Usage
 
 ```perl
-my $nums :Type(ArrayRef[Int]) = [1, 2, 3];
-my $map  :Type(HashRef[Str, Int]) = { a => 1, b => 2 };
-my $pair :Type(Tuple[Str, Int]) = ["Alice", 30];
-my $opt  :Type(Maybe[Str]) = undef;   # OK: Str | Undef
+my $nums :sig(ArrayRef[Int]) = [1, 2, 3];
+my $map  :sig(HashRef[Str, Int]) = { a => 1, b => 2 };
+my $pair :sig(Tuple[Str, Int]) = ["Alice", 30];
+my $opt  :sig(Maybe[Str]) = undef;   # OK: Str | Undef
 ```
 
 ---
@@ -131,7 +131,7 @@ S <: T|U   iff  S <: T  OR   S <: U     (any member suffices)
 ### Usage
 
 ```perl
-my $id :Type(Int | Str) = 42;
+my $id :sig(Int | Str) = 42;
 $id = "abc";    # OK
 
 typedef Result => 'Str | Undef';
@@ -190,8 +190,8 @@ Arity:        Strict           Must match exactly
 ### Usage
 
 ```perl
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
-sub greet :Type((Str) -> Str ![Console]) ($name) { "Hello, $name!" }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub greet :sig((Str) -> Str ![Console]) ($name) { "Hello, $name!" }
 ```
 
 ---
@@ -232,7 +232,7 @@ Optional fields:
 typedef Person => '{ name => Str, age => Int }';
 typedef Config => '{ host => Str, port => Int, tls? => Bool }';
 
-my $p :Type(Person) = { name => "Alice", age => 30 };
+my $p :sig(Person) = { name => "Alice", age => 30 };
 ```
 
 ---
@@ -457,12 +457,12 @@ F: * -> *                     With kind annotation
 
 ```perl
 # Simple generic
-sub first :Type(<T>(ArrayRef[T]) -> T) ($arr) {
+sub first :sig(<T>(ArrayRef[T]) -> T) ($arr) {
     $arr->[0];
 }
 
 # Multiple type variables
-sub pair :Type(<T, U>(T, U) -> Tuple[T, U]) ($a, $b) {
+sub pair :sig(<T, U>(T, U) -> Tuple[T, U]) ($a, $b) {
     [$a, $b];
 }
 ```
@@ -494,7 +494,7 @@ Type variables can be bounded above by a type:
 
 ```perl
 # T must be a subtype of Num
-sub max_of :Type(<T: Num>(T, T) -> T) ($a, $b) {
+sub max_of :sig(<T: Num>(T, T) -> T) ($a, $b) {
     $a > $b ? $a : $b;
 }
 ```
@@ -510,7 +510,7 @@ sub max_of :Type(<T: Num>(T, T) -> T) ($a, $b) {
 Multiple bounds can be combined with `+`:
 
 ```perl
-sub sorted_show :Type(<T: Ord + Show>(ArrayRef[T]) -> Str) ($arr) { ... }
+sub sorted_show :sig(<T: Ord + Show>(ArrayRef[T]) -> Str) ($arr) { ... }
 ```
 
 This checks both typeclass constraints at instantiation time.
@@ -693,8 +693,8 @@ BEGIN {
 Functions declare their effects with `![...]`:
 
 ```perl
-sub greet :Type((Str) -> Str ![Console]) ($name) { ... }
-sub fetch :Type((Str) -> Any ![DB, Console]) ($query) { ... }
+sub greet :sig((Str) -> Str ![Console]) ($name) { ... }
+sub fetch :sig((Str) -> Any ![DB, Console]) ($query) { ... }
 ```
 
 ### Effect Checking Rules
@@ -783,7 +783,7 @@ Row(Console, r)           Open row: Console + whatever r provides
 Declared in the generic list with `r: Row`:
 
 ```perl
-sub with_log :Type(<r: Row>(Str) -> Str ![Log, r]) ($msg) {
+sub with_log :sig(<r: Row>(Str) -> Str ![Log, r]) ($msg) {
     $msg;
 }
 ```

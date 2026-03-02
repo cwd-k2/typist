@@ -27,7 +27,7 @@ sub critique_source ($source) {
 subtest 'annotated public sub has no violations' => sub {
     my @violations = critique_source(<<'PERL');
 use v5.40;
-sub greet :Type((Str) -> Str) ($name) { "Hello $name" }
+sub greet :sig((Str) -> Str) ($name) { "Hello $name" }
 PERL
 
     is scalar @violations, 0, 'no violations';
@@ -53,7 +53,7 @@ sub greet ($name) { "Hello $name" }
 PERL
 
     is scalar @violations, 1, 'one violation';
-    like $violations[0]->description, qr/Public sub 'greet' lacks :Type\(\) annotation/,
+    like $violations[0]->description, qr/Public sub 'greet' lacks :sig\(\) annotation/,
         'violation message mentions missing annotation';
 };
 
@@ -62,7 +62,7 @@ PERL
 subtest 'mixed subs: only unannotated public flagged' => sub {
     my @violations = critique_source(<<'PERL');
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 sub mul ($a, $b) { $a * $b }
 sub _internal ($x) { $x }
 sub div ($a, $b) { $a / $b }

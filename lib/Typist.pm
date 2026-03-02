@@ -7,8 +7,6 @@ our $VERSION = '0.01';
 our $RUNTIME     = $ENV{TYPIST_RUNTIME}     ? 1 : 0;
 our $CHECK_QUIET = $ENV{TYPIST_CHECK_QUIET} ? 1 : 0;
 
-my $NEWTYPE_RE = qr/\ATypist::Newtype::/;
-
 use Typist::Type;
 use Typist::Type::Atom;
 use Typist::Type::Param;
@@ -25,6 +23,7 @@ use Typist::Type::Eff;
 use Typist::Type::Data;
 use Typist::Type::Struct;
 use Typist::Struct::Base;
+use Typist::Newtype::Base;
 use Typist::Effect;
 use Typist::TypeClass;
 use Typist::Kind;
@@ -42,7 +41,11 @@ use Typist::DSL;
 
 sub import ($class, @args) {
     my $caller = caller;
-    $Typist::RUNTIME = 1 if grep { $_ eq '-runtime' } @args;
+    my @dsl_names;
+    for my $arg (@args) {
+        if    ($arg eq '-runtime') { $Typist::RUNTIME = 1 }
+        elsif ($arg =~ /\A[A-Z]/ || $arg eq 'optional') { push @dsl_names, $arg }
+    }
 
     # Track this package
     Typist::Registry->register_package($caller);
@@ -50,11 +53,10 @@ sub import ($class, @args) {
     # Install attribute handlers
     Typist::Attribute->install($caller);
 
-    # Export typedef, newtype, unwrap into caller's namespace
+    # Export core functions into caller's namespace
     no strict 'refs';
     *{"${caller}::typedef"} = \&Typist::Registry::typedef;
     *{"${caller}::newtype"}   = \&_newtype;
-    *{"${caller}::unwrap"}    = \&_unwrap;
     *{"${caller}::typeclass"} = \&_typeclass;
     *{"${caller}::instance"}  = \&_instance;
     *{"${caller}::effect"}    = \&_effect;
@@ -65,6 +67,15 @@ sub import ($class, @args) {
     *{"${caller}::enum"}      = \&_enum;
     *{"${caller}::struct"}    = sub ($name, @fields) { _struct($name, $caller, @fields) };
     *{"${caller}::protocol"}  = \&_make_protocol;
+
+    # Selective DSL re-export
+    if (@dsl_names) {
+        my $map = Typist::DSL->export_map;
+        for my $name (@dsl_names) {
+            die "Typist: unknown export '$name'\n" unless exists $map->{$name};
+            *{"${caller}::${name}"} = $map->{$name};
+        }
+    }
 }
 
 # ── Newtype Support ─────────────────────────────
@@ -79,17 +90,12 @@ sub _newtype ($name, $expr) {
     my $class_name = "Typist::Newtype::$name";
     my $expr_str = $inner->to_string;
     no strict 'refs';
+    @{"${class_name}::ISA"} = ('Typist::Newtype::Base');
     *{"${caller}::${name}"} = sub ($value) {
         die "Typist: $name — value does not satisfy $expr_str\n"
             unless $inner->contains($value);
         bless \$value, $class_name;
     };
-}
-
-sub _unwrap ($value) {
-    die "Typist: unwrap — not a newtype value\n"
-        unless defined $value && ref $value && ref($value) =~ $NEWTYPE_RE;
-    $$value;
 }
 
 # ── TypeClass Support ───────────────────────────
@@ -650,22 +656,22 @@ Typist - A static-first type system for Perl 5
     }
 
     # Typed variables
-    my $count :Type(Int) = 0;
+    my $count :sig(Int) = 0;
 
     # Typed subroutines
-    sub add :Type((Int, Int) -> Int) ($a, $b) {
+    sub add :sig((Int, Int) -> Int) ($a, $b) {
         $a + $b;
     }
 
     # Generics with bounded quantification
-    sub max_of :Type(<T: Num>(T, T) -> T) ($a, $b) {
+    sub max_of :sig(<T: Num>(T, T) -> T) ($a, $b) {
         $a > $b ? $a : $b;
     }
 
 =head1 DESCRIPTION
 
 Typist brings static type annotations to Perl through the standard attribute
-syntax C<:Type(...)>. Errors are caught at compile time (CHECK phase) and
+syntax C<:sig(...)>. Errors are caught at compile time (CHECK phase) and
 via the LSP server, with zero runtime overhead by default.
 
     use Typist;            # Static-only (default)
@@ -685,9 +691,9 @@ Define a type alias: C<typedef Name =E<gt> 'Str'>
 
 Define a nominal type: C<newtype UserId =E<gt> 'Int'>
 
-=item C<unwrap>
+=item C<< $val->base >>
 
-Extract the inner value from a newtype: C<unwrap($uid)>
+Extract the inner value from a newtype: C<< $uid->base >>
 
 =item C<typeclass>
 

@@ -56,26 +56,26 @@ sub _suggest_add_effect ($class, $diag, $doc) {
         diagnostics => [$class->_strip_internal($diag)],
     };
 
-    # Try to generate a WorkspaceEdit for the :Type() annotation
+    # Try to generate a WorkspaceEdit for the :sig() annotation
     my $edit = $class->_build_effect_edit($doc, $fn_name, $effect_label);
     $action->{edit} = $edit if $edit;
 
     $action;
 }
 
-# Build a WorkspaceEdit that adds an effect label to a function's :Type() annotation.
+# Build a WorkspaceEdit that adds an effect label to a function's :sig() annotation.
 sub _build_effect_edit ($class, $doc, $fn_name, $effect_label) {
     my $lines = $doc->lines;
     return undef unless $lines && @$lines;
     my $uri = $doc->uri;
 
-    # Find the :Type(...) annotation line for the target function
+    # Find the :sig(...) annotation line for the target function
     for my $i (0 .. $#$lines) {
         my $line = $lines->[$i];
 
-        # Match: sub fn_name :Type(...) pattern on single line
+        # Match: sub fn_name :sig(...) pattern on single line
         next unless $line =~ /\bsub\s+\Q$fn_name\E\b/;
-        next unless $line =~ /:Type\(/;
+        next unless $line =~ /:sig\(/;
 
         # Determine edit position
         my ($new_line, $col);
@@ -88,12 +88,12 @@ sub _build_effect_edit ($class, $doc, $fn_name, $effect_label) {
                       . ", $effect_label"
                       . substr($line, $eff_close);
         } else {
-            # No ![...] — insert before the closing ) of :Type(...)
-            # Find the last ) that closes :Type(
-            my $type_start = index($line, ':Type(');
+            # No ![...] — insert before the closing ) of :sig(...)
+            # Find the last ) that closes :sig(
+            my $type_start = index($line, ':sig(');
             return undef if $type_start < 0;
 
-            # Walk from :Type( to find matching )
+            # Walk from :sig( to find matching )
             my $depth = 0;
             my $close_pos = -1;
             for my $p ($type_start + 5 .. length($line) - 1) {

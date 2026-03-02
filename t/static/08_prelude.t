@@ -18,9 +18,9 @@ subtest 'prelude: IO, Exn, and Decl effects are known' => sub {
 package PreludeEffects;
 use v5.40;
 
-sub io_fn :Type(() -> Void ![IO]) () { }
-sub exn_fn :Type(() -> Void ![Exn]) () { }
-sub decl_fn :Type(() -> Void ![Decl]) () { }
+sub io_fn :sig(() -> Void ![IO]) () { }
+sub exn_fn :sig(() -> Void ![Exn]) () { }
+sub decl_fn :sig(() -> Void ![Decl]) () { }
 PERL
 
     my @unknown = grep { $_->{kind} eq 'UnknownEffect' } $result->{diagnostics}->@*;
@@ -39,7 +39,7 @@ subtest 'typecheck: length(Int) → TypeMismatch' => sub {
 package LengthCheck;
 use v5.40;
 
-sub count :Type((Int) -> Int) ($n) {
+sub count :sig((Int) -> Int) ($n) {
     return length($n);
 }
 PERL
@@ -53,7 +53,7 @@ subtest 'typecheck: length(Str) → no error' => sub {
 package LengthOk;
 use v5.40;
 
-sub count :Type((Str) -> Int) ($s) {
+sub count :sig((Str) -> Int) ($s) {
     return length($s);
 }
 PERL
@@ -66,7 +66,7 @@ subtest 'typecheck: uc(Int) → TypeMismatch' => sub {
 package UcCheck;
 use v5.40;
 
-sub upper :Type((Int) -> Str) ($n) {
+sub upper :sig((Int) -> Str) ($n) {
     return uc($n);
 }
 PERL
@@ -80,7 +80,7 @@ subtest 'typecheck: abs(Str) → TypeMismatch' => sub {
 package AbsCheck;
 use v5.40;
 
-sub positive :Type((Str) -> Num) ($s) {
+sub positive :sig((Str) -> Num) ($s) {
     return abs($s);
 }
 PERL
@@ -96,7 +96,7 @@ subtest 'infer: length() returns Int' => sub {
 package InferLength;
 use v5.40;
 
-my $x :Type(Str) = length("hello");
+my $x :sig(Str) = length("hello");
 PERL
 
     is scalar @$errs, 1, 'one type error';
@@ -108,7 +108,7 @@ subtest 'infer: length() return assigned to Int → no error' => sub {
 package InferLengthOk;
 use v5.40;
 
-my $x :Type(Int) = length("hello");
+my $x :sig(Int) = length("hello");
 PERL
 
     is scalar @$errs, 0, 'length returns Int, assigned to Int — no error';
@@ -119,7 +119,7 @@ subtest 'infer: uc() returns Str' => sub {
 package InferUc;
 use v5.40;
 
-my $x :Type(Int) = uc("hello");
+my $x :sig(Int) = uc("hello");
 PERL
 
     is scalar @$errs, 1, 'one type error';
@@ -133,7 +133,7 @@ subtest 'effects: say in ![IO] function → no error' => sub {
 package SayInIO;
 use v5.40;
 
-sub greet :Type((Str) -> Void ![IO]) ($name) {
+sub greet :sig((Str) -> Void ![IO]) ($name) {
     say "Hello, $name";
 }
 PERL
@@ -146,7 +146,7 @@ subtest 'effects: say in pure function → EffectMismatch' => sub {
 package SayInPure;
 use v5.40;
 
-sub greet :Type((Str) -> Str) ($name) {
+sub greet :sig((Str) -> Str) ($name) {
     say "Hello, $name";
     return $name;
 }
@@ -161,7 +161,7 @@ subtest 'effects: die in ![Exn] function → no error' => sub {
 package DieInExn;
 use v5.40;
 
-sub fail :Type((Str) -> Never ![Exn]) ($msg) {
+sub fail :sig((Str) -> Never ![Exn]) ($msg) {
     die($msg);
 }
 PERL
@@ -174,7 +174,7 @@ subtest 'effects: die in ![IO] function → EffectMismatch' => sub {
 package DieInIO;
 use v5.40;
 
-sub io_only :Type((Str) -> Void ![IO]) ($msg) {
+sub io_only :sig((Str) -> Void ![IO]) ($msg) {
     die($msg);
 }
 PERL
@@ -188,7 +188,7 @@ subtest 'effects: pure builtin (length) in pure function → no error' => sub {
 package PureBuiltin;
 use v5.40;
 
-sub count :Type((Str) -> Int) ($s) {
+sub count :sig((Str) -> Int) ($s) {
     length($s);
 }
 PERL
@@ -211,7 +211,7 @@ use v5.40;
 
 declare say => '(Str) -> Void ![Console]';
 
-sub greet :Type((Str) -> Void ![Console]) ($name) {
+sub greet :sig((Str) -> Void ![Console]) ($name) {
     say "Hello, $name";
 }
 PERL
@@ -226,7 +226,7 @@ use v5.40;
 
 declare length => '(Str) -> Int';
 
-sub count :Type((Str) -> Int) ($s) {
+sub count :sig((Str) -> Int) ($s) {
     length($s);
 }
 PERL
@@ -241,7 +241,7 @@ subtest 'effects: multiple builtins with same effect → OK' => sub {
 package MultiBuiltin;
 use v5.40;
 
-sub verbose :Type((Str) -> Void ![IO]) ($msg) {
+sub verbose :sig((Str) -> Void ![IO]) ($msg) {
     print "LOG: ";
     say $msg;
 }
@@ -255,7 +255,7 @@ subtest 'effects: mixed IO and Exn builtins → need both' => sub {
 package MixedEffects;
 use v5.40;
 
-sub bail :Type((Str) -> Never ![IO, Exn]) ($msg) {
+sub bail :sig((Str) -> Never ![IO, Exn]) ($msg) {
     say $msg;
     die($msg);
 }
@@ -269,7 +269,7 @@ subtest 'effects: mixed builtins missing one effect → flagged' => sub {
 package MissingEffect;
 use v5.40;
 
-sub bail :Type((Str) -> Never ![IO]) ($msg) {
+sub bail :sig((Str) -> Never ![IO]) ($msg) {
     say $msg;
     die($msg);
 }
@@ -286,7 +286,7 @@ subtest 'effects: typedef in ![Decl] function → no error' => sub {
 package TypedefDecl;
 use v5.40;
 
-sub setup :Type(() -> Void ![Decl]) () {
+sub setup :sig(() -> Void ![Decl]) () {
     typedef UserId => 'Int';
 }
 PERL
@@ -299,7 +299,7 @@ subtest 'effects: typedef in pure function → EffectMismatch' => sub {
 package TypedefPure;
 use v5.40;
 
-sub setup :Type(() -> Void) () {
+sub setup :sig(() -> Void) () {
     typedef UserId => 'Int';
 }
 PERL
@@ -308,17 +308,19 @@ PERL
     like $errs->[0]{message}, qr/Decl/, 'reports Decl effect requirement';
 };
 
-subtest 'effects: unwrap remains pure' => sub {
+subtest 'effects: ->base is pure (method call, no effect)' => sub {
     my $errs = diags_of(<<'PERL', 'EffectMismatch');
-package UnwrapPure;
+package BasePure;
 use v5.40;
 
-sub extract :Type((Any) -> Any) ($val) {
-    unwrap($val);
+newtype UserId => 'Int';
+
+sub extract :sig((UserId) -> Int) ($val) {
+    $val->base;
 }
 PERL
 
-    is scalar @$errs, 0, 'unwrap in pure function — no effect error (remains pure)';
+    is scalar @$errs, 0, '->base in pure function — no effect error';
 };
 
 # ── New IO/Exn effects on core builtins ───────
@@ -328,7 +330,7 @@ subtest 'effects: rand requires IO' => sub {
 package RandPure;
 use v5.40;
 
-sub roll :Type(() -> Num) () {
+sub roll :sig(() -> Num) () {
     rand(6);
 }
 PERL
@@ -342,7 +344,7 @@ subtest 'effects: time requires IO' => sub {
 package TimePure;
 use v5.40;
 
-sub now :Type(() -> Int) () {
+sub now :sig(() -> Int) () {
     time();
 }
 PERL
@@ -356,7 +358,7 @@ subtest 'effects: sleep requires IO' => sub {
 package SleepPure;
 use v5.40;
 
-sub wait_a_bit :Type(() -> Int) () {
+sub wait_a_bit :sig(() -> Int) () {
     sleep(1);
 }
 PERL
@@ -370,7 +372,7 @@ subtest 'effects: eval requires Exn' => sub {
 package EvalPure;
 use v5.40;
 
-sub try_it :Type((Any) -> Any) ($code) {
+sub try_it :sig((Any) -> Any) ($code) {
     eval($code);
 }
 PERL
@@ -384,7 +386,7 @@ subtest 'effects: exit requires Exn' => sub {
 package ExitPure;
 use v5.40;
 
-sub abort :Type(() -> Never) () {
+sub abort :sig(() -> Never) () {
     exit(1);
 }
 PERL
@@ -398,7 +400,7 @@ subtest 'effects: rand in ![IO] function → no error' => sub {
 package RandIO;
 use v5.40;
 
-sub roll :Type(() -> Num ![IO]) () {
+sub roll :sig(() -> Num ![IO]) () {
     rand(6);
 }
 PERL
@@ -411,7 +413,7 @@ subtest 'effects: eval in ![Exn] function → no error' => sub {
 package EvalExn;
 use v5.40;
 
-sub try_it :Type((Any) -> Any ![Exn]) ($code) {
+sub try_it :sig((Any) -> Any ![Exn]) ($code) {
     eval($code);
 }
 PERL
@@ -426,7 +428,7 @@ subtest 'effects: struct requires Decl' => sub {
 package StructPure;
 use v5.40;
 
-sub define :Type(() -> Void) () {
+sub define :sig(() -> Void) () {
     struct Point => ('x' => 'Int', 'y' => 'Int');
 }
 PERL

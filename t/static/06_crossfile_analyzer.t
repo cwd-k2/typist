@@ -19,7 +19,7 @@ subtest 'analyzer resolves workspace typedefs' => sub {
 package Consumer;
 use v5.40;
 
-sub get_user :Type((UserId) -> Email) ($id) {
+sub get_user :sig((UserId) -> Email) ($id) {
     return "user\@example.com";
 }
 PERL
@@ -63,7 +63,7 @@ subtest 'analyzer checks cross-package function calls' => sub {
 package Consumer;
 use v5.40;
 
-sub caller_ok :Type((Int) -> Int) ($x) {
+sub caller_ok :sig((Int) -> Int) ($x) {
     return Helper::add($x, 1);
 }
 PERL
@@ -84,7 +84,7 @@ subtest 'analyzer detects cross-package type mismatch' => sub {
 package Consumer;
 use v5.40;
 
-sub caller_bad :Type((Str) -> Int) ($x) {
+sub caller_bad :sig((Str) -> Int) ($x) {
     return Helper::add("hello", "world");
 }
 PERL
@@ -118,7 +118,7 @@ subtest 'analyzer checks cross-package effect requirements' => sub {
 package App;
 use v5.40;
 
-sub safe :Type((Str) -> Void ![Console]) ($msg) {
+sub safe :sig((Str) -> Void ![Console]) ($msg) {
     IO::print_line($msg);
 }
 PERL
@@ -146,7 +146,7 @@ subtest 'alias argument matches concrete param via workspace registry' => sub {
 package Order;
 use v5.40;
 
-sub create :Type((Int) -> Int) ($qty) {
+sub create :sig((Int) -> Int) ($qty) {
     my $sub = Pricing::subtotal($qty);
     return Pricing::apply_discount($sub, 10);
 }
@@ -175,7 +175,7 @@ subtest 'alias argument satisfies bound in generic call via workspace registry' 
 package Order;
 use v5.40;
 
-sub create :Type((Int) -> Int) ($qty) {
+sub create :sig((Int) -> Int) ($qty) {
     my $sub = Pricing::subtotal($qty);
     return Pricing::apply_discount($sub, 10);
 }

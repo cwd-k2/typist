@@ -114,7 +114,7 @@ declare:    Statement[ Word("declare"), Word(Name), Operator("=>"), Quote(expr) 
 
 Variable:   Statement::Variable[ Symbol($x), Operator(:), Word(Type), List(...) ]
             PPI doesn't parse variable attributes as PPI::Token::Attribute,
-            so the :Type(...) pattern is reconstructed manually.
+            so the :sig(...) pattern is reconstructed manually.
 
 Function:   Statement::Sub[ Word(name), Token::Attribute("Type(...)"), Block ]
             Regex match: /\AType\((.+)\)\z/s on attribute content
@@ -125,7 +125,7 @@ Method:     Function where first param_name is $self (instance) or $class (class
 
 ### Unannotated Function Handling
 
-Functions without `:Type()` are still extracted with:
+Functions without `:sig()` are still extracted with:
 
 ```perl
 {
@@ -456,7 +456,7 @@ _narrow_env_for_block(env, node):
 ### Example
 
 ```perl
-my $x :Type(Str | Undef) = get_value();
+my $x :sig(Str | Undef) = get_value();
 if (defined($x)) {
     # $x is narrowed to Str here
     process($x);   # No TypeMismatch even though declared as Str | Undef
@@ -655,9 +655,9 @@ Typist implements gradual typing where annotation density determines check stric
 ```
 Level                    Example                               Behavior
 ─────────────────────    ───────────────────────────            ──────────────────────
-Fully annotated          :Type((Str) -> Int ![Console])        All checks active
-Partial (no return)      :Type((Str) -> Any)                   Params checked, return unknown
-Partial (no effect)      :Type((Str) -> Int)                   Types checked, treated as pure
+Fully annotated          :sig((Str) -> Int ![Console])        All checks active
+Partial (no return)      :sig((Str) -> Any)                   Params checked, return unknown
+Partial (no effect)      :sig((Str) -> Int)                   Types checked, treated as pure
 Unannotated              sub foo ($x) { ... }                  Skipped (Any -> Any ! [*])
 ```
 
@@ -783,7 +783,7 @@ Raw errors from checkers may lack precise file/line information. `Analyzer._to_d
 A comment `# @typist-ignore` on line N suppresses all diagnostics on line N+1:
 
 ```perl
-sub handler :Type((Str) -> Str ![Console]) ($s) {
+sub handler :sig((Str) -> Str ![Console]) ($s) {
     # @typist-ignore
     some_unannotated_function($s);  # No EffectMismatch
 }
@@ -811,7 +811,7 @@ Setting `TYPIST_CHECK_QUIET=1` skips the entire `_check_analyze()` pass in the C
 |------------|--------|
 | No control flow analysis | if/while branches not analyzed for variable type refinement beyond `defined()` |
 | No scope shadowing | Inner closures share parent's flat name env |
-| PPI attribute parsing fragile | Unusual spacing in `:Type(...)` may fail |
+| PPI attribute parsing fragile | Unusual spacing in `:sig(...)` may fail |
 | Method calls limited to $self | No cross-package or arbitrary receiver method checking |
 | Narrowing limited to `defined()` | Other guards (e.g., `ref`, pattern match) not handled |
 

@@ -1,0 +1,94 @@
+use v5.40;
+use Test::More;
+use lib 'lib';
+use File::Temp 'tempfile';
+
+# Helper: run Perl code in a subprocess, return stdout+stderr
+sub run_perl ($code) {
+    my ($fh, $file) = tempfile(SUFFIX => '.pl', UNLINK => 1);
+    print $fh $code;
+    close $fh;
+    my $out = `$^X $file 2>&1`;
+    $out;
+}
+
+# ── Selective import ────────────────────────────
+
+subtest 'use Typist qw(Int Str) — selected DSL names available' => sub {
+    my $out = run_perl(<<'PERL');
+use v5.40;
+use lib 'lib';
+use Typist qw(Int Str);
+print ref(Int), "\n";
+print ref(Str), "\n";
+PERL
+
+    like $out, qr/Typist::Type::Atom/, 'Int is available';
+};
+
+subtest 'use Typist — bare import does not export DSL names' => sub {
+    my $out = run_perl(<<'PERL');
+use v5.40;
+use lib 'lib';
+use Typist;
+eval { Int() };
+print $@ ? "not_found\n" : "found\n";
+PERL
+
+    like $out, qr/not_found/, 'Int is NOT available with bare use Typist';
+};
+
+subtest 'use Typist qw(optional Int) — optional is importable' => sub {
+    my $out = run_perl(<<'PERL');
+use v5.40;
+use lib 'lib';
+use Typist qw(optional Int);
+my $o = optional(Int);
+print ref($o), "\n";
+PERL
+
+    like $out, qr/Typist::DSL::Optional/, 'optional() available';
+};
+
+subtest 'use Typist qw(NotAType) — dies on unknown name' => sub {
+    my $out = run_perl(<<'PERL');
+use v5.40;
+use lib 'lib';
+eval { require Typist; Typist->import('NotAType') };
+print $@ ? "died\n" : "ok\n";
+PERL
+
+    like $out, qr/died/, 'unknown DSL name causes die';
+};
+
+subtest 'use Typist -runtime, qw(Int) — runtime flag with DSL' => sub {
+    my $out = run_perl(<<'PERL');
+use v5.40;
+use lib 'lib';
+use Typist -runtime, qw(Int);
+print ref(Int), "\n";
+print $Typist::RUNTIME ? "runtime\n" : "static\n";
+PERL
+
+    like $out, qr/Typist::Type::Atom/, 'Int is available';
+    like $out, qr/runtime/, 'runtime flag is set';
+};
+
+subtest 'core functions always exported' => sub {
+    my $out = run_perl(<<'PERL');
+use v5.40;
+use lib 'lib';
+use Typist;
+print defined(&typedef)  ? "yes\n" : "no\n";
+print defined(&newtype)  ? "yes\n" : "no\n";
+print defined(&effect)   ? "yes\n" : "no\n";
+print defined(&handle)   ? "yes\n" : "no\n";
+print defined(&match)    ? "yes\n" : "no\n";
+print defined(&struct)   ? "yes\n" : "no\n";
+PERL
+
+    my @lines = split /\n/, $out;
+    is_deeply \@lines, [('yes') x 6], 'all core functions exported with bare use Typist';
+};
+
+done_testing;

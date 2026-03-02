@@ -25,17 +25,17 @@ BEGIN {
 }
 
 # Aliases are structural — Name is interchangeable with Str.
-my $name :Type(Name) = "Alice";
-my $age  :Type(Age)  = 30;
+my $name :sig(Name) = "Alice";
+my $age  :sig(Age)  = 30;
 
 say "name=$name  age=$age";
 
 # ── Typed Variables ───────────────────────────────────────
 #
-# :Type(T) enforces the type on every assignment.
+# :sig(T) enforces the type on every assignment.
 # Runtime mode validates via Tie::Scalar on STORE.
 
-my $score :Type(Int) = 100;
+my $score :sig(Int) = 100;
 $score = 95;                    # ok: Int <- Int
 
 eval { $score = "high" };       # ng: "high" is not numeric
@@ -48,7 +48,7 @@ eval { $score = undef };        # ng: undef is not Int
 say "Int <- undef:  $@" if $@;
 
 # Maybe[T] = T | Undef — explicitly nullable.
-my $email :Type(Maybe[Str]) = undef;
+my $email :sig(Maybe[Str]) = undef;
 $email = 'alice@example.com';   # ok: Str
 $email = undef;                 # ok: Undef
 
@@ -57,14 +57,14 @@ say "Maybe[Str] <- ArrayRef:  $@" if $@;
 
 # ── Typed Subroutines ────────────────────────────────────
 #
-# :Type((Params) -> Return) annotates the full signature.
+# :sig((Params) -> Return) annotates the full signature.
 # Runtime mode wraps the sub to check args and return value.
 
-sub greet :Type((Str) -> Str) ($who) {
+sub greet :sig((Str) -> Str) ($who) {
     "Hello, $who!";
 }
 
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     $a + $b;
 }
 
@@ -83,7 +83,7 @@ say "add(1, []):   $@" if $@;
 
 # ── Multi-Argument Functions ──────────────────────────────
 
-sub clamp :Type((Int, Int, Int) -> Int) ($val, $lo, $hi) {
+sub clamp :sig((Int, Int, Int) -> Int) ($val, $lo, $hi) {
     $val < $lo ? $lo : $val > $hi ? $hi : $val;
 }
 
@@ -96,7 +96,7 @@ BEGIN {
     typedef Greeting => Str;
 }
 
-sub make_greeting :Type((Name, Age) -> Greeting) ($n, $a) {
+sub make_greeting :sig((Name, Age) -> Greeting) ($n, $a) {
     "$n is $a years old";
 }
 

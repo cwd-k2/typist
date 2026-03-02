@@ -13,11 +13,11 @@ subtest 'Extractor captures eff_expr' => sub {
 package EffTest;
 use v5.40;
 
-sub greet :Type((Str) -> Str ![Console]) ($name) {
+sub greet :sig((Str) -> Str ![Console]) ($name) {
     return "Hello, $name!";
 }
 
-sub main :Type(() -> Void ![Console, State]) () {
+sub main :sig(() -> Void ![Console, State]) () {
     greet("world");
 }
 PERL
@@ -34,7 +34,7 @@ subtest 'Extractor: function with effect only' => sub {
 package EffOnly;
 use v5.40;
 
-sub doIO :Type(() -> Any ![IO]) () {
+sub doIO :sig(() -> Any ![IO]) () {
     42;
 }
 PERL
@@ -57,11 +57,11 @@ subtest 'Analyzer: clean code with effects — no diagnostics' => sub {
 package Clean;
 use v5.40;
 
-sub greet :Type((Str) -> Str ![Console]) ($name) {
+sub greet :sig((Str) -> Str ![Console]) ($name) {
     return "Hello, $name!";
 }
 
-sub main :Type(() -> Void ![Console]) () {
+sub main :sig(() -> Void ![Console]) () {
     greet("world");
 }
 PERL
@@ -84,11 +84,11 @@ subtest 'Analyzer: caller missing callee effect' => sub {
 package Missing;
 use v5.40;
 
-sub effectful :Type((Str) -> Str ![Console, State]) ($x) {
+sub effectful :sig((Str) -> Str ![Console, State]) ($x) {
     return $x;
 }
 
-sub caller_fn :Type(() -> Str ![Console]) () {
+sub caller_fn :sig(() -> Str ![Console]) () {
     effectful("hello");
 }
 PERL
@@ -109,11 +109,11 @@ subtest 'Analyzer: caller has no effect but callee does' => sub {
 package NoEff;
 use v5.40;
 
-sub io_fn :Type((Str) -> Str ![IO]) ($x) {
+sub io_fn :sig((Str) -> Str ![IO]) ($x) {
     return $x;
 }
 
-sub pure_fn :Type((Str) -> Str) ($x) {
+sub pure_fn :sig((Str) -> Str) ($x) {
     io_fn($x);
 }
 PERL
@@ -134,9 +134,9 @@ subtest 'Analyzer: effect superset is OK' => sub {
 package Superset;
 use v5.40;
 
-sub needs_a :Type(() -> Void ![A]) () { }
+sub needs_a :sig(() -> Void ![A]) () { }
 
-sub has_abc :Type(() -> Void ![A, B, C]) () {
+sub has_abc :sig(() -> Void ![A, B, C]) () {
     needs_a();
 }
 PERL
@@ -152,7 +152,7 @@ subtest 'Analyzer: unknown effect label' => sub {
 package Unknown;
 use v5.40;
 
-sub bad :Type(() -> Void ![Nonexistent]) () { }
+sub bad :sig(() -> Void ![Nonexistent]) () { }
 PERL
 
     my @unknown = grep { $_->{kind} eq 'UnknownEffect' } @{$result->{diagnostics}};
@@ -171,7 +171,7 @@ subtest 'Analyzer: undeclared row variable' => sub {
 package BadRow;
 use v5.40;
 
-sub logged :Type(() -> Void ![Log, r]) () { }
+sub logged :sig(() -> Void ![Log, r]) () { }
 PERL
 
     my @undecl = grep { $_->{kind} eq 'UndeclaredRowVar' } @{$result->{diagnostics}};
@@ -196,7 +196,7 @@ sub helper ($x) {
     return $x;
 }
 
-sub main_fn :Type((Str) -> Str ![Console]) ($s) {
+sub main_fn :sig((Str) -> Str ![Console]) ($s) {
     helper($s);
 }
 PERL
@@ -215,7 +215,7 @@ sub helper ($x) {
     return $x;
 }
 
-sub pure_fn :Type((Str) -> Str) ($s) {
+sub pure_fn :sig((Str) -> Str) ($s) {
     helper($s);
 }
 PERL
@@ -230,11 +230,11 @@ subtest 'Analyzer: annotated callee without effect is pure' => sub {
 package PartiallyAnnotated;
 use v5.40;
 
-sub helper :Type((Str) -> Str) ($x) {
+sub helper :sig((Str) -> Str) ($x) {
     return $x;
 }
 
-sub caller_fn :Type((Str) -> Str) ($s) {
+sub caller_fn :sig((Str) -> Str) ($s) {
     helper($s);
 }
 PERL
@@ -256,7 +256,7 @@ subtest 'Analyzer: builtin say in ![Console] function is flagged' => sub {
 package BuiltinInEffect;
 use v5.40;
 
-sub greet :Type((Str) -> Void ![Console]) ($name) {
+sub greet :sig((Str) -> Void ![Console]) ($name) {
     say "Hello, $name";
 }
 PERL
@@ -271,7 +271,7 @@ subtest 'Analyzer: builtin in pure function is flagged' => sub {
 package BuiltinInPure;
 use v5.40;
 
-sub compute :Type((Int) -> Int) ($n) {
+sub compute :sig((Int) -> Int) ($n) {
     print "debug";
     $n * 2;
 }
@@ -297,7 +297,7 @@ use v5.40;
 
 declare say => '(Str) -> Void ![Console]';
 
-sub greet :Type((Str) -> Void ![Console]) ($name) {
+sub greet :sig((Str) -> Void ![Console]) ($name) {
     say "Hello, $name";
 }
 PERL
@@ -322,7 +322,7 @@ use v5.40;
 
 declare die => '(Any) -> Never ![Abort]';
 
-sub handler :Type((Str) -> Void ![Console]) ($msg) {
+sub handler :sig((Str) -> Void ![Console]) ($msg) {
     die("fatal: $msg");
 }
 PERL
@@ -339,7 +339,7 @@ use v5.40;
 
 declare length => '(Str) -> Int';
 
-sub count :Type((Str) -> Int) ($s) {
+sub count :sig((Str) -> Int) ($s) {
     length($s);
 }
 PERL
@@ -355,7 +355,7 @@ subtest '@typist-ignore suppresses EffectMismatch' => sub {
 package Ignore;
 use v5.40;
 sub helper ($x) { $x }
-sub main_fn :Type((Str) -> Str ![Console]) ($s) {
+sub main_fn :sig((Str) -> Str ![Console]) ($s) {
     # @typist-ignore
     helper($s);
 }
@@ -380,11 +380,11 @@ subtest 'diagnostic: col on EffectMismatch' => sub {
 package ColTest;
 use v5.40;
 
-sub effectful :Type((Str) -> Str ![Console, State]) ($x) {
+sub effectful :sig((Str) -> Str ![Console, State]) ($x) {
     return $x;
 }
 
-sub caller_fn :Type(() -> Str ![Console]) () {
+sub caller_fn :sig(() -> Str ![Console]) () {
     effectful("hello");
 }
 PERL
@@ -401,7 +401,7 @@ use v5.40;
 
 sub helper ($x) { $x }
 
-sub main_fn :Type((Str) -> Str) ($s) {
+sub main_fn :sig((Str) -> Str) ($s) {
     helper($s);
 }
 PERL
@@ -418,7 +418,7 @@ subtest 'Analyzer: enum in ![Decl] function → no error' => sub {
 package EnumDecl;
 use v5.40;
 
-sub setup :Type(() -> Void ![Decl]) () {
+sub setup :sig(() -> Void ![Decl]) () {
     enum Color => qw(Red Green Blue);
 }
 PERL
@@ -432,7 +432,7 @@ subtest 'Analyzer: eval in ![Exn] function → no error' => sub {
 package EvalExn;
 use v5.40;
 
-sub safe_eval :Type((Any) -> Any ![Exn]) ($code) {
+sub safe_eval :sig((Any) -> Any ![Exn]) ($code) {
     eval($code);
 }
 PERL
@@ -446,7 +446,7 @@ subtest 'Analyzer: eval in pure function → EffectMismatch' => sub {
 package EvalPure;
 use v5.40;
 
-sub try_parse :Type((Str) -> Any) ($s) {
+sub try_parse :sig((Str) -> Any) ($s) {
     eval($s);
 }
 PERL

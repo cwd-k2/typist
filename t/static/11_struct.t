@@ -93,7 +93,7 @@ package main;
 use Typist;
 use Typist::DSL;
 struct Person => (name => Str, age => Int);
-sub test :Type((Person) -> Void) ($p) {
+sub test :sig((Person) -> Void) ($p) {
     my $x = $p;
 }
 PERL
@@ -205,7 +205,7 @@ package TestPkg;
 use Typist;
 use Typist::DSL;
 struct Person => (name => Str, age => Int);
-sub find :Type((Int) -> Person) ($id) { Person(name => "x", age => $id) }
+sub find :sig((Int) -> Person) ($id) { Person(name => "x", age => $id) }
 PERL
     my $extracted = Typist::Static::Extractor->extract($source);
     my $registry  = Typist::Registry->new;
@@ -236,7 +236,7 @@ package TestPkg;
 use Typist;
 use Typist::DSL;
 struct Person => (name => Str, age => Int);
-sub find :Type((Int) -> Person) ($id) { Person(name => "x", age => $id) }
+sub find :sig((Int) -> Person) ($id) { Person(name => "x", age => $id) }
 PERL
     my $extracted = Typist::Static::Extractor->extract($source);
     my $registry  = Typist::Registry->new;

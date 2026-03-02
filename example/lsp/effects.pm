@@ -24,31 +24,31 @@ effect State   => +{};
 
 # ── OK: caller's effects include callee's ─────────────────
 
-sub write_msg :Type((Str) -> Str ![Console]) ($s) {
+sub write_msg :sig((Str) -> Str ![Console]) ($s) {
     $s;
 }
 
-sub main_ok :Type(() -> Str ![Console, State]) () {
+sub main_ok :sig(() -> Str ![Console, State]) () {
     write_msg("hello");     # Console ⊆ {Console, State} → OK
 }
 
 # ── NG: caller missing callee's effect ────────────────────
 
-sub stateful :Type((Str) -> Str ![Console, State]) ($x) {
+sub stateful :sig((Str) -> Str ![Console, State]) ($x) {
     $x;
 }
 
-sub caller_fn :Type(() -> Str ![Console]) () {
+sub caller_fn :sig(() -> Str ![Console]) () {
     stateful("hello");      # ← DIAGNOSTIC: State not in {Console}
 }
 
 # ── NG: pure caller calls effectful callee ────────────────
 
-sub io_fn :Type((Str) -> Str ![Console]) ($x) {
+sub io_fn :sig((Str) -> Str ![Console]) ($x) {
     $x;
 }
 
-sub pure_fn :Type((Str) -> Str) ($x) {
+sub pure_fn :sig((Str) -> Str) ($x) {
     io_fn($x);              # ← DIAGNOSTIC: pure → no effects allowed
 }
 
@@ -58,7 +58,7 @@ sub unknown_helper ($x) {
     $x;
 }
 
-sub safe_fn :Type((Str) -> Str ![Console]) ($s) {
+sub safe_fn :sig((Str) -> Str ![Console]) ($s) {
     unknown_helper($s);     # ← DIAGNOSTIC: unannotated → [*]
 }
 

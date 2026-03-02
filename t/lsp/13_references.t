@@ -9,7 +9,7 @@ use Test::Typist::LSP qw(run_session lsp_request lsp_notification init_shutdown_
 subtest 'references finds all occurrences of function name' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub greet :Type((Str) -> Str) ($name) {
+sub greet :sig((Str) -> Str) ($name) {
     return "hello $name";
 }
 greet("world");
@@ -48,8 +48,8 @@ subtest 'references finds type name in annotations and typedef' => sub {
     my $source = <<'PERL';
 use v5.40;
 typedef Age => 'Int';
-sub get_age :Type(( ) -> Age) () { 42 }
-sub set_age :Type((Age) -> Void) ($a) { }
+sub get_age :sig(( ) -> Age) () { 42 }
+sub set_age :sig((Age) -> Void) ($a) { }
 PERL
 
     my @results = run_session(init_shutdown_wrap(
@@ -98,7 +98,7 @@ PERL
 subtest 'references spans multiple open documents' => sub {
     my $source_a = <<'PERL';
 use v5.40;
-sub helper :Type((Int) -> Int) ($n) { $n + 1 }
+sub helper :sig((Int) -> Int) ($n) { $n + 1 }
 PERL
 
     my $source_b = <<'PERL';
@@ -134,8 +134,8 @@ PERL
 subtest 'references respects word boundaries' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub foo :Type(( ) -> Int) () { 1 }
-sub foobar :Type(( ) -> Int) () { 2 }
+sub foo :sig(( ) -> Int) () { 1 }
+sub foobar :sig(( ) -> Int) () { 2 }
 foo();
 foobar();
 PERL

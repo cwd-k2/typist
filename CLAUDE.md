@@ -26,6 +26,7 @@ Error (value + Collector), Error::Global (singleton buffer)
 Type::{Atom,Param,Union,Intersection,Func,Record,Struct,Var,Alias,Literal,Newtype,Row,Eff,Data}
 Type::Fold (map_type, walk)
 Struct::Base (blessed immutable object base)
+Newtype::Base (newtype value base, ->base accessor)
 Kind, KindChecker, TypeClass, Effect
 Static::Registration (shared type registration)
 DSL (Type constructors: Int, Str, ArrayRef(...), Record(...), Func(...), optional(), etc.)
@@ -52,7 +53,7 @@ Runtime (opt-in)| Generic instantiation      | die           | -runtime flag
 - `Typist::Type` — Abstract base with `|` (union), `&` (intersection), `""` (stringify) overloads. `coerce($expr)` accepts both Type objects and strings.
 - `Typist::Error` — Value class + Collector (instance-based). `Typist::Error::Global` provides the global singleton buffer.
 - `Typist::Static::Checker` — CHECK-phase validation (alias cycles, undeclared vars, bound/kind/effect well-formedness).
-- `Typist::Prelude` — Builtin function type annotations for Perl core functions and Typist builtins (say, print, die, length, typedef, unwrap, struct, etc. — 81 functions). Three standard effect labels: `IO` (I/O, time, randomness), `Exn` (exceptions, eval, exit), `Decl` (type/effect/struct declarations). Installed into CORE:: namespace via `install($registry)`. Auto-loaded by Analyzer and Workspace. User `declare` overrides entries. `builtin_names()` class method returns the canonical name list (single source of truth for Document/EffectChecker).
+- `Typist::Prelude` — Builtin function type annotations for Perl core functions and Typist builtins (say, print, die, length, typedef, struct, etc.). Three standard effect labels: `IO` (I/O, time, randomness), `Exn` (exceptions, eval, exit), `Decl` (type/effect/struct declarations). Installed into CORE:: namespace via `install($registry)`. Auto-loaded by Analyzer and Workspace. User `declare` overrides entries. `builtin_names()` class method returns the canonical name list (single source of truth for Document/EffectChecker).
 - `Typist::Static::Unify` — Type-based unification. Pairs formal (annotated) types against actual (inferred) types, extracting type-variable bindings. `collect_bindings($formal, $actual, $bindings)` is the shared binding-collection method used by both Infer.pm and Subtype.pm. Used by TypeChecker for generic function instantiation.
 - `Typist::Static::Infer` — Static type inference from PPI elements (literals, variable symbols, function calls, operator expressions, anonymous subs). Infers arithmetic/comparison/logical/concatenation/repetition operators, chained binary expressions, compound assignment operators, subscript access (`$a->[0]`, `$h->{k}`), method access (`$p->name` for struct accessors), ternary expressions, `handle { BLOCK }` return types, `match` arm union/LUB types, and anonymous sub types (`sub ($x) { ... }` → Func type with param count and body return inference). Interpolated strings (`"Hello $name"`) infer as `Str`, not `Literal`. Bidirectional: accepts optional `$expected` for propagation into arrays, hashes, ternary arms, and anonymous sub param types. Accepts optional `$env` for gradual typing.
 - `Typist::Static::TypeChecker` — Static type mismatch detection (variable initializers, assignments, call site args, return types). Arity checking (ArityMismatch) with default parameter support and callback arity checking (anonymous sub param count vs expected Func type), variable reassignment checking (annotated-only), method type checking (`$self->method()`), generic instantiation via Unify, and control flow narrowing (`defined($x)`, truthiness `if ($x)`, `isa`, early return). Builds type environment for function return type propagation and variable symbol resolution.
@@ -82,7 +83,7 @@ Runtime (opt-in)| Generic instantiation      | die           | -runtime flag
 - Hashref literals always use `+{}` to disambiguate from blocks.
 - Two-tier composite types: **Record** (structural, plain hashrefs via `typedef Name => Record(...)`) and **struct** (nominal, blessed immutable objects via `struct Name => (fields...)`). Struct values have constructors (`Name(field => val)`), accessors (`$obj->field`), and immutable updates (`$obj->with(field => val)`). `optional(Type)` marks fields that can be omitted. Struct <: Record (structural compatibility), Record </: Struct (nominal barrier).
 - No source filters or external preprocessors.
-- Static-first: `use Typist;` = static-only (default). Runtime enforcement via `use Typist -runtime;` or `TYPIST_RUNTIME=1`. Newtype constructors and `unwrap` always validate (boundary enforcement).
+- Static-first: `use Typist;` = static-only (default). Runtime enforcement via `use Typist -runtime;` or `TYPIST_RUNTIME=1`. Newtype constructors always validate (boundary enforcement). `$val->base` extracts inner value (via `Typist::Newtype::Base`).
 - CHECK phase runs both structural checks (Checker) and full static analysis (Analyzer with TypeChecker + EffectChecker) per loaded package. Diagnostics surface as `warn` → perlnavigator picks these up. Suppress with `TYPIST_CHECK_QUIET=1` when using typist-lsp.
 - Gradual typing: fully annotated → all checks enforced; partially annotated (some attrs, no `:Eff`) → pure, return type unknown if no `:Returns`; completely unannotated → `(Any...) -> Any ! [*]`, type checks skip, effect checks flag.
 - `datatype Shape => Circle => '(Int)', Rectangle => '(Int, Int)'` defines ADTs (tagged unions). Constructors are installed into the caller's namespace. Parameterized ADTs via `datatype 'Option[T]' => Some => '(T)', None => '()'` — type params are promoted from aliases to Var objects, constructors infer type arguments via `Inference->infer_value`, subtyping is covariant in type arguments.
@@ -94,11 +95,12 @@ Runtime (opt-in)| Generic instantiation      | die           | -runtime flag
 - Effect protocol (stateful effects): `effect DB, [qw(None Connected Authed)] => +{ connect => ['(Str) -> Void', protocol('None -> Connected')], query => ['(Str) -> Str', protocol('Authed -> Authed')] }`. Second arg is explicit states list; operation values are `[sig_string, protocol('From -> To')]` arrayrefs. Plain string values remain protocol-free. Annotation: `![DB<None -> Authed>]` declares start/end states. `![DB<Authed>]` is invariant (start = end). ProtocolChecker traces operation sequences and verifies state transitions.
 - `Effect::op(@args)` is the direct call syntax for effect operations (e.g., `Console::writeLine("hello")`). Replaces the old `perform Effect => op => @args` syntax.
 - `handle { BODY } Effect => { op => sub { ... } }` installs scoped effect handlers, executes BODY, and guarantees cleanup (even on exception).
-- Typeclass and effect definitions use string syntax for method/operation signatures: `show => '(T) -> Str'`, consistent with `:Type()` annotations. The Extractor only captures `PPI::Token::Quote`, so DSL `Func(...)` does not work for static analysis.
-- Prelude: builtin functions are registered under the CORE:: namespace by `Typist::Prelude->install`. Includes Typist builtins (typedef, newtype, unwrap, etc.) in addition to Perl core functions. User `declare` statements override prelude entries.
+- Typeclass and effect definitions use string syntax for method/operation signatures: `show => '(T) -> Str'`, consistent with `:sig()` annotations. The Extractor only captures `PPI::Token::Quote`, so DSL `Func(...)` does not work for static analysis.
+- Prelude: builtin functions are registered under the CORE:: namespace by `Typist::Prelude->install`. Includes Typist builtins (typedef, newtype, struct, etc.) in addition to Perl core functions. User `declare` statements override prelude entries.
+- Selective DSL export: `use Typist qw(Int Str ArrayRef)` imports selected DSL names; `use Typist` exports only core functions (typedef, newtype, etc.). DSL names are uppercase-starting or `optional`. `Typist::DSL->export_map` provides the name→coderef mapping.
 - `handle`/`match` return type inference: `handle { BLOCK }` infers from the block's last expression; `match` collects arm return types and computes union/LUB. These bypass the `Word + List` call pattern used for normal function inference.
 - Type Narrowing: `defined($x)` narrows `Maybe[T]` to `T` in the then-block; `if ($x)` (truthiness) also narrows by removing `Undef`; `$x isa Foo` narrows to `Foo`; `return unless defined($x)` narrows `$x` for the rest of the body (early return). Else-blocks receive the inverse narrowing.
-- Variable reassignment: `:Type` annotated variables are checked on reassignment (`$x = expr`); unannotated variables are not checked.
+- Variable reassignment: `:sig` annotated variables are checked on reassignment (`$x = expr`); unannotated variables are not checked.
 - Method calls: `$self->method()` is type-checked within the same package via registry lookup; cross-package method calls are gradual-skipped.
 
 ## Commands
@@ -154,6 +156,7 @@ Tests are numbered and ordered by dependency:
 - `t/25_struct.t` — Nominal struct types (constructor, accessors, with(), optional fields, type registration, subtyping)
 - `t/26_check_cli.t` — CLI typist-check (subprocess-based: clean/error/warning exit codes, --no-color, --verbose, file args)
 - `t/27_protocol.t` — Protocol FSM (construction, next_state, states, ops_in, validate)
+- `t/28_selective_import.t` — Selective DSL export (use Typist qw(Int Str), bare import, unknown name, -runtime flag)
 - `t/static/00_extractor.t` — PPI-based type extraction
 - `t/static/01_analyzer.t` — Static analysis pipeline
 - `t/static/02_infer.t` — Static type inference (including anonymous sub inference)
@@ -163,7 +166,7 @@ Tests are numbered and ordered by dependency:
 - `t/static/06_crossfile_analyzer.t` — Cross-file type resolution via workspace registry
 - `t/static/07_method_typecheck.t` — Method type checking (is_method, -> guard, $self->method())
 - `t/static/08_prelude.t` — Builtin prelude (type checking, effect detection, user override)
-- `t/static/09_builtins_infer.t` — Typist builtin inference (handle/match return types, unwrap CORE registration)
+- `t/static/09_builtins_infer.t` — Typist builtin inference (handle/match return types, newtype ->base inference)
 - `t/static/10_rank2.t` — Rank-2 polymorphism static analysis
 - `t/static/11_struct.t` — Struct static analysis (extraction, registration, inference)
 - `t/static/12_loop_inference.t` — Loop variable inference (for-loop extraction, iterable element types)

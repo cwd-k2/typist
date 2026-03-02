@@ -22,19 +22,19 @@ BEGIN {
 
 # ── Functions with :Type (compiled after effects are registered) ──
 
-sub greet :Type((Str) -> Str ![Console]) ($name) {
+sub greet :sig((Str) -> Str ![Console]) ($name) {
     "Hello, $name!";
 }
 
-sub main_fn :Type(() -> Void ![Console, State]) () {
+sub main_fn :sig(() -> Void ![Console, State]) () {
     undef;
 }
 
-sub logged :Type(<a, r: Row>(Str) -> Str ![Log, r]) ($msg) {
+sub logged :sig(<a, r: Row>(Str) -> Str ![Log, r]) ($msg) {
     $msg;
 }
 
-sub pure_effect :Type(() -> Any ![Console]) () {
+sub pure_effect :sig(() -> Any ![Console]) () {
     42;
 }
 

@@ -118,16 +118,6 @@ sub infer_expr ($class, $element, $env = undef, $expected = undef) {
         }
     }
 
-    # ── unwrap(expr): infer inner type of newtype ──
-    if ($element->isa('PPI::Token::Word') && $element->content eq 'unwrap') {
-        my $next = $element->snext_sibling;
-        if (ref($next) && $next->isa('PPI::Structure::List')) {
-            my $result = _infer_unwrap($next, $env);
-            return $result if defined $result;
-            # fall through to _infer_call (→ CORE lookup → Any)
-        }
-    }
-
     # ── Function call: Word followed by List ────
     if ($element->isa('PPI::Token::Word')) {
         my $next = $element->snext_sibling;
@@ -837,6 +827,12 @@ sub _infer_method_access ($receiver_type, $method_word, $env = undef) {
         $resolved = $looked_up if $looked_up;
     }
 
+    # Newtype ->base: extract inner type
+    if ($resolved->is_newtype) {
+        return $resolved->inner if $method_name eq 'base';
+        return undef;
+    }
+
     # Struct accessor: resolve field type from the inner record
     if ($resolved->is_struct) {
         my $record = $resolved->record;
@@ -1071,35 +1067,6 @@ sub _infer_source_element_type_after ($block, $env) {
     undef;
 }
 
-# ── Unwrap Inference ──────────────────────────────
-#
-# unwrap(expr) — resolve newtype inner type from the argument.
-# Returns undef when the argument is not a known newtype (falls through
-# to _infer_call → CORE → Any).
-
-sub _infer_unwrap ($list_element, $env) {
-    return undef unless $env && $env->{registry};
-
-    my $expr = $list_element->schild(0);
-    return undef unless $expr && $expr->isa('PPI::Statement::Expression');
-    my $first_arg = $expr->schild(0);
-    return undef unless $first_arg;
-
-    my $arg_type = __PACKAGE__->infer_expr($first_arg, $env);
-    return undef unless $arg_type;
-
-    # Resolve alias chain (e.g., typedef MyId => 'UserId' → UserId → Newtype)
-    my $registry = $env->{registry};
-    my $resolved = $arg_type;
-    if ($arg_type->is_alias) {
-        $resolved = eval { $registry->lookup_type($arg_type->alias_name) } // $arg_type;
-    }
-
-    # Newtype → return inner type
-    return $resolved->inner if $resolved->is_newtype;
-
-    undef;
-}
 
 # ── Anonymous Sub Inference ────────────────────────
 

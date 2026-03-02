@@ -5,7 +5,7 @@ A pure Perl type system for Perl 5.40+.
 Typist brings static type annotations to Perl through standard attribute syntax. Errors are caught at compile time (CHECK phase) and via LSP — no source filters, no external tooling, no runtime cost by default.
 
 ```
-                  `:Type(...)` attribute
+                  `:sig(...)` attribute
                         |
       +----------+------+------+----------+
       |          |             |           |
@@ -37,16 +37,16 @@ $p->name;                           # getter
 $p->with(age => 31);                # immutable update
 
 # Typed variables
-my $count :Type(Int) = 0;
-my $label :Type(Maybe[Str]) = undef;
+my $count :sig(Int) = 0;
+my $label :sig(Maybe[Str]) = undef;
 
-# Typed subroutines — unified :Type() annotation
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+# Typed subroutines — unified :sig() annotation
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     $a + $b;
 }
 
 # Generics with bounded quantification
-sub max_of :Type(<T: Num>(T, T) -> T) ($a, $b) {
+sub max_of :sig(<T: Num>(T, T) -> T) ($a, $b) {
     $a > $b ? $a : $b;
 }
 
@@ -58,12 +58,12 @@ BEGIN {
     };
 }
 
-sub greet :Type((Str) -> Str ![Console]) ($name) {
+sub greet :sig((Str) -> Str ![Console]) ($name) {
     "Hello, $name!";
 }
 
 # Row polymorphism — "at least Log, plus whatever r adds"
-sub with_log :Type(<r: Row>(Str) -> Str ![Log, r]) ($msg) {
+sub with_log :sig(<r: Row>(Str) -> Str ![Log, r]) ($msg) {
     $msg;
 }
 ```
@@ -74,7 +74,7 @@ sub with_log :Type(<r: Row>(Str) -> Str ![Log, r]) ($msg) {
 
 | Feature | Syntax | Example |
 |---------|--------|---------|
-| Primitive types | `Int`, `Str`, `Bool`, `Num`, `Any`, `Void`, `Never`, `Undef` | `my $x :Type(Int) = 42` |
+| Primitive types | `Int`, `Str`, `Bool`, `Num`, `Any`, `Void`, `Never`, `Undef` | `my $x :sig(Int) = 42` |
 | Parameterized types | `Name[T, ...]` | `ArrayRef[Int]`, `HashRef[Str, Int]` |
 | Union / Intersection | `A \| B`, `A & B` | `Int \| Str`, `Readable & Writable` |
 | Function types | `(A, B) -> R` | `(Int, Int) -> Int` |
@@ -83,7 +83,7 @@ sub with_log :Type(<r: Row>(Str) -> Str ![Log, r]) ($msg) {
 | Maybe | `Maybe[T]` | `Maybe[Str]` = `Str \| Undef` |
 | Literal types | `42`, `"hello"` | Singleton types for specific values |
 | Type aliases | `typedef` | `typedef Price => Int` |
-| Nominal types | `newtype` / `unwrap` | `newtype UserId => Int` |
+| Nominal types | `newtype` / `->base` | `newtype UserId => Int` |
 | ADT / GADT | `datatype` | Tagged unions, per-constructor return types |
 | Enumerations | `enum` | `enum Color => qw(Red Green Blue)` |
 | Generics | `<T>`, `<T: Bound>` | `<T: Num>(T, T) -> T` |
@@ -113,7 +113,7 @@ sub with_log :Type(<r: Row>(Str) -> Str ![Log, r]) ($msg) {
 |------|------|----------|
 | Static-only (default) | Zero runtime overhead | `warn` diagnostics at CHECK phase |
 | Runtime (`-runtime`) | Per-call type checks via `tie` + sub wrapping | `die` on type violation |
-| Newtype boundary | Always active | Constructor/unwrap validation regardless of mode |
+| Newtype boundary | Always active | Constructor validation regardless of mode |
 
 ## Installation
 
@@ -186,33 +186,33 @@ Color is disabled automatically when stdout is not a TTY, `--no-color` is passed
 
 ## Annotation Syntax
 
-Typist uses a single unified `:Type(...)` attribute for all type annotations.
+Typist uses a single unified `:sig(...)` attribute for all type annotations.
 
 ### Variables
 
 ```perl
-my $x :Type(Int) = 42;
-my $y :Type(Str | Undef) = undef;
-my $z :Type({ name => Str, age => Int }) = { name => "Alice", age => 30 };
+my $x :sig(Int) = 42;
+my $y :sig(Str | Undef) = undef;
+my $z :sig({ name => Str, age => Int }) = { name => "Alice", age => 30 };
 ```
 
 ### Functions
 
 ```perl
 # Parameters and return type
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 
 # With effects
-sub greet :Type((Str) -> Str ![Console]) ($name) { "Hello, $name!" }
+sub greet :sig((Str) -> Str ![Console]) ($name) { "Hello, $name!" }
 
 # With generics
-sub first :Type(<T>(ArrayRef[T]) -> T) ($arr) { $arr->[0] }
+sub first :sig(<T>(ArrayRef[T]) -> T) ($arr) { $arr->[0] }
 
 # With bounded quantification
-sub max_of :Type(<T: Num>(T, T) -> T) ($a, $b) { $a > $b ? $a : $b }
+sub max_of :sig(<T: Num>(T, T) -> T) ($a, $b) { $a > $b ? $a : $b }
 
 # Variadic arguments
-sub log_all :Type((Str, ...Any) -> Void ![Console]) ($fmt, @args) { }
+sub log_all :sig((Str, ...Any) -> Void ![Console]) ($fmt, @args) { }
 ```
 
 ### Struct Types (Nominal)
@@ -242,7 +242,7 @@ BEGIN {
 }
 
 my $uid = UserId(42);       # Constructor validates inner type
-my $raw = unwrap($uid);     # Extracts inner value: 42
+my $raw = $uid->base;       # Extracts inner value: 42
 ```
 
 ### Algebraic Data Types
@@ -282,7 +282,7 @@ BEGIN {
 }
 
 # Function declares its effects
-sub io_greet :Type((Str) -> Void ![Console]) ($name) { say "Hi, $name" }
+sub io_greet :sig((Str) -> Void ![Console]) ($name) { say "Hi, $name" }
 
 # Effect operations are called as qualified subs
 Console::writeLine("hello");
@@ -311,13 +311,13 @@ BEGIN {
 }
 
 # State transitions are declared in type annotations
-sub setup :Type(() -> Void ![Database<None -> Authed>]) () {
+sub setup :sig(() -> Void ![Database<None -> Authed>]) () {
     Database::connect("localhost");  # None → Connected
     Database::auth("user", "pass");  # Connected → Authed
 }
 
 # Invariant state: start and end in the same state
-sub run_query :Type((Str) -> Str ![Database<Authed>]) ($sql) {
+sub run_query :sig((Str) -> Str ![Database<Authed>]) ($sql) {
     Database::query($sql);           # Authed → Authed
 }
 ```
@@ -346,7 +346,7 @@ say Show::show(42);      # "42"
 # Annotate external functions for type/effect checking
 declare say => '(Str) -> Void ![Console]';
 
-sub handler :Type((Str) -> Str ![Console]) ($s) {
+sub handler :sig((Str) -> Str ![Console]) ($s) {
     # @typist-ignore
     some_unannotated_function($s);  # Diagnostic suppressed
 }

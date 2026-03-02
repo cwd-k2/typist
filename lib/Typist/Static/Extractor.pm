@@ -601,14 +601,14 @@ sub _extract_declares ($class, $doc, $result) {
 # ── Variable Extraction ─────────────────────────
 
 # PPI does not recognize variable attributes as PPI::Token::Attribute.
-# Instead, `my $x :Type(Int)` is parsed as:
-#   Symbol($x) Operator(:) Word(Type) List( Expression(Word(Int)) )
+# Instead, `my $x :sig(Int)` is parsed as:
+#   Symbol($x) Operator(:) Word(sig) List( Expression(Word(Int)) )
 # We detect this pattern by scanning PPI::Statement::Variable children.
 sub _extract_variables ($class, $doc, $result) {
     my $stmts = $doc->find('PPI::Statement::Variable') || [];
     my %typed_vars;
 
-    # First pass: annotated variables (:Type(...))
+    # First pass: annotated variables (:sig(...))
     for my $stmt (@$stmts) {
         my @children = $stmt->schildren;
 
@@ -629,7 +629,7 @@ sub _extract_variables ($class, $doc, $result) {
 
             my $next = $children[$i + 1] // next;
             next unless $next->isa('PPI::Token::Word')
-                     && $next->content eq 'Type';
+                     && $next->content eq 'sig';
 
             my $list = $children[$i + 2] // next;
             next unless $list->isa('PPI::Structure::List');
@@ -729,11 +729,11 @@ sub _extract_functions ($class, $doc, $result) {
         my $attrs = $sub_stmt->find('PPI::Token::Attribute') || [];
 
         if (@$attrs) {
-            # Look for :Type(...) annotation
+            # Look for :sig(...) annotation
             my $type_ann;
             for my $attr (@$attrs) {
                 my $content = $attr->content;
-                if ($content =~ /\AType\((.+)\)\z/s) {
+                if ($content =~ /\Asig\((.+)\)\z/s) {
                     $type_ann = $1;
                     last;
                 }

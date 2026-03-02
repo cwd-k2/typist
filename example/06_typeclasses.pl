@@ -143,7 +143,7 @@ say "fmap chain:  @$result";
 #
 # Combine Show with generic functions for display utilities.
 
-sub show_pair :Type(<T, U>(T, U) -> Str) ($a, $b) {
+sub show_pair :sig(<T, U>(T, U) -> Str) ($a, $b) {
     "(" . Show::show($a) . ", " . Show::show($b) . ")";
 }
 

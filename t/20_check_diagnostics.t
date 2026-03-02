@@ -13,7 +13,7 @@ subtest 'CHECK detects TypeMismatch in static-only mode' => sub {
 use v5.40;
 use Typist;
 
-sub greet :Type((Str) -> Str) ($name) { "Hello, $name!" }
+sub greet :sig((Str) -> Str) ($name) { "Hello, $name!" }
 
 greet(42);
 PERL
@@ -34,8 +34,8 @@ BEGIN {
     effect DB      => +{ query     => 'CodeRef[Str -> Any]'  };
 }
 
-sub db_op :Type((Str) -> Str ![DB]) ($q) { $q }
-sub handler :Type(() -> Str ![Console]) () { db_op("SELECT 1") }
+sub db_op :sig((Str) -> Str ![DB]) ($q) { $q }
+sub handler :sig(() -> Str ![Console]) () { db_op("SELECT 1") }
 
 handler();
 PERL
@@ -51,7 +51,7 @@ subtest 'static-only mode does not die on type error at runtime' => sub {
 use v5.40;
 use Typist;
 
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 
 eval { add("x", 3) };
 print $@ ? "DIED" : "OK";
@@ -67,7 +67,7 @@ subtest '-runtime flag enables runtime die' => sub {
 use v5.40;
 use Typist -runtime;
 
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 
 eval { add("x", 3) };
 print $@ ? "DIED" : "OK";
@@ -83,7 +83,7 @@ subtest 'TYPIST_RUNTIME=1 env enables runtime die' => sub {
 use v5.40;
 use Typist;
 
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 
 eval { add("x", 3) };
 print $@ ? "DIED" : "OK";
@@ -99,7 +99,7 @@ subtest 'scalar tie only in runtime mode' => sub {
 use v5.40;
 use Typist;
 
-my $x :Type(Int) = 42;
+my $x :sig(Int) = 42;
 eval { $x = "hello" };
 print $@ ? "DIED" : "OK";
 PERL
@@ -118,7 +118,7 @@ subtest 'CHECK_QUIET suppresses warn and skips Analyzer' => sub {
 use v5.40;
 use Typist;
 
-sub greet :Type((Str) -> Str) ($name) { "Hello, $name!" }
+sub greet :sig((Str) -> Str) ($name) { "Hello, $name!" }
 
 greet(42);
 print "DONE";

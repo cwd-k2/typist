@@ -20,7 +20,7 @@ use Typist::DSL;
 # newtype Name => InnerType
 #
 # Creates a constructor (Name($val)) and registers the
-# nominal type. unwrap($val) extracts the inner value.
+# nominal type. $val->base extracts the inner value.
 # Boundary enforcement is ALWAYS active, even without -runtime.
 
 BEGIN {
@@ -33,9 +33,9 @@ my $uid = UserId(42);
 my $oid = OrderId(99);
 my $em  = Email('alice@example.com');
 
-say "UserId:  ", unwrap($uid);     # 42
-say "OrderId: ", unwrap($oid);     # 99
-say "Email:   ", unwrap($em);
+say "UserId:  ", $uid->base;     # 42
+say "OrderId: ", $oid->base;     # 99
+say "Email:   ", $em->base;
 
 # Constructor validates inner type
 eval { UserId("hello") };
@@ -45,7 +45,7 @@ eval { Email(42) };
 say "Email(42):          $@" if $@;
 
 # Newtypes are NOT interchangeable
-my $x :Type(UserId) = UserId(1);
+my $x :sig(UserId) = UserId(1);
 
 eval { $x = OrderId(1) };          # same inner value, different type
 say "UserId <- OrderId:  $@" if $@;
@@ -57,8 +57,8 @@ say "UserId <- raw Int:  $@" if $@;
 #
 # Functions that accept UserId will reject OrderId and raw Int.
 
-sub find_user :Type((UserId) -> Str) ($id) {
-    "User #" . unwrap($id);
+sub find_user :sig((UserId) -> Str) ($id) {
+    "User #" . $id->base;
 }
 
 say find_user(UserId(42));
@@ -74,7 +74,7 @@ say "find_user(42):      $@" if $@;
 # Singleton types: only the exact value is accepted.
 # Useful for status codes, flags, and discriminated unions.
 
-my $answer :Type(42) = 42;
+my $answer :sig(42) = 42;
 say "answer: $answer";
 
 eval { $answer = 43 };
@@ -84,7 +84,7 @@ eval { $answer = 0 };
 say "42 <- 0:    $@" if $@;
 
 # String literals
-my $status :Type("ok" | "error") = "ok";
+my $status :sig("ok" | "error") = "ok";
 say "status: $status";
 
 $status = "error";                  # ok
@@ -105,7 +105,7 @@ BEGIN {
         | HashRef(Str, Alias('JsonValue'));
 }
 
-my $json :Type(JsonValue) = +{
+my $json :sig(JsonValue) = +{
     name   => "Alice",
     scores => [100, 95, 88],
     meta   => +{ active => 1, tags => ["admin", "user"] },
@@ -113,14 +113,14 @@ my $json :Type(JsonValue) = +{
 say "json: valid nested structure";
 
 # Leaves: all valid JsonValue types
-my $j1 :Type(JsonValue) = "hello";
-my $j2 :Type(JsonValue) = 42;
-my $j3 :Type(JsonValue) = undef;
-my $j4 :Type(JsonValue) = [1, "two", [3]];
+my $j1 :sig(JsonValue) = "hello";
+my $j2 :sig(JsonValue) = 42;
+my $j3 :sig(JsonValue) = undef;
+my $j4 :sig(JsonValue) = [1, "two", [3]];
 say "json leaves: ok";
 
 # CodeRef is not a valid JsonValue
-eval { my $bad :Type(JsonValue) = sub { 1 } };
+eval { my $bad :sig(JsonValue) = sub { 1 } };
 say "JsonValue <- CodeRef:  $@" if $@;
 
 # ── Combining Newtype and Struct ──────────────────────────
@@ -133,16 +133,16 @@ BEGIN {
     );
 }
 
-my $acct :Type(Account) = +{
+my $acct :sig(Account) = +{
     id    => UserId(1),
     email => Email('alice@example.com'),
     name  => "Alice",
 };
-say "account: $acct->{name} (", unwrap($acct->{id}), ")";
+say "account: $acct->{name} (", $acct->{id}->base, ")";
 
 # Raw values rejected in struct fields
 eval {
-    my $bad :Type(Account) = +{
+    my $bad :sig(Account) = +{
         id    => 1,                     # needs UserId(1)
         email => 'alice@example.com',   # needs Email(...)
         name  => "Alice",

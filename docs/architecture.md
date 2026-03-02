@@ -34,7 +34,7 @@ Typist operates across three phases of a Perl program's lifecycle:
 |       export typedef/newtype/effect/     |
 |       datatype/handle/...                |
 |                                          |
-|  :Type(...) attributes processed:        |
+|  :sig(...) attributes processed:        |
 |    -> Parser->parse_annotation()         |
 |    -> Registry->register_function()      |
 |    -> Registry->register_method()        |
@@ -101,12 +101,12 @@ Typist operates across three phases of a Perl program's lifecycle:
 
 ## Lifecycle: From Source to Diagnostics
 
-### The `:Type()` Attribute Journey
+### The `:sig()` Attribute Journey
 
-When Perl compiles `sub add :Type((Int, Int) -> Int) ($a, $b) { ... }`:
+When Perl compiles `sub add :sig((Int, Int) -> Int) ($a, $b) { ... }`:
 
 ```
-Perl compiler encounters :Type(...)
+Perl compiler encounters :sig(...)
      |
      v
 MODIFY_CODE_ATTRIBUTES callback (Attribute.pm)
@@ -844,7 +844,7 @@ NEVER (unless LSP):
 
 PPI is the heaviest dependency (~1MB of code, creates full ASTs). By loading it lazily via `require` inside the CHECK block, programs that use `TYPIST_CHECK_QUIET=1` (when the LSP provides diagnostics instead) avoid the PPI startup cost entirely.
 
-The eagerly-loaded modules are lightweight: they define type node classes (small hashref-based objects), the parser (pure Perl recursive descent), and the registry (hash-based storage). This is the minimum needed to process `:Type()` attributes at compile time.
+The eagerly-loaded modules are lightweight: they define type node classes (small hashref-based objects), the parser (pure Perl recursive descent), and the registry (hash-based storage). This is the minimum needed to process `:sig()` attributes at compile time.
 
 ---
 

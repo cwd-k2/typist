@@ -576,7 +576,7 @@ sub parse_row ($class, $expr) {
 
 # ── Unified Annotation Parsing ──────────────────
 
-# Parse a :Type(...) annotation string.
+# Parse a :sig(...) annotation string.
 # Supports: simple types, function types, and generic declarations.
 #   "Int"                              → { generics_raw => [], type => Atom(Int) }
 #   "(Int, Str) -> Bool"               → { generics_raw => [], type => Func }
@@ -701,7 +701,7 @@ Typist::Parser - Recursive-descent parser for type expressions
     my $struct = Typist::Parser->parse('{ name => Str, age? => Int }');
     my $forall = Typist::Parser->parse('forall A. A -> A');
 
-    # Parse a :Type() annotation string
+    # Parse a :sig() annotation string
     my $ann = Typist::Parser->parse_annotation('<T: Num>(T, T) -> T ![Console]');
     # Returns: { generics_raw => ["T: Num"], type => Func(...) }
 
@@ -756,7 +756,7 @@ Dies on malformed input with a diagnostic message.
 
     my $ann = Typist::Parser->parse_annotation($input);
 
-Parse a C<:Type(...)> annotation string. Handles optional leading generic
+Parse a C<:sig(...)> annotation string. Handles optional leading generic
 declarations in angle brackets.
 
 Returns a hashref:

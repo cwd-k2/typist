@@ -9,7 +9,7 @@ use Test::Typist::LSP qw(run_session lsp_request lsp_notification init_shutdown_
 subtest 'signatureHelp shows function signature at open paren' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 add(
 PERL
 
@@ -38,7 +38,7 @@ PERL
 subtest 'signatureHelp highlights second parameter after comma' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 add(1,
 PERL
 
@@ -85,7 +85,7 @@ PERL
 subtest 'signatureHelp works across multiple lines' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub greet :Type((Str, Int, Str) -> Str) ($name, $age, $city) { "$name ($age) from $city" }
+sub greet :sig((Str, Int, Str) -> Str) ($name, $age, $city) { "$name ($age) from $city" }
 greet(
     "Alice",
     30,
@@ -178,7 +178,7 @@ PERL
 subtest 'signatureHelp shows effect in label' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub greet :Type((Str) -> Void ![Console]) ($name) { say $name }
+sub greet :sig((Str) -> Void ![Console]) ($name) { say $name }
 greet(
 PERL
 

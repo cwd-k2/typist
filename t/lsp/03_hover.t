@@ -9,7 +9,7 @@ use Test::Typist::LSP qw(run_session lsp_request lsp_notification init_shutdown_
 subtest 'hover returns function signature' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 PERL
 
     my @results = run_session(init_shutdown_wrap(
@@ -57,8 +57,8 @@ PERL
 subtest 'hover on function call site' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub greet :Type((Str) -> Str) ($name) { "Hello, $name" }
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub greet :sig((Str) -> Str) ($name) { "Hello, $name" }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 say greet("Bob");
 PERL
 
@@ -84,8 +84,8 @@ PERL
 subtest 'hover distinguishes between multiple functions' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub greet :Type((Str) -> Str) ($name) { "Hello, $name" }
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub greet :sig((Str) -> Str) ($name) { "Hello, $name" }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 my $result = add(1, 2);
 PERL
 
@@ -159,7 +159,7 @@ PERL
 subtest 'hover shows generics and effects on function' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub fetch :Type(<T>(Str) -> T ![Console]) ($url) { }
+sub fetch :sig(<T>(Str) -> T ![Console]) ($url) { }
 PERL
 
     my @results = run_session(init_shutdown_wrap(
@@ -209,7 +209,7 @@ PERL
 subtest 'hover shows inferred variable type' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub greet :Type((Str) -> Str) ($name) { "Hello, $name" }
+sub greet :sig((Str) -> Str) ($name) { "Hello, $name" }
 my $result = greet("Alice");
 PERL
 
@@ -263,7 +263,7 @@ PERL
 subtest 'hover shows parameter type inside function' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) {
+sub add :sig((Int, Int) -> Int) ($a, $b) {
     return $a + $b;
 }
 PERL
@@ -510,7 +510,7 @@ subtest 'hover on package part of qualified call returns null' => sub {
 package Util::Math;
 use v5.40;
 use Typist;
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 1;
 PERL
     close $fh;
@@ -697,7 +697,7 @@ package App;
 use v5.40;
 use Typist;
 use Models;
-sub show_tier :Type((Customer) -> Str) ($customer) {
+sub show_tier :sig((Customer) -> Str) ($customer) {
     $customer->tier;
 }
 PERL
@@ -754,7 +754,7 @@ package App;
 use v5.40;
 use Typist;
 use Shop;
-sub product_name :Type((Order) -> Str) ($order) {
+sub product_name :sig((Order) -> Str) ($order) {
     $order->product->name;
 }
 PERL
@@ -805,7 +805,7 @@ package App;
 use v5.40;
 use Typist;
 use Contact;
-sub get_phone :Type((Customer) -> Str | Undef) ($c) {
+sub get_phone :sig((Customer) -> Str | Undef) ($c) {
     $c->phone;
 }
 PERL
@@ -859,7 +859,7 @@ package App;
 use v5.40;
 use Typist;
 use Models;
-sub find_customer :Type((Int) -> Customer) ($id) { }
+sub find_customer :sig((Int) -> Customer) ($id) { }
 my $t = find_customer(1)->tier;
 PERL
 
@@ -902,7 +902,7 @@ package Repo;
 use v5.40;
 use Typist;
 struct Product => (name => Str, price => Int);
-sub find :Type((Int) -> Product) ($id) { }
+sub find :sig((Int) -> Product) ($id) { }
 1;
 PERL
     close $fh;
@@ -964,7 +964,7 @@ package App;
 use v5.40;
 use Typist;
 use Store;
-sub get_order :Type((Int) -> Order) ($id) { }
+sub get_order :sig((Int) -> Order) ($id) { }
 my $n = get_order(1)->product->name;
 PERL
 
@@ -1019,7 +1019,7 @@ subtest '_format_field unit test' => sub {
 subtest 'hover response includes range for highlighted word' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 add(1, 2);
 PERL
 
@@ -1103,9 +1103,9 @@ subtest 'hover shows Typist builtin note' => sub {
 
     my $sym = +{
         kind            => 'function',
-        name            => 'unwrap',
-        params_expr     => ['Any'],
-        returns_expr    => 'Any',
+        name            => 'typedef',
+        params_expr     => ['...Any'],
+        returns_expr    => 'Void',
         builtin         => 1,
         typist_builtin  => 1,
     };

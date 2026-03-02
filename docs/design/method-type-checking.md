@@ -72,8 +72,8 @@ $result->{functions}{$name} = +{
 `params_expr` からは `$self`/`$class` に対応する型を**除外**する。
 メソッドの型シグネチャは receiver を含まない (例: `(Int, Str) -> Bool`)。
 
-**注意**: `:Type(...)` アノテーションでは `$self` の型を書かない設計とする。
-ユーザは `sub greet($self, $name) :Type((Str) -> Str)` と書く — `$self` は暗黙的。
+**注意**: `:sig(...)` アノテーションでは `$self` の型を書かない設計とする。
+ユーザは `sub greet($self, $name) :sig((Str) -> Str)` と書く — `$self` は暗黙的。
 
 ### 1-C. Registry にメソッド登録 API を追加
 
@@ -389,7 +389,7 @@ package Greeter;
 use v5.40;
 use Typist;
 
-sub greet($self, $name) :Type((Str) -> Str) {
+sub greet($self, $name) :sig((Str) -> Str) {
     return "Hello, $name";
 }
 
@@ -397,7 +397,7 @@ package main;
 use v5.40;
 use Typist;
 
-my $g :Type(Greeter) = Greeter->new;
+my $g :sig(Greeter) = Greeter->new;
 $g->greet(42);  # TypeMismatch: expected Str, got 42
 PERL
 ```
@@ -436,12 +436,12 @@ PERL
 
 ### 1. `$self` の暗黙除外
 
-`:Type(...)` アノテーションのシグネチャには `$self` を含めない。
+`:sig(...)` アノテーションのシグネチャには `$self` を含めない。
 メソッドの型は「呼び出し側から見た型」として定義する。
 
 ```perl
 # ユーザが書くコード
-sub greet($self, $name) :Type((Str) -> Str) { ... }
+sub greet($self, $name) :sig((Str) -> Str) { ... }
 # (Str) -> Str は $name: Str, 戻り値: Str を意味する
 # $self は暗黙的に除外される
 ```
@@ -454,12 +454,12 @@ sub greet($self, $name) :Type((Str) -> Str) { ... }
 Perl には言語レベルのメソッド/関数区分がないため、慣習ベースの判定とする。
 
 **限界**: `$self` を使わない非メソッドな関数も存在するが、
-`:Type(...)` アノテーションがあれば `$self` 分のパラメータ数の不一致で検出可能。
+`:sig(...)` アノテーションがあれば `$self` 分のパラメータ数の不一致で検出可能。
 
 ### 3. Receiver 型の解決範囲
 
 Phase 2 では以下に限定:
-- 変数に `:Type(...)` で明示された型
+- 変数に `:sig(...)` で明示された型
 - `my $x = ClassName->new(...)` パターンからの推論 (将来)
 
 型推論できない receiver はスキップする (gradual typing の原則に従う)。

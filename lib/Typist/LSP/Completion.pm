@@ -280,7 +280,7 @@ Typist::LSP::Completion - Completion providers for type annotations and code
 =head1 DESCRIPTION
 
 Typist::LSP::Completion generates completion items for both type
-annotation contexts (inside C<:Type(...)>) and code-level contexts
+annotation contexts (inside C<:sig(...)>) and code-level contexts
 (struct field access, method calls, effect operations).
 
 =head1 CLASS METHODS

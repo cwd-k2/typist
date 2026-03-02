@@ -26,16 +26,16 @@ use Typist::DSL;
 # types at variable initializers, assignments, call sites,
 # and return positions.
 
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 
 # [TypeMismatch] argument: Str where Int expected
 my $r1 = add("five", 3);
 
 # [TypeMismatch] variable initializer
-my $count :Type(Int) = "many";
+my $count :sig(Int) = "many";
 
 # [TypeMismatch] return value
-sub bad_return :Type(() -> Int) () {
+sub bad_return :sig(() -> Int) () {
     "not a number";
 }
 
@@ -46,7 +46,7 @@ sub bad_return :Type(() -> Int) () {
 # Defaults and variadic (...Type) adjust the minimum.
 # (Wrapped in sub — Perl's own arity check would abort at runtime.)
 
-sub arity_errors :Type(() -> Void) () {
+sub arity_errors :sig(() -> Void) () {
     # [ArityMismatch] too few
     my $r2 = add(1);
 
@@ -67,12 +67,12 @@ BEGIN {
     };
 }
 
-sub log_it :Type((Str) -> Void ![Logger]) ($msg) {
+sub log_it :sig((Str) -> Void ![Logger]) ($msg) {
     Logger::log($msg);
 }
 
 # [EffectMismatch] pure function calls effectful function
-sub pure_caller :Type((Str) -> Void) ($msg) {
+sub pure_caller :sig((Str) -> Void) ($msg) {
     log_it($msg);
 }
 
@@ -103,7 +103,7 @@ BEGIN {
 #
 # [ProtocolMismatch] operation 'query' is not allowed in state 'Disconnected'
 
-sub query_too_early :Type(() -> Str ![DB<Disconnected>]) () {
+sub query_too_early :sig(() -> Str ![DB<Disconnected>]) () {
     DB::query("SELECT 1");
 }
 
@@ -114,7 +114,7 @@ sub query_too_early :Type(() -> Str ![DB<Disconnected>]) () {
 #
 # [ProtocolMismatch] ends in state 'Connected' but declared end state is 'Authenticated'
 
-sub incomplete_setup :Type(() -> Void ![DB<Disconnected -> Authenticated>]) () {
+sub incomplete_setup :sig(() -> Void ![DB<Disconnected -> Authenticated>]) () {
     DB::connect("localhost");
 }
 
@@ -124,11 +124,11 @@ sub incomplete_setup :Type(() -> Void ![DB<Disconnected -> Authenticated>]) () {
 #
 # [ProtocolMismatch] do_auth() expects state 'Connected' but current state is 'Disconnected'
 
-sub do_auth :Type(() -> Void ![DB<Connected -> Authenticated>]) () {
+sub do_auth :sig(() -> Void ![DB<Connected -> Authenticated>]) () {
     DB::auth("admin", "secret");
 }
 
-sub bad_composition :Type(() -> Str ![DB<Disconnected -> Authenticated>]) () {
+sub bad_composition :sig(() -> Str ![DB<Disconnected -> Authenticated>]) () {
     do_auth();
     DB::query("SELECT 1");
 }
@@ -138,7 +138,7 @@ sub bad_composition :Type(() -> Str ![DB<Disconnected -> Authenticated>]) () {
 #
 # No errors: all operations follow the protocol.
 
-sub db_session :Type(() -> Str ![DB<Disconnected -> Authenticated>]) () {
+sub db_session :sig(() -> Str ![DB<Disconnected -> Authenticated>]) () {
     DB::connect("localhost");
     DB::auth("admin", "secret");
     DB::query("SELECT 1");

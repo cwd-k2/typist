@@ -25,13 +25,13 @@ sub violates ($self, $doc_elem, $doc) {
         my $name = $sub_stmt->name;
         next unless defined $name;
 
-        # Extract :Type annotation content
+        # Extract :sig annotation content
         my $attrs     = $sub_stmt->find('PPI::Token::Attribute') || [];
         my $type_text = undef;
 
         for my $attr (@$attrs) {
             my $content = $attr->content;
-            if ($content =~ /\AType\((.+)\)\z/s) {
+            if ($content =~ /\Asig\((.+)\)\z/s) {
                 $type_text = $1;
                 last;
             }
@@ -61,8 +61,8 @@ sub violates ($self, $doc_elem, $doc) {
         next if $declares_effect;
 
         push @violations, $self->violation(
-            "Sub '$name' calls effect operations without declaring effects (missing '!' in :Type)",
-            "Functions that call effect operations (e.g., Console::writeLine) should declare their effects in the :Type annotation using '!' syntax",
+            "Sub '$name' calls effect operations without declaring effects (missing '!' in :sig)",
+            "Functions that call effect operations (e.g., Console::writeLine) should declare their effects in the :sig annotation using '!' syntax",
             $sub_stmt,
         );
     }
@@ -82,10 +82,10 @@ Perl::Critic::Policy::Typist::EffectCompleteness - Require effect declarations f
 
 This policy detects functions that call effectful operations (qualified calls
 matching C<CapitalizedPkg::operation> pattern) without declaring their effects
-in the C<:Type()> annotation via the C<!> syntax.
+in the C<:sig()> annotation via the C<!> syntax.
 
 For example, a function calling C<Console::writeLine()> should have
-C<:Type((Str) -> Void ![Console])>.
+C<:sig((Str) -> Void ![Console])>.
 
 =head1 CONFIGURATION
 

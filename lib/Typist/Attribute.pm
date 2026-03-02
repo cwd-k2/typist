@@ -34,7 +34,7 @@ sub _handle_scalar_attrs ($pkg, $ref, @attrs) {
     my @unhandled;
 
     for my $attr (@attrs) {
-        if ($attr =~ /\AType\((.+)\)\z/s) {
+        if ($attr =~ /\Asig\((.+)\)\z/s) {
             my $type = Typist::Parser->parse($1);
 
             Typist::Registry->register_variable(+{
@@ -120,7 +120,7 @@ sub _handle_code_attrs ($pkg, $coderef, @attrs) {
     my @unhandled;
 
     for my $attr (@attrs) {
-        if ($attr =~ /\AType\((.+)\)\z/s) {
+        if ($attr =~ /\Asig\((.+)\)\z/s) {
             my $ann = Typist::Parser->parse_annotation($1);
             my $type = $ann->{type};
 
@@ -338,7 +338,7 @@ Typist::Attribute - Attribute handlers and generic declaration parsing
 =head1 DESCRIPTION
 
 Installs C<MODIFY_SCALAR_ATTRIBUTES> and C<MODIFY_CODE_ATTRIBUTES>
-handlers that process C<:Type(...)> annotations on variables and
+handlers that process C<:sig(...)> annotations on variables and
 subroutines. Handles type registration and, when runtime mode is
 enabled, ties scalars and wraps subroutines for runtime enforcement.
 

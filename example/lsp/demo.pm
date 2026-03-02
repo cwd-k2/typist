@@ -10,7 +10,7 @@ use Typist;
 #
 #  Features demonstrated:
 #    Hover       — shows type signatures on functions/variables
-#    Completion  — suggests type names inside :Type()
+#    Completion  — suggests type names inside :sig()
 #    Diagnostics — flags type errors, alias cycles, etc.
 #    Flow typing — inferred variable types from function returns
 # ═══════════════════════════════════════════════════════════
@@ -25,32 +25,32 @@ BEGIN {
 
 # ── Typed variables — hover shows: $user_id: UserId ──────
 
-my $user_id :Type(UserId) = 1001;
-my $email   :Type(Email)  = 'alice@example.com';
-my $age     :Type(Int)    = 30;
+my $user_id :sig(UserId) = 1001;
+my $email   :sig(Email)  = 'alice@example.com';
+my $age     :sig(Int)    = 30;
 
 # ── Typed function — hover shows: sub find_email(UserId) -> Email
 
-sub find_email :Type((UserId) -> Email) ($id) {
+sub find_email :sig((UserId) -> Email) ($id) {
     "user_${id}\@example.com";
 }
 
 # ── Generic function — hover shows: sub identity<T>(T) -> T
 
-sub identity :Type(<T>(T) -> T) ($x) {
+sub identity :sig(<T>(T) -> T) ($x) {
     $x;
 }
 
 # ── Bounded generic — hover shows: sub add<T: Num>(T, T) -> T
 
-sub add :Type(<T: Num>(T, T) -> T) ($a, $b) {
+sub add :sig(<T: Num>(T, T) -> T) ($a, $b) {
     $a + $b;
 }
 
 # ── Return type propagation ───────────────────────────────
 # find_email returns Email (= Str), so $result has type Email
 
-my $result :Type(Email) = find_email(1001);
+my $result :sig(Email) = find_email(1001);
 
 # ── Flow typing — hover shows: $found: Str (inferred) ────
 # No :Type annotation, but Typist infers from function return
@@ -69,7 +69,7 @@ sub helper ($s) {
 }
 
 # Return type Any → no false positive on assignment
-my $formatted :Type(Str) = helper($found);
+my $formatted :sig(Str) = helper($found);
 
 # ── Type error (uncomment to see diagnostic) ──────────────
 # find_email($email);   # Email (Str) where UserId (Int) expected

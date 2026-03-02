@@ -72,7 +72,7 @@ PERL
 subtest 'semantic tokens for function' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 PERL
 
     my @results = run_session(init_shutdown_wrap(
@@ -181,7 +181,7 @@ use v5.40;
 typedef Age => 'Int';
 newtype UserId => Int;
 effect Logger => +{};
-sub greet :Type((Str) -> Str) ($name) { "Hello, $name" }
+sub greet :sig((Str) -> Str) ($name) { "Hello, $name" }
 PERL
 
     my @results = run_session(init_shutdown_wrap(
@@ -280,6 +280,140 @@ PERL
 
     my @lens = sort map { $_->{len} } @fields;
     ok((grep { $_ == 1 } @lens), 'found field x or y (len 1)');
+};
+
+# ── Annotation tokenization: type names and operators ───
+
+subtest 'annotation tokens: type names and arrow in :sig()' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # Find type tokens (index 0) for 'Int' inside the annotation
+    my @type_toks = grep { $_->{type} == 0 && $_->{len} == 3 } @tokens;
+    ok scalar @type_toks >= 3, 'at least 3 Int type tokens in annotation';
+
+    # Find operator tokens (index 8) for '->'
+    my @arrow_toks = grep { $_->{type} == 8 && $_->{len} == 2 } @tokens;
+    ok scalar @arrow_toks >= 1, 'found -> operator token';
+};
+
+subtest 'annotation tokens: type parameters distinguished' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub id :sig(<T>(T) -> T) ($x) { $x }
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # T should be typeParameter (index 1), not type (index 0)
+    my @tparam_toks = grep { $_->{type} == 1 && $_->{len} == 1 } @tokens;
+    ok scalar @tparam_toks >= 1, 'found T as typeParameter token';
+};
+
+subtest 'annotation tokens: effect label and bang operator' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub greet :sig((Str) -> Void ![Console]) ($name) { }
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # Console should be a type token (index 0)
+    my @console_toks = grep { $_->{type} == 0 && $_->{len} == 7 } @tokens;
+    ok scalar @console_toks >= 1, 'found Console as type token';
+
+    # ! should be an operator token (index 8)
+    my @bang_toks = grep { $_->{type} == 8 && $_->{len} == 1 } @tokens;
+    ok scalar @bang_toks >= 1, 'found ! operator token';
+};
+
+subtest 'annotation tokens: variable annotation type names' => sub {
+    my $source = <<'PERL';
+use v5.40;
+my $x :sig(Int) = 42;
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # Int should be a type token (index 0) from the annotation
+    my @type_toks = grep { $_->{type} == 0 && $_->{len} == 3 } @tokens;
+    ok scalar @type_toks >= 1, 'found Int type token in variable annotation';
+};
+
+subtest 'annotation tokens: lowercase row variable as typeParameter' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub with_log :sig(<r: Row>(Str) -> Str ![Log, r]) ($msg) { $msg }
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # r should be typeParameter (index 1), len 1
+    my @rparam_toks = grep { $_->{type} == 1 && $_->{len} == 1 } @tokens;
+    ok scalar @rparam_toks >= 1, 'found r as typeParameter token';
+
+    # Log should be a type token (index 0)
+    my @log_toks = grep { $_->{type} == 0 && $_->{len} == 3 } @tokens;
+    ok scalar @log_toks >= 1, 'found Log as type token';
 };
 
 done_testing;
