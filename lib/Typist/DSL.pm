@@ -23,6 +23,7 @@ our @EXPORT = qw(
     ArrayRef HashRef Maybe Tuple Ref
     Record Func Literal TVar Alias
     Row Eff
+    optional
     T U V A B K
 );
 
@@ -34,6 +35,7 @@ our %EXPORT_TAGS = (
         ArrayRef HashRef Maybe Tuple Ref
         Record Func Literal TVar Alias
         Row Eff
+        optional
     )],
 );
 
@@ -128,6 +130,13 @@ sub Alias :prototype($) {
     Typist::Type::Alias->new($name);
 }
 
+# ── Optional Field Marker ──────────────────────
+
+sub optional :prototype($) ($type) {
+    $type = Typist::Type->coerce($type) unless ref $type && $type->isa('Typist::Type');
+    Typist::DSL::Optional->new($type);
+}
+
 # ── Effect Types ────────────────────────────────
 
 sub Row :prototype(%) {
@@ -138,6 +147,16 @@ sub Eff :prototype($) {
     my ($row) = @_;
     Typist::Type::Eff->new($row);
 }
+
+# ── Optional Marker Class ──────────────────────
+
+package Typist::DSL::Optional;
+use v5.40;
+use Scalar::Util 'blessed';
+
+sub new ($class, $inner) { bless +{ inner => $inner }, $class }
+sub inner ($self) { $self->{inner} }
+sub is_optional { 1 }
 
 1;
 

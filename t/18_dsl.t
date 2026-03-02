@@ -205,4 +205,30 @@ subtest 'Func with DSL types' => sub {
     ok $t->returns->is_var, 'returns is var T';
 };
 
+# ── optional() ─────────────────────────────────
+
+subtest 'optional marker class' => sub {
+    my $opt = optional(Str);
+    isa_ok $opt, 'Typist::DSL::Optional';
+    ok $opt->inner->equals(Str), 'inner type is Str';
+};
+
+subtest 'optional in Record constructor' => sub {
+    my $t = Record(name => Str, email => optional(Str), age => Int);
+    my %r = $t->required_fields;
+    my %o = $t->optional_fields;
+    ok exists $r{name}, 'name is required';
+    ok exists $r{age},  'age is required';
+    ok exists $o{email}, 'email is optional via optional()';
+    ok $o{email}->equals(Str), 'email type is Str';
+    ok !exists $r{email}, 'email not in required';
+};
+
+subtest 'optional with string coerce' => sub {
+    my $opt = optional('Int');
+    isa_ok $opt, 'Typist::DSL::Optional';
+    ok $opt->inner->is_atom, 'coerced string to atom type';
+    is $opt->inner->name, 'Int', 'inner is Int';
+};
+
 done_testing;

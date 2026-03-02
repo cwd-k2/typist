@@ -4,19 +4,23 @@ use v5.40;
 our $VERSION = '0.01';
 
 use parent 'Typist::Type';
-use Scalar::Util 'reftype';
+use Scalar::Util qw(reftype blessed);
 use List::Util   'all';
 
 # Structural record type: { key => Type, key? => Type, ... }
-# Optional fields are denoted by trailing '?' on the key name.
+# Optional fields are denoted by trailing '?' on the key name,
+# or by wrapping the value with optional(Type) from the DSL.
 
 sub new ($class, %all_fields) {
     my (%required, %optional);
     for my $key (keys %all_fields) {
-        if ($key =~ /\A(.+)\?\z/) {
-            $optional{$1} = $all_fields{$key};
+        my $val = $all_fields{$key};
+        if (blessed($val) && $val->isa('Typist::DSL::Optional')) {
+            $optional{$key} = $val->inner;
+        } elsif ($key =~ /\A(.+)\?\z/) {
+            $optional{$1} = $val;
         } else {
-            $required{$key} = $all_fields{$key};
+            $required{$key} = $val;
         }
     }
     bless +{ required => \%required, optional => \%optional }, $class;
