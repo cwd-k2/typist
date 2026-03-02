@@ -6,7 +6,7 @@ use Typist::Parser;
 # ── Primitive atoms ───────────────────────────────
 
 subtest 'primitive atoms' => sub {
-    for my $name (qw(Int Str Num Bool Any Void Never Undef)) {
+    for my $name (qw(Int Str Double Num Bool Any Void Never Undef)) {
         my $t = Typist::Parser->parse($name);
         ok $t->is_atom, "$name is atom";
         is $t->to_string, $name, "$name to_string";
@@ -202,6 +202,34 @@ subtest 'DSL: mixed bracket and paren' => sub {
     my $t1 = Typist::Parser->parse('ArrayRef[Int]');
     my $t2 = Typist::Parser->parse('ArrayRef(Int)');
     is $t1->to_string, $t2->to_string, 'bracket and paren produce same result';
+};
+
+# ── Array / Hash aliases ────────────────────────
+
+subtest 'Array[T] alias for ArrayRef[T]' => sub {
+    my $t1 = Typist::Parser->parse('Array[Int]');
+    my $t2 = Typist::Parser->parse('ArrayRef[Int]');
+    ok $t1->is_param, 'Array[Int] is param';
+    is $t1->base, 'ArrayRef', 'Array normalizes to ArrayRef internally';
+    is $t1->to_string, $t2->to_string, 'Array[Int] == ArrayRef[Int]';
+};
+
+subtest 'Hash[K,V] alias for HashRef[K,V]' => sub {
+    my $t1 = Typist::Parser->parse('Hash[Str, Int]');
+    my $t2 = Typist::Parser->parse('HashRef[Str, Int]');
+    ok $t1->is_param, 'Hash[Str, Int] is param';
+    is $t1->base, 'HashRef', 'Hash normalizes to HashRef internally';
+    is $t1->to_string, $t2->to_string, 'Hash[Str, Int] == HashRef[Str, Int]';
+};
+
+subtest 'Array/Hash DSL paren syntax' => sub {
+    my $t1 = Typist::Parser->parse('Array(Int)');
+    my $t2 = Typist::Parser->parse('ArrayRef(Int)');
+    is $t1->to_string, $t2->to_string, 'Array(Int) == ArrayRef(Int)';
+
+    my $t3 = Typist::Parser->parse('Hash(Str, Int)');
+    my $t4 = Typist::Parser->parse('HashRef(Str, Int)');
+    is $t3->to_string, $t4->to_string, 'Hash(Str, Int) == HashRef(Str, Int)';
 };
 
 # ── Variadic function types ──────────────────────

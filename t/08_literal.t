@@ -31,7 +31,7 @@ subtest 'parse numeric literals' => sub {
     my $t2 = parse('3.14');
     ok $t2->is_literal, '3.14 is literal';
     is $t2->value, 3.14, 'value is 3.14';
-    is $t2->base_type, 'Num', 'base type is Num';
+    is $t2->base_type, 'Double', 'base type is Double';
 
     my $t3 = parse('-1');
     ok $t3->is_literal, '-1 is literal';
@@ -61,15 +61,18 @@ subtest 'literal contains' => sub {
 # ── Subtype relations ───────────────────────────
 
 subtest 'literal subtype of base type' => sub {
-    ok  is_sub(parse('42'),      parse('Int')), '42 <: Int';
-    ok  is_sub(parse('42'),      parse('Num')), '42 <: Num (transitive)';
-    ok  is_sub(parse('42'),      parse('Any')), '42 <: Any';
-    ok  is_sub(parse('3.14'),    parse('Num')), '3.14 <: Num';
-    ok  is_sub(parse('"hello"'), parse('Str')), '"hello" <: Str';
-    ok  is_sub(parse('"hello"'), parse('Any')), '"hello" <: Any';
+    ok  is_sub(parse('42'),      parse('Int')),    '42 <: Int';
+    ok  is_sub(parse('42'),      parse('Double')), '42 <: Double (transitive)';
+    ok  is_sub(parse('42'),      parse('Num')),    '42 <: Num (transitive)';
+    ok  is_sub(parse('42'),      parse('Any')),    '42 <: Any';
+    ok  is_sub(parse('3.14'),    parse('Double')), '3.14 <: Double';
+    ok  is_sub(parse('3.14'),    parse('Num')),    '3.14 <: Num (transitive)';
+    ok  is_sub(parse('"hello"'), parse('Str')),    '"hello" <: Str';
+    ok  is_sub(parse('"hello"'), parse('Any')),    '"hello" <: Any';
 
     ok !is_sub(parse('42'),      parse('Str')),  '42 </: Str';
     ok !is_sub(parse('"hello"'), parse('Int')),  '"hello" </: Int';
+    ok !is_sub(parse('3.14'),    parse('Int')),  '3.14 </: Int';
 };
 
 subtest 'base type not subtype of literal' => sub {

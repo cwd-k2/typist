@@ -2,7 +2,7 @@
 use v5.40;
 use lib 'lib';
 use Typist -runtime;
-use Typist::DSL;
+use Typist::DSL qw(:all);
 
 # ═══════════════════════════════════════════════════════════
 #  09 — Type DSL

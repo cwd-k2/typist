@@ -458,9 +458,9 @@ sub _infer_match_return ($match_word, $env, $expected = undef) {
 sub _infer_number ($token) {
     my $content = $token->content;
 
-    # Float / Exp → Num literal
+    # Float / Exp → Double literal
     if ($token->isa('PPI::Token::Number::Float') || $token->isa('PPI::Token::Number::Exp')) {
-        return Typist::Type::Literal->new($content + 0, 'Num');
+        return Typist::Type::Literal->new($content + 0, 'Double');
     }
 
     # 0 or 1 → Bool literal, otherwise → Int literal

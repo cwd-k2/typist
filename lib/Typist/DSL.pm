@@ -19,44 +19,43 @@ use Typist::Type::Eff;
 use Exporter 'import';
 
 our @EXPORT = qw(
-    Int Str Num Bool Any Void Never Undef
-    ArrayRef HashRef Maybe Tuple Ref
-    Record Func Literal TVar Alias
-    Row Eff
+    Int Str Double Num Bool Any Void Never Undef
+    ArrayRef HashRef Array Hash Maybe Tuple Ref
+    Record Literal
     optional
-    T U V A B K
 );
 
-our @EXPORT_OK = @EXPORT;
+our @EXPORT_OK = qw(
+    T U V A B K
+    TVar Alias Row Eff Func
+);
+
+our %EXPORT_TAGS = (
+    all      => [@EXPORT, @EXPORT_OK],
+    types    => [@EXPORT],
+    vars     => [qw(T U V A B K)],
+    internal => [qw(TVar Alias Row Eff Func)],
+);
 
 sub export_map ($class) {
     state $map = do {
         no strict 'refs';
-        +{ map { $_ => \&{"Typist::DSL::$_"} } @EXPORT };
+        +{ map { $_ => \&{"Typist::DSL::$_"} } @EXPORT, @EXPORT_OK };
     };
     $map;
 }
 
-our %EXPORT_TAGS = (
-    types => [qw(
-        Int Str Num Bool Any Void Never Undef
-        ArrayRef HashRef Maybe Tuple Ref
-        Record Func Literal TVar Alias
-        Row Eff
-        optional
-    )],
-);
-
 # ── Atom Constants ──────────────────────────────
 
-use constant Int   => Typist::Type::Atom->new('Int');
-use constant Str   => Typist::Type::Atom->new('Str');
-use constant Num   => Typist::Type::Atom->new('Num');
-use constant Bool  => Typist::Type::Atom->new('Bool');
-use constant Any   => Typist::Type::Atom->new('Any');
-use constant Void  => Typist::Type::Atom->new('Void');
-use constant Never => Typist::Type::Atom->new('Never');
-use constant Undef => Typist::Type::Atom->new('Undef');
+use constant Int    => Typist::Type::Atom->new('Int');
+use constant Str    => Typist::Type::Atom->new('Str');
+use constant Double => Typist::Type::Atom->new('Double');
+use constant Num    => Typist::Type::Atom->new('Num');
+use constant Bool   => Typist::Type::Atom->new('Bool');
+use constant Any    => Typist::Type::Atom->new('Any');
+use constant Void   => Typist::Type::Atom->new('Void');
+use constant Never  => Typist::Type::Atom->new('Never');
+use constant Undef  => Typist::Type::Atom->new('Undef');
 
 # ── Type Variable Constants ─────────────────────
 
@@ -74,6 +73,14 @@ sub ArrayRef :prototype(@) {
 }
 
 sub HashRef :prototype(@) {
+    Typist::Type::Param->new('HashRef', @_);
+}
+
+sub Array :prototype(@) {
+    Typist::Type::Param->new('ArrayRef', @_);
+}
+
+sub Hash :prototype(@) {
     Typist::Type::Param->new('HashRef', @_);
 }
 
@@ -117,8 +124,8 @@ sub Func :prototype(@) {
 sub Literal :prototype($) {
     my ($value) = @_;
     require Scalar::Util;
-    my $base_type = Scalar::Util::looks_like_number($value) ? 'Num' : 'Str';
-    if ($base_type eq 'Num' && $value == int($value)) {
+    my $base_type = Scalar::Util::looks_like_number($value) ? 'Double' : 'Str';
+    if ($base_type eq 'Double' && $value == int($value)) {
         $base_type = 'Int';
     }
     Typist::Type::Literal->new($value, $base_type);
@@ -208,7 +215,7 @@ All symbols are exported by default.
 
 =head2 Atom Constants
 
-C<Int>, C<Str>, C<Num>, C<Bool>, C<Any>, C<Void>, C<Never>, C<Undef>
+C<Int>, C<Str>, C<Double>, C<Num>, C<Bool>, C<Any>, C<Void>, C<Never>, C<Undef>
 
 Each is a singleton L<Typist::Type::Atom> instance.
 

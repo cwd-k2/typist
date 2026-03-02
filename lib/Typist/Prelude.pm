@@ -49,13 +49,13 @@ my %BUILTINS = (
     # ── Numeric operations ────────────────────────
     abs     => '(Num) -> Num',
     int     => '(Num) -> Int',
-    sqrt    => '(Num) -> Num',
-    log     => '(Num) -> Num',
-    exp     => '(Num) -> Num',
-    sin     => '(Num) -> Num',
-    cos     => '(Num) -> Num',
-    atan2   => '(Num, Num) -> Num',
-    rand    => '(...Num) -> Num ![IO]',
+    sqrt    => '(Num) -> Double',
+    log     => '(Num) -> Double',
+    exp     => '(Num) -> Double',
+    sin     => '(Num) -> Double',
+    cos     => '(Num) -> Double',
+    atan2   => '(Num, Num) -> Double',
+    rand    => '(...Num) -> Double ![IO]',
     srand   => '(...Int) -> Int ![IO]',
 
     # ── Type/value introspection ──────────────────

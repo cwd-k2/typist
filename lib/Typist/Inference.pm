@@ -35,7 +35,7 @@ sub infer_value ($class, $value) {
     return Typist::Type::Atom->new('Int')
         if looks_like_number($value) && $value == int($value);
 
-    return Typist::Type::Atom->new('Num')
+    return Typist::Type::Atom->new('Double')
         if looks_like_number($value);
 
     Typist::Type::Atom->new('Str');
@@ -221,7 +221,7 @@ type class dispatch (C<Typist::TypeClass::Def>).
     my $type = Typist::Inference->infer_value($value);
 
 Returns the inferred L<Typist::Type> for a Perl runtime value.
-Scalars narrow to C<Bool>, C<Int>, C<Num>, or C<Str>; arrayrefs
+Scalars narrow to C<Bool>, C<Int>, C<Double>, or C<Str>; arrayrefs
 and hashrefs infer element types via common supertype.
 
 =head2 instantiate

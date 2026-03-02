@@ -18,8 +18,7 @@ Typist brings static type annotations to Perl through standard attribute syntax.
 ## Synopsis
 
 ```perl
-use Typist;
-use Typist::DSL;
+use Typist qw(Int Str Num Bool Double ArrayRef HashRef Record Maybe optional);
 
 # Type aliases and records (structural)
 BEGIN {
@@ -74,8 +73,8 @@ sub with_log :sig(<r: Row>(Str) -> Str ![Log, r]) ($msg) {
 
 | Feature | Syntax | Example |
 |---------|--------|---------|
-| Primitive types | `Int`, `Str`, `Bool`, `Num`, `Any`, `Void`, `Never`, `Undef` | `my $x :sig(Int) = 42` |
-| Parameterized types | `Name[T, ...]` | `ArrayRef[Int]`, `HashRef[Str, Int]` |
+| Primitive types | `Int`, `Str`, `Double`, `Num`, `Bool`, `Any`, `Void`, `Never`, `Undef` | `my $x :sig(Int) = 42` |
+| Parameterized types | `Name[T, ...]` | `ArrayRef[Int]` (`Array[Int]`), `HashRef[Str, Int]` (`Hash[Str, Int]`) |
 | Union / Intersection | `A \| B`, `A & B` | `Int \| Str`, `Readable & Writable` |
 | Function types | `(A, B) -> R` | `(Int, Int) -> Int` |
 | Struct (nominal) | `struct Name => (fields)` | Blessed immutable objects with accessors |
@@ -474,7 +473,7 @@ carton exec -- prove -l t/critic/       # Perl::Critic policy
 
 ## Known Limitations
 
-- **Expression inference** — String interpolation, regex, and complex dereference chains may widen to `Any`. Operator precedence does not influence inferred types.
+- **Expression inference** — Complex dereference chains (`$a->{k}[0]{j}`) may widen to `Any`. Operator precedence does not influence inferred types.
 - **Method checking** — Only `$self->method()` within the same package is checked. Cross-package and chained method calls are skipped under gradual typing.
 - **Type narrowing** — Supports `defined($x)`, truthiness, `isa`, and early return. Does not support `ref()` checks or user-defined predicates.
 - **Effect system** — Effects require explicit annotations; there is no effect inference. Row-polymorphic verification is limited. Protocol checking traces linear operation sequences; branching control flow within effectful functions is not yet tracked.

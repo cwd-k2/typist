@@ -91,7 +91,7 @@ Typist operates across three phases of a Perl program's lifecycle:
 |  Always active:                          |
 |    Newtype constructors validate.        |
 |    Datatype constructors validate.       |
-|    unwrap() validates blessed ref.       |
+|    $val->base extracts inner value.      |
 |    Effect::op() dispatches effect ops.      |
 |    handle { } scoped handler blocks.     |
 +==========================================+
@@ -304,19 +304,21 @@ substitute(\%)  Type            Apply binding map, return new type
 
 ```
                         Any
-                       / | \
-                     Str Num  Void  Undef
-                          |
-                         Int
-                          |
-                        Bool
-                          |
-                       Never
+                      / | \ \
+                   Str Num  |  Void  Undef
+                        |   |
+                     Double  |
+                        |    |
+                       Int   |
+                        |    |
+                      Bool   |
+                        |    |
+                      Never
 
 
   Structural:
 
-    Param[T...]        ArrayRef[Int], HashRef[Str, Num]
+    Param[T...]        ArrayRef[Int] (Array[Int]), HashRef[Str, Num] (Hash[Str, Num])
     Union(T|U)         Int | Str
     Intersection(T&U)  Readable & Writable
     Func(P->R!E)       (Int, Int) -> Int ![Console]
@@ -358,7 +360,7 @@ Newtype               N <: N iff same name        Nominal identity
 Data                  D <: D iff same name        Nominal identity
 Literal-Literal       L1 <: L2 iff val= & base<:  Value + hierarchy
 Literal-Atom          L <: A iff L.base <: A      Promotion
-Atom                  A <: B iff A in ancestors(B) %PARENT chain
+Atom                  A <: B iff A in ancestors(B) %PARENT chain (Bool<:Int<:Double<:Num<:Any)
 Param                 P[A] <: P[B] iff A<:B       Covariant
 Func params           (A)->R <: (B)->R iff B<:A   Contravariant
 Func return           (A)->R <: (A)->S iff R<:S   Covariant
@@ -519,8 +521,10 @@ EffectChecker->analyze()
 ```
 Expression Form              Inferred Type         Module
 ───────────────────────────  ────────────────────  ─────────────
-42, 3.14, 0, 1               Literal(val, base)    Infer._infer_number
+42, 0, 1                     Literal(val, base)    Infer._infer_number (Bool/Int)
+3.14, 1e10                   Literal(val,'Double') Infer._infer_number
 "hello", 'world'             Literal(val, 'Str')   Infer
+"Hello, $name"               Atom('Str')           Infer (interpolated → Str)
 <<HEREDOC                    Atom('Str')           Infer
 undef                        Atom('Undef')         Infer
 [1, 2, 3]                   Param('ArrayRef', T)  Infer._infer_array
@@ -533,12 +537,11 @@ CORE::name(args)             Prelude returns type  Infer._infer_call
 $a + $b                      Atom('Num')           Infer._infer_binop
 $a . $b                      Atom('Str')           Infer._infer_binop
 $a == $b                     Atom('Bool')          Infer._infer_binop
+$a =~ /pat/                  Atom('Bool')          Infer._infer_binop
 !$x                          Atom('Bool')          Infer._infer_operator
 $x ? $a : $b                 LUB or Union          Infer._infer_ternary
 
 NOT SUPPORTED:
-"Hello, $name"               -                     Interpolation
-$x =~ /pattern/              -                     Regex
 @{$arr}, %{$hash}            -                     Dereference
 ```
 

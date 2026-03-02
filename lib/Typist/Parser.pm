@@ -17,7 +17,7 @@ use Typist::Type::Quantified;
 use Typist::Type::Row;
 use Typist::Type::Eff;
 
-my %PRIMITIVES = map { $_ => 1 } qw(Any Void Never Undef Bool Int Num Str);
+my %PRIMITIVES = map { $_ => 1 } qw(Any Void Never Undef Bool Int Double Num Str);
 
 # DSL constructor names that use (...) syntax
 my %DSL_CONSTRUCTORS = (
@@ -25,7 +25,8 @@ my %DSL_CONSTRUCTORS = (
     Func    => \&_parse_dsl_func,
     Alias   => \&_parse_dsl_alias,
     # Parametric: ArrayRef(...), HashRef(...), Maybe(...), Tuple(...), Ref(...), CodeRef(...)
-    (map { $_ => \&_parse_dsl_param } qw(ArrayRef HashRef Maybe Tuple Ref CodeRef)),
+    # Array/Hash are aliases for ArrayRef/HashRef
+    (map { $_ => \&_parse_dsl_param } qw(ArrayRef HashRef Array Hash Maybe Tuple Ref CodeRef)),
 );
 
 # ── Parse Cache ──────────────────────────────────
@@ -392,6 +393,10 @@ sub _parse_param_list ($tokens, $pos, $close) {
 
 # Resolve a parametric constructor with Maybe/CodeRef desugaring.
 sub _resolve_param_constructor ($name, $params, $return_type, $effect_row) {
+    # Normalize Array → ArrayRef, Hash → HashRef
+    $name = 'ArrayRef' if $name eq 'Array';
+    $name = 'HashRef'  if $name eq 'Hash';
+
     # Maybe[T] / Maybe(T) → T | Undef
     if ($name eq 'Maybe' && @$params == 1 && !$return_type) {
         return Typist::Type::Union->new(
@@ -469,7 +474,7 @@ sub _parse_literal ($tokens, $pos) {
         return Typist::Type::Literal->new($1, 'Str');
     }
     # Numeric literal
-    my $base = $tok =~ /\./ ? 'Num' : 'Int';
+    my $base = $tok =~ /\./ ? 'Double' : 'Int';
     return Typist::Type::Literal->new($tok + 0, $base);
 }
 
@@ -724,7 +729,7 @@ Parse a type expression string into a type object. Supported syntax:
 
 =over 4
 
-=item Primitives: C<Int>, C<Str>, C<Num>, C<Bool>, C<Any>, C<Void>, C<Never>, C<Undef>
+=item Primitives: C<Int>, C<Double>, C<Str>, C<Num>, C<Bool>, C<Any>, C<Void>, C<Never>, C<Undef>
 
 =item Type variables: single uppercase letters (C<T>, C<U>, C<V>, ...)
 

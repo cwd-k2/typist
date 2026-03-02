@@ -7,18 +7,19 @@ use Typist::Type::Atom;
 use Typist::Type::Var;
 use List::Util 'any', 'all';
 
-# Primitive hierarchy: Any > Num > Int > Bool, Any > Str, Any > Undef, Any > Void
+# Primitive hierarchy: Any > Num > Double > Int > Bool, Any > Str, Any > Undef, Any > Void
 my %PARENT = (
-    Bool  => 'Int',
-    Int   => 'Num',
-    Num   => 'Any',
-    Str   => 'Any',
-    Undef => 'Any',
-    Void  => 'Any',
+    Bool   => 'Int',
+    Int    => 'Double',
+    Double => 'Num',
+    Num    => 'Any',
+    Str    => 'Any',
+    Undef  => 'Any',
+    Void   => 'Any',
 );
 
 # Atom ordering for common supertype (LUB) computation
-my %ATOM_ORDER = (Bool => 0, Int => 1, Num => 2, Str => 3, Any => 4);
+my %ATOM_ORDER = (Bool => 0, Int => 1, Double => 2, Num => 3, Str => 4, Any => 5);
 
 # ── Public API ────────────────────────────────────
 
@@ -374,7 +375,7 @@ Typist::Subtype - Structural subtype relation and least upper bound
 =head1 DESCRIPTION
 
 Implements the subtype relation for Typist's type system. The relation
-covers atom primitives (C<Bool E<lt>: Int E<lt>: Num E<lt>: Any>),
+covers atom primitives (C<Bool E<lt>: Int E<lt>: Double E<lt>: Num E<lt>: Any>),
 unions, intersections, parametric types (covariant), function types
 (contravariant params, covariant return), records (width subtyping),
 structs (nominal identity), newtypes (nominal), data types (covariant

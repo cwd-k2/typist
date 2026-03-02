@@ -10,14 +10,15 @@ use Scalar::Util 'looks_like_number';
 my %POOL;
 
 my %VALIDATORS = (
-    Any   => sub { 1 },
-    Void  => sub { 0 },
-    Never => sub { 0 },
-    Undef => sub { !defined $_[0] },
-    Bool  => sub { defined $_[0] && !ref $_[0] && ($_[0] eq '1' || $_[0] eq '0' || $_[0] eq '' ) },
-    Int   => sub { defined $_[0] && !ref $_[0] && looks_like_number($_[0]) && $_[0] == int($_[0]) },
-    Num   => sub { defined $_[0] && !ref $_[0] && looks_like_number($_[0]) },
-    Str   => sub { defined $_[0] && !ref $_[0] },
+    Any    => sub { 1 },
+    Void   => sub { 0 },
+    Never  => sub { 0 },
+    Undef  => sub { !defined $_[0] },
+    Bool   => sub { defined $_[0] && !ref $_[0] && ($_[0] eq '1' || $_[0] eq '0' || $_[0] eq '' ) },
+    Int    => sub { defined $_[0] && !ref $_[0] && looks_like_number($_[0]) && $_[0] == int($_[0]) },
+    Double => sub { defined $_[0] && !ref $_[0] && looks_like_number($_[0]) },
+    Num    => sub { defined $_[0] && !ref $_[0] && looks_like_number($_[0]) },
+    Str    => sub { defined $_[0] && !ref $_[0] },
 );
 
 sub new ($class, $name) {
@@ -57,7 +58,7 @@ Typist::Type::Atom - Primitive type atoms (Int, Str, Bool, ...)
 =head1 DESCRIPTION
 
 Singleton flyweight type for primitive types. Each name (C<Int>, C<Str>,
-C<Num>, C<Bool>, C<Any>, C<Void>, C<Never>, C<Undef>) maps to exactly
+C<Double>, C<Num>, C<Bool>, C<Any>, C<Void>, C<Never>, C<Undef>) maps to exactly
 one blessed instance in a package-level pool.
 
 =head1 ABSTRACT INTERFACE

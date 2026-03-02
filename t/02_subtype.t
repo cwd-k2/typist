@@ -11,16 +11,22 @@ sub is_sub { Typist::Subtype->is_subtype(@_) }
 # ── Primitive hierarchy ──────────────────────────
 
 subtest 'primitive hierarchy' => sub {
-    ok  is_sub(parse('Bool'), parse('Int')),   'Bool <: Int';
-    ok  is_sub(parse('Int'),  parse('Num')),   'Int <: Num';
-    ok  is_sub(parse('Bool'), parse('Num')),   'Bool <: Num (transitive)';
-    ok  is_sub(parse('Num'),  parse('Any')),   'Num <: Any';
-    ok  is_sub(parse('Str'),  parse('Any')),   'Str <: Any';
-    ok  is_sub(parse('Undef'), parse('Any')),  'Undef <: Any';
+    ok  is_sub(parse('Bool'),   parse('Int')),    'Bool <: Int';
+    ok  is_sub(parse('Int'),    parse('Double')), 'Int <: Double';
+    ok  is_sub(parse('Double'), parse('Num')),    'Double <: Num';
+    ok  is_sub(parse('Int'),    parse('Num')),    'Int <: Num (transitive)';
+    ok  is_sub(parse('Bool'),   parse('Num')),    'Bool <: Num (transitive)';
+    ok  is_sub(parse('Bool'),   parse('Double')), 'Bool <: Double (transitive)';
+    ok  is_sub(parse('Num'),    parse('Any')),    'Num <: Any';
+    ok  is_sub(parse('Double'), parse('Any')),    'Double <: Any (transitive)';
+    ok  is_sub(parse('Str'),    parse('Any')),    'Str <: Any';
+    ok  is_sub(parse('Undef'),  parse('Any')),    'Undef <: Any';
 
-    ok !is_sub(parse('Str'),  parse('Int')),   'Str </: Int';
-    ok !is_sub(parse('Int'),  parse('Str')),   'Int </: Str';
-    ok !is_sub(parse('Num'),  parse('Int')),   'Num </: Int';
+    ok !is_sub(parse('Str'),    parse('Int')),    'Str </: Int';
+    ok !is_sub(parse('Int'),    parse('Str')),    'Int </: Str';
+    ok !is_sub(parse('Num'),    parse('Int')),    'Num </: Int';
+    ok !is_sub(parse('Double'), parse('Int')),    'Double </: Int';
+    ok !is_sub(parse('Num'),    parse('Double')), 'Num </: Double';
 };
 
 # ── Identity ─────────────────────────────────────

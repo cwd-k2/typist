@@ -46,7 +46,7 @@ subtest 'negative integer' => sub {
 subtest 'float literal' => sub {
     my $t = infer_from_source('my $x = 3.14;');
     ok $t, 'inferred';
-    is $t->base_type, 'Num', '3.14 → Literal(Num)';
+    is $t->base_type, 'Double', '3.14 → Literal(Double)';
 };
 
 subtest 'bool literal 0' => sub {
@@ -386,7 +386,7 @@ subtest 'ternary LUB within numeric hierarchy' => sub {
     my $t = infer_stmt('$x ? 3.14 : 42;');
     ok $t, 'inferred';
     ok $t->is_atom, 'is atom (LUB)';
-    is $t->name, 'Num', '$x ? 3.14 : 42 → Num (common_super)';
+    is $t->name, 'Double', '$x ? 3.14 : 42 → Double (common_super)';
 };
 
 subtest 'ternary one branch non-inferable → undef' => sub {

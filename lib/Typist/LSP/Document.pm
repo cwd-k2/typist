@@ -482,16 +482,17 @@ sub inlay_hints ($self, $start_line, $end_line) {
         my $line = ($sym->{line} // 1) - 1;
         next if $line < $start_line || $line > $end_line;
 
+        my $display = _display_type($sym->{type}, $sym->{name});
         push @hints, +{
             position => +{
                 line      => $line,
                 character => ($sym->{col} // 1) - 1 + length($sym->{name}),
             },
-            label   => ": $sym->{type}",
+            label   => ": $display",
             kind    => 1,  # Type
             tooltip => +{
                 kind  => 'markdown',
-                value => "```perl\n$sym->{name}: $sym->{type}\n```\n*inferred*",
+                value => "```\n$sym->{name}: $display\n```\n*inferred*",
             },
         };
     }
@@ -993,6 +994,16 @@ sub _synthesize_function_symbol ($name, $sig) {
         generics     => \@generics,
         eff_expr     => $eff_expr,
     };
+}
+
+# Display ArrayRef/HashRef as Array/Hash for sigil-matched variables
+sub _display_type ($type_str, $name) {
+    if ($name =~ /\A[\@]/) {
+        $type_str =~ s/\bArrayRef\b/Array/g;
+    } elsif ($name =~ /\A[%]/) {
+        $type_str =~ s/\bHashRef\b/Hash/g;
+    }
+    $type_str;
 }
 
 1;

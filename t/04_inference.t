@@ -15,7 +15,7 @@ subtest 'scalar inference' => sub {
     is infer(0)->to_string,       'Bool',  '0 -> Bool';
     is infer(42)->to_string,      'Int',   '42 -> Int';
     is infer(-7)->to_string,      'Int',   '-7 -> Int';
-    is infer(3.14)->to_string,    'Num',   '3.14 -> Num';
+    is infer(3.14)->to_string,    'Double', '3.14 -> Double';
     is infer("hello")->to_string, 'Str',   '"hello" -> Str';
 };
 
@@ -24,7 +24,7 @@ subtest 'scalar inference' => sub {
 subtest 'array inference' => sub {
     is infer([])->to_string, 'ArrayRef[Any]', 'empty array -> ArrayRef[Any]';
     is infer([1,2,3])->to_string, 'ArrayRef[Int]', '[1,2,3] -> ArrayRef[Int]';
-    is infer([1, 3.14])->to_string, 'ArrayRef[Num]', '[1, 3.14] -> ArrayRef[Num]';
+    is infer([1, 3.14])->to_string, 'ArrayRef[Double]', '[1, 3.14] -> ArrayRef[Double]';
     is infer(["a", "b"])->to_string, 'ArrayRef[Str]', '["a","b"] -> ArrayRef[Str]';
 };
 

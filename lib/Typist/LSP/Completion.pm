@@ -5,8 +5,8 @@ our $VERSION = '0.01';
 
 # ── Primitive and Parametric Types ───────────────
 
-my @PRIMITIVES   = qw(Any Void Never Undef Bool Int Num Str);
-my @PARAMETRICS  = qw(ArrayRef HashRef Tuple Ref Maybe CodeRef);
+my @PRIMITIVES   = qw(Any Void Never Undef Bool Int Double Num Str);
+my @PARAMETRICS  = qw(ArrayRef HashRef Array Hash Tuple Ref Maybe CodeRef);
 my @TYPE_VARS    = qw(T U V K);
 
 # ── Public API ───────────────────────────────────

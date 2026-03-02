@@ -29,20 +29,22 @@ This document provides a comprehensive reference for all type constructs, subtyp
 
 ## Primitive Types
 
-Typist provides eight primitive (atom) types, organized in a subtype hierarchy:
+Typist provides nine primitive (atom) types, organized in a subtype hierarchy:
 
 ```
                 Any         Top type: every type is a subtype
-               / | \
-             Str Num Void   Void: no meaningful return value
-              |   |    |
-              |  Int   |    Undef: Perl's undef
-              |   |    |
-              | Bool   |
-              |        |
-              +--+--+--+
-                 |
-               Never        Bottom type: subtype of everything
+              / | \ \
+           Str Num  | Void   Void: no meaningful return value
+            |   |   |
+            | Double |       Double: floating-point
+            |   |    |
+            |  Int   |       Undef: Perl's undef
+            |   |    |
+            | Bool   |
+            |        |
+            +--+--+--+
+                |
+              Never         Bottom type: subtype of everything
 ```
 
 | Type | Description | Runtime Validator |
@@ -53,13 +55,14 @@ Typist provides eight primitive (atom) types, organized in a subtype hierarchy:
 | `Undef` | Perl's `undef` | `!defined($v)` |
 | `Bool` | Boolean values | `$v` is `1`, `0`, or `''` |
 | `Int` | Integer values | `looks_like_number($v) && $v == int($v)` |
-| `Num` | Numeric values | `looks_like_number($v)` |
+| `Double` | Floating-point values | `looks_like_number($v)` |
+| `Num` | Numeric supertype | `looks_like_number($v)` |
 | `Str` | String values | `defined($v) && !ref($v)` |
 
 ### Subtype Relations
 
 ```
-Bool <: Int <: Num <: Any
+Bool <: Int <: Double <: Num <: Any
 Str <: Any
 Undef <: Any
 Void <: Any
@@ -72,7 +75,8 @@ Never <: T (for all T)
 my $x :sig(Int) = 42;
 my $s :sig(Str) = "hello";
 my $b :sig(Bool) = 1;
-my $n :sig(Num) = 3.14;
+my $d :sig(Double) = 3.14;
+my $n :sig(Num) = 3.14;    # Num accepts all numerics
 my $u :sig(Undef) = undef;
 ```
 
@@ -91,12 +95,14 @@ Types that take type parameters inside `[...]`:
 | `Maybe[T]` | `* -> *` | `Maybe[Str]` | Desugars to `T \| Undef` |
 | `CodeRef[A -> R]` | `* -> *` | `CodeRef[Int -> Str]` | Desugars to `Func([A], R)` |
 
+The DSL also provides short aliases `Array[T]` and `Hash[K, V]` for `ArrayRef[T]` and `HashRef[K, V]`.
+
 ### Subtyping
 
 Parameterized types are **covariant** in all parameters:
 
 ```
-ArrayRef[Int] <: ArrayRef[Num]     (because Int <: Num)
+ArrayRef[Int] <: ArrayRef[Double]    (because Int <: Double)
 HashRef[Str, Int] <: HashRef[Str, Num]
 ```
 
@@ -246,9 +252,9 @@ Singleton types for specific values: `42`, `"hello"`, `3.14`.
 Each literal type has a **base type** that it subtypes:
 
 ```
-Literal("hello", Str)  <:  Str  <:  Any
-Literal(42, Int)       <:  Int  <:  Num  <:  Any
-Literal(3.14, Num)     <:  Num  <:  Any
+Literal("hello", Str)  <:  Str     <:  Any
+Literal(42, Int)       <:  Int     <:  Double  <:  Num  <:  Any
+Literal(3.14, Double)  <:  Double  <:  Num     <:  Any
 ```
 
 ### Equality
@@ -257,7 +263,7 @@ Two literal types are equal iff both value and base type match:
 
 ```
 Literal(42, Int)  =  Literal(42, Int)       # Equal
-Literal(42, Int)  != Literal(42, Num)       # Different base
+Literal(42, Int)  != Literal(42, Double)    # Different base
 Literal(42, Int)  != Literal(43, Int)       # Different value
 ```
 
@@ -267,7 +273,7 @@ The static type inferrer produces literal types from source literals:
 
 ```perl
 42          # Literal(42, Int)
-3.14        # Literal(3.14, Num)
+3.14        # Literal(3.14, Double)
 "hello"     # Literal("hello", Str)
 0, 1        # Literal(0, Bool), Literal(1, Bool)
 ```
@@ -337,7 +343,7 @@ BEGIN {
 }
 
 my $uid = UserId(42);            # Constructs, validates inner type
-my $raw = unwrap($uid);          # Extracts: 42
+my $raw = $uid->base;            # Extracts inner value: 42
 
 eval { UserId("not a number") }; # Dies: validation failure
 ```
@@ -539,7 +545,7 @@ Maybe     :: * -> *
 ### Usage in Type Classes
 
 ```perl
-use Typist::DSL;
+use Typist::DSL qw(TVar);
 
 BEGIN {
     typeclass Functor => TVar('F', kind => '* -> *'), +{
@@ -831,7 +837,7 @@ Complete reference of all subtyping rules implemented in `Typist::Subtype`:
 11  Data                  name equality                       nominal
 12  Literal-Literal       value= ∧ base<:base                 structural
 13  Literal-Atom          literal.base <: atom                 promotion
-14  Atom-Atom             ancestor chain via %PARENT           hierarchy
+14  Atom-Atom             ancestor chain via %PARENT           hierarchy (Bool<:Int<:Double<:Num<:Any)
 15  Param                 same constructor ∧ covariant params  structural
 16  Func-params           contravariant                        reversed
 17  Func-return           covariant                            normal
@@ -854,31 +860,39 @@ Complete reference of all subtyping rules implemented in `Typist::Subtype`:
 ### Atom Constants
 
 ```perl
-use Typist::DSL;
+use Typist qw(Int Str Double Num Bool Any Void Never Undef);
 
-Int, Str, Bool, Num, Any, Void, Never, Undef
+Int, Str, Double, Num, Bool, Any, Void, Never, Undef
 ```
 
-These are `use constant` singletons backed by `Typist::Type::Atom` flyweight pool entries.
+These are `use constant` singletons backed by `Typist::Type::Atom` flyweight pool entries. Imported via `use Typist qw(...)` selective import.
 
 ### Type Variable Constants
 
 ```perl
-T, U, V, A, B, K         # Single-character type variables
-TVar('Elem')              # Multi-character type variable
-TVar('F', kind => '* -> *')  # With kind annotation
+use Typist qw(T U V A B K);     # Single-character type variables
+
+# For advanced usage (multi-char vars, kind annotations):
+use Typist::DSL qw(TVar);
+TVar('Elem')                     # Multi-character type variable
+TVar('F', kind => '* -> *')     # With kind annotation
 ```
 
 ### Parametric Constructors
 
 ```perl
+use Typist qw(ArrayRef Array HashRef Hash Tuple Maybe Record);
+
 ArrayRef(Int)                    # ArrayRef[Int]
+Array(Int)                       # ArrayRef[Int]  (alias)
 HashRef(Str, Int)                # HashRef[Str, Int]
+Hash(Str, Int)                   # HashRef[Str, Int]  (alias)
 Tuple(Int, Str, Bool)            # Tuple[Int, Str, Bool]
 Maybe(Str)                       # Str | Undef
-Struct(name => Str, age => Int)  # { name => Str, age => Int }
-Func(Int, Int, returns => Int)   # (Int, Int) -> Int
+Record(name => Str, age => Int)  # { name => Str, age => Int }
 ```
+
+`Func`, `Row`, `Eff`, `TVar`, `Alias` are internal constructors available via `use Typist::DSL qw(:internal)`.
 
 ### Operator Overloads
 
@@ -898,16 +912,26 @@ Typist::Type->coerce(Int)             # Atom(Int) (DSL constant, passthrough)
 Typist::Type->coerce('ArrayRef[Str]') # Param(ArrayRef, Atom(Str))
 ```
 
-### DSL in typedef/newtype
+### Importing DSL Symbols
+
+The recommended way is selective import via `use Typist qw(...)`:
 
 ```perl
-use Typist::DSL;
+use Typist qw(Int Str Record optional);       # Import specific names
 
 BEGIN {
-    typedef Name   => Str;                              # DSL form
-    typedef Person => Struct(name => Str, age => Int);   # DSL form
-    typedef Config => '{ host => Str, port => Int }';    # String form
+    typedef Name   => Str;                     # DSL form
+    typedef Person => Record(name => Str);     # DSL form
+    typedef Config => '{ host => Str }';       # String form (always works)
 }
+```
+
+For advanced usage, `Typist::DSL` provides export tags:
+
+```perl
+use Typist::DSL qw(:all);       # All symbols (types + vars + internal)
+use Typist::DSL qw(:vars);      # T, U, V, A, B, K
+use Typist::DSL qw(:internal);  # TVar, Alias, Row, Eff, Func
 ```
 
 ---
@@ -916,8 +940,8 @@ BEGIN {
 
 | Constructor | Module | Kind | Syntax |
 |-------------|--------|------|--------|
-| `Atom` | `Type::Atom` | `*` | `Int`, `Str`, `Bool`, `Num`, `Any`, `Void`, `Never`, `Undef` |
-| `Param` | `Type::Param` | `* -> ... -> *` | `ArrayRef[T]`, `HashRef[K, V]`, `Tuple[T, U]` |
+| `Atom` | `Type::Atom` | `*` | `Int`, `Str`, `Double`, `Num`, `Bool`, `Any`, `Void`, `Never`, `Undef` |
+| `Param` | `Type::Param` | `* -> ... -> *` | `ArrayRef[T]` (alias: `Array[T]`), `HashRef[K, V]` (alias: `Hash[K, V]`), `Tuple[T, U]` |
 | `Union` | `Type::Union` | `*` | `T \| U` |
 | `Intersection` | `Type::Intersection` | `*` | `T & U` |
 | `Func` | `Type::Func` | `*` | `(A, B) -> R`, `(A) -> R ![E]` |

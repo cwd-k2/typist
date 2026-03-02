@@ -2,7 +2,7 @@ use v5.40;
 use Test::More;
 use lib 'lib';
 
-use Typist::DSL;
+use Typist::DSL qw(:all);
 use Typist::Type;
 use Typist::Subtype;
 use Typist::Type::Atom;
@@ -229,6 +229,22 @@ subtest 'optional with string coerce' => sub {
     isa_ok $opt, 'Typist::DSL::Optional';
     ok $opt->inner->is_atom, 'coerced string to atom type';
     is $opt->inner->name, 'Int', 'inner is Int';
+};
+
+# ── Array / Hash aliases ────────────────────────
+
+subtest 'Array constructor (alias for ArrayRef)' => sub {
+    my $t = Array(Int);
+    ok $t->is_param, 'Array(Int) is param';
+    is $t->base, 'ArrayRef', 'Array normalizes to ArrayRef';
+    is $t->to_string, ArrayRef(Int)->to_string, 'Array(Int) == ArrayRef(Int)';
+};
+
+subtest 'Hash constructor (alias for HashRef)' => sub {
+    my $t = Hash(Str, Int);
+    ok $t->is_param, 'Hash(Str, Int) is param';
+    is $t->base, 'HashRef', 'Hash normalizes to HashRef';
+    is $t->to_string, HashRef(Str, Int)->to_string, 'Hash(Str, Int) == HashRef(Str, Int)';
 };
 
 done_testing;

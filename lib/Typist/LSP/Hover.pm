@@ -30,12 +30,14 @@ sub _format ($class, $sym) {
     my $kind = $sym->{kind};
 
     if ($kind eq 'parameter') {
-        return _code("$sym->{name}: $sym->{type}")
+        my $display = _display_type($sym->{type}, $sym->{name});
+        return _code("$sym->{name}: $display")
              . _note("parameter of `$sym->{fn_name}`");
     }
 
     if ($kind eq 'variable') {
-        my $md = _code("$sym->{name}: $sym->{type}");
+        my $display = _display_type($sym->{type}, $sym->{name});
+        my $md = _code("$sym->{name}: $display");
         if ($sym->{unknown}) {
             $md .= _note('type unknown');
         } elsif ($sym->{narrowed}) {
@@ -251,8 +253,18 @@ sub _format_typeclass ($class, $sym) {
 
 # ── Helpers ──────────────────────────────────────
 
-sub _code ($text) { "```perl\n$text\n```" }
+sub _code ($text) { "```\n$text\n```" }
 
 sub _note ($text) { "\n\n*$text*" }
+
+# Display ArrayRef/HashRef as Array/Hash for sigil-matched variables
+sub _display_type ($type_str, $name) {
+    if ($name =~ /\A[\@]/) {
+        $type_str =~ s/\bArrayRef\b/Array/g;
+    } elsif ($name =~ /\A[%]/) {
+        $type_str =~ s/\bHashRef\b/Hash/g;
+    }
+    $type_str;
+}
 
 1;

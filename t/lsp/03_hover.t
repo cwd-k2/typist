@@ -1491,4 +1491,50 @@ PERL
     }
 };
 
+# ── Hover displays Array/Hash for sigil variables ──
+
+subtest 'hover shows Array[Int] for @arr variable' => sub {
+    require Typist::LSP::Hover;
+
+    my $sym = +{
+        kind     => 'variable',
+        name     => '@arr',
+        type     => 'ArrayRef[Int]',
+        inferred => 1,
+    };
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'got hover';
+    like $hover->{contents}{value}, qr/\@arr: Array\[Int\]/, '@arr displays as Array[Int]';
+    unlike $hover->{contents}{value}, qr/ArrayRef/, 'ArrayRef replaced for @-sigil';
+};
+
+subtest 'hover shows Hash[Str, Int] for %hash variable' => sub {
+    require Typist::LSP::Hover;
+
+    my $sym = +{
+        kind     => 'variable',
+        name     => '%config',
+        type     => 'HashRef[Str, Int]',
+        inferred => 1,
+    };
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'got hover';
+    like $hover->{contents}{value}, qr/%config: Hash\[Str, Int\]/, '%config displays as Hash[Str, Int]';
+    unlike $hover->{contents}{value}, qr/HashRef/, 'HashRef replaced for %-sigil';
+};
+
+subtest 'hover keeps ArrayRef for $scalar variable' => sub {
+    require Typist::LSP::Hover;
+
+    my $sym = +{
+        kind     => 'variable',
+        name     => '$ref',
+        type     => 'ArrayRef[Int]',
+        inferred => 1,
+    };
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'got hover';
+    like $hover->{contents}{value}, qr/\$ref: ArrayRef\[Int\]/, '$ref keeps ArrayRef[Int]';
+};
+
 done_testing;

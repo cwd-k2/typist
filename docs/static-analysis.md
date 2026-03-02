@@ -435,7 +435,22 @@ Analyzer:  if is_method → registry->register_method(pkg, name, sig)
 
 ## Type Narrowing
 
-The TypeChecker narrows types within control-flow guard blocks. Currently supports `defined()` guards for removing `Undef` from union types.
+The TypeChecker narrows types within control-flow guard blocks and after early returns.
+
+### Narrowing Rules
+
+Four narrowing rules are supported, dispatched in order of specificity:
+
+```
+Rule           Condition                Result in then-block        Result in else-block
+─────────────  ───────────────────────  ────────────────────────    ────────────────────
+defined()      `defined($x)`           Remove Undef from union     Undef only
+truthiness     `if ($x)`               Remove Undef from union     (no inverse)
+isa            `$x isa Type`           Narrow to Type              (no inverse)
+early return   `return unless defined` Narrow remainder of body    N/A
+```
+
+The `unless` keyword reverses polarity: in `unless (defined($x))`, the then-block sees the inverse narrowing.
 
 ### Algorithm
 
@@ -443,17 +458,22 @@ The TypeChecker narrows types within control-flow guard blocks. Currently suppor
 _narrow_env_for_block(env, node):
   Walk up to nearest enclosing Block
   Parent must be a Compound statement (if/elsif/unless/while)
-  Only narrow inside the first (then) block, not else
+  Detect then-block vs else-block position
 
-  Match condition: `defined($x)` or `defined $x`
-  Lookup variable type in env
+  Dispatch rules (most specific first):
+    1. _narrow_defined   → defined($x) or defined $x
+    2. _narrow_isa       → $x isa Type
+    3. _narrow_truthiness → bare $x
 
-  If type is Union containing Undef:
-    Remove Undef members
-    Return env with narrowed variable type
+  Apply narrowing or inverse based on block polarity
+
+_scan_early_returns(env, node):
+  Walk preceding siblings in the enclosing block
+  Match: `return unless defined($x)` pattern
+  Narrow env for the remainder of the body
 ```
 
-### Example
+### Examples
 
 ```perl
 my $x :sig(Str | Undef) = get_value();
@@ -461,6 +481,17 @@ if (defined($x)) {
     # $x is narrowed to Str here
     process($x);   # No TypeMismatch even though declared as Str | Undef
 }
+
+if ($x) {
+    # $x is narrowed to Str (Undef removed by truthiness)
+}
+
+if ($x isa Person) {
+    # $x is narrowed to Person
+}
+
+return unless defined($x);
+# After this point, $x is narrowed to Str for the rest of the body
 ```
 
 ---
@@ -521,7 +552,6 @@ Decl effects:   typedef, newtype, effect      → ![Decl]
 Pure string:    length, substr, uc, lc, index → pure
 Pure numeric:   abs, int, sqrt                → pure
 Pure list:      scalar, reverse, sort         → pure
-Pure Typist:    unwrap                        → pure
 ```
 
 ### Standard Effect Labels
@@ -591,11 +621,13 @@ my $type = Typist::Static::Infer->infer_expr($ppi_element, $env);
 ```
 PPI Element                    Result                    Notes
 ─────────────────────────────  ────────────────────────  ─────────────
-PPI::Token::Number::Float      Literal(val, 'Num')
-PPI::Token::Number::Exp        Literal(val, 'Num')
+PPI::Token::Number::Float      Literal(val, 'Double')
+PPI::Token::Number::Exp        Literal(val, 'Double')
 PPI::Token::Number (0 or 1)    Literal(val, 'Bool')
 PPI::Token::Number (other)     Literal(val, 'Int')
 PPI::Token::Quote              Literal(string, 'Str')   Uses ->string
+PPI::Token::Quote::Double      Atom('Str')              Interpolated ("$x")
+PPI::Token::Quote::Interpolate Atom('Str')              Interpolated (qq{})
 PPI::Token::HereDoc            Atom('Str')
 PPI::Token::Word 'undef'       Atom('Undef')
 PPI::Structure::Constructor[]  Param('ArrayRef', LUB)   _infer_array
@@ -612,6 +644,7 @@ $a + $b, $a - $b, ...         Atom('Num')              Arithmetic
 $a . $b                       Atom('Str')              Concatenation
 $a == $b, $a < $b, ...        Atom('Bool')             Numeric comparison
 $a eq $b, $a lt $b, ...       Atom('Bool')             String comparison
+$a =~ /pat/, $a !~ /pat/      Atom('Bool')             Regex match
 !$x, not $x                   Atom('Bool')             Unary negation
 $a && $b, $a || $b, ...       type of LHS              Logical operators
 $x ? $a : $b                  LUB or Union             Ternary (see below)
@@ -639,8 +672,8 @@ Struct{ k => T } → T          Struct field access (bare word or quoted key)
 
 When inferring `[1, "a", 3.14]`, the inferrer:
 
-1. Infers each element: `Literal(1, Int)`, `Literal("a", Str)`, `Literal(3.14, Num)`
-2. Promotes literals to atoms: `Int`, `Str`, `Num`
+1. Infers each element: `Literal(1, Int)`, `Literal("a", Str)`, `Literal(3.14, Double)`
+2. Promotes literals to atoms: `Int`, `Str`, `Double`
 3. Computes LUB pairwise: `common_super(Int, Str)` = `Any`, etc.
 4. Returns `ArrayRef[Any]`
 
@@ -801,19 +834,16 @@ Setting `TYPIST_CHECK_QUIET=1` skips the entire `_check_analyze()` pass in the C
 
 | Not Supported | Example | Reason |
 |---------------|---------|--------|
-| String interpolation | `"Hello, $name"` | PPI represents as single token |
-| Regex | `$x =~ /pattern/` | Returns match result, not typed |
 | Dereference | `@{$arr}`, `%{$hash}` | No deref type propagation |
+| Complex dereference chains | `$a->{k}[0]{j}` | Only single-level subscript |
 
 ### Structural
 
 | Limitation | Impact |
 |------------|--------|
-| No control flow analysis | if/while branches not analyzed for variable type refinement beyond `defined()` |
 | No scope shadowing | Inner closures share parent's flat name env |
 | PPI attribute parsing fragile | Unusual spacing in `:sig(...)` may fail |
 | Method calls limited to $self | No cross-package or arbitrary receiver method checking |
-| Narrowing limited to `defined()` | Other guards (e.g., `ref`, pattern match) not handled |
 
 ### Effects
 
