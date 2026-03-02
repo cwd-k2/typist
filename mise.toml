@@ -77,3 +77,18 @@ run = "carton exec -- perl example/10_higher_order.pl"
 [tasks."example:chains"]
 description = "Run method chain example (struct accessors, newtype ->base)"
 run = "carton exec -- perl example/12_method_chains.pl"
+
+[tasks."vscode:build"]
+description = "Build VSCode extension"
+dir = "editors/vscode"
+run = "npm run build"
+
+[tasks."vscode:package"]
+description = "Package VSCode extension (.vsix)"
+dir = "editors/vscode"
+run = "npm run package"
+
+[tasks."vscode:install"]
+description = "Build, package, and install VSCode extension"
+dir = "editors/vscode"
+run = "npm run package && code --install-extension typist-*.vsix"
