@@ -196,4 +196,69 @@ subtest 'empty source has empty collections' => sub {
     is_deeply $result->{typeclasses}, +{}, 'no typeclasses';
 };
 
+# ── Protocol extraction ───────────────────────
+
+subtest 'extracts effect with inline protocol (new syntax)' => sub {
+    my $result = Typist::Static::Extractor->extract(<<'PERL');
+use v5.40;
+
+effect DB, [qw(None Connected)] => +{
+    connect => ['(Str) -> Void', protocol('None -> Connected')],
+    query   => ['(Str) -> Str',  protocol('Connected -> Connected')],
+};
+PERL
+
+    ok exists $result->{effects}{DB}, 'DB effect extracted';
+    my $eff = $result->{effects}{DB};
+
+    # Protocol transitions
+    my $proto = $eff->{protocol};
+    ok defined $proto, 'protocol extracted';
+    is ref $proto, 'HASH', 'protocol is hashref';
+    is_deeply $proto->{None}, { connect => 'Connected' }, 'None transitions';
+    is_deeply $proto->{Connected}, { query => 'Connected' }, 'Connected transitions';
+
+    # Operations (string signatures only)
+    is $eff->{operations}{connect}, '(Str) -> Void', 'connect sig extracted';
+    is $eff->{operations}{query},   '(Str) -> Str',  'query sig extracted';
+
+    # States list
+    ok defined $eff->{states}, 'states list extracted';
+    is_deeply $eff->{states}, [qw(None Connected)], 'states match declared list';
+};
+
+subtest 'extracts effect without protocol' => sub {
+    my $result = Typist::Static::Extractor->extract(<<'PERL');
+use v5.40;
+
+effect Console => +{
+    writeLine => '(Str) -> Void',
+};
+PERL
+
+    ok exists $result->{effects}{Console}, 'Console effect extracted';
+    is $result->{effects}{Console}{protocol}, undef, 'no protocol';
+    is $result->{effects}{Console}{states}, undef, 'no states list';
+};
+
+subtest 'extracts mixed ops with and without protocol' => sub {
+    my $result = Typist::Static::Extractor->extract(<<'PERL');
+use v5.40;
+
+effect Mixed, [qw(A B)] => +{
+    step    => ['(Int) -> Void', protocol('A -> B')],
+    helper  => '(Str) -> Str',
+};
+PERL
+
+    my $eff = $result->{effects}{Mixed};
+    ok defined $eff, 'Mixed effect extracted';
+    is $eff->{operations}{step},   '(Int) -> Void', 'step sig extracted';
+    is $eff->{operations}{helper}, '(Str) -> Str',  'helper sig extracted';
+
+    my $proto = $eff->{protocol};
+    ok defined $proto, 'protocol extracted for mixed ops';
+    is_deeply $proto->{A}, { step => 'B' }, 'step transition from A';
+};
+
 done_testing;

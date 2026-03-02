@@ -91,6 +91,7 @@ sub with_log :Type(<r: Row>(Str) -> Str !Eff(Log | r)) ($msg) {
 | Variadic functions | `...Type` | `(Int, ...Str) -> Void` |
 | Type classes / HKT | `typeclass` / `instance` | Ad-hoc polymorphism, `F: * -> *` |
 | Algebraic effects | `effect` / `!Eff(...)` | `!Eff(Console \| Log)` |
+| Effect protocols | `protocol('From -> To')` | `!Eff(DB<None -> Authed>)` |
 | Row polymorphism | `<r: Row>` / `Eff(E \| r)` | Effect row extension |
 | Effect handlers | `Effect::op(...)` / `handle` | Direct dispatch + scoped handling |
 
@@ -295,6 +296,34 @@ my $result = handle {
 };
 ```
 
+### Effect Protocols (Stateful Effects)
+
+Effects can carry protocol state machines that enforce operation ordering:
+
+```perl
+BEGIN {
+    # Quote the name when using comma syntax (strict subs)
+    effect 'Database', [qw(None Connected Authed)] => +{
+        connect => ['(Str) -> Void',      protocol('None -> Connected')],
+        auth    => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+        query   => ['(Str) -> Str',       protocol('Authed -> Authed')],
+    };
+}
+
+# State transitions are declared in type annotations
+sub setup :Type(() -> Void !Eff(Database<None -> Authed>)) () {
+    Database::connect("localhost");  # None → Connected
+    Database::auth("user", "pass");  # Connected → Authed
+}
+
+# Invariant state: start and end in the same state
+sub run_query :Type((Str) -> Str !Eff(Database<Authed>)) ($sql) {
+    Database::query($sql);           # Authed → Authed
+}
+```
+
+The static analyzer traces operation sequences and verifies that the final state matches the declared end state. Calling `DB::query` from state `None` produces a `ProtocolMismatch` diagnostic.
+
 ### Type Classes
 
 ```perl
@@ -421,7 +450,7 @@ See `example/` for runnable demonstrations:
 | `04_nominal_types.pl` | Newtypes, literal types, recursive types |
 | `05_algebraic_types.pl` | Datatype/ADT, pattern matching, enum |
 | `06_typeclasses.pl` | Type classes, HKT, Functor |
-| `07_effects.pl` | Effect system, perform/handle |
+| `07_effects.pl` | Effect system, handlers, protocols |
 | `08_gradual_typing.pl` | Gradual typing, flow typing |
 | `09_dsl.pl` | DSL operators, constructors |
 | `10_higher_order.pl` | Higher-order function inference |
@@ -448,7 +477,7 @@ carton exec -- prove -l t/critic/       # Perl::Critic policy
 - **Expression inference** — String interpolation, regex, and complex dereference chains may widen to `Any`. Operator precedence does not influence inferred types.
 - **Method checking** — Only `$self->method()` within the same package is checked. Cross-package and chained method calls are skipped under gradual typing.
 - **Type narrowing** — Supports `defined($x)`, truthiness, `isa`, and early return. Does not support `ref()` checks or user-defined predicates.
-- **Effect system** — Effects require explicit annotations; there is no effect inference. Row-polymorphic verification is limited.
+- **Effect system** — Effects require explicit annotations; there is no effect inference. Row-polymorphic verification is limited. Protocol checking traces linear operation sequences; branching control flow within effectful functions is not yet tracked.
 - **Cross-file CHECK** — The CHECK phase is single-file. Use `TYPIST_CHECK_QUIET=1` with the LSP or CLI for cross-file diagnostics.
 - **Hover** — Builtin and special-form hovers show static Prelude signatures, not call-site-specific inferred types.
 - **PPI dependency** — Diagnostic quality depends on PPI's parse accuracy.

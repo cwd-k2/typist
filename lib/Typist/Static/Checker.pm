@@ -28,6 +28,7 @@ sub analyze ($self) {
     $self->_check_aliases;
     $self->_check_functions;
     $self->_check_typeclasses;
+    $self->_check_protocols;
 }
 
 # ── Source Location Helpers ─────────────────────
@@ -286,6 +287,91 @@ sub _check_typeclasses ($self) {
     };
 
     $visit->($_) for sort keys %typeclasses;
+}
+
+# ── Protocol Well-formedness ─────────────────────
+
+sub _eff_line ($self, $name) {
+    my $ext = $self->{extracted} // return (0, '(effect definition)', 0);
+    my $info = $ext->{effects}{$name} // return (0, '(effect definition)', 0);
+    ($info->{line}, $self->{file}, $info->{col} // 0);
+}
+
+sub _check_protocols ($self) {
+    my %effects = $self->{registry}->all_effects;
+
+    for my $name (sort keys %effects) {
+        my $eff = $effects{$name} // next;
+        next unless $eff->has_protocol;
+
+        my $protocol = $eff->protocol;
+        my ($eff_line, $eff_file, $eff_col) = $self->_eff_line($name);
+
+        # Build the set of known states:
+        # - From explicit states list (if provided via extraction), or
+        # - From transition source states (fallback)
+        my %known_states;
+        my $has_explicit_states;
+        if (my $ext = $self->{extracted}) {
+            my $eff_info = $ext->{effects}{$name};
+            if ($eff_info && $eff_info->{states}) {
+                %known_states = map { $_ => 1 } $eff_info->{states}->@*;
+                $has_explicit_states = 1;
+            }
+        }
+        unless ($has_explicit_states) {
+            $known_states{$_} = 1 for keys $protocol->transitions->%*;
+        }
+
+        # Check all transition targets are known states
+        for my $from (keys $protocol->transitions->%*) {
+            for my $op (keys $protocol->transitions->{$from}->%*) {
+                my $to = $protocol->transitions->{$from}{$op};
+                unless ($known_states{$to}) {
+                    my $msg = $has_explicit_states
+                        ? "Protocol $name: state '$to' appears in transitions "
+                          . "but is not in the declared states list"
+                        : "Protocol $name: transition from '$from' via '$op' "
+                          . "targets undefined state '$to'";
+                    $self->{errors}->collect(
+                        kind    => 'ProtocolMismatch',
+                        message => $msg,
+                        file    => $eff_file,
+                        line    => $eff_line,
+                        col     => $eff_col,
+                    );
+                }
+            }
+        }
+
+        # Also check source states against the explicit list
+        if ($has_explicit_states) {
+            for my $from (keys $protocol->transitions->%*) {
+                unless ($known_states{$from}) {
+                    $self->{errors}->collect(
+                        kind    => 'ProtocolMismatch',
+                        message => "Protocol $name: state '$from' appears in transitions "
+                                 . "but is not in the declared states list",
+                        file    => $eff_file,
+                        line    => $eff_line,
+                        col     => $eff_col,
+                    );
+                }
+            }
+        }
+
+        # Check all effect operations are reachable from at least one state
+        my @unreachable = $protocol->validate([$eff->op_names]);
+        for my $op (@unreachable) {
+            $self->{errors}->collect(
+                kind    => 'ProtocolMismatch',
+                message => "Protocol $name: operation '$op' is unreachable from any state",
+                file    => $eff_file,
+                line    => $eff_line,
+                col     => $eff_col,
+            );
+        }
+    }
 }
 
 1;

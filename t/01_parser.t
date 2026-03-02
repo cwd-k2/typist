@@ -244,4 +244,46 @@ subtest 'variadic generic annotation' => sub {
     is scalar(my @p = $type->params), 2, 'two params';
 };
 
+# ── Protocol state in effect row ────────────────
+
+subtest 'Eff(DB<None -> Authed>) — state transition' => sub {
+    my $func = Typist::Parser->parse('(Str) -> Void !Eff(DB<None -> Authed>)');
+    ok $func->is_func, 'parsed as func';
+    my $row = $func->effects;
+    ok $row->is_row, 'effects is row';
+    is_deeply [$row->labels], ['DB'], 'single label DB';
+    my $st = $row->label_state('DB');
+    ok $st, 'DB has state';
+    is $st->{from}, 'None', 'from is None';
+    is $st->{to}, 'Authed', 'to is Authed';
+    like $row->to_string, qr/DB<None -> Authed>/, 'to_string includes state';
+};
+
+subtest 'Eff(DB<Authed>) — invariant state' => sub {
+    my $func = Typist::Parser->parse('(Str) -> Str !Eff(DB<Authed>)');
+    my $row = $func->effects;
+    my $st = $row->label_state('DB');
+    ok $st, 'DB has state';
+    is $st->{from}, 'Authed', 'from is Authed';
+    is $st->{to}, 'Authed', 'to equals from (invariant)';
+    like $row->to_string, qr/DB<Authed>/, 'to_string shows invariant state';
+};
+
+subtest 'Eff(DB<None -> Authed> | IO) — mixed' => sub {
+    my $func = Typist::Parser->parse('() -> Void !Eff(DB<None -> Authed> | IO)');
+    my $row = $func->effects;
+    is_deeply [sort $row->labels], [qw(DB IO)], 'two labels';
+    ok $row->label_state('DB'), 'DB has state';
+    is $row->label_state('IO'), undef, 'IO has no state';
+};
+
+subtest 'parse_row with state' => sub {
+    my $row = Typist::Parser->parse_row('DB<None -> Connected> | IO | r');
+    is_deeply [sort $row->labels], [qw(DB IO)], 'labels';
+    ok defined $row->row_var, 'has row var';
+    my $st = $row->label_state('DB');
+    is $st->{from}, 'None', 'from';
+    is $st->{to}, 'Connected', 'to';
+};
+
 done_testing;

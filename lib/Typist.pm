@@ -64,6 +64,7 @@ sub import ($class, @args) {
     *{"${caller}::match"}     = \&_match;
     *{"${caller}::enum"}      = \&_enum;
     *{"${caller}::struct"}    = sub ($name, @fields) { _struct($name, $caller, @fields) };
+    *{"${caller}::protocol"}  = \&_make_protocol;
 }
 
 # ── Newtype Support ─────────────────────────────
@@ -126,17 +127,61 @@ sub _coerce_method_sigs ($methods_ref) {
     } keys %$methods_ref;
 }
 
+# ── Protocol Support ────────────────────────────
+
+sub _make_protocol (@args) {
+    if (@args == 1 && !ref $args[0]) {
+        # protocol('From -> To') — single transition marker
+        my ($from, $to) = $args[0] =~ /^\s*(\w+)\s*->\s*(\w+)\s*$/;
+        die "Invalid protocol transition: '$args[0]'\n" unless defined $from;
+        return +{ __protocol_transition__ => 1, from => $from, to => $to };
+    }
+    die "Invalid protocol() call\n";
+}
+
 # ── Effect Support ──────────────────────────────
 
-sub _effect ($name, $operations_ref) {
+sub _effect ($name, @rest) {
+    my ($states, $operations_ref);
+    if (ref $rest[0] eq 'ARRAY') {
+        # New syntax: effect Name, [states] => +{...}
+        $states = shift @rest;
+        $operations_ref = shift @rest;
+    } else {
+        # Protocol-less: effect Name => +{...}
+        $operations_ref = shift @rest;
+    }
+
+    # Process operation values: string or [sig, protocol('From -> To')]
+    my (%ops, %transitions);
+    for my $op_name (keys %$operations_ref) {
+        my $val = $operations_ref->{$op_name};
+        if (ref $val eq 'ARRAY') {
+            $ops{$op_name} = $val->[0];
+            if (ref $val->[1] eq 'HASH' && $val->[1]{__protocol_transition__}) {
+                my $t = $val->[1];
+                $transitions{$t->{from}}{$op_name} = $t->{to};
+            }
+        } else {
+            $ops{$op_name} = $val;
+        }
+    }
+
+    my $protocol;
+    if (%transitions) {
+        require Typist::Protocol;
+        $protocol = Typist::Protocol->new(transitions => +{%transitions});
+    }
+
     my $eff = Typist::Effect->new(
         name       => $name,
-        operations => $operations_ref,
+        operations => \%ops,
+        protocol   => $protocol,
     );
     Typist::Registry->register_effect($name, $eff);
 
     # Install qualified subs for direct effect operation calls
-    for my $op_name (keys %$operations_ref) {
+    for my $op_name (keys %ops) {
         my ($eff_name, $op) = ($name, $op_name);
         no strict 'refs';
         *{"${eff_name}::${op}"} = sub (@args) {
@@ -652,6 +697,17 @@ Provide a type class instance: C<instance Show =E<gt> Int, +{ show =E<gt> sub ($
 =item C<effect>
 
 Define an algebraic effect: C<effect Console =E<gt> +{ log =E<gt> '(Str) -E<gt> Void' }>
+
+With protocol (stateful effects):
+
+    effect DB, [qw(None Connected Authed)] => +{
+        connect => ['(Str) -> Void', protocol('None -> Connected')],
+        query   => ['(Str) -> Str',  protocol('Authed -> Authed')],
+    };
+
+=item C<protocol>
+
+Inline state transition marker for effect protocols: C<protocol('From -E<gt> To')>
 
 =item C<declare>
 

@@ -15,12 +15,15 @@ sub new ($class, %args) {
     bless +{
         name       => ($args{name}       // die("Effect requires name\n")),
         operations => ($args{operations} // +{}),
+        protocol   => $args{protocol},
         _parsed    => +{},
     }, $class;
 }
 
-sub name       ($self) { $self->{name} }
-sub operations ($self) { $self->{operations}->%* }
+sub name         ($self) { $self->{name} }
+sub operations   ($self) { $self->{operations}->%* }
+sub protocol     ($self) { $self->{protocol} }
+sub has_protocol ($self) { defined $self->{protocol} }
 
 sub op_names ($self) { sort keys $self->{operations}->%* }
 

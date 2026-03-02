@@ -55,6 +55,8 @@ my @modules = qw(
     Typist::Type::Fold
     Typist::Type::Quantified
     Typist::Type::Struct
+    Typist::Protocol
+    Typist::Static::ProtocolChecker
 );
 
 for my $mod (@modules) {

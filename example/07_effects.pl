@@ -179,6 +179,63 @@ handle {
     log => sub ($msg) { say "  [log] $msg" },
 };
 
+# ── Effect Protocols (Stateful Effects) ──────────────────
+#
+# Protocols add state machines to effects, enforcing operation
+# ordering at the type level.  Each operation carries an inline
+# protocol('From -> To') transition marker.
+#
+#   effect DB, [qw(None Connected Authed)] => +{
+#       connect => ['sig', protocol('None -> Connected')],
+#       ...
+#   };
+#
+# Annotations declare start/end states:
+#   !Eff(DB<None -> Authed>)   — transition from None to Authed
+#   !Eff(DB<Authed>)           — invariant: stay in Authed
+
+say "";
+say "── Effect protocol (database) ─────────────────";
+
+BEGIN {
+    effect 'Database', [qw(Disconnected Connected Authenticated)] => +{
+        connect    => ['(Str) -> Void',      protocol('Disconnected -> Connected')],
+        auth       => ['(Str, Str) -> Void', protocol('Connected -> Authenticated')],
+        query      => ['(Str) -> Str',       protocol('Authenticated -> Authenticated')],
+        disconnect => ['() -> Void',         protocol('Authenticated -> Disconnected')],
+    };
+}
+
+# setup transitions: Disconnected → Connected → Authenticated
+sub db_setup :Type(() -> Void !Eff(Database<Disconnected -> Authenticated>)) () {
+    Database::connect("localhost");
+    Database::auth("admin", "secret");
+}
+
+# query is invariant: Authenticated → Authenticated
+sub db_query :Type((Str) -> Str !Eff(Database<Authenticated>)) ($sql) {
+    Database::query($sql);
+}
+
+# Full session: Disconnected → Authenticated → Disconnected
+sub db_session :Type(() -> Str !Eff(Database<Disconnected -> Disconnected>)) () {
+    db_setup();
+    my $result = db_query("SELECT 1");
+    Database::disconnect();
+    $result;
+}
+
+my $db_result = handle {
+    db_session();
+} Database => +{
+    connect    => sub ($host) { say "  [db] connecting to $host" },
+    auth       => sub ($u, $p) { say "  [db] authenticating $u" },
+    query      => sub ($sql) { say "  [db] query: $sql"; "row_data" },
+    disconnect => sub { say "  [db] disconnected" },
+};
+
+say "  result: $db_result";
+
 # ── Effect Inclusion (Static Checking) ────────────────────
 #
 # The static analyzer (CHECK phase and LSP) enforces:

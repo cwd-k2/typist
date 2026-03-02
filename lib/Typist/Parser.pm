@@ -66,7 +66,7 @@ sub _tokenize ($input) {
         elsif ($input =~ /\G('(?:[^'\\]|\\.)*')/gc) { push @tokens, $1 }
         elsif ($input =~ /\G(-?\d+(?:\.\d+)?)/gc)   { push @tokens, $1 }
         elsif ($input =~ /\G([A-Za-z_]\w*)/gc)    { push @tokens, $1 }
-        elsif ($input =~ /\G([\[\]{}(),.|&?!:])/gc)  { push @tokens, $1 }
+        elsif ($input =~ /\G([\[\]{}(),.|&?!:<>])/gc)  { push @tokens, $1 }
         else {
             my $ch = substr($input, pos($input), 1);
             die "Typist::Parser: unexpected character '$ch' in '$input'";
@@ -494,6 +494,7 @@ sub _parse_effect_row ($tokens, $pos, $close = undef) {
 
     my @labels;
     my $row_var;
+    my %label_states;
 
     while ($$pos < @$tokens && $tokens->[$$pos] ne ')') {
         my $tok = $tokens->[$$pos++];
@@ -501,6 +502,26 @@ sub _parse_effect_row ($tokens, $pos, $close = undef) {
             $row_var = $tok;
         } else {
             push @labels, $tok;
+            # Optional protocol state: Label<From -> To> or Label<State>
+            if ($$pos < @$tokens && $tokens->[$$pos] eq '<') {
+                $$pos++;  # consume '<'
+                die "Typist::Parser: expected state name after '<' in Eff label"
+                    unless $$pos < @$tokens;
+                my $from = $tokens->[$$pos++];
+                my $to;
+                if ($$pos < @$tokens && $tokens->[$$pos] eq '->') {
+                    $$pos++;  # consume '->'
+                    die "Typist::Parser: expected target state after '->' in Eff label"
+                        unless $$pos < @$tokens;
+                    $to = $tokens->[$$pos++];
+                } else {
+                    $to = $from;
+                }
+                die "Typist::Parser: expected '>' after state in Eff label"
+                    unless $$pos < @$tokens && $tokens->[$$pos] eq '>';
+                $$pos++;  # consume '>'
+                $label_states{$tok} = +{ from => $from, to => $to };
+            }
         }
         last unless $$pos < @$tokens && $tokens->[$$pos] eq '|';
         $$pos++;  # consume '|'
@@ -510,7 +531,11 @@ sub _parse_effect_row ($tokens, $pos, $close = undef) {
         unless $$pos < @$tokens && $tokens->[$$pos] eq ')';
     $$pos++;  # consume ')'
 
-    Typist::Type::Row->new(labels => \@labels, row_var => $row_var);
+    Typist::Type::Row->new(
+        labels       => \@labels,
+        row_var      => $row_var,
+        label_states => (%label_states ? \%label_states : +{}),
+    );
 }
 
 # ── Row Parsing ──────────────────────────────────
@@ -519,7 +544,7 @@ sub _parse_effect_row ($tokens, $pos, $close = undef) {
 # Labels are uppercase-initial identifiers; a trailing lowercase identifier is a row variable.
 sub parse_row ($class, $expr) {
     my @tokens = grep { $_ ne '' } split /\s*\|\s*/, $expr;
-    my (@labels, $row_var);
+    my (@labels, $row_var, %label_states);
 
     for my $i (0 .. $#tokens) {
         my $tok = $tokens[$i];
@@ -530,12 +555,24 @@ sub parse_row ($class, $expr) {
             die "Typist::Parser: row variable '$tok' must be the last element in '$expr'"
                 unless $i == $#tokens;
             $row_var = $tok;
+        } elsif ($tok =~ /\A(\w+)<(.+)>\z/) {
+            my ($label, $state_str) = ($1, $2);
+            push @labels, $label;
+            if ($state_str =~ /\A(\w+)\s*->\s*(\w+)\z/) {
+                $label_states{$label} = +{ from => $1, to => $2 };
+            } else {
+                $label_states{$label} = +{ from => $state_str, to => $state_str };
+            }
         } else {
             push @labels, $tok;
         }
     }
 
-    Typist::Type::Row->new(labels => \@labels, row_var => $row_var);
+    Typist::Type::Row->new(
+        labels       => \@labels,
+        row_var      => $row_var,
+        label_states => (%label_states ? \%label_states : +{}),
+    );
 }
 
 # ── Unified Annotation Parsing ──────────────────

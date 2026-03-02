@@ -490,6 +490,26 @@ sub inlay_hints ($self, $start_line, $end_line) {
         };
     }
 
+    # Protocol state hints from ProtocolChecker
+    for my $ph (($result->{protocol_hints} // [])->@*) {
+        my $line = ($ph->{line} // 1) - 1;
+        next if $line < $start_line || $line > $end_line;
+
+        push @hints, +{
+            position => +{
+                line      => $line,
+                character => ($ph->{col} // 1) - 1,
+            },
+            label   => "[$ph->{to}]",
+            kind    => 1,
+            tooltip => +{
+                kind  => 'markdown',
+                value => "Protocol $ph->{label}: $ph->{from} \x{2192} $ph->{to}",
+            },
+            paddingLeft => 1,
+        };
+    }
+
     \@hints;
 }
 

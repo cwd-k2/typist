@@ -34,7 +34,7 @@ sub _handle_scalar_attrs ($pkg, $ref, @attrs) {
     my @unhandled;
 
     for my $attr (@attrs) {
-        if ($attr =~ /\AType\((.+)\)\z/) {
+        if ($attr =~ /\AType\((.+)\)\z/s) {
             my $type = Typist::Parser->parse($1);
 
             Typist::Registry->register_variable(+{

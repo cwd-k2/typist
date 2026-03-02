@@ -111,6 +111,16 @@ sub _format_function ($class, $sym) {
     } elsif ($sym->{unannotated}) {
         $md .= _note('unannotated');
     }
+
+    # Protocol transition info for effect operations
+    if ($sym->{protocol_transitions}) {
+        my @lines;
+        for my $t ($sym->{protocol_transitions}->@*) {
+            push @lines, "$t->{from} \x{2192} $t->{to}";
+        }
+        $md .= "\n\n**Protocol:** " . join(', ', @lines) if @lines;
+    }
+
     $md;
 }
 
@@ -169,17 +179,48 @@ sub _format_datatype ($class, $sym) {
 sub _format_effect ($class, $sym) {
     my $op_names   = $sym->{op_names}   // [];
     my $operations = $sym->{operations} // +{};
+    my $protocol   = $sym->{protocol};
 
     unless (@$op_names) {
         return _code("effect $sym->{name}");
     }
 
-    my $body = "effect $sym->{name} {\n";
+    # Build reverse lookup: op → [from → to] for inline display
+    my %op_transitions;
+    if ($protocol && ref $protocol eq 'HASH') {
+        for my $state (keys %$protocol) {
+            my $ops = $protocol->{$state};
+            for my $op (keys %$ops) {
+                push $op_transitions{$op}->@*, "$state \x{2192} $ops->{$op}";
+            }
+        }
+    }
+
+    # Collect states for header
+    my $states_str = '';
+    if ($sym->{states} && ref $sym->{states} eq 'ARRAY' && $sym->{states}->@*) {
+        $states_str = ' [' . join(', ', $sym->{states}->@*) . ']';
+    } elsif ($protocol && ref $protocol eq 'HASH') {
+        # Derive from transitions
+        my %seen;
+        for my $from (keys %$protocol) {
+            $seen{$from} = 1;
+            $seen{$_} = 1 for values $protocol->{$from}->%*;
+        }
+        $states_str = ' [' . join(', ', sort keys %seen) . ']' if %seen;
+    }
+
+    my $body = "effect $sym->{name}${states_str} {\n";
     for my $op (@$op_names) {
         my $sig = $operations->{$op} // '';
-        $body .= "    $op: $sig,\n";
+        my $transition = '';
+        if ($op_transitions{$op}) {
+            $transition = '  [' . join(', ', sort $op_transitions{$op}->@*) . ']';
+        }
+        $body .= "    $op: $sig${transition},\n";
     }
     $body .= '}';
+
     _code($body);
 }
 

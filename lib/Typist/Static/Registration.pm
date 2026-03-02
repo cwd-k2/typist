@@ -233,7 +233,30 @@ sub register_effects ($class, $extracted, $registry, %opts) {
     for my $name (sort keys $extracted->{effects}->%*) {
         my $eff_info = $extracted->{effects}{$name};
         my $ops = $eff_info->{operations} // +{};
-        $registry->register_effect($name, Typist::Effect->new(name => $name, operations => $ops));
+
+        # Build Protocol object if extracted
+        my $protocol;
+        if (my $pd = $eff_info->{protocol}) {
+            require Typist::Protocol;
+            $protocol = Typist::Protocol->new(transitions => $pd);
+        }
+
+        $registry->register_effect($name,
+            Typist::Effect->new(name => $name, operations => $ops, protocol => $protocol),
+        );
+
+        # Build per-op protocol transitions for ProtocolChecker
+        my %op_transitions;
+        if ($protocol) {
+            for my $state ($protocol->states) {
+                for my $op ($protocol->ops_in($state)) {
+                    push $op_transitions{$op}->@*, +{
+                        from => $state,
+                        to   => $protocol->next_state($state, $op),
+                    };
+                }
+            }
+        }
 
         # Register effect operations as functions
         for my $op_name (sort keys %$ops) {
@@ -252,14 +275,18 @@ sub register_effects ($class, $extracted, $registry, %opts) {
             my $eff_row = Typist::Type::Row->new(labels => [$name]);
             my $effects = Typist::Type::Eff->new($eff_row);
 
-            $registry->register_function($name, $op_name, +{
+            my $sig = +{
                 params       => \@params,
                 returns      => $returns,
                 generics     => [],
                 effects      => $effects,
                 params_expr  => [map { $_->to_string } @params],
                 returns_expr => $returns->to_string,
-            });
+            };
+            $sig->{protocol_transitions} = $op_transitions{$op_name}
+                if $op_transitions{$op_name};
+
+            $registry->register_function($name, $op_name, $sig);
         }
     }
 }

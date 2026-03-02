@@ -38,7 +38,7 @@ Phase           | Catches                    | Surface       | Tool Integration
 ────────────────|────────────────────────────|───────────────|─────────────────
 Static (LSP)    | TypeMismatch, EffectMis.   | Diagnostics   | typist-lsp, editors
                 | ArityMismatch, CycleError  |               |
-                | UnknownType                |               |
+                | UnknownType, ProtocolMis.  |               |
 CHECK (compile) | All of above (expanded)    | warn → STDERR | perlnavigator, prove
 Runtime (opt-in)| Generic instantiation      | die           | -runtime flag
                 | TypeClass constraints      |               |
@@ -57,6 +57,8 @@ Runtime (opt-in)| Generic instantiation      | die           | -runtime flag
 - `Typist::Static::Infer` — Static type inference from PPI elements (literals, variable symbols, function calls, operator expressions, anonymous subs). Infers arithmetic/comparison/logical/concatenation/repetition operators, chained binary expressions, compound assignment operators, subscript access (`$a->[0]`, `$h->{k}`), method access (`$p->name` for struct accessors), ternary expressions, `handle { BLOCK }` return types, `match` arm union/LUB types, and anonymous sub types (`sub ($x) { ... }` → Func type with param count and body return inference). Interpolated strings (`"Hello $name"`) infer as `Str`, not `Literal`. Bidirectional: accepts optional `$expected` for propagation into arrays, hashes, ternary arms, and anonymous sub param types. Accepts optional `$env` for gradual typing.
 - `Typist::Static::TypeChecker` — Static type mismatch detection (variable initializers, assignments, call site args, return types). Arity checking (ArityMismatch) with default parameter support and callback arity checking (anonymous sub param count vs expected Func type), variable reassignment checking (annotated-only), method type checking (`$self->method()`), generic instantiation via Unify, and control flow narrowing (`defined($x)`, truthiness `if ($x)`, `isa`, early return). Builds type environment for function return type propagation and variable symbol resolution.
 - `Typist::Static::EffectChecker` — PPI-based static effect checker (call graph + label inclusion, cross-package support, unannotated function detection, builtin function effect tracking via CORE:: registry). Keywords `handle`, `match` are skipped as non-function calls.
+- `Typist::Protocol` — Finite state machine attached to an Effect. Maps `(state, operation)` pairs to successor states. `next_state($state, $op)`, `states()`, `ops_in($state)`, `validate($ops)` for unreachable operation detection.
+- `Typist::Static::ProtocolChecker` — Static protocol state-machine verification. Traces operation sequences in function bodies, validates against declared `!Eff(DB<From -> To>)` state transitions, detects disallowed operations and end-state mismatches, composes protocol transitions across function calls, generates protocol hints for LSP inlay hints.
 - `Typist::Handler` — Runtime effect handler stack (LIFO). Effect operations are dispatched as qualified calls (`Effect::op(@args)`) to the nearest handler; `handle { BODY } Effect => { handlers }` provides scoped effect processing with automatic cleanup.
 - `Typist::Type::Data` — Algebraic data type (tagged union). Supports parameterized types via `datatype 'Option[T]' => Some => '(T)', None => '()'` with covariant type arguments, type inference in constructors, and `instantiate` for concrete types. Values are blessed with `_tag`, `_values`, and optional `_type_args` fields. GADT support via `return_types` field: `is_gadt`, `constructor_return_type($tag)`, `parse_constructor_spec($spec, %opts)`.
 - `Typist::Type::Fold` — Type tree traversal utilities. `map_type($type, $cb)` rebuilds bottom-up; `walk($type, $cb)` visits top-down. Handles all type nodes including Data (variants, type_args, return_types).
@@ -89,6 +91,7 @@ Runtime (opt-in)| Generic instantiation      | die           | -runtime flag
 - `match $value, Tag => sub (...) { ... }, _ => sub { ... }` dispatches on `_tag`, splats `_values` into handlers. `_` is the optional fallback arm. Emits exhaustiveness warnings for registered ADTs when arms are incomplete and no fallback is given.
 - Variadic function types: `(Int, ...Str) -> Void` — rest parameter with `...Type` syntax. Arity checking uses minimum args for variadic functions. Default parameters (`$x = expr`) reduce minimum arity via `default_count`.
 - `effect Console => +{ writeLine => '(Str) -> Void' }` defines effects with named operations. Operations are auto-installed as qualified subs (`Console::writeLine(@args)`), dispatching to the nearest handler on the runtime stack.
+- Effect protocol (stateful effects): `effect DB, [qw(None Connected Authed)] => +{ connect => ['(Str) -> Void', protocol('None -> Connected')], query => ['(Str) -> Str', protocol('Authed -> Authed')] }`. Second arg is explicit states list; operation values are `[sig_string, protocol('From -> To')]` arrayrefs. Plain string values remain protocol-free. Annotation: `!Eff(DB<None -> Authed>)` declares start/end states. `!Eff(DB<Authed>)` is invariant (start = end). ProtocolChecker traces operation sequences and verifies state transitions.
 - `Effect::op(@args)` is the direct call syntax for effect operations (e.g., `Console::writeLine("hello")`). Replaces the old `perform Effect => op => @args` syntax.
 - `handle { BODY } Effect => { op => sub { ... } }` installs scoped effect handlers, executes BODY, and guarantees cleanup (even on exception).
 - Typeclass and effect definitions use string syntax for method/operation signatures: `show => '(T) -> Str'`, consistent with `:Type()` annotations. The Extractor only captures `PPI::Token::Quote`, so DSL `Func(...)` does not work for static analysis.
@@ -150,6 +153,7 @@ Tests are numbered and ordered by dependency:
 - `t/23_gadt.t` — GADT (Generalized Algebraic Data Types: construction, forced type_args, is_gadt, match, return_types)
 - `t/25_struct.t` — Nominal struct types (constructor, accessors, with(), optional fields, type registration, subtyping)
 - `t/26_check_cli.t` — CLI typist-check (subprocess-based: clean/error/warning exit codes, --no-color, --verbose, file args)
+- `t/27_protocol.t` — Protocol FSM (construction, next_state, states, ops_in, validate)
 - `t/static/00_extractor.t` — PPI-based type extraction
 - `t/static/01_analyzer.t` — Static analysis pipeline
 - `t/static/02_infer.t` — Static type inference (including anonymous sub inference)
@@ -163,6 +167,7 @@ Tests are numbered and ordered by dependency:
 - `t/static/10_rank2.t` — Rank-2 polymorphism static analysis
 - `t/static/11_struct.t` — Struct static analysis (extraction, registration, inference)
 - `t/static/12_loop_inference.t` — Loop variable inference (for-loop extraction, iterable element types)
+- `t/static/14_protocol.t` — Protocol static analysis (sequence verification, state mismatch, composition, hints)
 - `t/lsp/00_transport.t` — JSON-RPC transport
 - `t/lsp/01_server.t` — LSP server lifecycle
 - `t/lsp/02_diagnostics.t` — Diagnostics publishing
@@ -179,6 +184,7 @@ Tests are numbered and ordered by dependency:
 - `t/lsp/14_rename.t` — Rename
 - `t/lsp/15_code_actions.t` — Code Actions (quick fixes)
 - `t/lsp/16_semantic_tokens.t` — Semantic Tokens
+- `t/lsp/17_protocol.t` — Protocol hover and inlay hints
 - `t/critic/00_policy.t` — Perl::Critic policy bridge
 - `t/critic/01_annotation_style.t` — Annotation style policy
 - `t/critic/02_effect_completeness.t` — Effect completeness policy

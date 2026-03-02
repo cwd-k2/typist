@@ -6,6 +6,7 @@ our $VERSION = '0.01';
 use Typist::Static::Extractor;
 use Typist::Static::TypeChecker;
 use Typist::Static::EffectChecker;
+use Typist::Static::ProtocolChecker;
 use Typist::Static::Registration;
 use Typist::Registry;
 use Typist::Parser;
@@ -28,6 +29,7 @@ my %SEVERITY = (
     UnknownEffect    => 3,
     UnknownTypeClass => 2,
     UnknownType      => 4,
+    ProtocolMismatch => 2,
 );
 
 # ── Public API ───────────────────────────────────
@@ -86,12 +88,23 @@ sub analyze ($class, $source, %opts) {
     );
     $effect_checker->analyze;
 
+    # 3d. Run Protocol Checker (static protocol state-machine verification)
+    my $protocol_checker = Typist::Static::ProtocolChecker->new(
+        registry  => $registry,
+        errors    => $errors,
+        extracted => $extracted,
+        ppi_doc   => $extracted->{ppi_doc},
+        file      => $file,
+    );
+    $protocol_checker->analyze;
+
     # 4. Build results
     return +{
-        diagnostics => _to_diagnostics($errors, $file, $extracted),
-        symbols     => _build_symbol_index($extracted, $type_checker->env, $type_checker),
-        extracted   => $extracted,
-        registry    => $registry,
+        diagnostics    => _to_diagnostics($errors, $file, $extracted),
+        symbols        => _build_symbol_index($extracted, $type_checker->env, $type_checker),
+        extracted      => $extracted,
+        registry       => $registry,
+        protocol_hints => $protocol_checker->hints,
     };
 }
 
@@ -319,6 +332,7 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
             kind       => 'effect',
             op_names   => $info->{op_names},
             operations => $info->{operations},
+            protocol   => $info->{protocol},
             line       => $info->{line},
             col        => $info->{col},
         };

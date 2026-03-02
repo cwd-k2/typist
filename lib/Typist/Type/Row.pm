@@ -20,14 +20,19 @@ sub new ($class, %args) {
     my $rv = $args{row_var};
     $rv = Typist::Type::Var->new($rv) if defined $rv && !ref $rv;
     bless +{
-        labels  => \@labels,
-        row_var => $rv,
+        labels       => \@labels,
+        row_var      => $rv,
+        label_states => ($args{label_states} // +{}),
     }, $class;
 }
 
-sub labels  ($self) { $self->{labels}->@* }
-sub row_var ($self) { $self->{row_var} }
-sub is_row  ($self) { 1 }
+sub labels       ($self) { $self->{labels}->@* }
+sub row_var      ($self) { $self->{row_var} }
+sub is_row       ($self) { 1 }
+sub label_states ($self) { $self->{label_states} }
+
+# State range for a label, or undef if no protocol state annotated.
+sub label_state ($self, $label) { $self->{label_states}{$label} }
 
 # String name of the row variable (works both before and after Var normalization).
 sub row_var_name ($self) {
@@ -41,7 +46,18 @@ sub is_empty  ($self) { !@{$self->{labels}} && !defined $self->{row_var} }
 sub name ($self) { $self->to_string }
 
 sub to_string ($self) {
-    my @parts = $self->{labels}->@*;
+    my @parts;
+    for my $label ($self->{labels}->@*) {
+        if (my $st = $self->{label_states}{$label}) {
+            if ($st->{from} eq $st->{to}) {
+                push @parts, "${label}<$st->{from}>";
+            } else {
+                push @parts, "${label}<$st->{from} -> $st->{to}>";
+            }
+        } else {
+            push @parts, $label;
+        }
+    }
     push @parts, $self->{row_var}->name if defined $self->{row_var};
     join ' | ', @parts;
 }
@@ -74,12 +90,14 @@ sub substitute ($self, $bindings) {
 
     my $bound = $bindings->{$name};
 
-    # Binding is a Row — merge labels and inherit tail
+    # Binding is a Row — merge labels, label_states, and inherit tail
     if ($bound->is_row) {
         my @merged = sort(uniq($self->{labels}->@*, $bound->labels));
+        my %merged_states = ($self->{label_states}->%*, $bound->label_states->%*);
         return __PACKAGE__->new(
-            labels  => \@merged,
-            row_var => $bound->row_var,
+            labels       => \@merged,
+            row_var      => $bound->row_var,
+            label_states => \%merged_states,
         );
     }
 
