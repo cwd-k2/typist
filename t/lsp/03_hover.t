@@ -1373,4 +1373,88 @@ PERL
     is $sym->{type}, 'Int', '$key in refund is Int (not Any)';
 };
 
+# ── Hover on accessor narrowed by defined() ──────
+
+subtest 'hover narrows optional accessor inside defined() guard' => sub {
+    require File::Temp;
+    require File::Path;
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib");
+
+    open my $fh, '>', "$dir/lib/Customer.pm" or die;
+    print $fh <<'PERL';
+package Customer;
+use v5.40;
+use Typist;
+struct Customer => (name => Str, phone => optional(Str));
+1;
+PERL
+    close $fh;
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source = <<'PERL';
+package App;
+use v5.40;
+use Typist;
+use Customer;
+sub greet :sig((Customer) -> Str) ($customer) {
+    if (defined($customer->phone)) {
+        $customer->phone;
+    } else {
+        "no phone";
+    }
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///app.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Line 6 (0-indexed): "        $customer->phone;"
+    #                       0123456789012345678901
+    my $sym = $doc->symbol_at(6, 20);
+    ok $sym, 'found symbol for narrowed accessor';
+    is $sym->{kind}, 'field', 'kind is field';
+    is $sym->{name}, 'phone', 'field name is phone';
+    is $sym->{type}, 'Str', 'field type is Str';
+    is $sym->{optional}, 0, 'optional is 0 (narrowed by defined)';
+
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'hover response for narrowed accessor';
+    like $hover->{contents}{value}, qr/\(Customer\) phone: Str/, 'shows (Customer) phone: Str (no ?)';
+    unlike $hover->{contents}{value}, qr/phone\?/, 'does not show phone? marker';
+
+    # Outside the if-block: line 8 "        \"no phone\";" — no accessor to test,
+    # but verify the un-narrowed case by hovering on the same accessor outside guard
+    my $source2 = <<'PERL';
+package App2;
+use v5.40;
+use Typist;
+use Customer;
+sub show :sig((Customer) -> Str) ($customer) {
+    $customer->phone;
+}
+PERL
+
+    my $doc2 = Typist::LSP::Document->new(
+        uri     => 'file:///app2.pm',
+        content => $source2,
+        version => 1,
+    );
+    $doc2->analyze(workspace_registry => $ws->registry);
+
+    # Line 5 (0-indexed): "    $customer->phone;"
+    my $sym2 = $doc2->symbol_at(5, 16);
+    ok $sym2, 'found symbol for un-narrowed accessor';
+    is $sym2->{optional}, 1, 'optional is 1 (not narrowed)';
+};
+
 done_testing;

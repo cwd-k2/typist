@@ -100,11 +100,12 @@ sub analyze ($class, $source, %opts) {
 
     # 4. Build results
     return +{
-        diagnostics    => _to_diagnostics($errors, $file, $extracted),
-        symbols        => _build_symbol_index($extracted, $type_checker->env, $type_checker),
-        extracted      => $extracted,
-        registry       => $registry,
-        protocol_hints => $protocol_checker->hints,
+        diagnostics         => _to_diagnostics($errors, $file, $extracted),
+        symbols             => _build_symbol_index($extracted, $type_checker->env, $type_checker),
+        extracted           => $extracted,
+        registry            => $registry,
+        protocol_hints      => $protocol_checker->hints,
+        narrowed_accessors  => $type_checker->narrowed_accessor_types,
     };
 }
 

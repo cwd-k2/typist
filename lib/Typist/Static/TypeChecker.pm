@@ -21,16 +21,18 @@ sub new ($class, %args) {
         extracted       => $args{extracted},
         ppi_doc         => $args{ppi_doc},
         file            => $args{file} // '(buffer)',
-        _loop_var_types  => +{},
-        _local_var_types => +{},
-        _narrowed_vars   => [],
+        _loop_var_types      => +{},
+        _local_var_types     => +{},
+        _narrowed_vars       => [],
+        _narrowed_accessors  => [],
     }, $class;
 }
 
 sub loop_var_types       ($self) { $self->{_loop_var_types} }
 sub local_var_types      ($self) { $self->{_local_var_types} }
 sub callback_param_types ($self) { $self->{_callback_param_types} }
-sub narrowed_var_types   ($self) { $self->{_narrowed_vars} }
+sub narrowed_var_types      ($self) { $self->{_narrowed_vars} }
+sub narrowed_accessor_types ($self) { $self->{_narrowed_accessors} }
 
 # ── Public API ───────────────────────────────────
 
@@ -40,6 +42,7 @@ sub analyze ($self) {
     Typist::Static::Infer->clear_callback_params;
     $self->_collect_loop_var_types;
     $self->_collect_local_var_types;
+    $self->_collect_accessor_narrowings;
     $self->_check_variable_initializers;
     $self->_check_assignments;
     $self->_check_call_sites;
@@ -734,7 +737,57 @@ sub _env_for_node ($self, $node) {
     $env;
 }
 
-# ── Loop Variable Collection ─────────────────────
+# ── Accessor Narrowing Collection ────────────────
+#
+# Proactively scan for `if (defined($var->field))` patterns and record
+# the narrowed accessor scope for LSP hover.  This runs independently of
+# type checking because bare accessor expressions inside then-blocks are
+# not visited by _narrow_env_for_block.
+sub _collect_accessor_narrowings ($self) {
+    my $ppi_doc = $self->{ppi_doc} // return;
+    my $compounds = $ppi_doc->find('PPI::Statement::Compound') || [];
+
+    for my $compound (@$compounds) {
+        my ($keyword) = grep { $_->isa('PPI::Token::Word') } $compound->schildren;
+        next unless $keyword;
+        my $kw = $keyword->content;
+        next unless $kw eq 'if' || $kw eq 'unless';
+
+        my ($condition) = grep { $_->isa('PPI::Structure::Condition') } $compound->schildren;
+        next unless $condition;
+
+        my @cond_children = $condition->schildren;
+        my $expr = $cond_children[0];
+        if ($expr && $expr->isa('PPI::Statement::Expression')) {
+            @cond_children = $expr->schildren;
+        }
+
+        my $accessor = $self->_extract_defined_accessor(\@cond_children);
+        next unless $accessor;
+
+        my $is_unless = $kw eq 'unless';
+        my @blocks = grep { $_->isa('PPI::Structure::Block') } $compound->schildren;
+
+        for my $i (0 .. $#blocks) {
+            my $apply = $is_unless ? ($i > 0) : ($i == 0);
+            next unless $apply;
+
+            my $block       = $blocks[$i];
+            my $block_start = $block->line_number;
+            my $block_last  = $block->last_element;
+            my $block_end   = $block_last ? $block_last->line_number : $block_start;
+
+            push $self->{_narrowed_accessors}->@*, +{
+                var_name    => $accessor->{var_name},
+                chain       => $accessor->{chain},
+                scope_start => $block_start,
+                scope_end   => $block_end,
+            };
+        }
+    }
+}
+
+# ── Match Callback Collection ────────────────────
 #
 # Proactively walk standalone match expressions so their callback params
 # are collected for LSP hover/inlay hints.  Match expressions inside
@@ -962,6 +1015,44 @@ sub _extract_defined_symbol ($self, $cond_children) {
     }
 
     undef;
+}
+
+# Extract accessor chain from `defined($var->field)` or `defined $var->field`.
+# Returns { var_name => '$x', chain => ['field'] } or undef.
+sub _extract_defined_accessor ($self, $cond_children) {
+    return undef unless @$cond_children >= 2;
+    return undef unless $cond_children->[0]->isa('PPI::Token::Word')
+                     && $cond_children->[0]->content eq 'defined';
+
+    # Collect the tokens after 'defined' — either inside parens or bare
+    my @tokens;
+    my $second = $cond_children->[1];
+
+    if ($second->isa('PPI::Structure::List')) {
+        my @exprs = grep { $_->isa('PPI::Statement::Expression') } $second->schildren;
+        @tokens = $exprs[0]->schildren if @exprs;
+    } else {
+        @tokens = @$cond_children[1 .. $#$cond_children];
+    }
+
+    # Expect: Symbol, Operator(->), Word [, Operator(->), Word ...]
+    return undef unless @tokens >= 3;
+    return undef unless $tokens[0]->isa('PPI::Token::Symbol');
+
+    my $var_name = $tokens[0]->content;
+    my @chain;
+
+    my $i = 1;
+    while ($i + 1 <= $#tokens) {
+        last unless $tokens[$i]->isa('PPI::Token::Operator')
+                 && $tokens[$i]->content eq '->';
+        last unless $tokens[$i + 1]->isa('PPI::Token::Word');
+        push @chain, $tokens[$i + 1]->content;
+        $i += 2;
+    }
+
+    return undef unless @chain;
+    +{ var_name => $var_name, chain => \@chain };
 }
 
 # Rule: `defined($x)` narrows T | Undef to T.

@@ -735,11 +735,28 @@ sub _resolve_accessor_hover ($self, $line, $col, $word) {
 
     return undef unless $type_str;
     my $type = eval { Typist::Parser->parse($type_str) } // return undef;
-    $self->_walk_accessor_chain($type, \@chain, $word, $registry);
+
+    # Check if this accessor is narrowed by defined() guard
+    my $narrowed = 0;
+    my $ppi_line = $line + 1;  # LSP 0-indexed → PPI 1-indexed
+    for my $na (($result->{narrowed_accessors} // [])->@*) {
+        next unless $na->{var_name} eq ($prefix =~ /(\$\w+)\s*$/ ? $1 : '');
+        next unless $ppi_line >= $na->{scope_start} && $ppi_line <= $na->{scope_end};
+        # Compare chains: narrowed chain must match the accessor chain
+        my $nc = $na->{chain};
+        next unless @$nc == @chain;
+        my $match = 1;
+        for my $i (0 .. $#chain) {
+            if ($nc->[$i] ne $chain[$i]) { $match = 0; last }
+        }
+        if ($match) { $narrowed = 1; last }
+    }
+
+    $self->_walk_accessor_chain($type, \@chain, $word, $registry, $narrowed);
 }
 
 # Walk an accessor chain, resolving struct fields and newtype ->base at each step.
-sub _walk_accessor_chain ($self, $type, $chain, $word, $registry) {
+sub _walk_accessor_chain ($self, $type, $chain, $word, $registry, $narrowed = 0) {
     for my $i (0 .. $#$chain) {
         my $field = $chain->[$i];
 
@@ -787,7 +804,7 @@ sub _walk_accessor_chain ($self, $type, $chain, $word, $registry) {
                     name        => $field,
                     type        => $type->to_string,
                     struct_name => $struct->name,
-                    optional    => 1,
+                    optional    => $narrowed ? 0 : 1,
                 };
             }
         } elsif ($field eq 'with') {
