@@ -275,7 +275,14 @@ sub register_effects ($class, $extracted, $registry, %opts) {
                 $returns = $type;
             }
 
-            my $eff_row = Typist::Type::Row->new(labels => [$name]);
+            my %label_states;
+            if (my $trans = $op_transitions{$op_name}) {
+                $label_states{$name} = $trans->[0] if @$trans == 1;
+            }
+            my $eff_row = Typist::Type::Row->new(
+                labels       => [$name],
+                label_states => \%label_states,
+            );
             my $effects = Typist::Type::Eff->new($eff_row);
 
             my $sig = +{
