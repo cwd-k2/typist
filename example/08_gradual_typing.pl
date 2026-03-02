@@ -12,7 +12,7 @@ use Typist::DSL;
 #
 #    Fully annotated    → all checks (types + effects)
 #    Partially annotated → only checkable parts verified
-#    Unannotated         → treated as (Any...) -> Any !Eff(*)
+#    Unannotated         → treated as (Any...) -> Any ![*]
 #
 #  This lets you incrementally adopt types in an existing
 #  codebase — annotate what matters, leave the rest.
@@ -77,7 +77,7 @@ say "5^2 = $result";
 
 # ── 5. Unannotated Functions ─────────────────────────────
 #
-# No annotations at all → (Any...) -> Any ! Eff(*)
+# No annotations at all → (Any...) -> Any ![*]
 # Type checks skip; effect checks flag annotated callers
 # that call this function (as it may perform any effect).
 
@@ -186,7 +186,7 @@ say format_or_default(undef);
 # ├─────────────────────┼──────────────────┼──────────────────┤
 # │ Fully annotated     │ All checks       │ Effects verified │
 # │ Any return type     │ Params checked   │ Pure (no effects)│
-# │ Completely unannot. │ Any (skip)       │ Eff(*) (any)     │
+# │ Completely unannot. │ Any (skip)       │ [*] (any)        │
 # └─────────────────────┴──────────────────┴──────────────────┘
 #
 # Flow Typing:

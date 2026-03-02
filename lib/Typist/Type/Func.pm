@@ -39,7 +39,7 @@ sub to_string ($self) {
     my $ret  = $self->{returns}->to_string;
     my $str  = "($args) -> $ret";
     if ($self->{effects}) {
-        $str .= ' !Eff(' . $self->{effects}->to_string . ')';
+        $str .= ' ![' . $self->{effects}->to_string . ']';
     }
     $str;
 }
@@ -83,7 +83,7 @@ sub substitute ($self, $bindings) {
 
 =head1 NAME
 
-Typist::Type::Func - Function type ((Int, Str) -> Bool ! Eff(IO))
+Typist::Type::Func - Function type ((Int, Str) -> Bool ![IO])
 
 =head1 SYNOPSIS
 

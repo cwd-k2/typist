@@ -150,14 +150,14 @@ subtest 'extracts declare with bare name (builtin)' => sub {
     my $result = Typist::Static::Extractor->extract(<<'PERL');
 package MyApp;
 use v5.40;
-declare say => '(Str) -> Void !Eff(Console)';
+declare say => '(Str) -> Void ![Console]';
 PERL
 
     my $declares = $result->{declares};
     ok exists $declares->{say}, 'declare say found';
     is $declares->{say}{package},   'CORE', 'bare name maps to CORE';
     is $declares->{say}{func_name}, 'say',  'func_name is say';
-    is $declares->{say}{type_expr}, '(Str) -> Void !Eff(Console)', 'type_expr captured';
+    is $declares->{say}{type_expr}, '(Str) -> Void ![Console]', 'type_expr captured';
     ok $declares->{say}{line} > 0, 'has line number';
 };
 

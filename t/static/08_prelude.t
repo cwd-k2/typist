@@ -18,9 +18,9 @@ subtest 'prelude: IO, Exn, and Decl effects are known' => sub {
 package PreludeEffects;
 use v5.40;
 
-sub io_fn :Type(() -> Void !Eff(IO)) () { }
-sub exn_fn :Type(() -> Void !Eff(Exn)) () { }
-sub decl_fn :Type(() -> Void !Eff(Decl)) () { }
+sub io_fn :Type(() -> Void ![IO]) () { }
+sub exn_fn :Type(() -> Void ![Exn]) () { }
+sub decl_fn :Type(() -> Void ![Decl]) () { }
 PERL
 
     my @unknown = grep { $_->{kind} eq 'UnknownEffect' } $result->{diagnostics}->@*;
@@ -128,17 +128,17 @@ PERL
 
 # ── Effect checking: builtin IO effects ──────────
 
-subtest 'effects: say in Eff(IO) function → no error' => sub {
+subtest 'effects: say in ![IO] function → no error' => sub {
     my $errs = diags_of(<<'PERL', 'EffectMismatch');
 package SayInIO;
 use v5.40;
 
-sub greet :Type((Str) -> Void !Eff(IO)) ($name) {
+sub greet :Type((Str) -> Void ![IO]) ($name) {
     say "Hello, $name";
 }
 PERL
 
-    is scalar @$errs, 0, 'say in Eff(IO) function — no effect error';
+    is scalar @$errs, 0, 'say in ![IO] function — no effect error';
 };
 
 subtest 'effects: say in pure function → EffectMismatch' => sub {
@@ -156,30 +156,30 @@ PERL
     like $errs->[0]{message}, qr/IO/, 'reports IO effect requirement';
 };
 
-subtest 'effects: die in Eff(Exn) function → no error' => sub {
+subtest 'effects: die in ![Exn] function → no error' => sub {
     my $errs = diags_of(<<'PERL', 'EffectMismatch');
 package DieInExn;
 use v5.40;
 
-sub fail :Type((Str) -> Never !Eff(Exn)) ($msg) {
+sub fail :Type((Str) -> Never ![Exn]) ($msg) {
     die($msg);
 }
 PERL
 
-    is scalar @$errs, 0, 'die in Eff(Exn) function — no effect error';
+    is scalar @$errs, 0, 'die in ![Exn] function — no effect error';
 };
 
-subtest 'effects: die in Eff(IO) function → EffectMismatch' => sub {
+subtest 'effects: die in ![IO] function → EffectMismatch' => sub {
     my $errs = diags_of(<<'PERL', 'EffectMismatch');
 package DieInIO;
 use v5.40;
 
-sub io_only :Type((Str) -> Void !Eff(IO)) ($msg) {
+sub io_only :Type((Str) -> Void ![IO]) ($msg) {
     die($msg);
 }
 PERL
 
-    ok scalar @$errs > 0, 'die in Eff(IO) function flagged (needs Exn)';
+    ok scalar @$errs > 0, 'die in ![IO] function flagged (needs Exn)';
     like $errs->[0]{message}, qr/Exn/, 'reports Exn effect requirement';
 };
 
@@ -209,14 +209,14 @@ subtest 'override: user declare overrides prelude say' => sub {
 package OverrideSay;
 use v5.40;
 
-declare say => '(Str) -> Void !Eff(Console)';
+declare say => '(Str) -> Void ![Console]';
 
-sub greet :Type((Str) -> Void !Eff(Console)) ($name) {
+sub greet :Type((Str) -> Void ![Console]) ($name) {
     say "Hello, $name";
 }
 PERL
 
-    is scalar @$errs, 0, 'user declare overrides prelude: say is Eff(Console), no mismatch';
+    is scalar @$errs, 0, 'user declare overrides prelude: say is ![Console], no mismatch';
 };
 
 subtest 'override: user declare pure length works' => sub {
@@ -241,13 +241,13 @@ subtest 'effects: multiple builtins with same effect → OK' => sub {
 package MultiBuiltin;
 use v5.40;
 
-sub verbose :Type((Str) -> Void !Eff(IO)) ($msg) {
+sub verbose :Type((Str) -> Void ![IO]) ($msg) {
     print "LOG: ";
     say $msg;
 }
 PERL
 
-    is scalar @$errs, 0, 'multiple IO builtins in Eff(IO) function — no error';
+    is scalar @$errs, 0, 'multiple IO builtins in ![IO] function — no error';
 };
 
 subtest 'effects: mixed IO and Exn builtins → need both' => sub {
@@ -255,13 +255,13 @@ subtest 'effects: mixed IO and Exn builtins → need both' => sub {
 package MixedEffects;
 use v5.40;
 
-sub bail :Type((Str) -> Never !Eff(IO | Exn)) ($msg) {
+sub bail :Type((Str) -> Never ![IO, Exn]) ($msg) {
     say $msg;
     die($msg);
 }
 PERL
 
-    is scalar @$errs, 0, 'IO + Exn builtins in Eff(IO | Exn) function — no error';
+    is scalar @$errs, 0, 'IO + Exn builtins in ![IO, Exn] function — no error';
 };
 
 subtest 'effects: mixed builtins missing one effect → flagged' => sub {
@@ -269,7 +269,7 @@ subtest 'effects: mixed builtins missing one effect → flagged' => sub {
 package MissingEffect;
 use v5.40;
 
-sub bail :Type((Str) -> Never !Eff(IO)) ($msg) {
+sub bail :Type((Str) -> Never ![IO]) ($msg) {
     say $msg;
     die($msg);
 }
@@ -281,17 +281,17 @@ PERL
 
 # ── Decl effect: Typist declaration builtins ──
 
-subtest 'effects: typedef in Eff(Decl) function → no error' => sub {
+subtest 'effects: typedef in ![Decl] function → no error' => sub {
     my $errs = diags_of(<<'PERL', 'EffectMismatch');
 package TypedefDecl;
 use v5.40;
 
-sub setup :Type(() -> Void !Eff(Decl)) () {
+sub setup :Type(() -> Void ![Decl]) () {
     typedef UserId => 'Int';
 }
 PERL
 
-    is scalar @$errs, 0, 'typedef in Eff(Decl) function — no effect error';
+    is scalar @$errs, 0, 'typedef in ![Decl] function — no effect error';
 };
 
 subtest 'effects: typedef in pure function → EffectMismatch' => sub {
@@ -393,30 +393,30 @@ PERL
     like $errs->[0]{message}, qr/Exn/, 'reports Exn effect requirement for exit';
 };
 
-subtest 'effects: rand in Eff(IO) function → no error' => sub {
+subtest 'effects: rand in ![IO] function → no error' => sub {
     my $errs = diags_of(<<'PERL', 'EffectMismatch');
 package RandIO;
 use v5.40;
 
-sub roll :Type(() -> Num !Eff(IO)) () {
+sub roll :Type(() -> Num ![IO]) () {
     rand(6);
 }
 PERL
 
-    is scalar @$errs, 0, 'rand in Eff(IO) function — no effect error';
+    is scalar @$errs, 0, 'rand in ![IO] function — no effect error';
 };
 
-subtest 'effects: eval in Eff(Exn) function → no error' => sub {
+subtest 'effects: eval in ![Exn] function → no error' => sub {
     my $errs = diags_of(<<'PERL', 'EffectMismatch');
 package EvalExn;
 use v5.40;
 
-sub try_it :Type((Any) -> Any !Eff(Exn)) ($code) {
+sub try_it :Type((Any) -> Any ![Exn]) ($code) {
     eval($code);
 }
 PERL
 
-    is scalar @$errs, 0, 'eval in Eff(Exn) function — no effect error';
+    is scalar @$errs, 0, 'eval in ![Exn] function — no effect error';
 };
 
 # ── struct builtin ────────────────────────────

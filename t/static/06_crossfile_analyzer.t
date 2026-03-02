@@ -118,7 +118,7 @@ subtest 'analyzer checks cross-package effect requirements' => sub {
 package App;
 use v5.40;
 
-sub safe :Type((Str) -> Void !Eff(Console)) ($msg) {
+sub safe :Type((Str) -> Void ![Console]) ($msg) {
     IO::print_line($msg);
 }
 PERL

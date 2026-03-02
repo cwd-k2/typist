@@ -164,7 +164,7 @@ subtest 'undefined operation in handler dies' => sub {
 
 # ── Effect::op inside annotated function ────────────
 
-sub greet :Type((Str) -> Str !Eff(Console)) ($name) {
+sub greet :Type((Str) -> Str ![Console]) ($name) {
     Console::log("Hello, $name!");
     "greeted $name";
 }

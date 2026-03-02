@@ -58,7 +58,7 @@ sub arity_errors :Type(() -> Void) () {
 # ── 3. Effect Mismatches ───────────────────────────────
 #
 # Every effectful call must be covered by the caller's
-# declared effects.  A pure function (no !Eff) may not
+# declared effects.  A pure function (no ![...]) may not
 # call effectful code.
 
 BEGIN {
@@ -67,7 +67,7 @@ BEGIN {
     };
 }
 
-sub log_it :Type((Str) -> Void !Eff(Logger)) ($msg) {
+sub log_it :Type((Str) -> Void ![Logger]) ($msg) {
     Logger::log($msg);
 }
 
@@ -103,7 +103,7 @@ BEGIN {
 #
 # [ProtocolMismatch] operation 'query' is not allowed in state 'Disconnected'
 
-sub query_too_early :Type(() -> Str !Eff(DB<Disconnected>)) () {
+sub query_too_early :Type(() -> Str ![DB<Disconnected>]) () {
     DB::query("SELECT 1");
 }
 
@@ -114,7 +114,7 @@ sub query_too_early :Type(() -> Str !Eff(DB<Disconnected>)) () {
 #
 # [ProtocolMismatch] ends in state 'Connected' but declared end state is 'Authenticated'
 
-sub incomplete_setup :Type(() -> Void !Eff(DB<Disconnected -> Authenticated>)) () {
+sub incomplete_setup :Type(() -> Void ![DB<Disconnected -> Authenticated>]) () {
     DB::connect("localhost");
 }
 
@@ -124,11 +124,11 @@ sub incomplete_setup :Type(() -> Void !Eff(DB<Disconnected -> Authenticated>)) (
 #
 # [ProtocolMismatch] do_auth() expects state 'Connected' but current state is 'Disconnected'
 
-sub do_auth :Type(() -> Void !Eff(DB<Connected -> Authenticated>)) () {
+sub do_auth :Type(() -> Void ![DB<Connected -> Authenticated>]) () {
     DB::auth("admin", "secret");
 }
 
-sub bad_composition :Type(() -> Str !Eff(DB<Disconnected -> Authenticated>)) () {
+sub bad_composition :Type(() -> Str ![DB<Disconnected -> Authenticated>]) () {
     do_auth();
     DB::query("SELECT 1");
 }
@@ -138,7 +138,7 @@ sub bad_composition :Type(() -> Str !Eff(DB<Disconnected -> Authenticated>)) () 
 #
 # No errors: all operations follow the protocol.
 
-sub db_session :Type(() -> Str !Eff(DB<Disconnected -> Authenticated>)) () {
+sub db_session :Type(() -> Str ![DB<Disconnected -> Authenticated>]) () {
     DB::connect("localhost");
     DB::auth("admin", "secret");
     DB::query("SELECT 1");

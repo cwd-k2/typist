@@ -714,7 +714,7 @@ Inline state transition marker for effect protocols: C<protocol('From -E<gt> To'
 
 =item C<declare>
 
-Annotate an external function: C<declare say =E<gt> '(Str) -E<gt> Void !Eff(Console)'>
+Annotate an external function: C<declare say =E<gt> '(Str) -E<gt> Void ![Console]'>
 
 =item C<datatype>
 

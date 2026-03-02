@@ -655,7 +655,7 @@ BEGIN {
 }
 
 # エフェクトの使用（直接 qualified call）
-sub counter :Type(() -> Int !Eff(State)) () {
+sub counter :Type(() -> Int ![State]) () {
     my $n = State::get();
     State::put($n + 1);
     $n;
@@ -985,10 +985,10 @@ use v5.40;
 
 my %BUILTINS = (
     # IO effects
-    say     => '(Any) -> Bool !Eff(IO)',
-    print   => '(Any) -> Bool !Eff(IO)',
-    warn    => '(Any) -> Bool !Eff(IO)',
-    die     => '(Any) -> Never !Eff(Exn)',
+    say     => '(Any) -> Bool ![IO]',
+    print   => '(Any) -> Bool ![IO]',
+    warn    => '(Any) -> Bool ![IO]',
+    die     => '(Any) -> Never ![Exn]',
 
     # Pure string operations
     length  => '(Str) -> Int',
@@ -1008,9 +1008,9 @@ my %BUILTINS = (
     sort    => '(Any) -> Any',
 
     # IO operations
-    open    => '(Any, Any) -> Bool !Eff(IO)',
-    close   => '(Any) -> Bool !Eff(IO)',
-    read    => '(Any, Any, Int) -> Int !Eff(IO)',
+    open    => '(Any, Any) -> Bool ![IO]',
+    close   => '(Any) -> Bool ![IO]',
+    read    => '(Any, Any, Int) -> Int ![IO]',
     chomp   => '(Any) -> Int',
     chop    => '(Any) -> Str',
 );
@@ -1038,11 +1038,11 @@ sub install ($class, $registry) {
 ```
 
 **テスト計画**:
-- `t/static/04_effects.t` に追加: プレリュード適用後、`say` 呼出しが `Eff(IO)` として正しく検出される
+- `t/static/04_effects.t` に追加: プレリュード適用後、`say` 呼出しが `[IO]` として正しく検出される
 
 **注意**:
 - ユーザが `declare` で上書きした場合はユーザ定義を優先
-- `Eff(IO)` や `Eff(Exn)` などの標準エフェクトも定義する必要がある
+- `[IO]` や `[Exn]` などの標準エフェクトも定義する必要がある
 - オプトアウト: `use Typist -no_prelude` で無効化
 
 ---

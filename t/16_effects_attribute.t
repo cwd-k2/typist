@@ -22,19 +22,19 @@ BEGIN {
 
 # ── Functions with :Type (compiled after effects are registered) ──
 
-sub greet :Type((Str) -> Str !Eff(Console)) ($name) {
+sub greet :Type((Str) -> Str ![Console]) ($name) {
     "Hello, $name!";
 }
 
-sub main_fn :Type(() -> Void !Eff(Console | State)) () {
+sub main_fn :Type(() -> Void ![Console, State]) () {
     undef;
 }
 
-sub logged :Type(<a, r: Row>(Str) -> Str !Eff(Log | r)) ($msg) {
+sub logged :Type(<a, r: Row>(Str) -> Str ![Log, r]) ($msg) {
     $msg;
 }
 
-sub pure_effect :Type(() -> Any !Eff(Console)) () {
+sub pure_effect :Type(() -> Any ![Console]) () {
     42;
 }
 
@@ -57,19 +57,19 @@ subtest 'function with :Type registers effects in sig' => sub {
     ok $sig, 'sig registered';
     ok $sig->{effects}, 'effects present';
     ok $sig->{effects}->is_eff, 'is_eff';
-    is $sig->{effects}->to_string, 'Eff(Console)', 'Eff(Console)';
+    is $sig->{effects}->to_string, '[Console]', '[Console]';
 };
 
 subtest 'function with multiple effects' => sub {
     my $sig = Typist::Registry->lookup_function('main', 'main_fn');
     ok $sig->{effects}, 'effects present';
-    is $sig->{effects}->to_string, 'Eff(Console | State)', 'multi-effect';
+    is $sig->{effects}->to_string, '[Console, State]', 'multi-effect';
 };
 
 subtest 'function with :Type and generics(r: Row)' => sub {
     my $sig = Typist::Registry->lookup_function('main', 'logged');
     ok $sig->{effects}, 'effects present';
-    is $sig->{effects}->to_string, 'Eff(Log | r)', 'open row with row_var';
+    is $sig->{effects}->to_string, '[Log, r]', 'open row with row_var';
 
     my @gs = $sig->{generics}->@*;
     is scalar(@gs), 2, 'two generics';
@@ -87,7 +87,7 @@ subtest 'function with only effect annotation' => sub {
     my $sig = Typist::Registry->lookup_function('main', 'pure_effect');
     ok $sig, 'sig registered for eff-only function';
     ok $sig->{effects}, 'effects present';
-    is $sig->{effects}->to_string, 'Eff(Console)', 'correct effect';
+    is $sig->{effects}->to_string, '[Console]', 'correct effect';
 
     my $r = pure_effect();
     is $r, 42, 'eff-only function works';

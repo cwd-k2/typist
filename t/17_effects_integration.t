@@ -23,16 +23,16 @@ BEGIN {
 
 # ── Effectful functions ──────────────────────────
 
-sub greet :Type((Str) -> Str !Eff(Console)) ($name) {
+sub greet :Type((Str) -> Str ![Console]) ($name) {
     "Hello, $name!";
 }
 
-sub main_app :Type(() -> Any !Eff(Console | State)) () {
+sub main_app :Type(() -> Any ![Console, State]) () {
     greet("world");
     undef;
 }
 
-sub logged :Type(<a, r: Row>(Str) -> Str !Eff(Log | r)) ($msg) {
+sub logged :Type(<a, r: Row>(Str) -> Str ![Log, r]) ($msg) {
     $msg;
 }
 
@@ -67,14 +67,14 @@ subtest 'return type checking works alongside effects' => sub {
 subtest 'effect rows stored in Registry' => sub {
     my $sig = Typist::Registry->lookup_function('main', 'greet');
     ok $sig->{effects}, 'greet has effects';
-    is $sig->{effects}->to_string, 'Eff(Console)', 'single effect';
+    is $sig->{effects}->to_string, '[Console]', 'single effect';
 
     $sig = Typist::Registry->lookup_function('main', 'main_app');
     ok $sig, 'main_app sig found';
-    is $sig->{effects}->to_string, 'Eff(Console | State)', 'multi-effect';
+    is $sig->{effects}->to_string, '[Console, State]', 'multi-effect';
 
     $sig = Typist::Registry->lookup_function('main', 'logged');
-    is $sig->{effects}->to_string, 'Eff(Log | r)', 'polymorphic effect';
+    is $sig->{effects}->to_string, '[Log, r]', 'polymorphic effect';
 
     $sig = Typist::Registry->lookup_function('main', 'pure_fn');
     ok !$sig->{effects}, 'pure function has no effects';
@@ -87,15 +87,15 @@ subtest 'effect row subtyping' => sub {
     my $c   = Typist::Type::Row->new(labels => [qw(Console)]);
     my $csl = Typist::Type::Row->new(labels => [qw(Console State Log)]);
 
-    ok  Typist::Subtype->is_subtype($cs, $c),    'Console|State <: Console';
-    ok  Typist::Subtype->is_subtype($csl, $cs),   'Console|State|Log <: Console|State';
-    ok !Typist::Subtype->is_subtype($c, $cs),     'Console </: Console|State';
+    ok  Typist::Subtype->is_subtype($cs, $c),    'Console,State <: Console';
+    ok  Typist::Subtype->is_subtype($csl, $cs),   'Console,State,Log <: Console,State';
+    ok !Typist::Subtype->is_subtype($c, $cs),     'Console </: Console,State';
 };
 
 # ── E2E: Row unification ────────────────────────
 
 subtest 'row unification for effect polymorphism' => sub {
-    # Simulate: formal = Eff(Log | r), actual = Eff(Console | Log | State)
+    # Simulate: formal = [Log, r], actual = [Console, Log, State]
     my $formal_row = Typist::Type::Row->new(labels => [qw(Log)], row_var => 'r');
     my $actual_row = Typist::Type::Row->new(labels => [qw(Console Log State)]);
 
@@ -104,7 +104,7 @@ subtest 'row unification for effect polymorphism' => sub {
 
     ok exists $bindings{r}, 'r is bound';
     my @bound_labels = sort $bindings{r}->labels;
-    is_deeply \@bound_labels, [qw(Console State)], 'r = Console | State';
+    is_deeply \@bound_labels, [qw(Console State)], 'r = Console, State';
     ok $bindings{r}->is_closed, 'bound row is closed';
 
     # Apply substitution to formal
@@ -150,11 +150,11 @@ subtest 'Analyzer detects effect mismatch' => sub {
 package IntegTest;
 use v5.40;
 
-sub db_op :Type((Str) -> Str !Eff(DB)) ($q) {
+sub db_op :Type((Str) -> Str ![DB]) ($q) {
     return $q;
 }
 
-sub handler :Type(() -> Str !Eff(Console)) () {
+sub handler :Type(() -> Str ![Console]) () {
     db_op("SELECT 1");
 }
 PERL

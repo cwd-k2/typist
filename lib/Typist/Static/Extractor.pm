@@ -779,7 +779,7 @@ sub _extract_functions ($class, $doc, $result) {
             # No :Type annotation — skip
         }
         else {
-            # Unannotated function: count signature params for Any... -> Any !Eff(*)
+            # Unannotated function: count signature params for Any... -> Any ![*]
             # For methods, exclude $self/$class from the parameter count
             my $arity = scalar @$param_names;
             $arity -= 1 if $is_method && $arity > 0;

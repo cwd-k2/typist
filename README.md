@@ -58,12 +58,12 @@ BEGIN {
     };
 }
 
-sub greet :Type((Str) -> Str !Eff(Console)) ($name) {
+sub greet :Type((Str) -> Str ![Console]) ($name) {
     "Hello, $name!";
 }
 
 # Row polymorphism — "at least Log, plus whatever r adds"
-sub with_log :Type(<r: Row>(Str) -> Str !Eff(Log | r)) ($msg) {
+sub with_log :Type(<r: Row>(Str) -> Str ![Log, r]) ($msg) {
     $msg;
 }
 ```
@@ -90,9 +90,9 @@ sub with_log :Type(<r: Row>(Str) -> Str !Eff(Log | r)) ($msg) {
 | Rank-2 polymorphism | `forall` | `forall A. (A) -> A` |
 | Variadic functions | `...Type` | `(Int, ...Str) -> Void` |
 | Type classes / HKT | `typeclass` / `instance` | Ad-hoc polymorphism, `F: * -> *` |
-| Algebraic effects | `effect` / `!Eff(...)` | `!Eff(Console \| Log)` |
-| Effect protocols | `protocol('From -> To')` | `!Eff(DB<None -> Authed>)` |
-| Row polymorphism | `<r: Row>` / `Eff(E \| r)` | Effect row extension |
+| Algebraic effects | `effect` / `![...]` | `![Console, Log]` |
+| Effect protocols | `protocol('From -> To')` | `![DB<None -> Authed>]` |
+| Row polymorphism | `<r: Row>` / `[E, r]` | Effect row extension |
 | Effect handlers | `Effect::op(...)` / `handle` | Direct dispatch + scoped handling |
 
 ### Analysis
@@ -203,7 +203,7 @@ my $z :Type({ name => Str, age => Int }) = { name => "Alice", age => 30 };
 sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
 
 # With effects
-sub greet :Type((Str) -> Str !Eff(Console)) ($name) { "Hello, $name!" }
+sub greet :Type((Str) -> Str ![Console]) ($name) { "Hello, $name!" }
 
 # With generics
 sub first :Type(<T>(ArrayRef[T]) -> T) ($arr) { $arr->[0] }
@@ -212,7 +212,7 @@ sub first :Type(<T>(ArrayRef[T]) -> T) ($arr) { $arr->[0] }
 sub max_of :Type(<T: Num>(T, T) -> T) ($a, $b) { $a > $b ? $a : $b }
 
 # Variadic arguments
-sub log_all :Type((Str, ...Any) -> Void !Eff(Console)) ($fmt, @args) { }
+sub log_all :Type((Str, ...Any) -> Void ![Console]) ($fmt, @args) { }
 ```
 
 ### Struct Types (Nominal)
@@ -282,7 +282,7 @@ BEGIN {
 }
 
 # Function declares its effects
-sub io_greet :Type((Str) -> Void !Eff(Console)) ($name) { say "Hi, $name" }
+sub io_greet :Type((Str) -> Void ![Console]) ($name) { say "Hi, $name" }
 
 # Effect operations are called as qualified subs
 Console::writeLine("hello");
@@ -311,13 +311,13 @@ BEGIN {
 }
 
 # State transitions are declared in type annotations
-sub setup :Type(() -> Void !Eff(Database<None -> Authed>)) () {
+sub setup :Type(() -> Void ![Database<None -> Authed>]) () {
     Database::connect("localhost");  # None → Connected
     Database::auth("user", "pass");  # Connected → Authed
 }
 
 # Invariant state: start and end in the same state
-sub run_query :Type((Str) -> Str !Eff(Database<Authed>)) ($sql) {
+sub run_query :Type((Str) -> Str ![Database<Authed>]) ($sql) {
     Database::query($sql);           # Authed → Authed
 }
 ```
@@ -344,9 +344,9 @@ say Show::show(42);      # "42"
 
 ```perl
 # Annotate external functions for type/effect checking
-declare say => '(Str) -> Void !Eff(Console)';
+declare say => '(Str) -> Void ![Console]';
 
-sub handler :Type((Str) -> Str !Eff(Console)) ($s) {
+sub handler :Type((Str) -> Str ![Console]) ($s) {
     # @typist-ignore
     some_unannotated_function($s);  # Diagnostic suppressed
 }
@@ -361,7 +361,7 @@ Typist enforces checks proportional to annotation density:
 | Fully annotated | All params, return, call sites | Full effect inclusion |
 | Partially annotated (no return) | Params only, return type unknown | As declared |
 | Partially annotated (no `:Eff`) | As declared | Treated as pure |
-| Completely unannotated | Skipped (`Any -> Any`) | Treated as `Eff(*)` — flags in callers |
+| Completely unannotated | Skipped (`Any -> Any`) | Treated as `[*]` — flags in callers |
 
 ## Editor Integration
 

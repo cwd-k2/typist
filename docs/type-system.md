@@ -166,14 +166,14 @@ typedef ReadWrite => 'Readable & Writable';
 
 ## Function Types
 
-`(A, B) -> R` or `(A, B) -> R !Eff(E)` — function signature with optional effects.
+`(A, B) -> R` or `(A, B) -> R ![E]` — function signature with optional effects.
 
 ### Syntax
 
 ```
 (Params) -> Return                    Pure function
-(Params) -> Return !Eff(Labels)       Effectful function
-<Generics>(Params) -> Return !Eff(E)  Generic effectful function
+(Params) -> Return ![Labels]          Effectful function
+<Generics>(Params) -> Return ![E]     Generic effectful function
 ```
 
 ### Subtyping
@@ -191,7 +191,7 @@ Arity:        Strict           Must match exactly
 
 ```perl
 sub add :Type((Int, Int) -> Int) ($a, $b) { $a + $b }
-sub greet :Type((Str) -> Str !Eff(Console)) ($name) { "Hello, $name!" }
+sub greet :Type((Str) -> Str ![Console]) ($name) { "Hello, $name!" }
 ```
 
 ---
@@ -690,11 +690,11 @@ BEGIN {
 
 ### Effect Annotation
 
-Functions declare their effects with `!Eff(...)`:
+Functions declare their effects with `![...]`:
 
 ```perl
-sub greet :Type((Str) -> Str !Eff(Console)) ($name) { ... }
-sub fetch :Type((Str) -> Any !Eff(DB | Console)) ($query) { ... }
+sub greet :Type((Str) -> Str ![Console]) ($name) { ... }
+sub fetch :Type((Str) -> Any ![DB, Console]) ($query) { ... }
 ```
 
 ### Effect Checking Rules
@@ -711,19 +711,19 @@ Any caller calls unannotated callee         EffectMismatch (warning)
 
 ### Effect Superset Rule
 
-A caller with `Eff(A | B | C)` can call a callee with `Eff(A)` — the caller's effects are a superset. The reverse is an error.
+A caller with `[A, B, C]` can call a callee with `[A]` — the caller's effects are a superset. The reverse is an error.
 
 ### Unannotated Functions
 
-Unannotated functions are treated as `Eff(*)` — they may perform any effect. Calling an unannotated function from an annotated function triggers an `EffectMismatch` warning.
+Unannotated functions are treated as `[*]` — they may perform any effect. Calling an unannotated function from an annotated function triggers an `EffectMismatch` warning.
 
 ### Declare for Builtins
 
 Perl builtins (say, print, die, etc.) receive default annotations from the Prelude (see `Typist::Prelude`). Use `declare` to override with custom annotations:
 
 ```perl
-declare say    => '(Str) -> Void !Eff(Console)';
-declare die    => '(Any) -> Never !Eff(Abort)';
+declare say    => '(Str) -> Void ![Console]';
+declare die    => '(Any) -> Never ![Abort]';
 declare length => '(Str) -> Int';              # Pure
 ```
 
@@ -775,7 +775,7 @@ A row is an ordered set of effect labels with an optional tail variable:
 ```
 Row(Console)              Closed row: exactly Console
 Row(Console, State)       Closed row: exactly Console + State
-Row(Console | r)          Open row: Console + whatever r provides
+Row(Console, r)           Open row: Console + whatever r provides
 ```
 
 ### Row Variables
@@ -783,7 +783,7 @@ Row(Console | r)          Open row: Console + whatever r provides
 Declared in the generic list with `r: Row`:
 
 ```perl
-sub with_log :Type(<r: Row>(Str) -> Str !Eff(Log | r)) ($msg) {
+sub with_log :Type(<r: Row>(Str) -> Str ![Log, r]) ($msg) {
     $msg;
 }
 ```
@@ -801,9 +801,9 @@ Row(A) <: Row(A)               Identity
 
 Row unification follows Remy-style semantics:
 
-Given `Row(A, B | r1)` unified with `Row(B, C | r2)`:
-- Excess of left in right: `{A}` → `r2 := Row(A | r1)`
-- Excess of right in left: `{C}` → `r1 := Row(C | r2)`
+Given `Row(A, B, r1)` unified with `Row(B, C, r2)`:
+- Excess of left in right: `{A}` → `r2 := Row(A, r1)`
+- Excess of right in left: `{C}` → `r1 := Row(C, r2)`
 
 ### Static Behavior
 
@@ -920,13 +920,13 @@ BEGIN {
 | `Param` | `Type::Param` | `* -> ... -> *` | `ArrayRef[T]`, `HashRef[K, V]`, `Tuple[T, U]` |
 | `Union` | `Type::Union` | `*` | `T \| U` |
 | `Intersection` | `Type::Intersection` | `*` | `T & U` |
-| `Func` | `Type::Func` | `*` | `(A, B) -> R`, `(A) -> R !Eff(E)` |
+| `Func` | `Type::Func` | `*` | `(A, B) -> R`, `(A) -> R ![E]` |
 | `Struct` | `Type::Struct` | `*` | `{ k => T, k? => T }` |
 | `Literal` | `Type::Literal` | `*` | `42`, `"hello"`, `3.14` |
 | `Alias` | `Type::Alias` | `*` | `typedef Name => Expr` |
 | `Newtype` | `Type::Newtype` | `*` | `newtype Name => Expr` |
 | `Data` | `Type::Data` | `*` | `datatype Name => Tag => '(T)', ...` |
 | `Var` | `Type::Var` | `*` or `k` | `T`, `T: Num`, `F: * -> *` |
-| `Row` | `Type::Row` | `Row` | `Row(A, B \| r)` |
-| `Eff` | `Type::Eff` | `Row` | `Eff(Row)`, `!Eff(Console \| Log)` |
+| `Row` | `Type::Row` | `Row` | `Row(A, B, r)` |
+| `Eff` | `Type::Eff` | `Row` | `[Row]`, `![Console, Log]` |
 | `Fold` | `Type::Fold` | -- | `map_type` (bottom-up), `walk` (top-down) |

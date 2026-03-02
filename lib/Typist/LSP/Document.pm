@@ -239,7 +239,7 @@ sub symbol_at ($self, $line, $col) {
             kind         => 'function',
             params_expr  => ['Any...'],
             returns_expr => 'Any',
-            eff_expr     => 'Eff(*)',
+            eff_expr     => '[*]',
             builtin      => 1,
             (Typist::Prelude->is_typist_builtin($builtin_name) ? (typist_builtin => 1) : ()),
         });

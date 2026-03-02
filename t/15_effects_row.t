@@ -12,14 +12,14 @@ use Typist::Type::Eff;
 # ── parse_row ────────────────────────────────────
 
 subtest 'parse_row: closed row' => sub {
-    my $row = Typist::Parser->parse_row('Console | State');
+    my $row = Typist::Parser->parse_row('Console, State');
     ok $row->is_row, 'is_row';
     is_deeply [$row->labels], [qw(Console State)], 'labels sorted';
     ok $row->is_closed, 'closed';
 };
 
 subtest 'parse_row: open row' => sub {
-    my $row = Typist::Parser->parse_row('Console | r');
+    my $row = Typist::Parser->parse_row('Console, r');
     is_deeply [$row->labels], [qw(Console)], 'labels';
     is $row->row_var, 'r', 'row_var';
     ok !$row->is_closed, 'open';
@@ -38,7 +38,7 @@ subtest 'parse_row: only row_var' => sub {
 };
 
 subtest 'parse_row: row_var must be last' => sub {
-    eval { Typist::Parser->parse_row('r | Console') };
+    eval { Typist::Parser->parse_row('r, Console') };
     like $@, qr/row variable.*must be the last/, 'row_var not last raises error';
 };
 
@@ -91,8 +91,8 @@ subtest 'Eff subtype delegates to Row' => sub {
     my $eff_abc = Typist::Type::Eff->new(Typist::Type::Row->new(labels => [qw(A B C)]));
     my $eff_ab  = Typist::Type::Eff->new(Typist::Type::Row->new(labels => [qw(A B)]));
 
-    ok  Typist::Subtype->is_subtype($eff_abc, $eff_ab), 'Eff(A,B,C) <: Eff(A,B)';
-    ok !Typist::Subtype->is_subtype($eff_ab, $eff_abc), 'Eff(A,B) </: Eff(A,B,C)';
+    ok  Typist::Subtype->is_subtype($eff_abc, $eff_ab), '[A,B,C] <: [A,B]';
+    ok !Typist::Subtype->is_subtype($eff_ab, $eff_abc), '[A,B] </: [A,B,C]';
 };
 
 # ── Row Unification ──────────────────────────────

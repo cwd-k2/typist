@@ -59,7 +59,7 @@ sub to_string ($self) {
         }
     }
     push @parts, $self->{row_var}->name if defined $self->{row_var};
-    join ' | ', @parts;
+    join ', ', @parts;
 }
 
 sub equals ($self, $other) {

@@ -312,7 +312,7 @@ sub _parse_dsl_func ($name, $tokens, $pos) {
         }
     }
 
-    # Parse optional effect row: !Eff(Label | Label | var)
+    # Parse optional effect row: ![Label, Label, var]
     my $effect_row;
     if ($$pos < @$tokens && $tokens->[$$pos] eq '!') {
         $$pos++;
@@ -483,20 +483,19 @@ sub _resolve_name ($name) {
 
 # ── Effect Row (inline) ─────────────────────────
 
-# Parse an effect row within a function type: Eff(Label | Label | var)
-# Requires the Eff(...) wrapper after '!'.
+# Parse an effect row within a function type: [Label, Label, var]
+# Requires the [...] wrapper after '!'.
 sub _parse_effect_row ($tokens, $pos, $close = undef) {
-    die "Typist::Parser: expected 'Eff(' after '!'"
-        unless $$pos + 1 < @$tokens
-            && $tokens->[$$pos] eq 'Eff'
-            && $tokens->[$$pos + 1] eq '(';
-    $$pos += 2;  # consume 'Eff' and '('
+    die "Typist::Parser: expected '[' after '!'"
+        unless $$pos < @$tokens
+            && $tokens->[$$pos] eq '[';
+    $$pos++;  # consume '['
 
     my @labels;
     my $row_var;
     my %label_states;
 
-    while ($$pos < @$tokens && $tokens->[$$pos] ne ')') {
+    while ($$pos < @$tokens && $tokens->[$$pos] ne ']') {
         my $tok = $tokens->[$$pos++];
         if ($tok =~ /\A[a-z]/) {
             $row_var = $tok;
@@ -505,31 +504,31 @@ sub _parse_effect_row ($tokens, $pos, $close = undef) {
             # Optional protocol state: Label<From -> To> or Label<State>
             if ($$pos < @$tokens && $tokens->[$$pos] eq '<') {
                 $$pos++;  # consume '<'
-                die "Typist::Parser: expected state name after '<' in Eff label"
+                die "Typist::Parser: expected state name after '<' in effect label"
                     unless $$pos < @$tokens;
                 my $from = $tokens->[$$pos++];
                 my $to;
                 if ($$pos < @$tokens && $tokens->[$$pos] eq '->') {
                     $$pos++;  # consume '->'
-                    die "Typist::Parser: expected target state after '->' in Eff label"
+                    die "Typist::Parser: expected target state after '->' in effect label"
                         unless $$pos < @$tokens;
                     $to = $tokens->[$$pos++];
                 } else {
                     $to = $from;
                 }
-                die "Typist::Parser: expected '>' after state in Eff label"
+                die "Typist::Parser: expected '>' after state in effect label"
                     unless $$pos < @$tokens && $tokens->[$$pos] eq '>';
                 $$pos++;  # consume '>'
                 $label_states{$tok} = +{ from => $from, to => $to };
             }
         }
-        last unless $$pos < @$tokens && $tokens->[$$pos] eq '|';
-        $$pos++;  # consume '|'
+        last unless $$pos < @$tokens && $tokens->[$$pos] eq ',';
+        $$pos++;  # consume ','
     }
 
-    die "Typist::Parser: expected ')' after Eff(...)"
-        unless $$pos < @$tokens && $tokens->[$$pos] eq ')';
-    $$pos++;  # consume ')'
+    die "Typist::Parser: expected ']' after ![...]"
+        unless $$pos < @$tokens && $tokens->[$$pos] eq ']';
+    $$pos++;  # consume ']'
 
     Typist::Type::Row->new(
         labels       => \@labels,
@@ -540,10 +539,10 @@ sub _parse_effect_row ($tokens, $pos, $close = undef) {
 
 # ── Row Parsing ──────────────────────────────────
 
-# Parse a row expression: "Console | State | r"
+# Parse a row expression: "Console, State, r"
 # Labels are uppercase-initial identifiers; a trailing lowercase identifier is a row variable.
 sub parse_row ($class, $expr) {
-    my @tokens = grep { $_ ne '' } split /\s*\|\s*/, $expr;
+    my @tokens = grep { $_ ne '' } split /\s*,\s*/, $expr;
     my (@labels, $row_var, %label_states);
 
     for my $i (0 .. $#tokens) {
@@ -582,7 +581,7 @@ sub parse_row ($class, $expr) {
 #   "Int"                              → { generics_raw => [], type => Atom(Int) }
 #   "(Int, Str) -> Bool"               → { generics_raw => [], type => Func }
 #   "<T: Num>(T, T) -> T"              → { generics_raw => ["T: Num"], type => Func }
-#   "<T, r: Row>(T) -> Str !Eff(Console | r)"
+#   "<T, r: Row>(T) -> Str ![Console, r]"
 sub parse_annotation ($class, $input) {
     if (my $cached = $_ANNOTATION_CACHE{$input}) { return $cached }
 
@@ -703,11 +702,11 @@ Typist::Parser - Recursive-descent parser for type expressions
     my $forall = Typist::Parser->parse('forall A. A -> A');
 
     # Parse a :Type() annotation string
-    my $ann = Typist::Parser->parse_annotation('<T: Num>(T, T) -> T ! Eff(Console)');
+    my $ann = Typist::Parser->parse_annotation('<T: Num>(T, T) -> T ![Console]');
     # Returns: { generics_raw => ["T: Num"], type => Func(...) }
 
     # Parse an effect row expression
-    my $row = Typist::Parser->parse_row('Console | State | r');
+    my $row = Typist::Parser->parse_row('Console, State, r');
 
 =head1 DESCRIPTION
 
@@ -737,7 +736,7 @@ Parse a type expression string into a type object. Supported syntax:
 
 =item Function types: C<(Int, Str) -E<gt> Bool>
 
-=item Function types with effects: C<(Str) -E<gt> Void !Eff(Console)>
+=item Function types with effects: C<(Str) -E<gt> Void ![Console]>
 
 =item Variadic functions: C<(Int, ...Str) -E<gt> Void>
 
@@ -772,13 +771,13 @@ Examples:
     "Int"                          # simple type
     "(Int, Str) -> Bool"           # function type
     "<T: Num>(T, T) -> T"         # generics + function
-    "<T, r: Row>(T) -> Str !Eff(Console | r)"
+    "<T, r: Row>(T) -> Str ![Console, r]"
 
 =head2 parse_row
 
     my $row = Typist::Parser->parse_row($expr);
 
-Parse an effect row expression of the form C<"Console | State | r">.
+Parse an effect row expression of the form C<"Console, State, r">.
 Labels are uppercase-initial identifiers; a trailing lowercase identifier
 is a row variable. Returns a L<Typist::Type::Row> object.
 
@@ -792,7 +791,7 @@ is a row variable. Returns a L<Typist::Type::Row> object.
     func       ::= '(' param_list? ')' '->' return ('!' effect_row)?
     quantified ::= 'forall' var+ '.' body
     literal    ::= NUMBER | STRING
-    effect_row ::= 'Eff(' (LABEL ('|' LABEL)* ('|' var)?)? ')'
+    effect_row ::= '[' (LABEL (',' LABEL)* (',' var)?)? ']'
 
 =head1 SEE ALSO
 

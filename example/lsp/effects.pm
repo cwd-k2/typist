@@ -10,11 +10,11 @@ use Typist;
 #  Expected diagnostics are marked with # ← DIAGNOSTIC.
 #
 #  Rules:
-#    caller !Eff(A)     calling callee !Eff(A)     → OK
-#    caller !Eff(A|B)   calling callee !Eff(A)     → OK (superset)
-#    caller !Eff(A)     calling callee !Eff(A|B)   → NG (missing B)
-#    caller (pure)      calling callee !Eff(A)     → NG
-#    caller (annotated) calling unannotated         → NG (Eff(*))
+#    caller ![A]     calling callee ![A]     → OK
+#    caller ![A, B]  calling callee ![A]     → OK (superset)
+#    caller ![A]     calling callee ![A, B]  → NG (missing B)
+#    caller (pure)   calling callee ![A]     → NG
+#    caller (annotated) calling unannotated   → NG ([*])
 # ═══════════════════════════════════════════════════════════
 
 # ── Effect Declarations ───────────────────────────────────
@@ -24,27 +24,27 @@ effect State   => +{};
 
 # ── OK: caller's effects include callee's ─────────────────
 
-sub write_msg :Type((Str) -> Str !Eff(Console)) ($s) {
+sub write_msg :Type((Str) -> Str ![Console]) ($s) {
     $s;
 }
 
-sub main_ok :Type(() -> Str !Eff(Console | State)) () {
+sub main_ok :Type(() -> Str ![Console, State]) () {
     write_msg("hello");     # Console ⊆ {Console, State} → OK
 }
 
 # ── NG: caller missing callee's effect ────────────────────
 
-sub stateful :Type((Str) -> Str !Eff(Console | State)) ($x) {
+sub stateful :Type((Str) -> Str ![Console, State]) ($x) {
     $x;
 }
 
-sub caller_fn :Type(() -> Str !Eff(Console)) () {
+sub caller_fn :Type(() -> Str ![Console]) () {
     stateful("hello");      # ← DIAGNOSTIC: State not in {Console}
 }
 
 # ── NG: pure caller calls effectful callee ────────────────
 
-sub io_fn :Type((Str) -> Str !Eff(Console)) ($x) {
+sub io_fn :Type((Str) -> Str ![Console]) ($x) {
     $x;
 }
 
@@ -58,8 +58,8 @@ sub unknown_helper ($x) {
     $x;
 }
 
-sub safe_fn :Type((Str) -> Str !Eff(Console)) ($s) {
-    unknown_helper($s);     # ← DIAGNOSTIC: unannotated → Eff(*)
+sub safe_fn :Type((Str) -> Str ![Console]) ($s) {
+    unknown_helper($s);     # ← DIAGNOSTIC: unannotated → [*]
 }
 
 # ── OK: unannotated caller — no check ────────────────────

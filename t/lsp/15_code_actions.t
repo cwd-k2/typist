@@ -15,9 +15,9 @@ use v5.40;
 effect Console => +{};
 effect State   => +{};
 
-sub stateful :Type((Str) -> Str !Eff(Console | State)) ($x) { $x }
+sub stateful :Type((Str) -> Str ![Console, State]) ($x) { $x }
 
-sub caller_fn :Type(() -> Str !Eff(Console)) () {
+sub caller_fn :Type(() -> Str ![Console]) () {
     stateful("hello");
 }
 PERL
@@ -72,7 +72,7 @@ PERL
     is $add_eff->{kind}, 'quickfix', 'action kind is quickfix';
     ok $add_eff->{diagnostics}, 'action references diagnostics';
 
-    # WorkspaceEdit: adds | State to existing !Eff(Console)
+    # WorkspaceEdit: adds , State to existing ![Console]
     ok $add_eff->{edit}, 'action has edit (WorkspaceEdit)';
     my $changes = $add_eff->{edit}{changes};
     ok $changes, 'edit has changes';
@@ -90,7 +90,7 @@ use v5.40;
 
 effect Console => +{};
 
-sub write_msg :Type((Str) -> Str !Eff(Console)) ($s) { $s }
+sub write_msg :Type((Str) -> Str ![Console]) ($s) { $s }
 
 sub pure_fn :Type((Str) -> Str) ($x) {
     write_msg($x);
@@ -110,10 +110,10 @@ PERL
 
     my ($diag_notif) = grep { ($_->{method} // '') eq 'textDocument/publishDiagnostics' } @step1;
     my @all_diags = @{$diag_notif->{params}{diagnostics}};
-    my ($eff_diag) = grep { $_->{message} =~ /no :Eff/ } @all_diags;
+    my ($eff_diag) = grep { $_->{message} =~ /no effect annotation/ } @all_diags;
 
-    # This message pattern: "...requires Eff(Console), but pure_fn() has no :Eff annotation"
-    # The regex in CodeAction looks for effect 'X' or Eff(X) — check if we get an action
+    # This message pattern: "...requires [Console], but pure_fn() has no effect annotation"
+    # The regex in CodeAction looks for effect 'X' or [X] — check if we get an action
     if ($eff_diag) {
         ok $eff_diag->{data}, 'diagnostic has data field';
 
@@ -140,17 +140,17 @@ PERL
         my $actions = $resp->{result};
         ok ref $actions eq 'ARRAY', 'result is array';
 
-        # The Eff(...) pattern should also be matched
-        # Message: "requires Eff(Console)" — _suggest_add_effect tries /Eff\(([^)]+)\)/
+        # The [...] pattern should also be matched
+        # Message: "requires [Console]" — _suggest_add_effect tries /\[([^\]]+)\]/
         if (@$actions) {
             like $actions->[0]{title}, qr/Add effect/, 'action suggests adding effect';
             is $actions->[0]{kind}, 'quickfix', 'action kind is quickfix';
 
-            # WorkspaceEdit: inserts !Eff(Console) before closing )
+            # WorkspaceEdit: inserts ![Console] before closing )
             if ($actions->[0]{edit}) {
                 my $changes = $actions->[0]{edit}{changes};
                 my ($text_edit) = values %$changes;
-                like $text_edit->[0]{newText}, qr/!Eff\(Console\)/, 'inserts !Eff(Console)';
+                like $text_edit->[0]{newText}, qr/!\[Console\]/, 'inserts ![Console]';
             }
         }
     } else {

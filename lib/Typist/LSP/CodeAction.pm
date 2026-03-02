@@ -38,12 +38,12 @@ sub _suggest_add_effect ($class, $diag, $doc) {
     my $msg = $diag->{message} // return undef;
 
     # Pattern 1: "Function foo() calls bar() which requires effect 'Console', but foo() does not declare it"
-    # Pattern 2: "Function foo() calls bar() which requires Eff(Console), but foo() has no :Eff annotation"
+    # Pattern 2: "Function foo() calls bar() which requires [Console], but foo() has no effect annotation"
     # Pattern 3: "Function foo() calls unannotated bar() which may perform any effect"
 
     my ($effect_label) = $msg =~ /effect '(\w+)'/;
     unless ($effect_label) {
-        ($effect_label) = $msg =~ /requires Eff\(([^)]+)\)/;
+        ($effect_label) = $msg =~ /requires \[([^\]]+)\]/;
     }
     return undef unless $effect_label;
 
@@ -80,15 +80,15 @@ sub _build_effect_edit ($class, $doc, $fn_name, $effect_label) {
         # Determine edit position
         my ($new_line, $col);
 
-        if ($line =~ /!Eff\(([^)]*)\)/) {
-            # Already has !Eff(...) — add | Label before the closing )
-            my $eff_close = index($line, ')', $-[0] + 4);
+        if ($line =~ /!\[([^\]]*)\]/) {
+            # Already has ![...] — add , Label before the closing ]
+            my $eff_close = index($line, ']', $-[0] + 1);
             return undef if $eff_close < 0;
             $new_line = substr($line, 0, $eff_close)
-                      . " | $effect_label"
+                      . ", $effect_label"
                       . substr($line, $eff_close);
         } else {
-            # No !Eff(...) — insert before the closing ) of :Type(...)
+            # No ![...] — insert before the closing ) of :Type(...)
             # Find the last ) that closes :Type(
             my $type_start = index($line, ':Type(');
             return undef if $type_start < 0;
@@ -110,7 +110,7 @@ sub _build_effect_edit ($class, $doc, $fn_name, $effect_label) {
             return undef if $close_pos < 0;
 
             $new_line = substr($line, 0, $close_pos)
-                      . " !Eff($effect_label)"
+                      . " ![$effect_label]"
                       . substr($line, $close_pos);
         }
 

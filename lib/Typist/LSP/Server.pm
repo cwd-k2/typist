@@ -349,7 +349,7 @@ sub _handle_signature_help ($self, $params) {
     my $params_expr  = $sym->{params_expr} // [];
     my $returns_expr = $sym->{returns_expr};
 
-    # Build label: add(Int, Int) -> Int !Eff(Console)
+    # Build label: add(Int, Int) -> Int ![Console]
     my $label = "$sym->{name}(" . join(', ', @$params_expr) . ')';
     $label .= " -> $returns_expr" if $returns_expr;
     $label .= " !$sym->{eff_expr}" if $sym->{eff_expr};

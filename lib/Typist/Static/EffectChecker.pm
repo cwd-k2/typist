@@ -7,7 +7,7 @@ use Typist::Type::Row;
 use Typist::Type::Eff;
 use Typist::Prelude;
 
-# ── Perl Builtins (unannotated → Eff(*)) ────────
+# ── Perl Builtins (unannotated → [*]) ────────
 
 my %BUILTINS = map { $_ => 1 } Typist::Prelude->builtin_names;
 
@@ -32,7 +32,7 @@ sub analyze ($self) {
         my $fn    = $self->{extracted}{functions}{$name};
         my $block = $fn->{block} // next;
 
-        # Skip unannotated callers — they are Eff(*) themselves
+        # Skip unannotated callers — they are [*] themselves
         next if $fn->{unannotated};
 
         # Lookup the caller's registered sig
@@ -68,7 +68,7 @@ sub analyze ($self) {
                     kind    => 'EffectMismatch',
                     message => "Function $name() calls $call->{name}() which requires "
                              . $callee_eff->to_string
-                             . ", but $name() has no :Eff annotation",
+                             . ", but $name() has no effect annotation",
                     file    => $self->{file},
                     line    => $call->{line},
                     col     => $call->{col} // 0,
@@ -108,7 +108,7 @@ sub _collect_called_effects ($self, $block, $pkg) {
         my $next = $word->snext_sibling;
         next if $next && ref $next && $next->isa('PPI::Token::Operator') && $next->content eq '=>';
 
-        # Builtin functions: check CORE registry for declared type, fallback to Eff(*)
+        # Builtin functions: check CORE registry for declared type, fallback to [*]
         # Builtins can be called without parens (say "hello"), so no List check needed.
         if ($BUILTINS{$callee_name}) {
             my $declared_sig = $self->{registry}->lookup_function('CORE', $callee_name);
@@ -126,7 +126,7 @@ sub _collect_called_effects ($self, $block, $pkg) {
                     col         => $word->column_number,
                 };
             } elsif (!$declared_sig) {
-                # No declaration → original behavior: unannotated Eff(*)
+                # No declaration → original behavior: unannotated [*]
                 push @calls, +{
                     name        => $callee_name,
                     effects     => 1,  # sentinel; unannotated branch does not inspect

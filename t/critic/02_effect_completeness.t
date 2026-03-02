@@ -27,7 +27,7 @@ sub critique_source ($source) {
 subtest 'sub with declared effect has no violations' => sub {
     my @violations = critique_source(<<'PERL');
 use v5.40;
-sub greet :Type((Str) -> Void !Eff(Console)) ($name) {
+sub greet :Type((Str) -> Void ![Console]) ($name) {
     Console::writeLine("Hello $name");
 }
 PERL

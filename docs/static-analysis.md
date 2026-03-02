@@ -501,22 +501,22 @@ The prelude is installed during `Analyzer->analyze()` and `Workspace->new()` via
 
 ### Override Semantics
 
-User `declare` statements override prelude entries. Since `register_function` uses plain assignment, a subsequent `declare say => '(Str) -> Bool !Eff(Console)'` replaces the prelude's default.
+User `declare` statements override prelude entries. Since `register_function` uses plain assignment, a subsequent `declare say => '(Str) -> Bool ![Console]'` replaces the prelude's default.
 
 ### Standard Annotations
 
 ```
-IO effects:     say, print, warn              → !Eff(IO)
-                open, close, read, write      → !Eff(IO)
-                rand, srand, sleep, time      → !Eff(IO)
-                localtime, gmtime             → !Eff(IO)
-                require, use                  → !Eff(IO)
-                system, exec                  → !Eff(IO)
-Exn effects:    die                           → !Eff(Exn)
-                eval, exit                    → !Eff(Exn)
-Decl effects:   typedef, newtype, effect      → !Eff(Decl)
-                typeclass, instance, declare  → !Eff(Decl)
-                datatype, enum, struct        → !Eff(Decl)
+IO effects:     say, print, warn              → ![IO]
+                open, close, read, write      → ![IO]
+                rand, srand, sleep, time      → ![IO]
+                localtime, gmtime             → ![IO]
+                require, use                  → ![IO]
+                system, exec                  → ![IO]
+Exn effects:    die                           → ![Exn]
+                eval, exit                    → ![Exn]
+Decl effects:   typedef, newtype, effect      → ![Decl]
+                typeclass, instance, declare  → ![Decl]
+                datatype, enum, struct        → ![Decl]
 
 Pure string:    length, substr, uc, lc, index → pure
 Pure numeric:   abs, int, sqrt                → pure
@@ -548,7 +548,7 @@ For each annotated function (skip unannotated entirely):
         Check CORE registry for declare'd annotation:
           - Declared with effects → use those
           - Declared pure → skip
-          - Not declared → unannotated (Eff(*))
+          - Not declared → unannotated ([*])
 
       If local/cross-package function with argument list:
         Lookup in registry → { effects, unannotated }
@@ -655,10 +655,10 @@ Typist implements gradual typing where annotation density determines check stric
 ```
 Level                    Example                               Behavior
 ─────────────────────    ───────────────────────────            ──────────────────────
-Fully annotated          :Type((Str) -> Int !Eff(Console))     All checks active
+Fully annotated          :Type((Str) -> Int ![Console])        All checks active
 Partial (no return)      :Type((Str) -> Any)                   Params checked, return unknown
 Partial (no effect)      :Type((Str) -> Int)                   Types checked, treated as pure
-Unannotated              sub foo ($x) { ... }                  Skipped (Any -> Any ! Eff(*))
+Unannotated              sub foo ($x) { ... }                  Skipped (Any -> Any ! [*])
 ```
 
 ### Implementation: The Any Guard
@@ -783,7 +783,7 @@ Raw errors from checkers may lack precise file/line information. `Analyzer._to_d
 A comment `# @typist-ignore` on line N suppresses all diagnostics on line N+1:
 
 ```perl
-sub handler :Type((Str) -> Str !Eff(Console)) ($s) {
+sub handler :Type((Str) -> Str ![Console]) ($s) {
     # @typist-ignore
     some_unannotated_function($s);  # No EffectMismatch
 }

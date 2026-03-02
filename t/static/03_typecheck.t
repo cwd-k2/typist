@@ -571,7 +571,7 @@ PERL
     like $inferred->{type}, qr/Str/, '$result type is Str (inferred)';
 };
 
-subtest 'symbols: unannotated function shows Eff(*)' => sub {
+subtest 'symbols: unannotated function shows [*]' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 use v5.40;
 sub helper ($x) {
@@ -582,7 +582,7 @@ PERL
     my @fns = grep { $_->{kind} eq 'function' } $result->{symbols}->@*;
     my ($fn) = grep { $_->{name} eq 'helper' } @fns;
     ok $fn, 'helper in symbols';
-    is $fn->{eff_expr}, 'Eff(*)', 'unannotated function shows eff_expr = Eff(*)';
+    is $fn->{eff_expr}, '[*]', 'unannotated function shows eff_expr = [*]';
 };
 
 # ── Function Parameter Typing ─────────────────

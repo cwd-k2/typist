@@ -103,11 +103,11 @@ use v5.40;
 effect Console => +{};
 effect State   => +{};
 
-sub write_msg :Type((Str) -> Str !Eff(Console)) ($s) { $s }
+sub write_msg :Type((Str) -> Str ![Console]) ($s) { $s }
 
-sub stateful :Type((Str) -> Str !Eff(Console | State)) ($x) { $x }
+sub stateful :Type((Str) -> Str ![Console, State]) ($x) { $x }
 
-sub caller_fn :Type(() -> Str !Eff(Console)) () {
+sub caller_fn :Type(() -> Str ![Console]) () {
     stateful("hello");
 }
 
@@ -117,7 +117,7 @@ sub pure_fn :Type((Str) -> Str) ($x) {
 
 sub helper ($x) { $x }
 
-sub safe_fn :Type((Str) -> Str !Eff(Console)) ($s) {
+sub safe_fn :Type((Str) -> Str ![Console]) ($s) {
     helper($s);
 }
 PERL
@@ -146,7 +146,7 @@ PERL
     like $missing->{message}, qr/caller_fn.*stateful/, 'identifies caller and callee';
 
     # Case 2: pure caller calls effectful
-    my ($pure) = grep { $_->{message} =~ /no :Eff/ } @eff_diags;
+    my ($pure) = grep { $_->{message} =~ /no effect annotation/ } @eff_diags;
     ok $pure, 'pure-calls-effectful reported';
     like $pure->{message}, qr/pure_fn.*write_msg/, 'identifies pure caller';
 

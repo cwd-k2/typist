@@ -159,7 +159,7 @@ PERL
 subtest 'hover shows generics and effects on function' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub fetch :Type(<T>(Str) -> T !Eff(Console)) ($url) { }
+sub fetch :Type(<T>(Str) -> T ![Console]) ($url) { }
 PERL
 
     my @results = run_session(init_shutdown_wrap(
@@ -175,12 +175,12 @@ PERL
     my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
     ok $hover, 'got hover response';
     ok $hover->{result}, 'hover has result';
-    like $hover->{result}{contents}{value}, qr/sub fetch<T>\(Str\) -> T !Eff\(Console\)/, 'shows sub fetch<T>(Str) -> T !Eff(Console)';
+    like $hover->{result}{contents}{value}, qr/sub fetch<T>\(Str\) -> T !\[Console\]/, 'shows sub fetch<T>(Str) -> T ![Console]';
 };
 
-# ── Hover on unannotated function shows Eff(*) ──
+# ── Hover on unannotated function shows [*] ──
 
-subtest 'hover shows unannotated function as Any with Eff(*)' => sub {
+subtest 'hover shows unannotated function as Any with [*]' => sub {
     my $source = <<'PERL';
 use v5.40;
 sub helper ($x) { $x }
@@ -201,7 +201,7 @@ PERL
     ok $hover->{result}, 'hover has result';
     like $hover->{result}{contents}{value}, qr/sub helper/, 'contains function name';
     like $hover->{result}{contents}{value}, qr/Any/, 'shows Any for params/returns';
-    like $hover->{result}{contents}{value}, qr/!Eff\(\*\)/, 'shows !Eff(*) for unannotated';
+    like $hover->{result}{contents}{value}, qr/!\[\*\]/, 'shows ![*] for unannotated';
 };
 
 # ── Hover on inferred variable type ──────────────
@@ -308,7 +308,7 @@ PERL
     ok $hover->{result}, 'hover has result';
     like $hover->{result}{contents}{value}, qr/sub say/, 'shows sub say';
     like $hover->{result}{contents}{value}, qr/-> Bool/, 'shows return type Bool (from Prelude)';
-    like $hover->{result}{contents}{value}, qr/!Eff\(IO\)/, 'shows !Eff(IO) (from Prelude)';
+    like $hover->{result}{contents}{value}, qr/!\[IO\]/, 'shows ![IO] (from Prelude)';
 };
 
 # ── Hover on declared builtin ───────────────────
@@ -316,7 +316,7 @@ PERL
 subtest 'hover shows declared builtin with specific type' => sub {
     my $source = <<'PERL';
 use v5.40;
-declare say => '(Str) -> Void !Eff(Console)';
+declare say => '(Str) -> Void ![Console]';
 say "hello";
 PERL
 
@@ -334,7 +334,7 @@ PERL
     ok $hover, 'got hover response';
     ok $hover->{result}, 'hover has result';
     like $hover->{result}{contents}{value}, qr/sub say\(Str\) -> Void/, 'shows declared type';
-    like $hover->{result}{contents}{value}, qr/!Eff\(Console\)/, 'shows Console effect';
+    like $hover->{result}{contents}{value}, qr/!\[Console\]/, 'shows Console effect';
     like $hover->{result}{contents}{value}, qr/declared/, 'shows declared label';
 };
 
@@ -659,7 +659,7 @@ subtest 'hover shows declared as italic note' => sub {
         name         => 'say',
         params_expr  => ['Str'],
         returns_expr => 'Void',
-        eff_expr     => 'Eff(Console)',
+        eff_expr     => '[Console]',
         declared     => 1,
     };
     my $hover = Typist::LSP::Hover->hover($sym);
@@ -1054,7 +1054,7 @@ subtest 'hover shows unannotated note on function' => sub {
         name         => 'helper',
         params_expr  => ['Any'],
         returns_expr => undef,
-        eff_expr     => 'Eff(*)',
+        eff_expr     => '[*]',
         unannotated  => 1,
     };
     my $hover = Typist::LSP::Hover->hover($sym);

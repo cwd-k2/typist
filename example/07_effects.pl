@@ -42,14 +42,14 @@ BEGIN {
 
 # ── Effect Annotations ────────────────────────────────────
 #
-# !Eff(Name) declares that a function may perform an effect.
+# ![Name] declares that a function may perform an effect.
 
-sub greet :Type((Str) -> Str !Eff(Console)) ($name) {
+sub greet :Type((Str) -> Str ![Console]) ($name) {
     Console::writeLine("Hello, $name!");
     "greeted $name";
 }
 
-sub log_msg :Type((Str) -> Str !Eff(Logger)) ($msg) {
+sub log_msg :Type((Str) -> Str ![Logger]) ($msg) {
     Logger::log("[LOG] $msg");
     $msg;
 }
@@ -104,10 +104,10 @@ say "  collected: ", join(", ", @logs);
 
 # ── Multiple Effects ──────────────────────────────────────
 #
-# !Eff(A | B) declares a function using multiple effects.
+# ![A, B] declares a function using multiple effects.
 # handle blocks can compose.
 
-sub greet_logged :Type((Str) -> Str !Eff(Console | Logger)) ($name) {
+sub greet_logged :Type((Str) -> Str ![Console, Logger]) ($name) {
     Logger::log("greeting $name");
     Console::writeLine("Hello, $name!");
     "greeted $name";
@@ -131,7 +131,7 @@ handle {
 #
 # Effects can model mutable state with get/put.
 
-sub counter :Type(() -> Int !Eff(State)) () {
+sub counter :Type(() -> Int ![State]) () {
     my $n = State::get();
     State::put($n + 1);
     State::put(State::get() + 1);
@@ -154,11 +154,11 @@ say "  final state: $final";
 # ── Row Polymorphism ──────────────────────────────────────
 #
 # <r: Row> declares a row variable — an open-ended set of
-# effects.  !Eff(Logger | r) means "at least Logger, plus
+# effects.  ![Logger, r] means "at least Logger, plus
 # whatever r adds."  Callers can instantiate r with
 # additional effects.
 
-sub with_log :Type(<r: Row>(Str) -> Str !Eff(Logger | r)) ($msg) {
+sub with_log :Type(<r: Row>(Str) -> Str ![Logger, r]) ($msg) {
     Logger::log($msg);
     $msg;
 }
@@ -191,8 +191,8 @@ handle {
 #   };
 #
 # Annotations declare start/end states:
-#   !Eff(DB<None -> Authed>)   — transition from None to Authed
-#   !Eff(DB<Authed>)           — invariant: stay in Authed
+#   ![DB<None -> Authed>]   — transition from None to Authed
+#   ![DB<Authed>]           — invariant: stay in Authed
 
 say "";
 say "── Effect protocol (database) ─────────────────";
@@ -207,18 +207,18 @@ BEGIN {
 }
 
 # setup transitions: Disconnected → Connected → Authenticated
-sub db_setup :Type(() -> Void !Eff(Database<Disconnected -> Authenticated>)) () {
+sub db_setup :Type(() -> Void ![Database<Disconnected -> Authenticated>]) () {
     Database::connect("localhost");
     Database::auth("admin", "secret");
 }
 
 # query is invariant: Authenticated → Authenticated
-sub db_query :Type((Str) -> Str !Eff(Database<Authenticated>)) ($sql) {
+sub db_query :Type((Str) -> Str ![Database<Authenticated>]) ($sql) {
     Database::query($sql);
 }
 
 # Full session: Disconnected → Authenticated → Disconnected
-sub db_session :Type(() -> Str !Eff(Database<Disconnected -> Disconnected>)) () {
+sub db_session :Type(() -> Str ![Database<Disconnected -> Disconnected>]) () {
     db_setup();
     my $result = db_query("SELECT 1");
     Database::disconnect();
@@ -240,11 +240,11 @@ say "  result: $db_result";
 #
 # The static analyzer (CHECK phase and LSP) enforces:
 #
-#   caller !Eff(A)     calling callee !Eff(A)         → OK
-#   caller !Eff(A|B)   calling callee !Eff(A)         → OK (superset)
-#   caller !Eff(A)     calling callee !Eff(A|B)       → NG (missing B)
-#   caller (pure)      calling callee !Eff(A)         → NG
-#   caller (annotated) calling unannotated             → NG (Eff(*))
+#   caller ![A]     calling callee ![A]         → OK
+#   caller ![A, B]  calling callee ![A]         → OK (superset)
+#   caller ![A]     calling callee ![A, B]      → NG (missing B)
+#   caller (pure)   calling callee ![A]         → NG
+#   caller (annotated) calling unannotated       → NG ([*])
 #
 # See lsp/effects.pm for an LSP diagnostic showcase.
 

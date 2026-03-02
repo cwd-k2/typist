@@ -319,7 +319,7 @@ substitute(\%)  Type            Apply binding map, return new type
     Param[T...]        ArrayRef[Int], HashRef[Str, Num]
     Union(T|U)         Int | Str
     Intersection(T&U)  Readable & Writable
-    Func(P->R!E)       (Int, Int) -> Int !Eff(Console)
+    Func(P->R!E)       (Int, Int) -> Int ![Console]
     Struct{k:T}        { name => Str, age? => Int }
 
   Named/Reference:

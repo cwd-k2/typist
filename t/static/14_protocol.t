@@ -43,7 +43,7 @@ effect DB, [qw(None Connected Authed)] => +{
     disconnect => ['() -> Void',         protocol('Connected -> None')],
 };
 
-sub setup :Type(() -> Void !Eff(DB<None -> Authed>)) () {
+sub setup :Type(() -> Void ![DB<None -> Authed>]) () {
     DB::connect("localhost");
     DB::auth("user", "pass");
 }
@@ -67,7 +67,7 @@ effect DB, [qw(None Connected Authed)] => +{
     disconnect => ['() -> Void',         protocol('Connected -> None')],
 };
 
-sub bad :Type(() -> Void !Eff(DB<None -> Authed>)) () {
+sub bad :Type(() -> Void ![DB<None -> Authed>]) () {
     DB::query("SELECT 1");
 }
 PERL
@@ -91,7 +91,7 @@ effect DB, [qw(None Connected Authed)] => +{
     disconnect => ['() -> Void',         protocol('Connected -> None')],
 };
 
-sub partial :Type(() -> Void !Eff(DB<None -> Authed>)) () {
+sub partial :Type(() -> Void ![DB<None -> Authed>]) () {
     DB::connect("localhost");
 }
 PERL
@@ -115,7 +115,7 @@ effect DB, [qw(None Connected Authed)] => +{
     disconnect => ['() -> Void',         protocol('Connected -> None')],
 };
 
-sub query_only :Type((Str) -> Str !Eff(DB<Authed>)) ($sql) {
+sub query_only :Type((Str) -> Str ![DB<Authed>]) ($sql) {
     DB::query($sql);
 }
 PERL
@@ -143,7 +143,7 @@ effect DB, [qw(None Connected Authed)] => +{
 
 effect IO => +{};
 
-sub mixed :Type(() -> Void !Eff(DB<None -> Connected> | IO)) () {
+sub mixed :Type(() -> Void ![DB<None -> Connected>, IO]) () {
     DB::connect("localhost");
 }
 PERL
@@ -219,11 +219,11 @@ effect DB, [qw(None Connected Authed)] => +{
     disconnect => ['() -> Void',         protocol('Connected -> None')],
 };
 
-sub do_connect :Type(() -> Void !Eff(DB<None -> Connected>)) () {
+sub do_connect :Type(() -> Void ![DB<None -> Connected>]) () {
     DB::connect("localhost");
 }
 
-sub full_setup :Type(() -> Void !Eff(DB<None -> Authed>)) () {
+sub full_setup :Type(() -> Void ![DB<None -> Authed>]) () {
     do_connect();
     DB::auth("user", "pass");
 }
@@ -247,7 +247,7 @@ effect DB, [qw(None Connected Authed)] => +{
     disconnect => ['() -> Void',         protocol('Connected -> None')],
 };
 
-sub setup :Type(() -> Void !Eff(DB<None -> Authed>)) () {
+sub setup :Type(() -> Void ![DB<None -> Authed>]) () {
     DB::connect("localhost");
     DB::auth("user", "pass");
 }

@@ -62,7 +62,7 @@ my $found = find_email(1001);
 my $count = 42;
 my $label = "hello";
 
-# ── Unannotated — hover shows: sub helper(Any) -> Any !Eff(*)
+# ── Unannotated — hover shows: sub helper(Any) -> Any ![*]
 
 sub helper ($s) {
     ">> $s <<";

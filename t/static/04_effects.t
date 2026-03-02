@@ -13,11 +13,11 @@ subtest 'Extractor captures eff_expr' => sub {
 package EffTest;
 use v5.40;
 
-sub greet :Type((Str) -> Str !Eff(Console)) ($name) {
+sub greet :Type((Str) -> Str ![Console]) ($name) {
     return "Hello, $name!";
 }
 
-sub main :Type(() -> Void !Eff(Console | State)) () {
+sub main :Type(() -> Void ![Console, State]) () {
     greet("world");
 }
 PERL
@@ -26,7 +26,7 @@ PERL
     is $result->{functions}{greet}{eff_expr}, 'Console', 'eff_expr for greet';
 
     ok exists $result->{functions}{main}, 'main extracted';
-    is $result->{functions}{main}{eff_expr}, 'Console | State', 'eff_expr for main';
+    is $result->{functions}{main}{eff_expr}, 'Console, State', 'eff_expr for main';
 };
 
 subtest 'Extractor: function with effect only' => sub {
@@ -34,7 +34,7 @@ subtest 'Extractor: function with effect only' => sub {
 package EffOnly;
 use v5.40;
 
-sub doIO :Type(() -> Any !Eff(IO)) () {
+sub doIO :Type(() -> Any ![IO]) () {
     42;
 }
 PERL
@@ -57,11 +57,11 @@ subtest 'Analyzer: clean code with effects — no diagnostics' => sub {
 package Clean;
 use v5.40;
 
-sub greet :Type((Str) -> Str !Eff(Console)) ($name) {
+sub greet :Type((Str) -> Str ![Console]) ($name) {
     return "Hello, $name!";
 }
 
-sub main :Type(() -> Void !Eff(Console)) () {
+sub main :Type(() -> Void ![Console]) () {
     greet("world");
 }
 PERL
@@ -84,11 +84,11 @@ subtest 'Analyzer: caller missing callee effect' => sub {
 package Missing;
 use v5.40;
 
-sub effectful :Type((Str) -> Str !Eff(Console | State)) ($x) {
+sub effectful :Type((Str) -> Str ![Console, State]) ($x) {
     return $x;
 }
 
-sub caller_fn :Type(() -> Str !Eff(Console)) () {
+sub caller_fn :Type(() -> Str ![Console]) () {
     effectful("hello");
 }
 PERL
@@ -109,7 +109,7 @@ subtest 'Analyzer: caller has no effect but callee does' => sub {
 package NoEff;
 use v5.40;
 
-sub io_fn :Type((Str) -> Str !Eff(IO)) ($x) {
+sub io_fn :Type((Str) -> Str ![IO]) ($x) {
     return $x;
 }
 
@@ -120,7 +120,7 @@ PERL
 
     my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
     ok @eff_diags > 0, 'mismatch detected: pure calls effectful';
-    like $eff_diags[0]{message}, qr/no :Eff/, 'reports missing :Eff annotation';
+    like $eff_diags[0]{message}, qr/no effect annotation/, 'reports missing effect annotation';
 };
 
 subtest 'Analyzer: effect superset is OK' => sub {
@@ -134,9 +134,9 @@ subtest 'Analyzer: effect superset is OK' => sub {
 package Superset;
 use v5.40;
 
-sub needs_a :Type(() -> Void !Eff(A)) () { }
+sub needs_a :Type(() -> Void ![A]) () { }
 
-sub has_abc :Type(() -> Void !Eff(A | B | C)) () {
+sub has_abc :Type(() -> Void ![A, B, C]) () {
     needs_a();
 }
 PERL
@@ -152,7 +152,7 @@ subtest 'Analyzer: unknown effect label' => sub {
 package Unknown;
 use v5.40;
 
-sub bad :Type(() -> Void !Eff(Nonexistent)) () { }
+sub bad :Type(() -> Void ![Nonexistent]) () { }
 PERL
 
     my @unknown = grep { $_->{kind} eq 'UnknownEffect' } @{$result->{diagnostics}};
@@ -171,7 +171,7 @@ subtest 'Analyzer: undeclared row variable' => sub {
 package BadRow;
 use v5.40;
 
-sub logged :Type(() -> Void !Eff(Log | r)) () { }
+sub logged :Type(() -> Void ![Log, r]) () { }
 PERL
 
     my @undecl = grep { $_->{kind} eq 'UndeclaredRowVar' } @{$result->{diagnostics}};
@@ -196,7 +196,7 @@ sub helper ($x) {
     return $x;
 }
 
-sub main_fn :Type((Str) -> Str !Eff(Console)) ($s) {
+sub main_fn :Type((Str) -> Str ![Console]) ($s) {
     helper($s);
 }
 PERL
@@ -243,9 +243,9 @@ PERL
     is scalar @eff_diags, 0, 'annotated function without effect is pure — no error';
 };
 
-# ── Builtin functions are Eff(*) ─────────────────
+# ── Builtin functions are [*] ─────────────────────
 
-subtest 'Analyzer: builtin say in Eff(Console) function is flagged' => sub {
+subtest 'Analyzer: builtin say in ![Console] function is flagged' => sub {
     my $ws_reg = Typist::Registry->new;
     require Typist::Effect;
     $ws_reg->register_effect('Console', Typist::Effect->new(
@@ -256,13 +256,13 @@ subtest 'Analyzer: builtin say in Eff(Console) function is flagged' => sub {
 package BuiltinInEffect;
 use v5.40;
 
-sub greet :Type((Str) -> Void !Eff(Console)) ($name) {
+sub greet :Type((Str) -> Void ![Console]) ($name) {
     say "Hello, $name";
 }
 PERL
 
     my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
-    ok @eff_diags > 0, 'calling builtin say inside Eff(Console) is flagged';
+    ok @eff_diags > 0, 'calling builtin say inside ![Console] is flagged';
     like $eff_diags[0]{message}, qr/say.*IO/, 'reports missing IO effect for builtin say';
 };
 
@@ -282,9 +282,9 @@ PERL
     like $eff_diags[0]{message}, qr/print.*IO/, 'reports IO effect mismatch for builtin print';
 };
 
-# ── Declared builtins override Eff(*) ────────────
+# ── Declared builtins override [*] ────────────────
 
-subtest 'Analyzer: declared say with Console — no error in Eff(Console)' => sub {
+subtest 'Analyzer: declared say with Console — no error in ![Console]' => sub {
     my $ws_reg = Typist::Registry->new;
     require Typist::Effect;
     $ws_reg->register_effect('Console', Typist::Effect->new(
@@ -295,9 +295,9 @@ subtest 'Analyzer: declared say with Console — no error in Eff(Console)' => su
 package DeclaredBuiltin;
 use v5.40;
 
-declare say => '(Str) -> Void !Eff(Console)';
+declare say => '(Str) -> Void ![Console]';
 
-sub greet :Type((Str) -> Void !Eff(Console)) ($name) {
+sub greet :Type((Str) -> Void ![Console]) ($name) {
     say "Hello, $name";
 }
 PERL
@@ -320,9 +320,9 @@ subtest 'Analyzer: declared die with Abort — error when caller only has Consol
 package DeclaredDie;
 use v5.40;
 
-declare die => '(Any) -> Never !Eff(Abort)';
+declare die => '(Any) -> Never ![Abort]';
 
-sub handler :Type((Str) -> Void !Eff(Console)) ($msg) {
+sub handler :Type((Str) -> Void ![Console]) ($msg) {
     die("fatal: $msg");
 }
 PERL
@@ -355,7 +355,7 @@ subtest '@typist-ignore suppresses EffectMismatch' => sub {
 package Ignore;
 use v5.40;
 sub helper ($x) { $x }
-sub main_fn :Type((Str) -> Str !Eff(Console)) ($s) {
+sub main_fn :Type((Str) -> Str ![Console]) ($s) {
     # @typist-ignore
     helper($s);
 }
@@ -380,11 +380,11 @@ subtest 'diagnostic: col on EffectMismatch' => sub {
 package ColTest;
 use v5.40;
 
-sub effectful :Type((Str) -> Str !Eff(Console | State)) ($x) {
+sub effectful :Type((Str) -> Str ![Console, State]) ($x) {
     return $x;
 }
 
-sub caller_fn :Type(() -> Str !Eff(Console)) () {
+sub caller_fn :Type(() -> Str ![Console]) () {
     effectful("hello");
 }
 PERL
@@ -413,32 +413,32 @@ PERL
 
 # ── Decl effect: declaration builtins ─────────
 
-subtest 'Analyzer: enum in Eff(Decl) function → no error' => sub {
+subtest 'Analyzer: enum in ![Decl] function → no error' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 package EnumDecl;
 use v5.40;
 
-sub setup :Type(() -> Void !Eff(Decl)) () {
+sub setup :Type(() -> Void ![Decl]) () {
     enum Color => qw(Red Green Blue);
 }
 PERL
 
     my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
-    is scalar @eff_diags, 0, 'enum in Eff(Decl) function — no effect error';
+    is scalar @eff_diags, 0, 'enum in ![Decl] function — no effect error';
 };
 
-subtest 'Analyzer: eval in Eff(Exn) function → no error' => sub {
+subtest 'Analyzer: eval in ![Exn] function → no error' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 package EvalExn;
 use v5.40;
 
-sub safe_eval :Type((Any) -> Any !Eff(Exn)) ($code) {
+sub safe_eval :Type((Any) -> Any ![Exn]) ($code) {
     eval($code);
 }
 PERL
 
     my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
-    is scalar @eff_diags, 0, 'eval in Eff(Exn) function — no effect error';
+    is scalar @eff_diags, 0, 'eval in ![Exn] function — no effect error';
 };
 
 subtest 'Analyzer: eval in pure function → EffectMismatch' => sub {

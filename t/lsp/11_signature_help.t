@@ -178,7 +178,7 @@ PERL
 subtest 'signatureHelp shows effect in label' => sub {
     my $source = <<'PERL';
 use v5.40;
-sub greet :Type((Str) -> Void !Eff(Console)) ($name) { say $name }
+sub greet :Type((Str) -> Void ![Console]) ($name) { say $name }
 greet(
 PERL
 
@@ -198,7 +198,7 @@ PERL
     my $sigs = $resp->{result}{signatures};
     ok $sigs && @$sigs, 'has signatures';
     like $sigs->[0]{label}, qr/greet\(Str\) -> Void/, 'label shows params and return';
-    like $sigs->[0]{label}, qr/!Eff\(Console\)/, 'label includes effect expression';
+    like $sigs->[0]{label}, qr/!\[Console\]/, 'label includes effect expression';
 };
 
 done_testing;

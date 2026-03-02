@@ -5,7 +5,7 @@ our $VERSION = '0.01';
 
 use parent 'Typist::Type';
 
-# Effect annotation wrapper: Eff(Console | State | r)
+# Effect annotation wrapper: [Console, State, r]
 # A thin delegation layer over Type::Row.
 # contains() always returns 1 — effects are phantom types.
 
@@ -19,7 +19,7 @@ sub is_eff ($self) { 1 }
 sub name ($self) { $self->to_string }
 
 sub to_string ($self) {
-    'Eff(' . $self->{row}->to_string . ')';
+    '[' . $self->{row}->to_string . ']';
 }
 
 sub equals ($self, $other) {
@@ -40,7 +40,7 @@ sub substitute ($self, $bindings) {
 
 =head1 NAME
 
-Typist::Type::Eff - Effect annotation wrapper (Eff(Console | State))
+Typist::Type::Eff - Effect annotation wrapper ([Console, State])
 
 =head1 SYNOPSIS
 
@@ -51,7 +51,7 @@ Typist::Type::Eff - Effect annotation wrapper (Eff(Console | State))
 =head1 DESCRIPTION
 
 A thin delegation layer over L<Typist::Type::Row>. Wraps a row type
-to represent function effect annotations (C<! Eff(Console | State)>).
+to represent function effect annotations (C<! [Console, State]>).
 Effects are phantom types: C<contains> always returns true.
 
 =head1 ABSTRACT INTERFACE

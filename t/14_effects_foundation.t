@@ -43,7 +43,7 @@ subtest 'Row with row variable (open)' => sub {
     );
     ok !$row->is_closed, 'open row';
     is $row->row_var, 'r', 'row_var accessor';
-    is $row->to_string, 'Console | r', 'to_string';
+    is $row->to_string, 'Console, r', 'to_string';
 };
 
 subtest 'Empty row' => sub {
@@ -110,7 +110,7 @@ subtest 'Eff wrapper' => sub {
     my $eff = Typist::Type::Eff->new($row);
 
     ok $eff->is_eff, 'is_eff predicate';
-    is $eff->to_string, 'Eff(Console | State)', 'to_string';
+    is $eff->to_string, '[Console, State]', 'to_string';
     ok $eff->contains(42), 'phantom contains';
     is_deeply [$eff->free_vars], [], 'no free vars in closed eff';
 };
@@ -132,7 +132,7 @@ subtest 'Eff substitute delegates to Row' => sub {
     my $result = $eff->substitute(+{ r => $tail });
 
     ok $result->is_eff, 'still Eff';
-    is $result->to_string, 'Eff(Console | State)', 'substituted';
+    is $result->to_string, '[Console, State]', 'substituted';
 };
 
 # ── Kind System ──────────────────────────────────
