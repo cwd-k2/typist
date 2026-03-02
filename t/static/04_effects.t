@@ -411,4 +411,49 @@ PERL
     ok $eff_diags[0]{col} > 0, 'col is set on unannotated callee EffectMismatch';
 };
 
+# ── Decl effect: declaration builtins ─────────
+
+subtest 'Analyzer: enum in Eff(Decl) function → no error' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package EnumDecl;
+use v5.40;
+
+sub setup :Type(() -> Void !Eff(Decl)) () {
+    enum Color => qw(Red Green Blue);
+}
+PERL
+
+    my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
+    is scalar @eff_diags, 0, 'enum in Eff(Decl) function — no effect error';
+};
+
+subtest 'Analyzer: eval in Eff(Exn) function → no error' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package EvalExn;
+use v5.40;
+
+sub safe_eval :Type((Any) -> Any !Eff(Exn)) ($code) {
+    eval($code);
+}
+PERL
+
+    my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
+    is scalar @eff_diags, 0, 'eval in Eff(Exn) function — no effect error';
+};
+
+subtest 'Analyzer: eval in pure function → EffectMismatch' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package EvalPure;
+use v5.40;
+
+sub try_parse :Type((Str) -> Any) ($s) {
+    eval($s);
+}
+PERL
+
+    my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
+    ok @eff_diags > 0, 'eval in pure function flagged';
+    like $eff_diags[0]{message}, qr/Exn/, 'reports Exn effect requirement';
+};
+
 done_testing;

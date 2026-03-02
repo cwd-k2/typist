@@ -2,6 +2,7 @@
 
 > **Status: Implemented** — All steps completed and merged.
 > This document is retained as a historical reference.
+> **Note:** The keyword skip list and effect annotations described below reflect the original implementation. Subsequent changes added `Decl` as a third standard effect label and removed `eval`/`enum` from the keyword skip list (they are now effect-checked via CORE registry). See `lib/Typist/Prelude.pm` for the current state.
 
 ## 背景と目的
 

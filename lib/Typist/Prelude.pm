@@ -55,8 +55,8 @@ my %BUILTINS = (
     sin     => '(Num) -> Num',
     cos     => '(Num) -> Num',
     atan2   => '(Num, Num) -> Num',
-    rand    => '(...Num) -> Num',
-    srand   => '(...Int) -> Int',
+    rand    => '(...Num) -> Num !Eff(IO)',
+    srand   => '(...Int) -> Int !Eff(IO)',
 
     # ── Type/value introspection ──────────────────
     defined     => '(Any) -> Bool',
@@ -90,26 +90,27 @@ my %BUILTINS = (
     unpack  => '(Str, Str) -> Any',
 
     # ── Misc ──────────────────────────────────────
-    eval    => '(Any) -> Any',
-    require => '(Any) -> Bool',
-    use     => '(Any) -> Bool',
-    exit    => '(...Int) -> Never',
+    eval    => '(Any) -> Any !Eff(Exn)',
+    require => '(Any) -> Bool !Eff(IO)',
+    use     => '(Any) -> Bool !Eff(IO)',
+    exit    => '(...Int) -> Never !Eff(Exn)',
     system  => '(...Any) -> Int !Eff(IO)',
     exec    => '(...Any) -> Never !Eff(IO)',
-    sleep   => '(...Int) -> Int',
-    time    => '() -> Int',
-    localtime => '(...Int) -> Any',
-    gmtime  => '(...Int) -> Any',
+    sleep   => '(...Int) -> Int !Eff(IO)',
+    time    => '() -> Int !Eff(IO)',
+    localtime => '(...Int) -> Any !Eff(IO)',
+    gmtime  => '(...Int) -> Any !Eff(IO)',
 
     # ── Typist builtins ──────────────────────────
-    typedef   => '(...Any) -> Void',
-    newtype   => '(...Any) -> Void',
-    effect    => '(...Any) -> Void',
-    typeclass => '(...Any) -> Void',
-    instance  => '(...Any) -> Void',
-    declare   => '(Str, Str) -> Void',
-    datatype  => '(...Any) -> Void',
-    enum      => '(...Any) -> Void',
+    typedef   => '(...Any) -> Void !Eff(Decl)',
+    newtype   => '(...Any) -> Void !Eff(Decl)',
+    effect    => '(...Any) -> Void !Eff(Decl)',
+    typeclass => '(...Any) -> Void !Eff(Decl)',
+    instance  => '(...Any) -> Void !Eff(Decl)',
+    declare   => '(Str, Str) -> Void !Eff(Decl)',
+    datatype  => '(...Any) -> Void !Eff(Decl)',
+    enum      => '(...Any) -> Void !Eff(Decl)',
+    struct    => '(...Any) -> Void !Eff(Decl)',
     unwrap    => '(Any) -> Any',
 );
 
@@ -118,7 +119,7 @@ my %BUILTINS = (
 # Effects referenced by the builtin annotations above.  Registered so
 # the Checker does not report them as UnknownEffect.
 
-my @EFFECTS = qw(IO Exn);
+my @EFFECTS = qw(IO Exn Decl);
 
 # ── Public API ───────────────────────────────────
 
@@ -177,9 +178,9 @@ Typist::Prelude - Builtin function type annotations for Perl core
 
 =head1 DESCRIPTION
 
-Provides standard type annotations for 83 Perl builtin functions
-(74 core + 9 Typist builtins) and registers them under the C<CORE::>
-namespace. Also registers standard effect labels (C<IO>, C<Exn>).
+Provides standard type annotations for 84 Perl builtin functions
+(74 core + 10 Typist builtins) and registers them under the C<CORE::>
+namespace. Also registers standard effect labels (C<IO>, C<Exn>, C<Decl>).
 
 User C<declare> statements override prelude entries — registration
 uses plain assignment, so later writes win.

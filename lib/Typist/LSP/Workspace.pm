@@ -246,6 +246,9 @@ sub all_effect_names ($self) {
     for my $info (values $self->{files}->%*) {
         $seen{$_} = 1 for keys(($info->{effects} // +{})->%*);
     }
+    # Include registry effects (Prelude: IO, Exn, Decl + merged workspace effects)
+    my %reg_effects = $self->{registry}->all_effects;
+    $seen{$_} = 1 for keys %reg_effects;
     sort keys %seen;
 }
 

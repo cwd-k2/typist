@@ -13,20 +13,23 @@ sub diags_of ($source, $kind, %opts) {
 
 # ── Prelude installs standard effects ────────────
 
-subtest 'prelude: IO and Exn effects are known' => sub {
+subtest 'prelude: IO, Exn, and Decl effects are known' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 package PreludeEffects;
 use v5.40;
 
 sub io_fn :Type(() -> Void !Eff(IO)) () { }
 sub exn_fn :Type(() -> Void !Eff(Exn)) () { }
+sub decl_fn :Type(() -> Void !Eff(Decl)) () { }
 PERL
 
     my @unknown = grep { $_->{kind} eq 'UnknownEffect' } $result->{diagnostics}->@*;
-    my @io_unknown  = grep { $_->{message} =~ /\bIO\b/ } @unknown;
-    my @exn_unknown = grep { $_->{message} =~ /\bExn\b/ } @unknown;
+    my @io_unknown   = grep { $_->{message} =~ /\bIO\b/ } @unknown;
+    my @exn_unknown  = grep { $_->{message} =~ /\bExn\b/ } @unknown;
+    my @decl_unknown = grep { $_->{message} =~ /\bDecl\b/ } @unknown;
     is scalar @io_unknown, 0, 'IO is a known effect (from prelude)';
     is scalar @exn_unknown, 0, 'Exn is a known effect (from prelude)';
+    is scalar @decl_unknown, 0, 'Decl is a known effect (from prelude)';
 };
 
 # ── Type checking: builtin argument types ────────
@@ -274,6 +277,162 @@ PERL
 
     ok scalar @$errs > 0, 'die requires Exn, caller only has IO';
     like $errs->[0]{message}, qr/Exn/, 'reports missing Exn effect';
+};
+
+# ── Decl effect: Typist declaration builtins ──
+
+subtest 'effects: typedef in Eff(Decl) function → no error' => sub {
+    my $errs = diags_of(<<'PERL', 'EffectMismatch');
+package TypedefDecl;
+use v5.40;
+
+sub setup :Type(() -> Void !Eff(Decl)) () {
+    typedef UserId => 'Int';
+}
+PERL
+
+    is scalar @$errs, 0, 'typedef in Eff(Decl) function — no effect error';
+};
+
+subtest 'effects: typedef in pure function → EffectMismatch' => sub {
+    my $errs = diags_of(<<'PERL', 'EffectMismatch');
+package TypedefPure;
+use v5.40;
+
+sub setup :Type(() -> Void) () {
+    typedef UserId => 'Int';
+}
+PERL
+
+    ok scalar @$errs > 0, 'typedef in pure function flagged';
+    like $errs->[0]{message}, qr/Decl/, 'reports Decl effect requirement';
+};
+
+subtest 'effects: unwrap remains pure' => sub {
+    my $errs = diags_of(<<'PERL', 'EffectMismatch');
+package UnwrapPure;
+use v5.40;
+
+sub extract :Type((Any) -> Any) ($val) {
+    unwrap($val);
+}
+PERL
+
+    is scalar @$errs, 0, 'unwrap in pure function — no effect error (remains pure)';
+};
+
+# ── New IO/Exn effects on core builtins ───────
+
+subtest 'effects: rand requires IO' => sub {
+    my $errs = diags_of(<<'PERL', 'EffectMismatch');
+package RandPure;
+use v5.40;
+
+sub roll :Type(() -> Num) () {
+    rand(6);
+}
+PERL
+
+    ok scalar @$errs > 0, 'rand in pure function flagged';
+    like $errs->[0]{message}, qr/IO/, 'reports IO effect requirement for rand';
+};
+
+subtest 'effects: time requires IO' => sub {
+    my $errs = diags_of(<<'PERL', 'EffectMismatch');
+package TimePure;
+use v5.40;
+
+sub now :Type(() -> Int) () {
+    time();
+}
+PERL
+
+    ok scalar @$errs > 0, 'time in pure function flagged';
+    like $errs->[0]{message}, qr/IO/, 'reports IO effect requirement for time';
+};
+
+subtest 'effects: sleep requires IO' => sub {
+    my $errs = diags_of(<<'PERL', 'EffectMismatch');
+package SleepPure;
+use v5.40;
+
+sub wait_a_bit :Type(() -> Int) () {
+    sleep(1);
+}
+PERL
+
+    ok scalar @$errs > 0, 'sleep in pure function flagged';
+    like $errs->[0]{message}, qr/IO/, 'reports IO effect requirement for sleep';
+};
+
+subtest 'effects: eval requires Exn' => sub {
+    my $errs = diags_of(<<'PERL', 'EffectMismatch');
+package EvalPure;
+use v5.40;
+
+sub try_it :Type((Any) -> Any) ($code) {
+    eval($code);
+}
+PERL
+
+    ok scalar @$errs > 0, 'eval in pure function flagged';
+    like $errs->[0]{message}, qr/Exn/, 'reports Exn effect requirement for eval';
+};
+
+subtest 'effects: exit requires Exn' => sub {
+    my $errs = diags_of(<<'PERL', 'EffectMismatch');
+package ExitPure;
+use v5.40;
+
+sub abort :Type(() -> Never) () {
+    exit(1);
+}
+PERL
+
+    ok scalar @$errs > 0, 'exit in pure function flagged';
+    like $errs->[0]{message}, qr/Exn/, 'reports Exn effect requirement for exit';
+};
+
+subtest 'effects: rand in Eff(IO) function → no error' => sub {
+    my $errs = diags_of(<<'PERL', 'EffectMismatch');
+package RandIO;
+use v5.40;
+
+sub roll :Type(() -> Num !Eff(IO)) () {
+    rand(6);
+}
+PERL
+
+    is scalar @$errs, 0, 'rand in Eff(IO) function — no effect error';
+};
+
+subtest 'effects: eval in Eff(Exn) function → no error' => sub {
+    my $errs = diags_of(<<'PERL', 'EffectMismatch');
+package EvalExn;
+use v5.40;
+
+sub try_it :Type((Any) -> Any !Eff(Exn)) ($code) {
+    eval($code);
+}
+PERL
+
+    is scalar @$errs, 0, 'eval in Eff(Exn) function — no effect error';
+};
+
+# ── struct builtin ────────────────────────────
+
+subtest 'effects: struct requires Decl' => sub {
+    my $errs = diags_of(<<'PERL', 'EffectMismatch');
+package StructPure;
+use v5.40;
+
+sub define :Type(() -> Void) () {
+    struct Point => ('x' => 'Int', 'y' => 'Int');
+}
+PERL
+
+    ok scalar @$errs > 0, 'struct in pure function flagged';
+    like $errs->[0]{message}, qr/Decl/, 'reports Decl effect requirement for struct';
 };
 
 done_testing;

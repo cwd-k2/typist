@@ -160,7 +160,7 @@ CHECK block fires (Typist.pm)
                        |
                        +--[ Prelude Phase ]--------+
                        |  Prelude->install(registry) |
-                       |    Register IO, Exn effects |
+                       |    Register IO, Exn, Decl    |
                        |    Register CORE:: builtins |
                        +----------------------------+
                        |

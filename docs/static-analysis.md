@@ -506,18 +506,27 @@ User `declare` statements override prelude entries. Since `register_function` us
 ### Standard Annotations
 
 ```
-IO effects:     say, print, warn    → (Any) -> Bool !Eff(IO)
-                die                 → (Any) -> Never !Eff(Exn)
-                open, close         → !Eff(IO)
+IO effects:     say, print, warn              → !Eff(IO)
+                open, close, read, write      → !Eff(IO)
+                rand, srand, sleep, time      → !Eff(IO)
+                localtime, gmtime             → !Eff(IO)
+                require, use                  → !Eff(IO)
+                system, exec                  → !Eff(IO)
+Exn effects:    die                           → !Eff(Exn)
+                eval, exit                    → !Eff(Exn)
+Decl effects:   typedef, newtype, effect      → !Eff(Decl)
+                typeclass, instance, declare  → !Eff(Decl)
+                datatype, enum, struct        → !Eff(Decl)
 
 Pure string:    length, substr, uc, lc, index → pure
 Pure numeric:   abs, int, sqrt                → pure
 Pure list:      scalar, reverse, sort         → pure
+Pure Typist:    unwrap                        → pure
 ```
 
 ### Standard Effect Labels
 
-The prelude registers `IO` and `Exn` effect labels so the Checker does not report them as `UnknownEffect`.
+The prelude registers three standard effect labels — `IO`, `Exn`, and `Decl` — so the Checker does not report them as `UnknownEffect`.
 
 ---
 

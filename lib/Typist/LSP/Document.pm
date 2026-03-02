@@ -225,6 +225,14 @@ sub symbol_at ($self, $line, $col) {
     # Fallback: synthesize symbol for Perl builtins
     my $builtin_name = $bare // $word;
     if ($BUILTINS{$builtin_name}) {
+        # Use actual Prelude signature from CORE registry when available
+        if (my $registry = $result->{registry}) {
+            if (my $sig = $registry->lookup_function('CORE', $builtin_name)) {
+                my $sym = _synthesize_function_symbol($builtin_name, $sig);
+                $sym->{builtin} = 1;
+                return $with_range->($sym);
+            }
+        }
         return $with_range->(+{
             name         => $builtin_name,
             kind         => 'function',
@@ -814,10 +822,31 @@ sub completion_context ($self, $line, $col) {
     return 'generic' if $text =~ /:Type\(<[^>]*\z/;
 
     # Inside :Type(...) after "!" — effect context
-    return 'effect' if $text =~ /:Type\([^)]*!\s*(?:\w+\s*\|\s*)*\z/;
+    # Two-stage: regex match, then paren-depth check to handle nested parens
+    if ($text =~ /:Type\((.*)!\s*(?:\w+\s*(?:\(\s*)?(?:\w+\s*(?:\|\s*)?)*)?(?:\)\s*)?\z/) {
+        my $between = $1;
+        my $depth = 0;
+        my $valid = 1;
+        for my $ch (split //, $between) {
+            $depth++ if $ch eq '(';
+            $depth-- if $ch eq ')';
+            if ($depth < 0) { $valid = 0; last }
+        }
+        return 'effect' if $valid;
+    }
 
-    # Inside :Type(...)
-    return 'type_expr' if $text =~ /:Type\([^)]*\z/;
+    # Inside :Type(...) — paren-depth aware
+    if ($text =~ /:Type\((.*)\z/) {
+        my $inside = $1;
+        my $depth = 0;
+        my $valid = 1;
+        for my $ch (split //, $inside) {
+            $depth++ if $ch eq '(';
+            $depth-- if $ch eq ')';
+            if ($depth < 0) { $valid = 0; last }
+        }
+        return 'type_expr' if $valid;
+    }
 
     # After typedef Name => or declare Name =>
     return 'type_expr' if $text =~ /typedef\s+\w+\s*=>\s*['"]?\s*\z/;

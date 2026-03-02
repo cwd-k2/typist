@@ -98,6 +98,10 @@ subtest 'completion inside :Type(... !' => sub {
     my @labels = map { $_->{label} } @{$comp->{result}{items}};
     ok(!(grep { $_ eq 'Int' } @labels), 'Int not in effect completions');
     ok(!(grep { $_ eq 'Str' } @labels), 'Str not in effect completions');
+    # Should include Prelude effects (IO, Exn, Decl)
+    ok((grep { $_ eq 'IO' }   @labels), 'IO in effect completions (from Prelude)');
+    ok((grep { $_ eq 'Exn' }  @labels), 'Exn in effect completions (from Prelude)');
+    ok((grep { $_ eq 'Decl' } @labels), 'Decl in effect completions (from Prelude)');
 };
 
 # ── Completion inside :Type(<T: — constraint context ──

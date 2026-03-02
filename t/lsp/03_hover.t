@@ -287,7 +287,7 @@ PERL
 
 # ── Hover on Perl builtin function ──────────────
 
-subtest 'hover shows builtin function as Any with Eff(*)' => sub {
+subtest 'hover shows builtin function with Prelude signature' => sub {
     my $source = <<'PERL';
 use v5.40;
 say "hello";
@@ -306,7 +306,9 @@ PERL
     my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
     ok $hover, 'got hover response';
     ok $hover->{result}, 'hover has result';
-    like $hover->{result}{contents}{value}, qr/sub say\(Any\.\.\.\) -> Any !Eff\(\*\)/, 'shows sub say(Any...) -> Any !Eff(*)';
+    like $hover->{result}{contents}{value}, qr/sub say/, 'shows sub say';
+    like $hover->{result}{contents}{value}, qr/-> Bool/, 'shows return type Bool (from Prelude)';
+    like $hover->{result}{contents}{value}, qr/!Eff\(IO\)/, 'shows !Eff(IO) (from Prelude)';
 };
 
 # ── Hover on declared builtin ───────────────────

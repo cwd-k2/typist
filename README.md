@@ -116,7 +116,7 @@ sub with_log :Type(<r: Row>(Str) -> Str !Eff(Log | r)) ($msg) {
 | Variable reassignment tracking | Type mismatch on re-assignment to `:Type`-annotated variables |
 | Method type checking | `$self->method()` argument types and arity checked within the same package |
 | Generic static type checking | Type variables instantiated from call-site arguments for concrete type verification |
-| Builtin prelude | 83 builtins (74 Perl core + 9 Typist) with pre-installed type annotations |
+| Builtin prelude | 84 builtins (74 Perl core + 10 Typist) with pre-installed type annotations and three standard effect labels (`IO`, `Exn`, `Decl`) |
 
 ### Architecture
 
@@ -704,6 +704,8 @@ carton exec -- perl script/lsp-verify-workspace path/to/lib # Custom directory
 #### Effect System
 
 - Effects require explicit `:Type(... ! Eff(...))` annotations — there is no effect inference.
+- Three standard effect labels are provided by Prelude: `IO` (I/O, time, randomness),
+  `Exn` (exceptions, eval, exit), and `Decl` (type/effect/struct declarations).
 - Open row polymorphism (`:Generic(r: Row)`) is parsed and represented, but static verification
   of row-polymorphic effect signatures is limited.
 
