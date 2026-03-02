@@ -730,7 +730,10 @@ sub _collect_loop_var_types ($self) {
         my $list_node = $lv->{list_node} // next;
         my $block_node = $lv->{block_node} // next;
 
-        my $elem_type = Typist::Static::Infer->infer_iterable_element_type($list_node, $self->{env});
+        # Use function-scoped env if loop is inside a function body
+        my $env = $self->_env_for_loop_list($list_node);
+
+        my $elem_type = Typist::Static::Infer->infer_iterable_element_type($list_node, $env);
         next unless $elem_type;
 
         my $block_last = $block_node->last_token;
@@ -744,6 +747,28 @@ sub _collect_loop_var_types ($self) {
             scope_end   => $lv->{scope_end},
         };
     }
+}
+
+# Determine the env for a loop's list node: if the loop is inside a function,
+# include parameter bindings so that `for my $x (@$param)` can resolve $param.
+sub _env_for_loop_list ($self, $node) {
+    my $ancestor = $node->parent;
+    while ($ancestor) {
+        if ($ancestor->isa('PPI::Structure::Block')) {
+            my $sub_stmt = $ancestor->parent;
+            if ($sub_stmt && $sub_stmt->isa('PPI::Statement::Sub')) {
+                my $fn_name = $sub_stmt->name;
+                if ($fn_name && $self->{extracted}{functions}{$fn_name}) {
+                    my $fn = $self->{extracted}{functions}{$fn_name};
+                    if ($fn->{block} && $fn->{block} == $ancestor) {
+                        return $self->_fn_env($fn);
+                    }
+                }
+            }
+        }
+        $ancestor = $ancestor->parent;
+    }
+    $self->{env};
 }
 
 # ── Loop Variable Injection ──────────────────────
