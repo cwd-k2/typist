@@ -724,6 +724,62 @@ PERL
     like $hover->{contents}{value}, qr/\(Customer\) tier: Str/, 'shows (Customer) tier: Str';
 };
 
+# ── Hover on struct ->with() method ──────────────
+
+subtest 'hover shows struct with() method' => sub {
+    require File::Temp;
+    require File::Path;
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib");
+
+    open my $fh, '>', "$dir/lib/Models.pm" or die;
+    print $fh <<'PERL';
+package Models;
+use v5.40;
+use Typist;
+struct Point => (x => Int, y => Int);
+1;
+PERL
+    close $fh;
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source = <<'PERL';
+package App;
+use v5.40;
+use Typist;
+use Models;
+sub move :sig((Point, Int) -> Point) ($p, $dx) {
+    $p->with(x => $p->x + $dx);
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///app.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Hover on 'with' at line 5: "    $p->with(x => $p->x + $dx);"
+    #                              01234567890
+    my $sym = $doc->symbol_at(5, 8);
+    ok $sym, 'found symbol for with()';
+    is $sym->{kind}, 'method', 'kind is method';
+    is $sym->{name}, 'with', 'method name is with';
+    is $sym->{struct_name}, 'Point', 'struct name is Point';
+    is $sym->{returns}, 'Point', 'returns the same struct type';
+
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'hover response for with()';
+    like $hover->{contents}{value}, qr/\(Point\) with\(\.\.\.\) -> Point/, 'shows (Point) with(...) -> Point';
+    like $hover->{contents}{value}, qr/method of/, 'shows method note';
+};
+
 # ── Hover on chained accessor ────────────────────
 
 subtest 'hover shows struct field type for chained accessor' => sub {

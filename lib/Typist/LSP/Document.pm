@@ -816,7 +816,14 @@ sub _walk_accessor_chain ($self, $type, $chain, $word, $registry, $narrowed = 0)
             }
         } elsif ($field eq 'with') {
             $type = $resolved;
-            return undef if $i == $#$chain;  # with() itself has no hover value
+            if ($i == $#$chain) {
+                return +{
+                    kind        => 'method',
+                    name        => 'with',
+                    struct_name => $struct->name,
+                    returns     => $resolved->to_string,
+                };
+            }
         } else {
             return undef;
         }
