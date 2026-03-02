@@ -445,6 +445,24 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
         }
     }
 
+    # Local variables (re-inferred with function-scoped env)
+    if ($type_checker && $type_checker->can('local_var_types')) {
+        my $lvt = $type_checker->local_var_types;
+        for my $key (sort keys %$lvt) {
+            my $lv = $lvt->{$key};
+            push @symbols, +{
+                name        => $lv->{name},
+                kind        => 'variable',
+                type        => $lv->{type}->to_string,
+                inferred    => 1,
+                line        => $lv->{line},
+                col         => $lv->{col},
+                scope_start => $lv->{scope_start},
+                scope_end   => $lv->{scope_end},
+            };
+        }
+    }
+
     # Callback parameters (from match arms, HOF callbacks)
     if ($type_checker && $type_checker->can('callback_param_types')) {
         my $cpt = $type_checker->callback_param_types // [];

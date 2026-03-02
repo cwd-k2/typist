@@ -16,19 +16,21 @@ use Typist::Type::Union;
 
 sub new ($class, %args) {
     bless +{
-        registry       => $args{registry},
-        errors         => $args{errors},
-        extracted      => $args{extracted},
-        ppi_doc        => $args{ppi_doc},
-        file           => $args{file} // '(buffer)',
-        _loop_var_types => +{},
-        _narrowed_vars  => [],
+        registry        => $args{registry},
+        errors          => $args{errors},
+        extracted       => $args{extracted},
+        ppi_doc         => $args{ppi_doc},
+        file            => $args{file} // '(buffer)',
+        _loop_var_types  => +{},
+        _local_var_types => +{},
+        _narrowed_vars   => [],
     }, $class;
 }
 
-sub loop_var_types     ($self) { $self->{_loop_var_types} }
+sub loop_var_types       ($self) { $self->{_loop_var_types} }
+sub local_var_types      ($self) { $self->{_local_var_types} }
 sub callback_param_types ($self) { $self->{_callback_param_types} }
-sub narrowed_var_types ($self) { $self->{_narrowed_vars} }
+sub narrowed_var_types   ($self) { $self->{_narrowed_vars} }
 
 # ── Public API ───────────────────────────────────
 
@@ -37,6 +39,7 @@ sub analyze ($self) {
     $self->{_fn_env_cache} = +{};
     Typist::Static::Infer->clear_callback_params;
     $self->_collect_loop_var_types;
+    $self->_collect_local_var_types;
     $self->_check_variable_initializers;
     $self->_check_assignments;
     $self->_check_call_sites;
@@ -749,6 +752,64 @@ sub _collect_match_callback_params ($self) {
         my $env = $self->_env_for_node($word);
         Typist::Static::Infer->infer_expr($word, $env);
     }
+}
+
+# ── Local Variable Collection ─────────────────────
+#
+# Re-infer unannotated variables with function-scoped env so that
+# `my $copy = $node` inside a typed function resolves to Node, not Any.
+
+sub _collect_local_var_types ($self) {
+    my $vars = $self->{extracted}{variables} // [];
+
+    for my $var (@$vars) {
+        next if $var->{type_expr};          # annotated — already in env
+        my $init_node = $var->{init_node} // next;
+
+        # Skip if _build_env already inferred a non-Any type
+        my $global = $self->{env}{variables}{$var->{name}};
+        next if $global && !($global->is_atom && $global->name eq 'Any');
+
+        # Use function-scoped env (includes parameter bindings)
+        my $env = $self->_env_for_node($init_node);
+
+        my $inferred = Typist::Static::Infer->infer_expr($init_node, $env);
+        next unless defined $inferred;
+        next if $inferred->is_atom && $inferred->name eq 'Any';
+
+        # Determine scope from enclosing function
+        my ($scope_start, $scope_end) = $self->_scope_for_node($init_node);
+        next unless $scope_start;
+
+        my $key = $var->{name} . ':' . $var->{line};
+        $self->{_local_var_types}{$key} = +{
+            name        => $var->{name},
+            type        => $inferred,
+            line        => $var->{line},
+            col         => $var->{col},
+            scope_start => $scope_start,
+            scope_end   => $scope_end,
+        };
+    }
+}
+
+# Find the enclosing function scope (line range) for a PPI node.
+sub _scope_for_node ($self, $node) {
+    my $ancestor = $node->parent;
+    while ($ancestor) {
+        if ($ancestor->isa('PPI::Structure::Block')) {
+            my $sub_stmt = $ancestor->parent;
+            if ($sub_stmt && $sub_stmt->isa('PPI::Statement::Sub')) {
+                my $fn_name = $sub_stmt->name;
+                if ($fn_name && $self->{extracted}{functions}{$fn_name}) {
+                    my $fn = $self->{extracted}{functions}{$fn_name};
+                    return ($fn->{line}, $fn->{end_line});
+                }
+            }
+        }
+        $ancestor = $ancestor->parent;
+    }
+    return ();
 }
 
 #

@@ -655,18 +655,42 @@ sub code_completion_at ($self, $line, $col) {
 }
 
 # Resolve the type of a variable from analysis symbols.
-# Returns a type string or undef.
-sub _resolve_var_type ($self, $var_name) {
+# When $line (0-indexed LSP line) is given, prefer scoped symbols that
+# contain the line and skip Any-typed entries when a better match exists.
+sub _resolve_var_type ($self, $var_name, $line = undef) {
     my $result = $self->{result} // return undef;
     my $symbols = $result->{symbols} // return undef;
+
+    my $ppi_line = defined $line ? $line + 1 : undef;  # LSP 0-indexed → PPI 1-indexed
+    my ($best, $best_any);
 
     for my $sym (@$symbols) {
         my $kind = $sym->{kind} // '';
         next unless $kind eq 'variable' || $kind eq 'parameter';
         next unless ($sym->{name} // '') eq $var_name;
-        return $sym->{type} if $sym->{type};
+        next unless $sym->{type};
+
+        my $is_any = $sym->{type} eq 'Any';
+
+        # Scoped symbol: check if hover line falls within scope
+        if ($ppi_line && $sym->{scope_start} && $sym->{scope_end}) {
+            if ($ppi_line >= $sym->{scope_start} && $ppi_line <= $sym->{scope_end}) {
+                return $sym->{type} unless $is_any;
+                $best_any //= $sym->{type};
+                next;
+            }
+            next;  # out of scope — skip
+        }
+
+        # Non-scoped symbol
+        if ($is_any) {
+            $best_any //= $sym->{type};
+        } else {
+            $best //= $sym->{type};
+        }
     }
-    undef;
+
+    $best // $best_any;
 }
 
 # Resolve struct field type for accessor hover.
@@ -701,7 +725,7 @@ sub _resolve_accessor_hover ($self, $line, $col, $word) {
 
     # Pattern 1: $var->...
     if ($prefix =~ /(\$\w+)\s*$/) {
-        $type_str = $self->_resolve_var_type($1);
+        $type_str = $self->_resolve_var_type($1, $line);
     }
 
     # Pattern 2: func(...)->... or Pkg::func(...)->...

@@ -1264,4 +1264,60 @@ subtest 'hover shows narrowed note for type-narrowed variable' => sub {
     unlike $hover->{contents}{value}, qr/\*inferred\*/, 'does not show inferred when narrowed';
 };
 
+# ── Hover on function-local unannotated variable accessor ──
+
+subtest 'hover shows field type for local unannotated variable accessor' => sub {
+    require File::Temp;
+    require File::Path;
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib");
+
+    open my $fh, '>', "$dir/lib/Node.pm" or die;
+    print $fh <<'PERL';
+package Node;
+use v5.40;
+use Typist;
+struct Node => (label => Str, value => Int);
+1;
+PERL
+    close $fh;
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source = <<'PERL';
+package App;
+use v5.40;
+use Typist;
+use Node;
+sub format_node :sig((Node) -> Str) ($node) {
+    my $copy = $node;
+    $copy->label;
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///app.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Hover on 'label' at line 6: "    $copy->label;"
+    #                               0123456789012345
+    my $sym = $doc->symbol_at(6, 12);
+    ok $sym, 'found symbol for local var accessor';
+    is $sym->{kind}, 'field', 'kind is field';
+    is $sym->{name}, 'label', 'field name is label';
+    is $sym->{type}, 'Str', 'field type is Str';
+    is $sym->{struct_name}, 'Node', 'struct name is Node';
+
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'hover response for local var accessor';
+    like $hover->{contents}{value}, qr/\(Node\) label: Str/, 'shows (Node) label: Str';
+};
+
 done_testing;
