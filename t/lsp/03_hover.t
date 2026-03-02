@@ -828,6 +828,162 @@ PERL
     like $hover->{contents}{value}, qr/\(Customer\) phone\?: Str/, 'shows (Customer) phone?: Str';
 };
 
+# ── Hover on function call return accessor ───────
+
+subtest 'hover shows field type for function()->accessor' => sub {
+    require File::Temp;
+    require File::Path;
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib");
+
+    open my $fh, '>', "$dir/lib/Models.pm" or die;
+    print $fh <<'PERL';
+package Models;
+use v5.40;
+use Typist;
+struct Customer => (name => Str, tier => Str);
+1;
+PERL
+    close $fh;
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source = <<'PERL';
+package App;
+use v5.40;
+use Typist;
+use Models;
+sub find_customer :Type((Int) -> Customer) ($id) { }
+my $t = find_customer(1)->tier;
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///app.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Hover on 'tier' at line 5: "my $t = find_customer(1)->tier;"
+    #                              01234567890123456789012345678
+    my $sym = $doc->symbol_at(5, 27);
+    ok $sym, 'found symbol for func()->field accessor';
+    is $sym->{kind}, 'field', 'kind is field';
+    is $sym->{name}, 'tier', 'field name is tier';
+    is $sym->{type}, 'Str', 'field type is Str';
+    is $sym->{struct_name}, 'Customer', 'struct name is Customer';
+
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'hover response';
+    like $hover->{contents}{value}, qr/\(Customer\) tier: Str/, 'shows (Customer) tier: Str';
+};
+
+# ── Hover on cross-package function call accessor ──
+
+subtest 'hover shows field type for Pkg::func()->accessor' => sub {
+    require File::Temp;
+    require File::Path;
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib");
+
+    open my $fh, '>', "$dir/lib/Repo.pm" or die;
+    print $fh <<'PERL';
+package Repo;
+use v5.40;
+use Typist;
+struct Product => (name => Str, price => Int);
+sub find :Type((Int) -> Product) ($id) { }
+1;
+PERL
+    close $fh;
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source = <<'PERL';
+package App;
+use v5.40;
+use Typist;
+use Repo;
+my $n = Repo::find(1)->name;
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///app.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Hover on 'name' at line 4: "my $n = Repo::find(1)->name;"
+    #                              0123456789012345678901234567
+    my $sym = $doc->symbol_at(4, 24);
+    ok $sym, 'found symbol for Pkg::func()->field';
+    is $sym->{kind}, 'field', 'kind is field';
+    is $sym->{name}, 'name', 'field name is name';
+    is $sym->{type}, 'Str', 'field type is Str';
+    is $sym->{struct_name}, 'Product', 'struct name is Product';
+};
+
+# ── Hover on chained function call accessor ──────
+
+subtest 'hover shows field type for func()->f1->f2 chain' => sub {
+    require File::Temp;
+    require File::Path;
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib");
+
+    open my $fh, '>', "$dir/lib/Store.pm" or die;
+    print $fh <<'PERL';
+package Store;
+use v5.40;
+use Typist;
+struct Product => (name => Str, price => Int);
+struct Order   => (product => Product, qty => Int);
+1;
+PERL
+    close $fh;
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source = <<'PERL';
+package App;
+use v5.40;
+use Typist;
+use Store;
+sub get_order :Type((Int) -> Order) ($id) { }
+my $n = get_order(1)->product->name;
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///app.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Hover on 'name' at line 5: "my $n = get_order(1)->product->name;"
+    #                              0         1         2         3
+    #                              0123456789012345678901234567890123456
+    my $sym = $doc->symbol_at(5, 32);
+    ok $sym, 'found symbol for func()->f1->f2';
+    is $sym->{kind}, 'field', 'kind is field';
+    is $sym->{name}, 'name', 'field name is name';
+    is $sym->{type}, 'Str', 'field type is Str';
+    is $sym->{struct_name}, 'Product', 'struct via chained resolve';
+};
+
 # ── _format_field unit test ──────────────────────
 
 subtest '_format_field unit test' => sub {

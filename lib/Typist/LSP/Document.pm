@@ -593,7 +593,8 @@ sub _resolve_var_type ($self, $var_name) {
     undef;
 }
 
-# Resolve struct field type for accessor hover ($var->field1->field2).
+# Resolve struct field type for accessor hover.
+# Supports: $var->field, $var->f1->f2, func()->field, Pkg::func()->field
 # Returns a symbol hashref with kind => 'field' or undef.
 sub _resolve_accessor_hover ($self, $line, $col, $word) {
     my $lines = $self->_lines;
@@ -608,24 +609,39 @@ sub _resolve_accessor_hover ($self, $line, $col, $word) {
     $word_end++ while $word_end < length($full_line) && substr($full_line, $word_end, 1) =~ /\w/;
     my $text = substr($full_line, 0, $word_end);
 
-    # Match $var->field1->field2 pattern
-    return undef unless $text =~ /(\$\w+)((?:\s*->\s*\w+)+)\s*$/;
-    my ($var_name, $chain_str) = ($1, $2);
+    # Must contain -> to be an accessor
+    return undef unless $text =~ /->/;
 
-    # Parse the chain into field names
+    # Extract the accessor chain suffix: ->field1->field2...
+    return undef unless $text =~ /((?:\s*->\s*\w+)+)\s*$/;
+    my $chain_str = $1;
     my @chain = ($chain_str =~ /->\s*(\w+)/g);
-    return undef unless @chain;
+    return undef unless @chain && $chain[-1] eq $word;
 
-    # Last chain element must match the word under cursor
-    return undef unless $chain[-1] eq $word;
+    my $prefix = substr($text, 0, length($text) - length($chain_str));
 
-    # Resolve the variable's type
-    my $type_str = $self->_resolve_var_type($var_name) // return undef;
+    # Try resolving the head type from prefix
+    my $type_str;
+
+    # Pattern 1: $var->...
+    if ($prefix =~ /(\$\w+)\s*$/) {
+        $type_str = $self->_resolve_var_type($1);
+    }
+
+    # Pattern 2: func(...)->... or Pkg::func(...)->...
+    if (!$type_str && $prefix =~ /\)\s*$/) {
+        $type_str = $self->_resolve_call_return_type($prefix, $registry);
+    }
+
+    return undef unless $type_str;
     my $type = eval { Typist::Parser->parse($type_str) } // return undef;
+    $self->_walk_struct_chain($type, \@chain, $word, $registry);
+}
 
-    # Walk the accessor chain
-    for my $i (0 .. $#chain) {
-        my $field = $chain[$i];
+# Walk an accessor chain on a struct type, returning the final field symbol.
+sub _walk_struct_chain ($self, $type, $chain, $word, $registry) {
+    for my $i (0 .. $#$chain) {
+        my $field = $chain->[$i];
         my $struct = $self->_resolve_to_struct($type, $registry) // return undef;
 
         my %req = $struct->required_fields;
@@ -633,7 +649,7 @@ sub _resolve_accessor_hover ($self, $line, $col, $word) {
 
         if (exists $req{$field}) {
             $type = $req{$field};
-            if ($i == $#chain) {
+            if ($i == $#$chain) {
                 return +{
                     kind        => 'field',
                     name        => $field,
@@ -644,7 +660,7 @@ sub _resolve_accessor_hover ($self, $line, $col, $word) {
             }
         } elsif (exists $opt{$field}) {
             $type = $opt{$field};
-            if ($i == $#chain) {
+            if ($i == $#$chain) {
                 return +{
                     kind        => 'field',
                     name        => $field,
@@ -657,8 +673,76 @@ sub _resolve_accessor_hover ($self, $line, $col, $word) {
             return undef;
         }
     }
+    undef;
+}
+
+# Resolve the return type of a function call from a text prefix ending with ')'.
+# Handles: func(...), Pkg::func(...), nested parens.
+sub _resolve_call_return_type ($self, $prefix, $registry) {
+    # Find the matching '(' by scanning backwards from the last ')'
+    my $depth = 0;
+    my $paren_pos;
+    for my $i (reverse 0 .. length($prefix) - 1) {
+        my $ch = substr($prefix, $i, 1);
+        if ($ch eq ')') {
+            $depth++;
+        } elsif ($ch eq '(') {
+            $depth--;
+            if ($depth == 0) {
+                $paren_pos = $i;
+                last;
+            }
+        }
+    }
+    return undef unless defined $paren_pos;
+
+    # Extract function name before the '('
+    my $before = substr($prefix, 0, $paren_pos);
+    return undef unless $before =~ /((?:\w+::)*\w+)\s*$/;
+    my $func_name = $1;
+
+    $self->_resolve_func_return_type($func_name, $registry);
+}
+
+# Look up function return type from local symbols and registry.
+sub _resolve_func_return_type ($self, $func_name, $registry) {
+    my $result = $self->{result} // return undef;
+
+    # Local symbols
+    for my $sym (@{$result->{symbols} // []}) {
+        next unless ($sym->{kind} // '') eq 'function';
+        next unless ($sym->{name} // '') eq $func_name;
+        return $sym->{returns_expr} if $sym->{returns_expr};
+    }
+
+    return undef unless $registry;
+
+    # Qualified name: Pkg::func
+    if ($func_name =~ /\A(.+)::(\w+)\z/) {
+        if (my $sig = $registry->lookup_function($1, $2)) {
+            return _sig_returns_str($sig);
+        }
+    }
+
+    # Current package
+    my $pkg = $result->{extracted}{package} // 'main';
+    if (my $sig = $registry->lookup_function($pkg, $func_name)) {
+        return _sig_returns_str($sig);
+    }
+
+    # Search all packages (Exporter-imported constructors, etc.)
+    if (my $sig = $registry->search_function_by_name($func_name)) {
+        return _sig_returns_str($sig);
+    }
 
     undef;
+}
+
+sub _sig_returns_str ($sig) {
+    if ($sig->{returns}) {
+        return ref $sig->{returns} ? $sig->{returns}->to_string : $sig->{returns};
+    }
+    $sig->{returns_expr};
 }
 
 # Resolve a type to a Struct via alias/registry lookup.
