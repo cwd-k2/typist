@@ -411,13 +411,19 @@ require('lspconfig').typist.setup {}
 
 #### VS Code
 
-Use the `vscode-languageclient` extension:
+A dedicated extension is provided at `editors/vscode/`.
 
-```json
-{
-  "typist-lsp.command": "typist-lsp"
-}
+Build and install:
+
+```sh
+cd editors/vscode
+npm install
+npm run build
+npx vsce package
+code --install-extension typist-0.0.1.vsix
 ```
+
+The extension looks for `local/bin/typist-lsp` in the workspace root (e.g. installed via `cpanm -L local Typist`), then falls back to `typist-lsp` on `$PATH`. To override, set `typist.server.path` in VS Code settings.
 
 ### Perl::Critic Policies
 

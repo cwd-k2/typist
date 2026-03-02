@@ -4,6 +4,11 @@ local/
 .vscode/
 .zed/
 
+# VSCode extension build artifacts
+editors/vscode/node_modules/
+editors/vscode/out/
+editors/vscode/*.vsix
+
 # ExtUtils::MakeMaker build artifacts
 Makefile
 Makefile.old
