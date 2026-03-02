@@ -756,60 +756,70 @@ sub _collect_match_callback_params ($self) {
 
 # ── Local Variable Collection ─────────────────────
 #
-# Re-infer unannotated variables with function-scoped env so that
-# `my $copy = $node` inside a typed function resolves to Node, not Any.
+# Walk each function body in the PPI doc to find unannotated `my $var = EXPR`
+# declarations and re-infer them with function-scoped env.  This avoids the
+# Extractor's file-level dedup which drops same-name vars in later functions.
 
 sub _collect_local_var_types ($self) {
-    my $vars = $self->{extracted}{variables} // [];
+    my $ppi_doc   = $self->{ppi_doc} // return;
+    my $functions = $self->{extracted}{functions} // return;
 
-    for my $var (@$vars) {
-        next if $var->{type_expr};          # annotated — already in env
-        my $init_node = $var->{init_node} // next;
+    for my $fn_name (keys %$functions) {
+        my $fn    = $functions->{$fn_name};
+        my $block = $fn->{block} // next;
+        next unless $fn->{line} && $fn->{end_line};
 
-        # Skip if _build_env already inferred a non-Any type
-        my $global = $self->{env}{variables}{$var->{name}};
-        next if $global && !($global->is_atom && $global->name eq 'Any');
+        my $stmts = $block->find('PPI::Statement::Variable') || [];
+        for my $stmt (@$stmts) {
+            next unless ($stmt->type // '') eq 'my';
+            my @children = $stmt->schildren;
 
-        # Use function-scoped env (includes parameter bindings)
-        my $env = $self->_env_for_node($init_node);
-
-        my $inferred = Typist::Static::Infer->infer_expr($init_node, $env);
-        next unless defined $inferred;
-        next if $inferred->is_atom && $inferred->name eq 'Any';
-
-        # Determine scope from enclosing function
-        my ($scope_start, $scope_end) = $self->_scope_for_node($init_node);
-        next unless $scope_start;
-
-        my $key = $var->{name} . ':' . $var->{line};
-        $self->{_local_var_types}{$key} = +{
-            name        => $var->{name},
-            type        => $inferred,
-            line        => $var->{line},
-            col         => $var->{col},
-            scope_start => $scope_start,
-            scope_end   => $scope_end,
-        };
-    }
-}
-
-# Find the enclosing function scope (line range) for a PPI node.
-sub _scope_for_node ($self, $node) {
-    my $ancestor = $node->parent;
-    while ($ancestor) {
-        if ($ancestor->isa('PPI::Structure::Block')) {
-            my $sub_stmt = $ancestor->parent;
-            if ($sub_stmt && $sub_stmt->isa('PPI::Statement::Sub')) {
-                my $fn_name = $sub_stmt->name;
-                if ($fn_name && $self->{extracted}{functions}{$fn_name}) {
-                    my $fn = $self->{extracted}{functions}{$fn_name};
-                    return ($fn->{line}, $fn->{end_line});
+            # Find $var = EXPR pattern
+            my ($var_name, $var_sym, $init_node);
+            for my $i (0 .. $#children) {
+                if ($children[$i]->isa('PPI::Token::Symbol') && !$var_name) {
+                    $var_name = $children[$i]->content;
+                    $var_sym  = $children[$i];
+                }
+                if ($children[$i]->isa('PPI::Token::Operator') && $children[$i]->content eq '=') {
+                    $init_node = $children[$i + 1] if $i + 1 <= $#children;
+                    last;
                 }
             }
+            next unless $var_name && $init_node;
+
+            # Skip annotated variables (have :sig attribute)
+            my $has_sig = 0;
+            for my $i (0 .. $#children) {
+                if ($children[$i]->isa('PPI::Token::Operator') && $children[$i]->content eq ':') {
+                    my $nxt = $children[$i + 1] // next;
+                    if ($nxt->isa('PPI::Token::Word') && $nxt->content eq 'sig') {
+                        $has_sig = 1;
+                        last;
+                    }
+                }
+            }
+            next if $has_sig;
+
+            # Use function-scoped env (includes parameter bindings)
+            my $env = $self->_fn_env($fn);
+            $env = $self->_inject_loop_vars($env, $init_node);
+
+            my $inferred = Typist::Static::Infer->infer_expr($init_node, $env);
+            next unless defined $inferred;
+            next if $inferred->is_atom && $inferred->name eq 'Any';
+
+            my $key = $var_name . ':' . $var_sym->line_number;
+            $self->{_local_var_types}{$key} = +{
+                name        => $var_name,
+                type        => $inferred,
+                line        => $var_sym->line_number,
+                col         => $var_sym->column_number,
+                scope_start => $fn->{line},
+                scope_end   => $fn->{end_line},
+            };
         }
-        $ancestor = $ancestor->parent;
     }
-    return ();
 }
 
 #

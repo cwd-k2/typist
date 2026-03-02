@@ -802,6 +802,65 @@ PERL
     is scalar @nums, 2, 'found 2 numeric literal tokens in variant specs';
 };
 
+# ── Typedef value string tokens ───────────────────
+
+subtest 'typedef value string gets type and literal tokens' => sub {
+    my $source = <<'PERL';
+use v5.40;
+typedef DiscountPct => '0 | 5 | 10 | 15 | 20';
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # number tokens (index 9) for 0, 5, 10, 15, 20
+    my @nums = grep { $_->{type} == 9 && $_->{line} == 1 } @tokens;
+    is scalar @nums, 5, 'found 5 numeric literal tokens in typedef value string';
+
+    # | operator tokens (index 8) between the literals
+    my @pipes = grep { $_->{type} == 8 && $_->{line} == 1 && $_->{len} == 1 } @tokens;
+    ok scalar @pipes >= 4, 'at least 4 pipe operator tokens';
+};
+
+subtest 'typedef value string: type name tokens' => sub {
+    my $source = <<'PERL';
+use v5.40;
+typedef Result => 'Int | Str';
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # Int and Str should be type tokens (index 0) from the value string
+    my @type_toks = grep { $_->{type} == 0 && $_->{line} == 1 } @tokens;
+    # Result (definition) + Int + Str = at least 3
+    ok scalar @type_toks >= 3, 'at least 3 type tokens (Result + Int + Str)';
+
+    # | operator
+    my @pipes = grep { $_->{type} == 8 && $_->{line} == 1 && $_->{len} == 1 } @tokens;
+    ok scalar @pipes >= 1, 'found | operator in typedef value string';
+};
+
 done_testing;
 
 # ── Test Helpers ─────────────────────────────────

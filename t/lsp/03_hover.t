@@ -1320,4 +1320,57 @@ PERL
     like $hover->{contents}{value}, qr/\(Node\) label: Str/, 'shows (Node) label: Str';
 };
 
+# ── Hover on same-name local var in multiple functions ──
+
+subtest 'hover resolves same-name local var in second function' => sub {
+    require File::Temp;
+    require File::Path;
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib");
+
+    open my $fh, '>', "$dir/lib/Ids.pm" or die;
+    print $fh <<'PERL';
+package Ids;
+use v5.40;
+use Typist;
+newtype OrderId => 'Int';
+1;
+PERL
+    close $fh;
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source = <<'PERL';
+package App;
+use v5.40;
+use Typist;
+use Ids;
+sub process :sig((OrderId) -> Str) ($oid) {
+    my $key = $oid->base;
+    "$key";
+}
+sub refund :sig((OrderId) -> Str) ($oid) {
+    my $key = $oid->base;
+    "$key";
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///app.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Hover on '$key' in refund (line 9): "    my $key = $oid->base;"
+    #                                      01234567
+    my $sym = $doc->symbol_at(9, 8);
+    ok $sym, 'found symbol for $key in second function';
+    is $sym->{type}, 'Int', '$key in refund is Int (not Any)';
+};
+
 done_testing;

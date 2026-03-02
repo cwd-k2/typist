@@ -56,6 +56,7 @@ sub compute ($class, $doc) {
         my $info = $extracted->{aliases}{$name};
         my $line0 = ($info->{line} // 1) - 1;
         _scan_keyword_name(\@tokens, \@lines, $line0, 'typedef', $name, 'type');
+        _tokenize_quoted_types(\@tokens, \@lines, $line0, +{}, 0);
     }
 
     # ── newtype declarations ──────────────────
