@@ -1029,18 +1029,29 @@ sub _infer_map_grep_sort ($word, $env) {
     # Infer source list element type from siblings after the block
     my $elem_type = _infer_source_element_type_after($block, $env);
 
-    # Record $_ binding as callback param for LSP visibility
+    # Record $_ binding as callback param for LSP visibility.
+    # Locate the first $_ token inside the block for accurate positioning.
     if ($elem_type) {
         my $block_line  = $block->line_number;
         my $block_last  = $block->last_element;
         my $block_end   = $block_last ? $block_last->line_number : $block_line;
         my $dedup_key   = '$_:' . $block_line;
         unless ($_CALLBACK_PARAMS_SEEN{$dedup_key}++) {
+            my ($topic_line, $topic_col) = ($block_line, $block->column_number + 2);
+            my $magics = $block->find('PPI::Token::Magic');
+            if ($magics) {
+                for my $m (@$magics) {
+                    if ($m->content eq '$_') {
+                        ($topic_line, $topic_col) = ($m->line_number, $m->column_number);
+                        last;
+                    }
+                }
+            }
             push @_CALLBACK_PARAMS, +{
                 name        => '$_',
                 type        => $elem_type,
-                line        => $block_line,
-                col         => 1,
+                line        => $topic_line,
+                col         => $topic_col,
                 scope_start => $block_line,
                 scope_end   => $block_end,
             };
