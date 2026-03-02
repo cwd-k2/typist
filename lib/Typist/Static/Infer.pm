@@ -87,6 +87,14 @@ sub infer_expr ($class, $element, $env = undef, $expected = undef) {
         return _infer_match_return($element, $env, $expected);
     }
 
+    # ── Anonymous sub expression: sub [sig] { body } ──
+    if ($element->isa('PPI::Token::Word') && $element->content eq 'sub') {
+        my $parent = $element->parent;
+        unless ($parent && $parent->isa('PPI::Statement::Sub')) {
+            return _infer_anon_sub($element, $env, $expected);
+        }
+    }
+
     # ── Function call: Word followed by List ────
     if ($element->isa('PPI::Token::Word')) {
         my $next = $element->snext_sibling;
@@ -721,6 +729,86 @@ sub _infer_method_access ($receiver_type, $method_word, $env = undef) {
     }
 
     undef;
+}
+
+# ── Anonymous Sub Inference ────────────────────────
+
+# Infer the type of an anonymous sub expression: sub [($sig)] { body }
+# Uses bidirectional inference: if $expected is a Func type, propagates
+# parameter types and checks arity. Infers return type from block body.
+sub _infer_anon_sub ($element, $env = undef, $expected = undef) {
+    my $param_count = 0;
+    my $block;
+    my $next = $element->snext_sibling;
+
+    # Signature (PPI parses as Prototype for anonymous subs)
+    if ($next && ($next->isa('PPI::Structure::List') || $next->isa('PPI::Token::Prototype'))) {
+        $param_count = _count_sub_params($next);
+        $next = $next->snext_sibling;
+    }
+
+    # Block body
+    $block = $next if $next && $next->isa('PPI::Structure::Block');
+
+    # Bidirectional: if expected type is Func, propagate param types
+    if ($expected && $expected->is_func) {
+        my @expected_params = $expected->params;
+        my @params;
+
+        my $arity_match = ($param_count == scalar @expected_params)
+            || ($expected->variadic && $param_count >= scalar(@expected_params) - 1);
+
+        if ($arity_match) {
+            @params = @expected_params;
+        } else {
+            @params = map { Typist::Type::Atom->new('Any') } 1 .. $param_count;
+        }
+
+        # Infer return type from block body
+        my $ret_type = $expected->returns;
+        if ($block && $env) {
+            my $body_type = _infer_block_return($block, $env, $ret_type);
+            $ret_type = $body_type if $body_type;
+        }
+
+        return Typist::Type::Func->new(
+            \@params, $ret_type // Typist::Type::Atom->new('Any'),
+        );
+    }
+
+    # No expected type — infer generic Func
+    my @params = map { Typist::Type::Atom->new('Any') } 1 .. $param_count;
+    my $ret_type = Typist::Type::Atom->new('Any');
+
+    if ($block && $env) {
+        my $body_type = _infer_block_return($block, $env);
+        $ret_type = $body_type if $body_type;
+    }
+
+    Typist::Type::Func->new(\@params, $ret_type);
+}
+
+# Count parameters in a sub signature.
+# PPI parses anonymous sub signatures as PPI::Token::Prototype (e.g., '($x, $y)'),
+# while named sub signatures may use PPI::Structure::List.
+sub _count_sub_params ($sig) {
+    # Prototype token: parse string content for variable sigils
+    if ($sig->isa('PPI::Token::Prototype')) {
+        my $content = $sig->content;
+        my $count = 0;
+        $count++ while $content =~ /[\$\@%]\w/g;
+        return $count;
+    }
+
+    # List structure: walk children for Symbol tokens
+    my $expr = $sig->schild(0);
+    return 0 unless $expr;
+
+    my $count = 0;
+    for my $tok ($expr->schildren) {
+        $count++ if $tok->isa('PPI::Token::Symbol') && $tok->content =~ /\A[\$\@%]/;
+    }
+    $count;
 }
 
 1;

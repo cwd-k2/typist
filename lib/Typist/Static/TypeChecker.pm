@@ -242,6 +242,26 @@ sub _check_call_sites ($self) {
             next unless defined $declared;
             next if $self->_has_type_var($declared);
 
+            # Callback arity check: anonymous sub vs Func parameter
+            if ($declared->is_func && $self->_is_anon_sub($args[$i])) {
+                my $expected_arity = scalar($declared->params);
+                my $actual_arity   = $self->_count_anon_sub_params($args[$i]);
+                if (defined $actual_arity
+                    && $actual_arity != $expected_arity
+                    && !$declared->variadic)
+                {
+                    $self->{errors}->collect(
+                        kind    => 'ArityMismatch',
+                        message => "Callback argument " . ($i + 1)
+                            . " of $name(): expected $expected_arity parameter(s), got $actual_arity",
+                        file => $self->{file},
+                        line => $word->line_number,
+                        col  => $word->column_number,
+                    );
+                    next;
+                }
+            }
+
             my $inferred = Typist::Static::Infer->infer_expr($args[$i], $env, $declared);
             next unless defined $inferred;
             next if $inferred->is_atom && $inferred->name eq 'Any';
@@ -946,6 +966,37 @@ sub _early_return_var ($self, $children) {
         }
     }
     undef;
+}
+
+# Check if a PPI element represents an anonymous sub (Word 'sub' not in Statement::Sub)
+sub _is_anon_sub ($self, $element) {
+    return 0 unless $element->isa('PPI::Token::Word') && $element->content eq 'sub';
+    my $parent = $element->parent;
+    return 0 if $parent && $parent->isa('PPI::Statement::Sub');
+    1;
+}
+
+# Count parameters of an anonymous sub from its PPI element (the 'sub' Word)
+sub _count_anon_sub_params ($self, $element) {
+    my $next = $element->snext_sibling;
+    # PPI parses anonymous sub signatures as Prototype tokens
+    if ($next && $next->isa('PPI::Token::Prototype')) {
+        my $content = $next->content;
+        my $count = 0;
+        $count++ while $content =~ /[\$\@%]\w/g;
+        return $count;
+    }
+    if ($next && $next->isa('PPI::Structure::List')) {
+        my $expr = $next->schild(0);
+        return 0 unless $expr;
+        my $count = 0;
+        for my $tok ($expr->schildren) {
+            $count++ if $tok->isa('PPI::Token::Symbol') && $tok->content =~ /\A[\$\@%]/;
+        }
+        return $count;
+    }
+    # No signature — zero params
+    0;
 }
 
 sub _extract_args ($self, $list) {

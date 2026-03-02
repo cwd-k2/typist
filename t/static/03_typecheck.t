@@ -1552,4 +1552,43 @@ PERL
     is scalar @$errs, 0, 'else block narrows to Undef after defined guard';
 };
 
+# ── Callback Arity Checking ──────────────────────
+
+subtest 'callback: correct arity passes' => sub {
+    my $errs = arity_errors(<<'PERL');
+use v5.40;
+sub apply :Type(((Int) -> Int, Int) -> Int) ($f, $x) {
+    $f->($x);
+}
+apply(sub ($n) { $n + 1 }, 42);
+PERL
+    is scalar @$errs, 0, 'no arity error when callback arity matches';
+};
+
+subtest 'callback: wrong arity detected' => sub {
+    my $errs = arity_errors(<<'PERL');
+use v5.40;
+sub apply :Type(((Int) -> Int, Int) -> Int) ($f, $x) {
+    $f->($x);
+}
+apply(sub ($a, $b) { $a + $b }, 42);
+PERL
+    is scalar @$errs, 1, 'one arity mismatch';
+    like $errs->[0]{message}, qr/Callback.*1.*expected 1.*got 2/,
+        'message mentions callback arity mismatch';
+};
+
+subtest 'callback: zero params when one expected' => sub {
+    my $errs = arity_errors(<<'PERL');
+use v5.40;
+sub apply :Type(((Int) -> Int, Int) -> Int) ($f, $x) {
+    $f->($x);
+}
+apply(sub { 42 }, 10);
+PERL
+    is scalar @$errs, 1, 'detected arity mismatch for zero-param callback';
+    like $errs->[0]{message}, qr/expected 1.*got 0/,
+        'message says expected 1, got 0';
+};
+
 done_testing;

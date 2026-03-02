@@ -610,4 +610,71 @@ subtest 'expected struct propagates to hash values' => sub {
     is $req{items}->to_string, 'ArrayRef[Int]', 'items field inferred as ArrayRef[Int]';
 };
 
+# ── Anonymous Sub Inference ────────────────────────
+
+use Typist::Type::Func;
+
+subtest 'anonymous sub: no expected type → generic Func' => sub {
+    my $doc = PPI::Document->new(\'my $f = sub ($x) { 42 };');
+    my $sub_word = $doc->find_first(sub {
+        $_[1]->isa('PPI::Token::Word') && $_[1]->content eq 'sub'
+    });
+    ok $sub_word, 'found sub keyword';
+    my $t = Typist::Static::Infer->infer_expr($sub_word);
+    ok $t, 'inferred';
+    ok $t->is_func, 'is Func type';
+    is scalar($t->params), 1, 'has 1 parameter';
+};
+
+subtest 'anonymous sub: 2 params → Func with 2 params' => sub {
+    my $doc = PPI::Document->new(\'my $f = sub ($x, $y) { $x };');
+    my $sub_word = $doc->find_first(sub {
+        $_[1]->isa('PPI::Token::Word') && $_[1]->content eq 'sub'
+    });
+    my $t = Typist::Static::Infer->infer_expr($sub_word);
+    ok $t && $t->is_func, 'inferred as Func';
+    is scalar($t->params), 2, 'has 2 parameters';
+};
+
+subtest 'anonymous sub: no signature → 0 params' => sub {
+    my $doc = PPI::Document->new(\'my $f = sub { 42 };');
+    my $sub_word = $doc->find_first(sub {
+        $_[1]->isa('PPI::Token::Word') && $_[1]->content eq 'sub'
+    });
+    my $t = Typist::Static::Infer->infer_expr($sub_word);
+    ok $t && $t->is_func, 'inferred as Func';
+    is scalar($t->params), 0, 'has 0 parameters';
+};
+
+subtest 'anonymous sub: expected Func propagates param types' => sub {
+    my $doc = PPI::Document->new(\'my $f = sub ($x) { $x };');
+    my $sub_word = $doc->find_first(sub {
+        $_[1]->isa('PPI::Token::Word') && $_[1]->content eq 'sub'
+    });
+    my $expected = Typist::Type::Func->new(
+        [Typist::Type::Atom->new('Int')],
+        Typist::Type::Atom->new('Int'),
+    );
+    my $t = Typist::Static::Infer->infer_expr($sub_word, undef, $expected);
+    ok $t && $t->is_func, 'inferred as Func';
+    is scalar($t->params), 1, 'has 1 parameter';
+    is(($t->params)[0]->to_string, 'Int', 'param type propagated from expected');
+};
+
+subtest 'anonymous sub: arity mismatch with expected → generic params' => sub {
+    my $doc = PPI::Document->new(\'my $f = sub ($x, $y) { $x };');
+    my $sub_word = $doc->find_first(sub {
+        $_[1]->isa('PPI::Token::Word') && $_[1]->content eq 'sub'
+    });
+    # Expected 1 param, actual 2 params
+    my $expected = Typist::Type::Func->new(
+        [Typist::Type::Atom->new('Int')],
+        Typist::Type::Atom->new('Int'),
+    );
+    my $t = Typist::Static::Infer->infer_expr($sub_word, undef, $expected);
+    ok $t && $t->is_func, 'inferred as Func';
+    is scalar($t->params), 2, 'has 2 params (actual count, not expected)';
+    is(($t->params)[0]->to_string, 'Any', 'param type is Any (arity mismatch)');
+};
+
 done_testing;
