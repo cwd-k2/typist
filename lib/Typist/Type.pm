@@ -26,6 +26,7 @@ sub is_union        { 0 }
 sub is_intersection { 0 }
 sub is_func         { 0 }
 sub is_record       { 0 }
+sub is_struct       { 0 }
 sub is_var          { 0 }
 sub is_alias        { 0 }
 sub is_literal      { 0 }

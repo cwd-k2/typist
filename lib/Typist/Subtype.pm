@@ -212,7 +212,19 @@ sub _check ($sub, $super, $registry = undef) {
         return _check($se, $pe, $registry);      # delegate to Row subtyping
     }
 
-    # ── Struct width subtyping ───────────────────
+    # ── Nominal struct subtyping ─────────────────
+    # Struct(A) <: Struct(B) only if same name (nominal identity)
+    if ($sub->is_struct && $super->is_struct) {
+        return $sub->name eq $super->name;
+    }
+    # Struct <: Record (structural compatibility via inner record)
+    if ($sub->is_struct && $super->is_record) {
+        return _check($sub->record, $super, $registry);
+    }
+    # Record </: Struct (nominal barrier)
+    return 0 if $sub->is_record && $super->is_struct;
+
+    # ── Record width subtyping ───────────────────
     # { a: T, b: U } <: { a: T }  (more fields <: fewer fields)
     # Optional field rules:
     #   super required → sub must have (required or optional)

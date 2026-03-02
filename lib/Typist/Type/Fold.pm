@@ -8,6 +8,7 @@ use Typist::Type::Union;
 use Typist::Type::Intersection;
 use Typist::Type::Func;
 use Typist::Type::Record;
+use Typist::Type::Struct;
 use Typist::Type::Eff;
 use Typist::Type::Data;
 use Typist::Type::Quantified;
@@ -48,6 +49,14 @@ sub map_type ($class, $type, $cb) {
         my %new_opt = map { $_ => $class->map_type($opt{$_}, $cb) } keys %opt;
         return $cb->(Typist::Type::Record->from_parts(
             required => \%new_req, optional => \%new_opt,
+        ));
+    }
+    if ($type->is_struct) {
+        my $new_record = $class->map_type($type->record, $cb);
+        return $cb->(Typist::Type::Struct->new(
+            name    => $type->name,
+            record  => $new_record,
+            package => $type->package,
         ));
     }
     if ($type->is_eff) {
@@ -109,6 +118,9 @@ sub walk ($class, $type, $cb) {
         my %r = $type->required_fields;
         my %o = $type->optional_fields;
         $class->walk($_, $cb) for values %r, values %o;
+    }
+    elsif ($type->is_struct) {
+        $class->walk($type->record, $cb);
     }
     elsif ($type->is_eff) {
         $class->walk($type->row, $cb);

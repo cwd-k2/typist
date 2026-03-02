@@ -23,6 +23,8 @@ use Typist::Type::Newtype;
 use Typist::Type::Row;
 use Typist::Type::Eff;
 use Typist::Type::Data;
+use Typist::Type::Struct;
+use Typist::Struct::Base;
 use Typist::Effect;
 use Typist::TypeClass;
 use Typist::Kind;
@@ -61,6 +63,7 @@ sub import ($class, @args) {
     *{"${caller}::handle"}    = \&_handle;
     *{"${caller}::match"}     = \&_match;
     *{"${caller}::enum"}      = \&_enum;
+    *{"${caller}::struct"}    = sub ($name, @fields) { _struct($name, $caller, @fields) };
 }
 
 # ── Newtype Support ─────────────────────────────
@@ -244,6 +247,101 @@ sub _enum ($name, @tags) {
     }
     my $data_type = Typist::Type::Data->new($name, \%parsed_variants);
     Typist::Registry->register_datatype($name, $data_type);
+}
+
+# ── Struct Support (nominal blessed immutable structs) ──
+
+sub _struct ($name, $caller, @field_pairs) {
+    die "Typist: struct '$name' — odd number of field arguments\n"
+        if @field_pairs % 2;
+
+    my %field_spec = @field_pairs;
+    my (%required_types, %optional_types);
+
+    for my $key (keys %field_spec) {
+        my $val = $field_spec{$key};
+        if (blessed($val) && $val->isa('Typist::DSL::Optional')) {
+            $optional_types{$key} = $val->inner;
+        } else {
+            my $type = Typist::Type->coerce($val);
+            $required_types{$key} = $type;
+        }
+    }
+
+    my $record = Typist::Type::Record->from_parts(
+        required => \%required_types,
+        optional => \%optional_types,
+    );
+
+    my $pkg = "Typist::Struct::${name}";
+    my $type = Typist::Type::Struct->new(
+        name    => $name,
+        record  => $record,
+        package => $pkg,
+    );
+
+    # 1. Register in Registry
+    Typist::Registry->register_type($name, $type);
+
+    # 2. Generate the package (ISA, meta, accessors)
+    {
+        no strict 'refs';
+        @{"${pkg}::ISA"} = ('Typist::Struct::Base');
+
+        my %all_types = (%required_types, %optional_types);
+        my %req_copy  = %required_types;
+        my %opt_copy  = %optional_types;
+        my $meta = +{
+            name     => $name,
+            required => \%req_copy,
+            optional => \%opt_copy,
+        };
+        *{"${pkg}::_typist_struct_meta"} = sub { $meta };
+
+        # Accessors for each field
+        for my $field (keys %all_types) {
+            my $f = $field;  # capture
+            *{"${pkg}::${f}"} = sub ($self) { $self->{$f} };
+        }
+    }
+
+    # 3. Install constructor in caller's namespace
+    {
+        my %req = %required_types;
+        my %opt = %optional_types;
+        my %all = (%req, %opt);
+        no strict 'refs';
+        *{"${caller}::${name}"} = sub (@args) {
+            die "Typist: ${name}() — odd number of arguments\n"
+                if @args % 2;
+            my %given = @args;
+
+            # Check for unknown fields
+            for my $k (keys %given) {
+                die "Typist: ${name}() — unknown field '$k'\n"
+                    unless exists $all{$k};
+            }
+
+            # Check required fields
+            for my $k (keys %req) {
+                die "Typist: ${name}() — missing required field '$k'\n"
+                    unless exists $given{$k};
+            }
+
+            # Runtime type validation (if enabled)
+            if ($Typist::RUNTIME) {
+                for my $k (keys %given) {
+                    my $expected = $all{$k};
+                    unless ($expected->contains($given{$k})) {
+                        die "Typist: ${name}() — field '$k' expected "
+                            . $expected->to_string . ", got $given{$k}\n";
+                    }
+                }
+            }
+
+            bless +{%given}, $pkg;
+        };
+    }
 }
 
 # ── Declare Support (external function annotations) ──

@@ -26,6 +26,7 @@ sub new ($class, %args) {
         typeclasses => +{},
         instances   => +{},
         datatypes   => +{},
+        structs     => +{},
         effects     => +{},
     }, $class;
 }
@@ -54,8 +55,9 @@ sub lookup_type ($invocant, $name) {
     my $self = _self($invocant);
     return $self->{resolved}{$name} if exists $self->{resolved}{$name};
 
-    # Newtypes and datatypes take precedence over aliases
+    # Newtypes, structs, and datatypes take precedence over aliases
     return $self->{newtypes}{$name}  if exists $self->{newtypes}{$name};
+    return $self->{structs}{$name}   if exists $self->{structs}{$name};
     return $self->{datatypes}{$name} if exists $self->{datatypes}{$name};
 
     my $expr = $self->{aliases}{$name} // return undef;
@@ -95,7 +97,7 @@ sub lookup_type ($invocant, $name) {
 
 sub has_alias ($invocant, $name) {
     my $self = _self($invocant);
-    exists $self->{aliases}{$name} || exists $self->{newtypes}{$name} || exists $self->{datatypes}{$name};
+    exists $self->{aliases}{$name} || exists $self->{newtypes}{$name} || exists $self->{structs}{$name} || exists $self->{datatypes}{$name};
 }
 
 # ── Newtype Management ─────────────────────────
@@ -135,6 +137,23 @@ sub lookup_datatype ($invocant, $name) {
 sub all_datatypes ($invocant) {
     my $self = _self($invocant);
     $self->{datatypes}->%*;
+}
+
+# ── Struct Management ──────────────────────────
+
+sub register_type ($invocant, $name, $type_obj) {
+    my $self = _self($invocant);
+    $self->{structs}{$name} = $type_obj;
+}
+
+sub lookup_struct ($invocant, $name) {
+    my $self = _self($invocant);
+    $self->{structs}{$name};
+}
+
+sub all_structs ($invocant) {
+    my $self = _self($invocant);
+    $self->{structs}->%*;
 }
 
 # ── Variable Tracking ───────────────────────────
@@ -291,6 +310,9 @@ sub merge ($self, $other) {
     }
     for my $name (keys $other->{datatypes}->%*) {
         $self->{datatypes}{$name} //= $other->{datatypes}{$name};
+    }
+    for my $name (keys(($other->{structs} // +{})->%*)) {
+        $self->{structs}{$name} //= $other->{structs}{$name};
     }
     for my $name (keys $other->{typeclasses}->%*) {
         $self->{typeclasses}{$name} //= $other->{typeclasses}{$name};
