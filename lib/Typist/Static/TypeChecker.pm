@@ -858,7 +858,7 @@ sub _collect_local_var_types ($self) {
             my $env = $self->_fn_env($fn);
             $env = $self->_inject_loop_vars($env, $init_node);
 
-            my $inferred = Typist::Static::Infer->infer_expr($init_node, $env);
+            my $inferred = Typist::Static::Infer->infer_expr_with_siblings($init_node, $env);
             next unless defined $inferred;
             next if $inferred->is_atom && $inferred->name eq 'Any';
 

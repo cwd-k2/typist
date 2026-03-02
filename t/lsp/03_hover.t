@@ -1457,4 +1457,38 @@ PERL
     is $sym2->{optional}, 1, 'optional is 1 (not narrowed)';
 };
 
+# ── Hash key should not resolve as builtin ──────
+
+subtest 'hash key "log" does not resolve as Perl builtin' => sub {
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Document;
+
+    my $source = <<'PERL';
+package App;
+use v5.40;
+handle Logger => +{
+    log => sub ($msg) { say $msg },
+};
+PERL
+
+    my $ws = Typist::LSP::Workspace->new;
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///test.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Line 3 (0-indexed): "    log => sub ($msg) { say $msg },"
+    # "log" starts at col 4
+    my $sym = $doc->symbol_at(3, 5);
+
+    # Should NOT resolve as Perl builtin log (Num) -> Num
+    if ($sym) {
+        ok !$sym->{builtin}, 'hash key "log" is not a builtin';
+    } else {
+        pass 'hash key "log" returns no symbol (correct: not a builtin)';
+    }
+};
+
 done_testing;

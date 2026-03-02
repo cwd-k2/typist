@@ -143,6 +143,31 @@ sub infer_expr ($class, $element, $env = undef, $expected = undef) {
     undef;
 }
 
+# Like infer_expr, but peeks at sibling tokens to detect flat binary
+# expressions inside Statement::Variable (e.g., "  " x $indent).
+# PPI does NOT wrap the RHS of `my $x = expr op expr;` in a sub-statement,
+# so init_node is just the first token after `=`.  This method checks
+# for an adjacent operator and delegates to _infer_binop.
+sub infer_expr_with_siblings ($class, $element, $env = undef) {
+    return undef unless defined $element;
+
+    if ($element->isa('PPI::Token') && !$element->isa('PPI::Token::Operator')) {
+        my $next = $element->snext_sibling;
+        if ($next && $next->isa('PPI::Token::Operator')) {
+            my $op = $next->content;
+            if ($op ne '=' && $op ne '->' && $op ne '=>') {
+                my $rhs = $next->snext_sibling;
+                if ($rhs) {
+                    my $result = _infer_binop($op, $element, $rhs, $env);
+                    return $result if defined $result;
+                }
+            }
+        }
+    }
+
+    $class->infer_expr($element, $env);
+}
+
 # ── Function Call Inference ──────────────────────
 
 sub _infer_call ($name, $env, $list_element = undef) {

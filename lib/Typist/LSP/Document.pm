@@ -223,8 +223,14 @@ sub symbol_at ($self, $line, $col) {
     }
 
     # Fallback: synthesize symbol for Perl builtins
+    # Skip builtin resolution for hash keys (word followed by =>)
     my $builtin_name = $bare // $word;
-    if ($BUILTINS{$builtin_name}) {
+    my $is_hash_key = do {
+        my $text = $self->_lines->[$line] // '';
+        $wr->{end} < length($text)
+            && substr($text, $wr->{end}) =~ /\A\s*=>/;
+    };
+    if ($BUILTINS{$builtin_name} && !$is_hash_key) {
         # Use actual Prelude signature from CORE registry when available
         if (my $registry = $result->{registry}) {
             if (my $sig = $registry->lookup_function('CORE', $builtin_name)) {

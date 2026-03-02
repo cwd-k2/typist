@@ -730,4 +730,68 @@ subtest '->base: alias chain resolves through to newtype inner' => sub {
     is $t->name, 'Int', '$id->base → Int (alias → newtype → inner)';
 };
 
+# ── infer_expr_with_siblings ────────────────────
+
+# Helper: parse a `my $x = EXPR;` statement and call infer_expr_with_siblings
+# on the init_node (first token after '=').
+sub infer_with_siblings ($source, $env = undef) {
+    my $doc = PPI::Document->new(\$source);
+    my $stmts = $doc->find('PPI::Statement') || [];
+    for my $stmt (@$stmts) {
+        my @children = $stmt->schildren;
+        for my $i (0 .. $#children) {
+            if ($children[$i]->isa('PPI::Token::Operator') && $children[$i]->content eq '=') {
+                my $rhs = $children[$i + 1] // next;
+                return Typist::Static::Infer->infer_expr_with_siblings($rhs, $env);
+            }
+        }
+    }
+    undef;
+}
+
+subtest 'sibling: string x operator → Str' => sub {
+    my $t = infer_with_siblings('my $pad = "  " x $indent;');
+    ok $t, 'inferred type for "  " x $indent';
+    ok $t->is_atom, 'is atom';
+    is $t->name, 'Str', '"  " x $indent → Str';
+};
+
+subtest 'sibling: string concatenation → Str' => sub {
+    my $env = +{
+        variables => +{ '$a' => Typist::Type::Atom->new('Str') },
+        functions => +{},
+        known     => +{},
+    };
+    my $t = infer_with_siblings('my $s = $a . "suffix";', $env);
+    ok $t, 'inferred type for $a . "suffix"';
+    ok $t->is_atom, 'is atom';
+    is $t->name, 'Str', '$a . "suffix" → Str';
+};
+
+subtest 'sibling: arithmetic → Num' => sub {
+    my $t = infer_with_siblings('my $n = 42 + 3;');
+    ok $t, 'inferred type for 42 + 3';
+    ok $t->is_atom, 'is atom';
+    is $t->name, 'Num', '42 + 3 → Num';
+};
+
+subtest 'sibling: no operator → falls through to infer_expr' => sub {
+    my $t = infer_with_siblings('my $x = "hello";');
+    ok $t, 'inferred type for plain string';
+    ok $t->is_literal, 'is literal (no sibling op)';
+    is $t->value, 'hello', 'preserves Literal["hello"]';
+};
+
+subtest 'sibling: fat comma (=>) is not a binary operator' => sub {
+    # In `log => sub { ... }`, "log" followed by "=>" should NOT trigger binop
+    my $t = infer_with_siblings('my $x = "key";');
+    ok $t, 'plain token inferred';
+    # The point is: => after a word would be a hash key, not an operator expression.
+    # We test by confirming that => is excluded in the method:
+    my $doc = PPI::Document->new(\'log => sub { 1 }');
+    my $word = $doc->find_first('PPI::Token::Word');
+    my $result = Typist::Static::Infer->infer_expr_with_siblings($word);
+    ok !defined($result), 'word followed by => returns undef (no binop)';
+};
+
 done_testing;
