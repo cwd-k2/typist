@@ -56,13 +56,13 @@ sub contains ($self, $value) {
     my $base   = $self->{base};
     my @params = $self->{params}->@*;
 
-    if ($base eq 'ArrayRef') {
+    if ($base eq 'ArrayRef' || $base eq 'Array') {
         return 0 unless defined $value && ref $value && reftype($value) eq 'ARRAY';
         return 1 unless @params;
         return all { $params[0]->contains($_) } @$value;
     }
 
-    if ($base eq 'HashRef') {
+    if ($base eq 'HashRef' || $base eq 'Hash') {
         return 0 unless defined $value && ref $value && reftype($value) eq 'HASH';
         if (@params >= 2) {
             return (all { $params[0]->contains($_) } keys   %$value)

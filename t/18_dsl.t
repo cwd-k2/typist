@@ -231,20 +231,20 @@ subtest 'optional with string coerce' => sub {
     is $opt->inner->name, 'Int', 'inner is Int';
 };
 
-# ── Array / Hash aliases ────────────────────────
+# ── Array / Hash list types ───────────────────────
 
-subtest 'Array constructor (alias for ArrayRef)' => sub {
+subtest 'Array constructor (list type, distinct from ArrayRef)' => sub {
     my $t = Array(Int);
     ok $t->is_param, 'Array(Int) is param';
-    is $t->base, 'ArrayRef', 'Array normalizes to ArrayRef';
-    is $t->to_string, ArrayRef(Int)->to_string, 'Array(Int) == ArrayRef(Int)';
+    is $t->base, 'Array', 'Array base is Array';
+    is $t->to_string, 'Array[Int]', 'Array(Int) stringifies correctly';
 };
 
-subtest 'Hash constructor (alias for HashRef)' => sub {
+subtest 'Hash constructor (list type, distinct from HashRef)' => sub {
     my $t = Hash(Str, Int);
     ok $t->is_param, 'Hash(Str, Int) is param';
-    is $t->base, 'HashRef', 'Hash normalizes to HashRef';
-    is $t->to_string, HashRef(Str, Int)->to_string, 'Hash(Str, Int) == HashRef(Str, Int)';
+    is $t->base, 'Hash', 'Hash base is Hash';
+    is $t->to_string, 'Hash[Str, Int]', 'Hash(Str, Int) stringifies correctly';
 };
 
 done_testing;

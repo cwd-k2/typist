@@ -129,44 +129,44 @@ PERL
 # map/grep/sort inference (coverage for existing impl)
 # ═══════════════════════════════════════════════════
 
-subtest 'map: infers ArrayRef[Num] from $_ * 2' => sub {
+subtest 'map: [map {...} @list] infers ArrayRef[Num]' => sub {
     my $errs = diags_of(<<'PERL', 'TypeMismatch');
 use v5.40;
 my $nums :sig(ArrayRef[Int]) = [1, 2, 3];
-my $doubled :sig(ArrayRef[Num]) = map { $_ * 2 } @$nums;
+my $doubled :sig(ArrayRef[Num]) = [map { $_ * 2 } @$nums];
 PERL
 
-    is scalar @$errs, 0, 'map { $_ * 2 } @$nums → ArrayRef[Num] — no error';
+    is scalar @$errs, 0, '[map { $_ * 2 } @$nums] → ArrayRef[Num] — no error';
 };
 
-subtest 'grep: infers ArrayRef[ElemType]' => sub {
+subtest 'grep: [grep {...} @list] infers ArrayRef[ElemType]' => sub {
     my $errs = diags_of(<<'PERL', 'TypeMismatch');
 use v5.40;
 my $nums :sig(ArrayRef[Int]) = [1, 2, 3, 4];
-my $evens :sig(ArrayRef[Int]) = grep { $_ % 2 == 0 } @$nums;
+my $evens :sig(ArrayRef[Int]) = [grep { $_ % 2 == 0 } @$nums];
 PERL
 
-    is scalar @$errs, 0, 'grep preserves element type — no error';
+    is scalar @$errs, 0, '[grep ...] flattens to ArrayRef — no error';
 };
 
-subtest 'sort: infers ArrayRef[ElemType]' => sub {
+subtest 'sort: [sort {...} @list] infers ArrayRef[ElemType]' => sub {
     my $errs = diags_of(<<'PERL', 'TypeMismatch');
 use v5.40;
 my $nums :sig(ArrayRef[Int]) = [3, 1, 2];
-my $sorted :sig(ArrayRef[Int]) = sort { $a <=> $b } @$nums;
+my $sorted :sig(ArrayRef[Int]) = [sort { $a <=> $b } @$nums];
 PERL
 
-    is scalar @$errs, 0, 'sort preserves element type — no error';
+    is scalar @$errs, 0, '[sort ...] flattens to ArrayRef — no error';
 };
 
 subtest 'map: type mismatch when expecting wrong type' => sub {
     my $errs = diags_of(<<'PERL', 'TypeMismatch');
 use v5.40;
 my $nums :sig(ArrayRef[Int]) = [1, 2, 3];
-my $result :sig(ArrayRef[Str]) = map { $_ * 2 } @$nums;
+my $result :sig(ArrayRef[Str]) = [map { $_ * 2 } @$nums];
 PERL
 
-    is scalar @$errs, 1, 'map returns ArrayRef[Num] but var expects ArrayRef[Str]';
+    is scalar @$errs, 1, 'map returns Array[Num] but var expects ArrayRef[Str]';
 };
 
 # ═══════════════════════════════════════════════════

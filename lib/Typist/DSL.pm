@@ -77,11 +77,11 @@ sub HashRef :prototype(@) {
 }
 
 sub Array :prototype(@) {
-    Typist::Type::Param->new('ArrayRef', @_);
+    Typist::Type::Param->new('Array', @_);
 }
 
 sub Hash :prototype(@) {
-    Typist::Type::Param->new('HashRef', @_);
+    Typist::Type::Param->new('Hash', @_);
 }
 
 sub Maybe :prototype($) {

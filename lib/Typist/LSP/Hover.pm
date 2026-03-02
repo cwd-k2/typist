@@ -257,14 +257,7 @@ sub _code ($text) { "```\n$text\n```" }
 
 sub _note ($text) { "\n\n*$text*" }
 
-# Display ArrayRef/HashRef as Array/Hash for sigil-matched variables
-sub _display_type ($type_str, $name) {
-    if ($name =~ /\A[\@]/) {
-        $type_str =~ s/\bArrayRef\b/Array/g;
-    } elsif ($name =~ /\A[%]/) {
-        $type_str =~ s/\bHashRef\b/Hash/g;
-    }
-    $type_str;
-}
+# Array and Hash are now first-class list types — no display rewriting needed.
+sub _display_type ($type_str, $) { $type_str }
 
 1;

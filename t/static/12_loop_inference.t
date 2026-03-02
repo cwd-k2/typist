@@ -222,7 +222,7 @@ subtest 'map infers ArrayRef of block return type' => sub {
     ok $map_word, 'found map word';
     my $t = Typist::Static::Infer->infer_expr($map_word, $env);
     ok $t, 'map type inferred';
-    is $t->to_string, 'ArrayRef[Bool]', 'map { 1 } @$items → ArrayRef[Bool]';
+    is $t->to_string, 'Array[Bool]', 'map { 1 } @$items → Array[Bool]';
 };
 
 subtest 'grep infers ArrayRef of element type' => sub {
@@ -248,7 +248,7 @@ subtest 'grep infers ArrayRef of element type' => sub {
     ok $grep_word, 'found grep word';
     my $t = Typist::Static::Infer->infer_expr($grep_word, $env);
     ok $t, 'grep type inferred';
-    is $t->to_string, 'ArrayRef[Str]', 'grep { ... } @$items → ArrayRef[Str]';
+    is $t->to_string, 'Array[Str]', 'grep { ... } @$items → Array[Str]';
 };
 
 subtest 'sort infers ArrayRef of element type' => sub {
@@ -274,7 +274,7 @@ subtest 'sort infers ArrayRef of element type' => sub {
     ok $sort_word, 'found sort word';
     my $t = Typist::Static::Infer->infer_expr($sort_word, $env);
     ok $t, 'sort type inferred';
-    is $t->to_string, 'ArrayRef[Int]', 'sort { ... } @$items → ArrayRef[Int]';
+    is $t->to_string, 'Array[Int]', 'sort { ... } @$items → Array[Int]';
 };
 
 # ── Regex Operators via Infer ─────────────────────

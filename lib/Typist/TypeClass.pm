@@ -98,10 +98,9 @@ sub install_dispatch ($self, $caller) {
 
     my $name  = $self->{name};
     my $arity = $self->arity;
-    my $ns    = "Typist::TC::${name}";
     no strict 'refs';
     for my $method_name (keys $self->{methods}->%*) {
-        *{"${ns}::${method_name}"} = sub {
+        *{"${caller}::${name}::${method_name}"} = sub {
             my @args = @_;
             if ($arity > 1) {
                 # Multi-parameter: infer types from first N arguments
@@ -126,7 +125,6 @@ sub install_dispatch ($self, $caller) {
                 $impl->(@args);
             }
         };
-        *{"${caller}::${name}::${method_name}"} = \&{"${ns}::${method_name}"};
     }
 }
 

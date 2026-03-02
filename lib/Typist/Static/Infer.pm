@@ -489,10 +489,39 @@ sub _infer_array ($constructor, $env = undef, $expected = undef) {
         ? ($expected->params)[0] : undef;
 
     my @elem_types;
-    for my $child ($expr->schildren) {
-        next if $child->isa('PPI::Token::Operator');   # skip commas, +
+    my @children = $expr->schildren;
+    my $i = 0;
+    while ($i <= $#children) {
+        my $child = $children[$i];
+        if ($child->isa('PPI::Token::Operator')) { $i++; next }  # skip commas, +
+
+        # Detect map/grep/sort { BLOCK } LIST — consume the entire pattern
+        if ($child->isa('PPI::Token::Word')
+            && ($child->content eq 'map' || $child->content eq 'grep' || $child->content eq 'sort'))
+        {
+            my $t = __PACKAGE__->infer_expr($child, $env, $elem_expected);
+            if (defined $t && $t->is_param && $t->base eq 'Array') {
+                push @elem_types, ($t->params)[0];
+                # Skip siblings consumed by map/grep/sort (block + source list)
+                $i++;
+                while ($i <= $#children) {
+                    last if $children[$i]->isa('PPI::Token::Operator')
+                         && $children[$i]->content eq ',';
+                    $i++;
+                }
+                next;
+            }
+        }
+
         my $t = __PACKAGE__->infer_expr($child, $env, $elem_expected);
-        push @elem_types, $t if defined $t;
+        $i++;
+        next unless defined $t;
+        # Flatten list types: Array[T] inside [...] contributes T, not Array[T]
+        if ($t->is_param && $t->base eq 'Array') {
+            push @elem_types, ($t->params)[0];
+        } else {
+            push @elem_types, $t;
+        }
     }
 
     unless (@elem_types) {
@@ -971,10 +1000,10 @@ sub infer_iterable_element_type ($class, $list_node, $env = undef) {
     undef;
 }
 
-# Extract element type T from ArrayRef[T].
+# Extract element type T from ArrayRef[T] or Array[T].
 sub _unwrap_arrayref ($type) {
     return undef unless defined $type;
-    return ($type->params)[0] if $type->is_param && $type->base eq 'ArrayRef';
+    return ($type->params)[0] if $type->is_param && ($type->base eq 'ArrayRef' || $type->base eq 'Array');
     undef;
 }
 
@@ -986,9 +1015,9 @@ sub _lookup_var ($name, $env) {
 
 # ── Map/Grep/Sort Inference ───────────────────────
 #
-# map { BLOCK } @list → ArrayRef[ReturnType]
-# grep { BLOCK } @list → ArrayRef[ElemType]
-# sort { BLOCK } @list → ArrayRef[ElemType]
+# map { BLOCK } @list → Array[ReturnType]   (list type, not reference)
+# grep { BLOCK } @list → Array[ElemType]
+# sort { BLOCK } @list → Array[ElemType]
 
 sub _infer_map_grep_sort ($word, $env) {
     my $name = $word->content;
@@ -1028,12 +1057,13 @@ sub _infer_map_grep_sort ($word, $env) {
         # Widen literals to base atoms
         $ret = Typist::Type::Atom->new($ret->base_type)
             if $ret && $ret->is_literal;
-        return Typist::Type::Param->new('ArrayRef', $ret // Typist::Type::Atom->new('Any'));
+        # List type: map returns a list, not a reference
+        return Typist::Type::Param->new('Array', $ret // Typist::Type::Atom->new('Any'));
     }
 
     if ($name eq 'grep' || $name eq 'sort') {
         return $elem_type
-            ? Typist::Type::Param->new('ArrayRef', $elem_type)
+            ? Typist::Type::Param->new('Array', $elem_type)
             : undef;
     }
 

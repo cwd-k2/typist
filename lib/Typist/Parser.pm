@@ -393,9 +393,7 @@ sub _parse_param_list ($tokens, $pos, $close) {
 
 # Resolve a parametric constructor with Maybe/CodeRef desugaring.
 sub _resolve_param_constructor ($name, $params, $return_type, $effect_row) {
-    # Normalize Array → ArrayRef, Hash → HashRef
-    $name = 'ArrayRef' if $name eq 'Array';
-    $name = 'HashRef'  if $name eq 'Hash';
+    # Array and Hash are list types (distinct from ArrayRef/HashRef)
 
     # Maybe[T] / Maybe(T) → T | Undef
     if ($name eq 'Maybe' && @$params == 1 && !$return_type) {

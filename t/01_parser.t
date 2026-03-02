@@ -206,30 +206,30 @@ subtest 'DSL: mixed bracket and paren' => sub {
 
 # ── Array / Hash aliases ────────────────────────
 
-subtest 'Array[T] alias for ArrayRef[T]' => sub {
+subtest 'Array[T] is distinct from ArrayRef[T]' => sub {
     my $t1 = Typist::Parser->parse('Array[Int]');
     my $t2 = Typist::Parser->parse('ArrayRef[Int]');
     ok $t1->is_param, 'Array[Int] is param';
-    is $t1->base, 'ArrayRef', 'Array normalizes to ArrayRef internally';
-    is $t1->to_string, $t2->to_string, 'Array[Int] == ArrayRef[Int]';
+    is $t1->base, 'Array', 'Array base is Array (list type)';
+    isnt $t1->to_string, $t2->to_string, 'Array[Int] != ArrayRef[Int]';
 };
 
-subtest 'Hash[K,V] alias for HashRef[K,V]' => sub {
+subtest 'Hash[K,V] is distinct from HashRef[K,V]' => sub {
     my $t1 = Typist::Parser->parse('Hash[Str, Int]');
     my $t2 = Typist::Parser->parse('HashRef[Str, Int]');
     ok $t1->is_param, 'Hash[Str, Int] is param';
-    is $t1->base, 'HashRef', 'Hash normalizes to HashRef internally';
-    is $t1->to_string, $t2->to_string, 'Hash[Str, Int] == HashRef[Str, Int]';
+    is $t1->base, 'Hash', 'Hash base is Hash (list type)';
+    isnt $t1->to_string, $t2->to_string, 'Hash[Str, Int] != HashRef[Str, Int]';
 };
 
 subtest 'Array/Hash DSL paren syntax' => sub {
     my $t1 = Typist::Parser->parse('Array(Int)');
-    my $t2 = Typist::Parser->parse('ArrayRef(Int)');
-    is $t1->to_string, $t2->to_string, 'Array(Int) == ArrayRef(Int)';
+    is $t1->base, 'Array', 'Array(Int) base is Array';
+    is $t1->to_string, 'Array[Int]', 'Array(Int) stringifies to Array[Int]';
 
     my $t3 = Typist::Parser->parse('Hash(Str, Int)');
-    my $t4 = Typist::Parser->parse('HashRef(Str, Int)');
-    is $t3->to_string, $t4->to_string, 'Hash(Str, Int) == HashRef(Str, Int)';
+    is $t3->base, 'Hash', 'Hash(Str, Int) base is Hash';
+    is $t3->to_string, 'Hash[Str, Int]', 'Hash(Str, Int) stringifies to Hash[Str, Int]';
 };
 
 # ── Variadic function types ──────────────────────
