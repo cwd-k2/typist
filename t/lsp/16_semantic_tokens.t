@@ -388,6 +388,78 @@ PERL
     ok scalar @type_toks >= 1, 'found Int type token in variable annotation';
 };
 
+subtest 'effect sig string tokens: type names and operators' => sub {
+    my $source = <<'PERL';
+use v5.40;
+effect Console => +{ writeLine => '(Str) -> Void' };
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # writeLine should be a function token (index 3)
+    my @fn_toks = grep { $_->{type} == 3 && $_->{len} == 9 } @tokens;
+    ok scalar @fn_toks >= 1, 'found writeLine as function token';
+
+    # Str should be a type token (index 0) inside the sig string
+    my @str_toks = grep { $_->{type} == 0 && $_->{len} == 3 } @tokens;
+    ok scalar @str_toks >= 1, 'found Str type token in effect sig string';
+
+    # Void should be a type token (index 0) inside the sig string
+    my @void_toks = grep { $_->{type} == 0 && $_->{len} == 4 } @tokens;
+    ok scalar @void_toks >= 1, 'found Void type token in effect sig string';
+
+    # -> should be an operator token (index 8)
+    my @arrow_toks = grep { $_->{type} == 8 && $_->{len} == 2 } @tokens;
+    ok scalar @arrow_toks >= 1, 'found -> operator token in effect sig string';
+};
+
+subtest 'typeclass sig string tokens: type params and operators' => sub {
+    my $source = <<'PERL';
+use v5.40;
+typeclass Show => T, +{ show => '(T) -> Str' };
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # show should be a function token (index 3)
+    my @fn_toks = grep { $_->{type} == 3 && $_->{len} == 4 } @tokens;
+    ok scalar @fn_toks >= 1, 'found show as function token';
+
+    # T should be typeParameter (index 1) inside the sig string
+    my @tparam_toks = grep { $_->{type} == 1 && $_->{len} == 1 } @tokens;
+    ok scalar @tparam_toks >= 1, 'found T as typeParameter token in typeclass sig string';
+
+    # Str should be a type token (index 0)
+    my @str_toks = grep { $_->{type} == 0 && $_->{len} == 3 } @tokens;
+    ok scalar @str_toks >= 1, 'found Str type token in typeclass sig string';
+
+    # -> should be an operator token (index 8)
+    my @arrow_toks = grep { $_->{type} == 8 && $_->{len} == 2 } @tokens;
+    ok scalar @arrow_toks >= 1, 'found -> operator token in typeclass sig string';
+};
+
 subtest 'annotation tokens: lowercase row variable as typeParameter' => sub {
     my $source = <<'PERL';
 use v5.40;

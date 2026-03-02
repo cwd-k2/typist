@@ -41,6 +41,15 @@ use Typist::DSL;
 
 sub import ($class, @args) {
     my $caller = caller;
+
+    # Suppress "attribute may clash with future reserved word" for :sig
+    my $prev_warn = $SIG{__WARN__};
+    $SIG{__WARN__} = sub {
+        return if $_[0] =~ /attribute may clash with future reserved word/;
+        if ($prev_warn) { $prev_warn->(@_) }
+        else            { warn $_[0] }
+    };
+
     my @dsl_names;
     for my $arg (@args) {
         if    ($arg eq '-runtime') { $Typist::RUNTIME = 1 }

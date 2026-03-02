@@ -68,6 +68,7 @@ sub compute ($class, $doc) {
         my $info = $extracted->{effects}{$name};
         my $line0 = ($info->{line} // 1) - 1;
         _scan_keyword_name(\@tokens, \@lines, $line0, 'effect', $name, 'enum');
+        _tokenize_sig_strings(\@tokens, \@lines, $line0, $info->{operations} // +{});
     }
 
     # ── typeclass declarations ────────────────
@@ -75,6 +76,11 @@ sub compute ($class, $doc) {
         my $info = $extracted->{typeclasses}{$name};
         my $line0 = ($info->{line} // 1) - 1;
         _scan_keyword_name(\@tokens, \@lines, $line0, 'typeclass', $name, 'class');
+
+        my $var = $info->{var_spec} // '';
+        $var =~ s/\s*:.*\z//;
+        my %generics = length($var) ? ($var => 1) : ();
+        _tokenize_sig_strings(\@tokens, \@lines, $line0, $info->{methods} // +{}, \%generics);
     }
 
     # ── datatype declarations ─────────────────
@@ -237,8 +243,11 @@ sub _tokenize_annotation ($tokens, $line0, $line_text, $generic_names) {
     return if $content_end < 0;
 
     my $content = substr($line_text, $content_start, $content_end - $content_start);
+    _tokenize_content($tokens, $line0, $content_start, $content, $generic_names);
+}
 
-    # Scan the content string for type names and operators
+# Scan a type expression string for type names and operators, pushing tokens.
+sub _tokenize_content ($tokens, $line0, $abs_col, $content, $generic_names) {
     my $pos = 0;
     while ($pos < length($content)) {
         my $rest = substr($content, $pos);
@@ -246,7 +255,7 @@ sub _tokenize_annotation ($tokens, $line0, $line_text, $generic_names) {
         # Identifier: word chars starting with a letter
         if ($rest =~ /\A([a-zA-Z][a-zA-Z0-9]*)/) {
             my $name = $1;
-            my $col = $content_start + $pos;
+            my $col = $abs_col + $pos;
             if ($generic_names->{$name}) {
                 # Known generic parameter (T, U, r, etc.)
                 push @$tokens, [$line0, $col, length($name), 'typeParameter', 0];
@@ -261,19 +270,44 @@ sub _tokenize_annotation ($tokens, $line0, $line_text, $generic_names) {
 
         # Arrow operator: ->
         if ($rest =~ /\A(->)/) {
-            push @$tokens, [$line0, $content_start + $pos, 2, 'operator', 0];
+            push @$tokens, [$line0, $abs_col + $pos, 2, 'operator', 0];
             $pos += 2;
             next;
         }
 
         # Effect operator: !
         if (substr($rest, 0, 1) eq '!') {
-            push @$tokens, [$line0, $content_start + $pos, 1, 'operator', 0];
+            push @$tokens, [$line0, $abs_col + $pos, 1, 'operator', 0];
             $pos += 1;
             next;
         }
 
         $pos++;
+    }
+}
+
+# Tokenize operation/method names and their quoted sig strings in definition blocks.
+sub _tokenize_sig_strings ($tokens, $lines, $line0, $operations, $generic_names = +{}) {
+    my $end = ($line0 + 20 < $#$lines) ? $line0 + 20 : $#$lines;
+
+    for my $li ($line0 .. $end) {
+        my $text = $lines->[$li];
+
+        for my $op_name (keys %$operations) {
+            my $op_pos = _word_pos($text, $op_name);
+            if (defined $op_pos) {
+                push @$tokens, [$li, $op_pos, length($op_name), 'function', 0];
+            }
+        }
+
+        # Find quoted strings ('...') and tokenize their type content
+        while ($text =~ /'([^']+)'/g) {
+            my $sig_content = $1;
+            my $match_end = pos($text);
+            my $str_col = $match_end - length($sig_content) - 1;  # position of opening '
+            my $content_col = $str_col + 1;  # first char inside quotes
+            _tokenize_content($tokens, $li, $content_col, $sig_content, $generic_names);
+        }
     }
 }
 
