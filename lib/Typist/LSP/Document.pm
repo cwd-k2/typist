@@ -297,10 +297,24 @@ sub symbol_at ($self, $line, $col) {
             }
         }
         if (my $dt = $registry->lookup_datatype($lookup_name)) {
+            my @tp = $dt->type_params;
+            my @variants;
+            for my $tag (sort keys %{$dt->variants // +{}}) {
+                my @types = ($dt->variants->{$tag} // [])->@*;
+                my $spec = @types
+                    ? '(' . join(', ', map { $_->to_string } @types) . ')'
+                    : '';
+                if ($dt->is_gadt && $dt->return_types->{$tag}) {
+                    $spec .= ' -> ' . $dt->return_types->{$tag}->to_string;
+                }
+                push @variants, +{ tag => $tag, spec => $spec };
+            }
             return $with_range->(+{
-                name => $lookup_name,
-                kind => 'datatype',
-                type => $dt->to_string,
+                name        => $lookup_name,
+                kind        => 'datatype',
+                type        => $dt->to_string,
+                type_params => \@tp,
+                variants    => \@variants,
             });
         }
         if (my $st = $registry->lookup_struct($lookup_name)) {

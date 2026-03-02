@@ -380,12 +380,13 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
         }
 
         push @symbols, +{
-            name     => $name,
-            kind     => 'datatype',
-            type     => join(' | ', @parts),
-            variants => \@variants,
-            line     => $info->{line},
-            col      => $info->{col},
+            name        => $name,
+            kind        => 'datatype',
+            type        => join(' | ', @parts),
+            variants    => \@variants,
+            type_params => \@tp,
+            line        => $info->{line},
+            col         => $info->{col},
         };
 
         # Constructor symbols for each variant

@@ -171,14 +171,20 @@ sub _format_datatype ($class, $sym) {
         @variants = split /\s*\|\s*/, $type;
     }
 
+    # Build name with type parameters: Option[T], ShopEvent[R]
+    my $name = $sym->{name};
+    if ($sym->{type_params} && @{$sym->{type_params}}) {
+        $name .= '[' . join(', ', @{$sym->{type_params}}) . ']';
+    }
+
     # Single-line for 0-2 variants, multi-line for 3+
     if (@variants <= 2) {
-        my $display = "datatype $sym->{name}";
+        my $display = "datatype $name";
         $display .= ' = ' . join(' | ', @variants) if @variants;
         return _code($display);
     }
 
-    my $body = "datatype $sym->{name}\n";
+    my $body = "datatype $name\n";
     for my $i (0 .. $#variants) {
         my $prefix = $i == 0 ? '    = ' : '    | ';
         $body .= "$prefix$variants[$i]\n";
