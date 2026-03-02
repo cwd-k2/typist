@@ -89,7 +89,7 @@ sub analyze ($class, $source, %opts) {
     # 4. Build results
     return +{
         diagnostics => _to_diagnostics($errors, $file, $extracted),
-        symbols     => _build_symbol_index($extracted, $type_checker->env),
+        symbols     => _build_symbol_index($extracted, $type_checker->env, $type_checker),
         extracted   => $extracted,
         registry    => $registry,
     };
@@ -178,7 +178,7 @@ sub _to_diagnostics ($errors, $default_file, $extracted) {
 
 # ── Symbol Index ─────────────────────────────────
 
-sub _build_symbol_index ($extracted, $env = undef) {
+sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
     my @symbols;
 
     # Aliases
@@ -400,6 +400,24 @@ sub _build_symbol_index ($extracted, $env = undef) {
             line   => $info->{line},
             col    => $info->{col},
         };
+    }
+
+    # Loop variables (inferred by TypeChecker)
+    if ($type_checker && $type_checker->can('loop_var_types')) {
+        my $lvt = $type_checker->loop_var_types;
+        for my $key (sort keys %$lvt) {
+            my $lv = $lvt->{$key};
+            push @symbols, +{
+                name        => $lv->{name},
+                kind        => 'variable',
+                type        => $lv->{type}->to_string,
+                inferred    => 1,
+                line        => $lv->{line},
+                col         => $lv->{col},
+                scope_start => $lv->{scope_start},
+                scope_end   => $lv->{scope_end},
+            };
+        }
     }
 
     # Typeclass method symbols

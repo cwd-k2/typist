@@ -14,17 +14,18 @@ sub extract ($class, $source) {
         or die "Typist::Static::Extractor: failed to parse source";
 
     my $result = +{
-        aliases     => +{},
-        variables   => [],
-        functions   => +{},
-        newtypes    => +{},
-        datatypes   => +{},
-        effects     => +{},
-        structs     => +{},
-        typeclasses => +{},
-        declares    => +{},
-        package     => 'main',
-        ppi_doc     => $doc,
+        aliases        => +{},
+        variables      => [],
+        functions      => +{},
+        newtypes       => +{},
+        datatypes      => +{},
+        effects        => +{},
+        structs        => +{},
+        typeclasses    => +{},
+        declares       => +{},
+        loop_variables => [],
+        package        => 'main',
+        ppi_doc        => $doc,
     };
 
     # Detect package declaration
@@ -42,6 +43,7 @@ sub extract ($class, $source) {
     $class->_extract_declares($doc, $result);
     $class->_extract_variables($doc, $result);
     $class->_extract_functions($doc, $result);
+    $class->_extract_loop_variables($doc, $result);
 
     $result->{ignore_lines} = $class->_collect_ignore_lines($doc);
 
@@ -694,6 +696,53 @@ sub _extract_functions ($class, $doc, $result) {
                 block         => $sub_stmt->block,
             };
         }
+    }
+}
+
+# ── Loop Variable Extraction ─────────────────────
+#
+# Extract for/foreach loop variables from PPI::Statement::Compound.
+# PPI structure: Word('for'/'foreach') → Word('my') → Symbol('$item') → List(...) → Block{...}
+
+sub _extract_loop_variables ($class, $doc, $result) {
+    my $compounds = $doc->find('PPI::Statement::Compound') || [];
+
+    for my $stmt (@$compounds) {
+        my @children = $stmt->schildren;
+        next unless @children >= 4;
+
+        # for/foreach my $var (LIST) { BLOCK }
+        my $i = 0;
+        next unless $children[$i]->isa('PPI::Token::Word')
+                 && ($children[$i]->content eq 'for' || $children[$i]->content eq 'foreach');
+        $i++;
+
+        next unless $children[$i]->isa('PPI::Token::Word')
+                 && $children[$i]->content eq 'my';
+        $i++;
+
+        next unless $children[$i]->isa('PPI::Token::Symbol');
+        my $var_sym = $children[$i];
+        $i++;
+
+        # Find the List (iterable) and Block (scope)
+        my ($list, $block);
+        for my $j ($i .. $#children) {
+            $list  = $children[$j] if $children[$j]->isa('PPI::Structure::List') && !$list;
+            $block = $children[$j] if $children[$j]->isa('PPI::Structure::Block') && !$block;
+        }
+        next unless $list && $block;
+
+        my $block_last = $block->last_token;
+        push $result->{loop_variables}->@*, +{
+            name        => $var_sym->content,
+            line        => $var_sym->line_number,
+            col         => $var_sym->column_number,
+            list_node   => $list,
+            block_node  => $block,
+            scope_start => $block->line_number,
+            scope_end   => $block_last ? $block_last->line_number : $block->line_number,
+        };
     }
 }
 

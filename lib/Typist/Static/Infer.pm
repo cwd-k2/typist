@@ -95,6 +95,17 @@ sub infer_expr ($class, $element, $env = undef, $expected = undef) {
         }
     }
 
+    # ── map/grep/sort: Word + Block pattern ─────
+    if ($element->isa('PPI::Token::Word')
+        && ($element->content eq 'map' || $element->content eq 'grep' || $element->content eq 'sort'))
+    {
+        my $next = $element->snext_sibling;
+        if ($next && $next->isa('PPI::Structure::Block')) {
+            my $result = _infer_map_grep_sort($element, $env);
+            return $result if defined $result;
+        }
+    }
+
     # ── Function call: Word followed by List ────
     if ($element->isa('PPI::Token::Word')) {
         my $next = $element->snext_sibling;
@@ -589,6 +600,10 @@ sub _infer_binop ($op, $lhs, $rhs, $env) {
     return Typist::Type::Atom->new('Bool')
         if $op =~ /\A(?:eq|ne|lt|gt|le|ge|cmp)\z/;
 
+    # Regex match → Bool
+    return Typist::Type::Atom->new('Bool')
+        if $op eq '=~' || $op eq '!~';
+
     # Logical → left operand type
     if ($op =~ /\A(?:&&|\|\||\/\/|and|or)\z/) {
         return __PACKAGE__->infer_expr($lhs, $env);
@@ -733,6 +748,189 @@ sub _infer_method_access ($receiver_type, $method_word, $env = undef) {
             my $sig = $env->{registry}->lookup_method($pkg, $method_name);
             return $sig->{returns} if $sig && $sig->{returns};
         }
+    }
+
+    undef;
+}
+
+# ── Iterable Element Type Inference ────────────────
+#
+# Given a PPI::Structure::List from `for my $var (LIST)`, infer the element
+# type of the iterable expression.  Supports:
+#   @$ref         → ArrayRef unwrap
+#   @array        → ArrayRef unwrap via $array lookup
+#   $ref          → ArrayRef unwrap
+#   func(...)     → ArrayRef unwrap on return type
+#   $obj->m->@*   → accessor chain + postfix deref
+
+sub infer_iterable_element_type ($class, $list_node, $env = undef) {
+    return undef unless $list_node && $env;
+
+    # Unwrap List → Expression (PPI returns '' not undef on no-match)
+    my $expr = $list_node->find_first('PPI::Statement::Expression')
+            || $list_node->find_first('PPI::Statement');
+    return undef unless $expr;
+
+    my @children = $expr->schildren;
+    return undef unless @children;
+
+    # Pattern 1: @$ref — Cast('@') + Symbol('$ref')
+    if (@children >= 2
+        && $children[0]->isa('PPI::Token::Cast') && $children[0]->content eq '@'
+        && $children[1]->isa('PPI::Token::Symbol'))
+    {
+        my $var_name = $children[1]->content;
+        my $var_type = _lookup_var($var_name, $env);
+        return _unwrap_arrayref($var_type) if $var_type;
+    }
+
+    # Pattern 2: @array — Symbol('@array') → lookup as $array
+    if (@children == 1 && $children[0]->isa('PPI::Token::Symbol')
+        && $children[0]->raw_type eq '@')
+    {
+        my $scalar_name = $children[0]->content;
+        $scalar_name =~ s/\A\@/\$/;
+        my $var_type = _lookup_var($scalar_name, $env);
+        return _unwrap_arrayref($var_type) if $var_type;
+    }
+
+    # Pattern 3: $obj->method->@* or $var->@* — accessor chain with postfix deref
+    if (@children >= 3
+        && $children[0]->isa('PPI::Token::Symbol')
+        && $children[0]->raw_type eq '$')
+    {
+        # Check if the chain ends with ->@*
+        my $last = $children[-1];
+        my $penult = @children >= 2 ? $children[-2] : undef;
+        if ($last->isa('PPI::Token::Cast') && $last->content eq '@*'
+            && $penult && $penult->isa('PPI::Token::Operator') && $penult->content eq '->')
+        {
+            # Chase the chain excluding the trailing ->@*
+            my $var_type = _lookup_var($children[0]->content, $env);
+            if ($var_type) {
+                my $chain_type = _chase_subscript_chain($var_type, $children[0], $env);
+                return _unwrap_arrayref($chain_type) if $chain_type;
+            }
+        }
+    }
+
+    # Pattern 4: single $ref — Symbol → ArrayRef unwrap
+    if (@children == 1 && $children[0]->isa('PPI::Token::Symbol')
+        && $children[0]->raw_type eq '$')
+    {
+        my $var_type = _lookup_var($children[0]->content, $env);
+        return _unwrap_arrayref($var_type) if $var_type;
+    }
+
+    # Pattern 5: func(...) — Word + List → function return type → ArrayRef unwrap
+    if (@children >= 2
+        && $children[0]->isa('PPI::Token::Word')
+        && $children[1]->isa('PPI::Structure::List'))
+    {
+        my $ret = _infer_call($children[0]->content, $env, $children[1]);
+        return _unwrap_arrayref($ret) if $ret;
+    }
+
+    undef;
+}
+
+# Extract element type T from ArrayRef[T].
+sub _unwrap_arrayref ($type) {
+    return undef unless defined $type;
+    return ($type->params)[0] if $type->is_param && $type->base eq 'ArrayRef';
+    undef;
+}
+
+# Look up a variable type in the env.
+sub _lookup_var ($name, $env) {
+    return undef unless $env && $env->{variables};
+    $env->{variables}{$name};
+}
+
+# ── Map/Grep/Sort Inference ───────────────────────
+#
+# map { BLOCK } @list → ArrayRef[ReturnType]
+# grep { BLOCK } @list → ArrayRef[ElemType]
+# sort { BLOCK } @list → ArrayRef[ElemType]
+
+sub _infer_map_grep_sort ($word, $env) {
+    my $name = $word->content;
+    my $next = $word->snext_sibling;
+    return undef unless $next && $next->isa('PPI::Structure::Block');
+
+    my $block = $next;
+
+    # Infer source list element type from siblings after the block
+    my $elem_type = _infer_source_element_type_after($block, $env);
+
+    if ($name eq 'map') {
+        return undef unless $elem_type;
+        # Build env with $_ bound to element type
+        my %new_vars = ($env->{variables} // +{})->%*;
+        $new_vars{'$_'} = $elem_type;
+        my $inner_env = +{ %$env, variables => \%new_vars };
+        my $ret = _infer_block_return($block, $inner_env);
+        # Widen literals to base atoms
+        $ret = Typist::Type::Atom->new($ret->base_type)
+            if $ret && $ret->is_literal;
+        return Typist::Type::Param->new('ArrayRef', $ret // Typist::Type::Atom->new('Any'));
+    }
+
+    if ($name eq 'grep' || $name eq 'sort') {
+        return $elem_type
+            ? Typist::Type::Param->new('ArrayRef', $elem_type)
+            : undef;
+    }
+
+    undef;
+}
+
+# Walk siblings after the block to find the source list, then infer its element type.
+# Patterns: @$var, @array, $arrayref, func(...)
+sub _infer_source_element_type_after ($block, $env) {
+    my $sib = $block->snext_sibling;
+    return undef unless $sib;
+
+    # Skip leading comma if present
+    if ($sib->isa('PPI::Token::Operator') && $sib->content eq ',') {
+        $sib = $sib->snext_sibling;
+        return undef unless $sib;
+    }
+
+    # @$ref — Cast('@') + Symbol
+    if ($sib->isa('PPI::Token::Cast') && $sib->content eq '@') {
+        my $sym = $sib->snext_sibling;
+        if ($sym && $sym->isa('PPI::Token::Symbol')) {
+            my $var_type = _lookup_var($sym->content, $env);
+            return _unwrap_arrayref($var_type) if $var_type;
+        }
+        return undef;
+    }
+
+    # @array — Symbol with @ sigil
+    if ($sib->isa('PPI::Token::Symbol') && $sib->raw_type eq '@') {
+        my $scalar = $sib->content;
+        $scalar =~ s/\A\@/\$/;
+        my $var_type = _lookup_var($scalar, $env);
+        return _unwrap_arrayref($var_type) if $var_type;
+        return undef;
+    }
+
+    # $ref — scalar Symbol → ArrayRef unwrap
+    if ($sib->isa('PPI::Token::Symbol') && $sib->raw_type eq '$') {
+        my $var_type = _lookup_var($sib->content, $env);
+        return _unwrap_arrayref($var_type) if $var_type;
+        return undef;
+    }
+
+    # func(...) — Word + List
+    if ($sib->isa('PPI::Token::Word')) {
+        my $after = $sib->snext_sibling;
+        if ($after && $after->isa('PPI::Structure::List')) {
+            my $ret = _infer_call($sib->content, $env, $after);
+            return _unwrap_arrayref($ret) if $ret;
+        }
+        return undef;
     }
 
     undef;

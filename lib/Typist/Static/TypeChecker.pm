@@ -14,18 +14,22 @@ use Typist::Type::Union;
 
 sub new ($class, %args) {
     bless +{
-        registry  => $args{registry},
-        errors    => $args{errors},
-        extracted => $args{extracted},
-        ppi_doc   => $args{ppi_doc},
-        file      => $args{file} // '(buffer)',
+        registry       => $args{registry},
+        errors         => $args{errors},
+        extracted      => $args{extracted},
+        ppi_doc        => $args{ppi_doc},
+        file           => $args{file} // '(buffer)',
+        _loop_var_types => +{},
     }, $class;
 }
+
+sub loop_var_types ($self) { $self->{_loop_var_types} }
 
 # ── Public API ───────────────────────────────────
 
 sub analyze ($self) {
     $self->{env} = $self->_build_env;
+    $self->_collect_loop_var_types;
     $self->_check_variable_initializers;
     $self->_check_assignments;
     $self->_check_call_sites;
@@ -193,7 +197,7 @@ sub _check_call_sites ($self) {
 
         # Find the argument list — next sibling should be a List
         my $next = $word->snext_sibling // next;
-        next unless $next->isa('PPI::Structure::List');
+        next unless ref($next) && $next->isa('PPI::Structure::List');
 
         my @param_exprs = $fn->{params_expr}->@*;
 
@@ -706,9 +710,117 @@ sub _env_for_node ($self, $node) {
     }
     $env //= $self->{env};
 
+    $env = $self->_inject_loop_vars($env, $node);
     $env = $self->_narrow_env_for_block($env, $node);
     $env = $self->_scan_early_returns($env, $node);
     $env;
+}
+
+# ── Loop Variable Collection ─────────────────────
+#
+# Proactively infer loop variable types from extracted loop_variables.
+# This ensures _loop_var_types is populated for the symbol index even
+# when no type-checking occurs inside loop bodies.
+
+sub _collect_loop_var_types ($self) {
+    my $loops = $self->{extracted}{loop_variables} // [];
+    return unless @$loops;
+
+    for my $lv (@$loops) {
+        my $list_node = $lv->{list_node} // next;
+        my $block_node = $lv->{block_node} // next;
+
+        my $elem_type = Typist::Static::Infer->infer_iterable_element_type($list_node, $self->{env});
+        next unless $elem_type;
+
+        my $block_last = $block_node->last_token;
+        my $key = $lv->{name} . ':' . $lv->{line};
+        $self->{_loop_var_types}{$key} = +{
+            name        => $lv->{name},
+            type        => $elem_type,
+            line        => $lv->{line},
+            col         => $lv->{col},
+            scope_start => $lv->{scope_start},
+            scope_end   => $lv->{scope_end},
+        };
+    }
+}
+
+# ── Loop Variable Injection ──────────────────────
+#
+# Walk ancestors to detect enclosing for/foreach loops. For each loop whose
+# Block contains $node, infer the element type and inject the loop variable
+# into the env. Outer loops are injected first; inner loops shadow correctly.
+
+sub _inject_loop_vars ($self, $env, $node) {
+    my @loop_vars;    # collect from outermost to innermost
+
+    my $ancestor = $node;
+    while ($ancestor = $ancestor->parent) {
+        next unless $ancestor->isa('PPI::Structure::Block');
+
+        my $compound = $ancestor->parent;
+        next unless $compound && $compound->isa('PPI::Statement::Compound');
+
+        my @children = $compound->schildren;
+        next unless @children >= 4;
+
+        my $i = 0;
+        next unless $children[$i]->isa('PPI::Token::Word')
+                 && ($children[$i]->content eq 'for' || $children[$i]->content eq 'foreach');
+        $i++;
+        next unless $children[$i]->isa('PPI::Token::Word')
+                 && $children[$i]->content eq 'my';
+        $i++;
+        next unless $children[$i]->isa('PPI::Token::Symbol');
+        my $var_sym = $children[$i];
+        $i++;
+
+        # Find the List and verify this is the correct Block
+        my $list;
+        for my $j ($i .. $#children) {
+            if ($children[$j]->isa('PPI::Structure::List') && !$list) {
+                $list = $children[$j];
+            }
+            last if $children[$j]->isa('PPI::Structure::Block');
+        }
+        next unless $list;
+
+        # Verify the block matches the ancestor
+        my $block;
+        for my $j ($i .. $#children) {
+            if ($children[$j]->isa('PPI::Structure::Block')) {
+                $block = $children[$j];
+                last;
+            }
+        }
+        next unless $block && $block == $ancestor;
+
+        unshift @loop_vars, +{ var_sym => $var_sym, list => $list, block => $block };
+    }
+
+    return $env unless @loop_vars;
+
+    my %new_vars = $env->{variables}->%*;
+    for my $lv (@loop_vars) {
+        my $elem_type = Typist::Static::Infer->infer_iterable_element_type($lv->{list}, $env);
+        if ($elem_type) {
+            $new_vars{$lv->{var_sym}->content} = $elem_type;
+
+            # Cache for Analyzer symbol index
+            my $block_last = $lv->{block}->last_token;
+            $self->{_loop_var_types}{$lv->{var_sym}->content . ':' . $lv->{var_sym}->line_number} = +{
+                name        => $lv->{var_sym}->content,
+                type        => $elem_type,
+                line        => $lv->{var_sym}->line_number,
+                col         => $lv->{var_sym}->column_number,
+                scope_start => $lv->{block}->line_number,
+                scope_end   => $block_last ? $block_last->line_number : $lv->{block}->line_number,
+            };
+        }
+    }
+
+    +{ %$env, variables => \%new_vars };
 }
 
 # ── Narrowing Rules ──────────────────────────────
