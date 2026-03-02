@@ -78,6 +78,11 @@ run = "carton exec -- perl example/10_higher_order.pl"
 description = "Run method chain example (struct accessors, newtype ->base)"
 run = "carton exec -- perl example/12_method_chains.pl"
 
+[tasks."vscode:deps"]
+description = "Install VSCode extension dependencies"
+dir = "editors/vscode"
+run = "npm install"
+
 [tasks."vscode:build"]
 description = "Build VSCode extension"
 dir = "editors/vscode"
