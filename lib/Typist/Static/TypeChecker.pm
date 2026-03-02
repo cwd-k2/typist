@@ -671,7 +671,7 @@ sub _build_env ($self) {
         next if exists $variables{$var->{name}};
         my $init_node = $var->{init_node} // next;
 
-        my $inferred = Typist::Static::Infer->infer_expr($init_node, $partial_env);
+        my $inferred = Typist::Static::Infer->infer_expr_with_siblings($init_node, $partial_env);
         next unless defined $inferred;
         next if $inferred->is_atom && $inferred->name eq 'Any';
 
@@ -857,6 +857,17 @@ sub _collect_local_var_types ($self) {
             # Use function-scoped env (includes parameter bindings)
             my $env = $self->_fn_env($fn);
             $env = $self->_inject_loop_vars($env, $init_node);
+
+            # Inject previously collected local var types so that
+            # `my $result = $line` can resolve $line's type.
+            if (keys $self->{_local_var_types}->%*) {
+                my %vars = $env->{variables}->%*;
+                for my $lv (values $self->{_local_var_types}->%*) {
+                    next unless $lv->{scope_start} == $fn->{line};
+                    $vars{$lv->{name}} //= $lv->{type};
+                }
+                $env = +{ $env->%*, variables => \%vars };
+            }
 
             my $inferred = Typist::Static::Infer->infer_expr_with_siblings($init_node, $env);
             next unless defined $inferred;
