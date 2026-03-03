@@ -165,10 +165,12 @@ sub _check_call_sites ($self) {
                     my $sig = $self->{registry}->lookup_function($pkg, $fname);
                     if ($sig) {
                         $cross_pkg = +{
-                            params_expr   => [map { $_->to_string } ($sig->{params} // [])->@*],
-                            generics      => $sig->{generics},
-                            variadic      => $sig->{variadic},
-                            default_count => $sig->{default_count} // 0,
+                            params_expr        => [map { $_->to_string } ($sig->{params} // [])->@*],
+                            generics           => $sig->{generics},
+                            variadic           => $sig->{variadic},
+                            default_count      => $sig->{default_count} // 0,
+                            struct_constructor => $sig->{struct_constructor},
+                            returns            => $sig->{returns},
                         };
                     }
                 }
@@ -179,11 +181,13 @@ sub _check_call_sites ($self) {
                 my $core_sig = $self->{registry}->lookup_function('CORE', $name);
                 if ($core_sig) {
                     $cross_pkg = +{
-                        params_expr   => $core_sig->{params_expr}
+                        params_expr        => $core_sig->{params_expr}
                             // [map { $_->to_string } ($core_sig->{params} // [])->@*],
-                        generics      => $core_sig->{generics},
-                        variadic      => $core_sig->{variadic},
-                        default_count => $core_sig->{default_count} // 0,
+                        generics           => $core_sig->{generics},
+                        variadic           => $core_sig->{variadic},
+                        default_count      => $core_sig->{default_count} // 0,
+                        struct_constructor => $core_sig->{struct_constructor},
+                        returns            => $core_sig->{returns},
                     };
                 }
             }
@@ -194,11 +198,13 @@ sub _check_call_sites ($self) {
                 my $pkg_sig = $self->{registry}->lookup_function($pkg, $name);
                 if ($pkg_sig) {
                     $cross_pkg = +{
-                        params_expr   => $pkg_sig->{params_expr}
+                        params_expr        => $pkg_sig->{params_expr}
                             // [map { $_->to_string } ($pkg_sig->{params} // [])->@*],
-                        generics      => $pkg_sig->{generics},
-                        variadic      => $pkg_sig->{variadic},
-                        default_count => $pkg_sig->{default_count} // 0,
+                        generics           => $pkg_sig->{generics},
+                        variadic           => $pkg_sig->{variadic},
+                        default_count      => $pkg_sig->{default_count} // 0,
+                        struct_constructor => $pkg_sig->{struct_constructor},
+                        returns            => $pkg_sig->{returns},
                     };
                 }
             }
@@ -214,6 +220,12 @@ sub _check_call_sites ($self) {
         # Find the argument list — next sibling should be a List
         my $next = $word->snext_sibling // next;
         next unless ref($next) && $next->isa('PPI::Structure::List');
+
+        # Struct constructor: named-arg check instead of positional
+        if ($fn->{struct_constructor} && $fn->{returns} && $fn->{returns}->is_struct) {
+            $self->_check_struct_constructor_call($name, $fn, $next, $self->_env_for_node($word), $word);
+            next;
+        }
 
         my @param_exprs = $fn->{params_expr}->@*;
 
@@ -304,6 +316,109 @@ sub _check_call_sites ($self) {
                 );
             }
         }
+    }
+}
+
+# ── Struct Constructor Check ─────────────────────
+
+# Check named-argument calls to struct constructors:
+#   Person(name => "Alice", age => 30)
+# Validates field names, types, and required-field completeness.
+sub _check_struct_constructor_call ($self, $name, $fn, $list, $env, $word) {
+    my $struct_type = $fn->{returns};
+    my $req = $struct_type->required_ref // +{};
+    my $opt = $struct_type->optional_ref // +{};
+    my %all = (%$req, %$opt);
+
+    # Extract key => value pairs from the PPI List
+    my $expr = $list->find_first('PPI::Statement::Expression')
+            // $list->find_first('PPI::Statement');
+    return unless $expr;
+
+    # Split children into comma-separated groups
+    my @groups;
+    my @current;
+    for my $child ($expr->schildren) {
+        if ($child->isa('PPI::Token::Operator') && $child->content eq ',') {
+            push @groups, [@current] if @current;
+            @current = ();
+        } else {
+            push @current, $child;
+        }
+    }
+    push @groups, [@current] if @current;
+
+    my %seen;
+    for my $group (@groups) {
+        # Find => in this group
+        my $arrow_idx;
+        for my $j (0 .. $#$group) {
+            if ($group->[$j]->isa('PPI::Token::Operator') && $group->[$j]->content eq '=>') {
+                $arrow_idx = $j;
+                last;
+            }
+        }
+        next unless defined $arrow_idx && $arrow_idx > 0;
+
+        # Extract field name
+        my $key_tok = $group->[0];
+        my $field_name;
+        if ($key_tok->isa('PPI::Token::Word')) {
+            $field_name = $key_tok->content;
+        } elsif ($key_tok->isa('PPI::Token::Quote')) {
+            $field_name = $key_tok->string;
+        }
+        next unless defined $field_name;
+
+        $seen{$field_name} = 1;
+
+        # Unknown field check
+        unless (exists $all{$field_name}) {
+            $self->{errors}->collect(
+                kind    => 'TypeMismatch',
+                message => "${name}(): unknown field '$field_name'",
+                file    => $self->{file},
+                line    => $word->line_number,
+                col     => $word->column_number,
+                end_col => $word->column_number + length($word->content),
+            );
+            next;
+        }
+
+        # Infer value type
+        my $val_token = $group->[$arrow_idx + 1];
+        next unless $val_token;
+
+        my $expected_type = $all{$field_name};
+        my $inferred = Typist::Static::Infer->infer_expr($val_token, $env, $expected_type);
+        next unless defined $inferred;
+        next if _contains_any($inferred);
+
+        unless (Typist::Subtype->is_subtype($inferred, $expected_type, registry => $self->{registry})) {
+            $self->{errors}->collect(
+                kind          => 'TypeMismatch',
+                message       => "${name}(): field '$field_name' expected ${\$expected_type->to_string}, got ${\$inferred->to_string}",
+                file          => $self->{file},
+                line          => $word->line_number,
+                col           => $word->column_number,
+                end_col       => $word->column_number + length($word->content),
+                expected_type => $expected_type->to_string,
+                actual_type   => $inferred->to_string,
+            );
+        }
+    }
+
+    # Missing required fields
+    for my $rk (sort keys %$req) {
+        next if $seen{$rk};
+        $self->{errors}->collect(
+            kind    => 'TypeMismatch',
+            message => "${name}(): missing required field '$rk'",
+            file    => $self->{file},
+            line    => $word->line_number,
+            col     => $word->column_number,
+            end_col => $word->column_number + length($word->content),
+        );
     }
 }
 

@@ -258,4 +258,110 @@ PERL
         'TestPkg::find(1)->age infers as Int';
 };
 
+# ── Static type checking: struct constructor ──────
+
+use Typist::Static::Analyzer;
+
+# Helper: analyze source, return TypeMismatch diagnostics
+sub _struct_type_errors {
+    my ($source) = @_;
+    my $result = Typist::Static::Analyzer->analyze($source);
+    [ grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@* ];
+}
+
+subtest 'struct constructor: correct usage — no errors' => sub {
+    my $errs = _struct_type_errors(<<'PERL');
+package main;
+use Typist;
+use Typist::DSL;
+struct Person => (name => Str, age => Int);
+sub test :sig(() -> Void) () {
+    my $p = Person(name => "Alice", age => 30);
+}
+PERL
+    is scalar @$errs, 0, 'no type errors for correct struct constructor call';
+};
+
+subtest 'struct constructor: field type mismatch' => sub {
+    my $errs = _struct_type_errors(<<'PERL');
+package main;
+use Typist;
+use Typist::DSL;
+struct Person => (name => Str, age => Int);
+sub test :sig(() -> Void) () {
+    my $p = Person(name => 42, age => 30);
+}
+PERL
+    ok scalar @$errs >= 1, 'detects field type mismatch';
+    like $errs->[0]{message}, qr/field 'name'.*Str/, 'error identifies field and expected type';
+};
+
+subtest 'struct constructor: missing required field' => sub {
+    my $errs = _struct_type_errors(<<'PERL');
+package main;
+use Typist;
+use Typist::DSL;
+struct Person => (name => Str, age => Int);
+sub test :sig(() -> Void) () {
+    my $p = Person(name => "Alice");
+}
+PERL
+    ok scalar @$errs >= 1, 'detects missing required field';
+    like $errs->[0]{message}, qr/missing required field 'age'/, 'error identifies missing field';
+};
+
+subtest 'struct constructor: unknown field' => sub {
+    my $errs = _struct_type_errors(<<'PERL');
+package main;
+use Typist;
+use Typist::DSL;
+struct Person => (name => Str, age => Int);
+sub test :sig(() -> Void) () {
+    my $p = Person(name => "Alice", age => 30, hair => "brown");
+}
+PERL
+    ok scalar @$errs >= 1, 'detects unknown field';
+    like $errs->[0]{message}, qr/unknown field 'hair'/, 'error identifies unknown field';
+};
+
+subtest 'struct constructor: optional field omission OK' => sub {
+    my $errs = _struct_type_errors(<<'PERL');
+package main;
+use Typist;
+use Typist::DSL;
+struct Config => (host => Str, port => Int, debug => optional(Bool));
+sub test :sig(() -> Void) () {
+    my $c = Config(host => "localhost", port => 8080);
+}
+PERL
+    is scalar @$errs, 0, 'no errors when optional field is omitted';
+};
+
+subtest 'struct constructor: optional field type mismatch' => sub {
+    my $errs = _struct_type_errors(<<'PERL');
+package main;
+use Typist;
+use Typist::DSL;
+struct Config => (host => Str, port => Int, debug => optional(Bool));
+sub test :sig(() -> Void) () {
+    my $c = Config(host => "localhost", port => 8080, debug => "yes");
+}
+PERL
+    ok scalar @$errs >= 1, 'detects optional field type mismatch';
+    like $errs->[0]{message}, qr/field 'debug'.*Bool/, 'error identifies optional field';
+};
+
+subtest 'struct constructor: expression value inference' => sub {
+    my $errs = _struct_type_errors(<<'PERL');
+package main;
+use Typist;
+use Typist::DSL;
+struct Person => (name => Str, age => Int);
+sub test :sig(() -> Void) () {
+    my $p = Person(name => "Alice", age => 1 + 2);
+}
+PERL
+    is scalar @$errs, 0, 'no errors when expression infers correct type';
+};
+
 done_testing;

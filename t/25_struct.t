@@ -117,10 +117,9 @@ subtest 'struct contains checks blessed type' => sub {
 
 # ── Runtime type validation ──────────────────
 
-subtest 'runtime type validation' => sub {
-    local $Typist::RUNTIME = 1;
+subtest 'boundary type validation (always-on)' => sub {
     my $died = !eval { Person(name => "Alice", age => "not_a_number"); 1 };
-    ok $died, 'runtime rejects invalid type';
+    ok $died, 'constructor rejects invalid type without -runtime';
     like $@, qr/field 'age' expected Int/, 'error names the field and expected type';
 };
 

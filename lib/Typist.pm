@@ -391,14 +391,12 @@ sub _struct ($name, $caller, @field_pairs) {
                     unless exists $given{$k};
             }
 
-            # Runtime type validation (if enabled)
-            if ($Typist::RUNTIME) {
-                for my $k (keys %given) {
-                    my $expected = $all{$k};
-                    unless ($expected->contains($given{$k})) {
-                        die "Typist: ${name}() — field '$k' expected "
-                            . $expected->to_string . ", got $given{$k}\n";
-                    }
+            # Boundary type validation (always-on, like newtype/datatype)
+            for my $k (keys %given) {
+                my $expected = $all{$k};
+                unless ($expected->contains($given{$k})) {
+                    die "Typist: ${name}() — field '$k' expected "
+                        . $expected->to_string . ", got $given{$k}\n";
                 }
             }
 
