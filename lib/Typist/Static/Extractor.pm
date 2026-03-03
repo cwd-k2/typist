@@ -22,6 +22,7 @@ sub extract ($class, $source) {
         effects        => +{},
         structs        => +{},
         typeclasses    => +{},
+        instances      => [],
         declares       => +{},
         loop_variables => [],
         package        => 'main',
@@ -40,6 +41,7 @@ sub extract ($class, $source) {
     $class->_extract_structs($doc, $result);
     $class->_extract_effects($doc, $result);
     $class->_extract_typeclasses($doc, $result);
+    $class->_extract_instances($doc, $result);
     $class->_extract_declares($doc, $result);
     $class->_extract_variables($doc, $result);
     $class->_extract_functions($doc, $result);
@@ -547,6 +549,72 @@ sub _extract_typeclasses ($class, $doc, $result) {
             var_spec     => $var_spec,
             method_names => \@method_names,
             methods      => \%method_sigs,
+            line         => $stmt->line_number,
+            col          => $stmt->column_number,
+        };
+    }
+}
+
+# ── Instance Extraction ────────────────────────
+#
+# instance ClassName => TypeExpr, +{ method => sub ... }
+# instance ClassName => 'TypeExpr', +{ method => sub ... }
+
+sub _extract_instances ($class, $doc, $result) {
+    my $statements = $doc->find('PPI::Statement') || [];
+
+    for my $stmt (@$statements) {
+        my @children = $stmt->schildren;
+        next unless @children >= 4;
+
+        next unless $children[0]->isa('PPI::Token::Word')
+                 && $children[0]->content eq 'instance';
+
+        # Class name: bare Word or quoted string
+        my $class_tok = $children[1];
+        my $class_name = $class_tok->isa('PPI::Token::Quote')
+            ? $class_tok->string
+            : $class_tok->content;
+
+        next unless $children[2]->isa('PPI::Token::Operator')
+                 && $children[2]->content eq '=>';
+
+        # Type expression: Word or Quote
+        my $type_tok = $children[3];
+        my $type_expr;
+        if ($type_tok->isa('PPI::Token::Quote')) {
+            $type_expr = $type_tok->string;
+        } elsif ($type_tok->isa('PPI::Token::Word')) {
+            $type_expr = $type_tok->content;
+        } else {
+            next;
+        }
+
+        # Extract method names from the methods hashref block
+        my @method_names;
+        for my $child (@children[4 .. $#children]) {
+            next unless $child->isa('PPI::Structure::Constructor')
+                     || $child->isa('PPI::Structure::Block')
+                     || $child->isa('PPI::Structure::List');
+            for my $expr ($child->schildren) {
+                next unless $expr->isa('PPI::Statement') || $expr->isa('PPI::Statement::Expression');
+                my @sc = $expr->schildren;
+                for my $i (0 .. $#sc - 1) {
+                    if ($sc[$i]->isa('PPI::Token::Word')
+                        && $sc[$i + 1]->isa('PPI::Token::Operator')
+                        && $sc[$i + 1]->content eq '=>')
+                    {
+                        push @method_names, $sc[$i]->content;
+                    }
+                }
+            }
+            last;
+        }
+
+        push $result->{instances}->@*, +{
+            class_name   => $class_name,
+            type_expr    => $type_expr,
+            method_names => \@method_names,
             line         => $stmt->line_number,
             col          => $stmt->column_number,
         };

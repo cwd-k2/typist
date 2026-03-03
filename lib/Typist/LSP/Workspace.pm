@@ -65,6 +65,7 @@ sub _index_file ($self, $path) {
         structs     => $extracted->{structs},
         effects     => $extracted->{effects},
         typeclasses => $extracted->{typeclasses},
+        instances   => $extracted->{instances},
         declares    => $extracted->{declares},
         package     => $extracted->{package},
     };
@@ -93,6 +94,7 @@ sub update_file ($self, $path, $source) {
         structs     => $extracted->{structs},
         effects     => $extracted->{effects},
         typeclasses => $extracted->{typeclasses},
+        instances   => $extracted->{instances},
         declares    => $extracted->{declares},
         package     => $extracted->{package},
     };
@@ -148,6 +150,11 @@ sub _unregister_file_types ($self, $old_info) {
         }
     }
 
+    # Unregister instances
+    for my $inst_info (($old_info->{instances} // [])->@*) {
+        $reg->unregister_instance($inst_info->{class_name}, $inst_info->{type_expr});
+    }
+
     # Unregister declare entries
     for my $name (keys(($old_info->{declares} // +{})->%*)) {
         my $decl = $old_info->{declares}{$name};
@@ -179,6 +186,7 @@ sub _rebuild_registry ($self) {
             structs     => $info->{structs}     // +{},
             effects     => $info->{effects}     // +{},
             typeclasses => $info->{typeclasses} // +{},
+            instances   => $info->{instances}   // [],
             declares    => $info->{declares}    // +{},
             package     => $info->{package}     // 'main',
         });

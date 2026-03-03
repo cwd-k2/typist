@@ -101,7 +101,7 @@ sub with_log :sig(<r: Row>(Str) -> Str ![Log, r]) ($msg) {
 | CHECK-phase analysis | Type/effect errors at compile time via `warn` |
 | CLI checker | Terminal-based static analysis with colored output |
 | LSP server | Hover, completion, diagnostics, go-to-definition, references, rename, code actions, semantic tokens, and more |
-| Cross-file checking | Workspace-level type resolution across modules |
+| Cross-file checking | Workspace-level type resolution across modules (aliases, newtypes, datatypes, structs, effects, typeclasses, instances) |
 | Gradual typing | Annotation density determines check strictness |
 | Type inference | Bidirectional inference, literal widening for mutable bindings, control flow narrowing (`defined`, truthiness, `isa`, `ref()`, early return) |
 | Builtin prelude | 80 builtins with type annotations and three standard effect labels (`IO`, `Exn`, `Decl`) |
@@ -339,6 +339,17 @@ BEGIN {
 say Show::show(42);      # "42"
 ```
 
+Instances can be defined in a separate file from their typeclass. The LSP workspace and `typist-check` resolve instances across modules:
+
+```perl
+# lib/MyApp/Classes.pm
+typeclass Eq => T, +{ eq => '(T, T) -> Bool' };
+
+# lib/MyApp/Instances.pm — different file
+instance Eq => Int, +{ eq => sub ($a, $b) { $a == $b } };
+instance Eq => Str, +{ eq => sub ($a, $b) { $a eq $b } };
+```
+
 ### Declare and Suppress
 
 ```perl
@@ -503,6 +514,7 @@ carton exec -- prove -l t/critic/       # Perl::Critic policy
 - **Method checking** — Instance (`$self->method()`), cross-package struct (`$p->name()`), class (`Person->new()`), chained (`$p->with(...)->greet()`), generic, and Record accessor calls are checked. Union receivers and untyped receivers are gradual-skipped.
 - **Type narrowing** — Supports `defined($x)`, truthiness, `isa`, `ref($x) eq/ne 'TYPE'` (with/without parens, variable comparison, inverse narrowing for Union types), and early return. Full ref type map: `HASH`, `ARRAY`, `SCALAR`, `CODE`, `REF`, `Regexp`, `GLOB`, `IO`, `VSTRING`, plus blessed class names.
 - **Effect system** — Effect inference provides LSP inlay hints for unannotated functions (direct callees only). Protocol checking traces operation sequences with if/else branching convergence, loop idempotency enforcement, and `match`/`handle` body tracking.
+- **Typeclass instances** — Cross-file instance declarations are extracted and registered for workspace resolution. Static analysis records instance existence but does not validate method completeness; completeness checking runs at runtime only. Method implementations (coderefs) are not available to the static path.
 - **PPI dependency** — Diagnostic quality depends on PPI's parse accuracy.
 
 ## License

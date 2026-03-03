@@ -241,6 +241,75 @@ PERL
     is $result->{effects}{Console}{states}, undef, 'no states list';
 };
 
+# ── Instance extraction ────────────────────────
+
+subtest 'extracts basic instance' => sub {
+    my $result = Typist::Static::Extractor->extract(<<'PERL');
+package MyApp;
+use v5.40;
+instance Show => Int, +{
+    show => sub ($x) { "$x" },
+};
+PERL
+
+    my $instances = $result->{instances};
+    is scalar @$instances, 1, 'one instance extracted';
+    is $instances->[0]{class_name},   'Show', 'class_name is Show';
+    is $instances->[0]{type_expr},    'Int',  'type_expr is Int';
+    is_deeply $instances->[0]{method_names}, ['show'], 'method_names';
+    ok $instances->[0]{line} > 0, 'has line number';
+};
+
+subtest 'extracts instance with quoted type_expr' => sub {
+    my $result = Typist::Static::Extractor->extract(<<'PERL');
+use v5.40;
+instance Serialize => 'Int, Str', +{
+    serialize => sub ($x) { "$x" },
+};
+PERL
+
+    my $instances = $result->{instances};
+    is scalar @$instances, 1, 'one instance extracted';
+    is $instances->[0]{class_name}, 'Serialize',  'class_name is Serialize';
+    is $instances->[0]{type_expr},  'Int, Str',   'type_expr is quoted multi-param';
+};
+
+subtest 'extracts multiple instances for same class' => sub {
+    my $result = Typist::Static::Extractor->extract(<<'PERL');
+use v5.40;
+instance Eq => Int, +{ eq => sub ($a, $b) { $a == $b } };
+instance Eq => Str, +{ eq => sub ($a, $b) { $a eq $b } };
+PERL
+
+    my $instances = $result->{instances};
+    is scalar @$instances, 2, 'two instances extracted';
+    is $instances->[0]{class_name}, 'Eq',  'first class_name';
+    is $instances->[0]{type_expr},  'Int', 'first type_expr';
+    is $instances->[1]{class_name}, 'Eq',  'second class_name';
+    is $instances->[1]{type_expr},  'Str', 'second type_expr';
+};
+
+subtest 'extracts HKT instance' => sub {
+    my $result = Typist::Static::Extractor->extract(<<'PERL');
+use v5.40;
+instance Functor => 'ArrayRef', +{
+    fmap => sub ($f, $xs) { [map { $f->($_) } @$xs] },
+};
+PERL
+
+    my $instances = $result->{instances};
+    is scalar @$instances, 1, 'one HKT instance';
+    is $instances->[0]{class_name}, 'Functor',  'class is Functor';
+    is $instances->[0]{type_expr},  'ArrayRef', 'type_expr is ArrayRef';
+};
+
+subtest 'empty source has empty instances' => sub {
+    my $result = Typist::Static::Extractor->extract('use v5.40;');
+    is_deeply $result->{instances}, [], 'no instances';
+};
+
+# ── Protocol extraction ───────────────────────
+
 subtest 'extracts mixed ops with and without protocol' => sub {
     my $result = Typist::Static::Extractor->extract(<<'PERL');
 use v5.40;

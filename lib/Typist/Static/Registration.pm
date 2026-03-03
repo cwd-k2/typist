@@ -32,6 +32,7 @@ sub register_all ($class, $extracted, $registry, %opts) {
     $class->register_datatypes($extracted, $registry, %opts);
     $class->register_effects($extracted, $registry, %opts);
     $class->register_typeclasses($extracted, $registry, %opts);
+    $class->register_instances($extracted, $registry, %opts);
     $class->register_declares($extracted, $registry, %opts);
     $class->register_functions($extracted, $registry, %opts);
 }
@@ -378,6 +379,19 @@ sub register_typeclasses ($class, $extracted, $registry, %opts) {
                 returns_expr => $returns->to_string,
             });
         }
+    }
+}
+
+# ── Instances ────────────────────────────────────
+
+sub register_instances ($class, $extracted, $registry, %opts) {
+    for my $info (($extracted->{instances} // [])->@*) {
+        my $inst = Typist::TypeClass->new_instance(
+            class     => $info->{class_name},
+            type_expr => $info->{type_expr},
+            methods   => +{},
+        );
+        $registry->register_instance($info->{class_name}, $info->{type_expr}, $inst);
     }
 }
 

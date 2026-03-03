@@ -277,6 +277,13 @@ sub resolve_instance ($invocant, $class_name, $type_or_types) {
     Typist::TypeClass::Def->resolve($class_name, $type_or_types, $self->{instances});
 }
 
+sub unregister_instance ($invocant, $class_name, $type_expr) {
+    my $self = _self($invocant);
+    my $list = $self->{instances}{$class_name} // return;
+    @$list = grep { $_->type_expr ne $type_expr } @$list;
+    delete $self->{instances}{$class_name} unless @$list;
+}
+
 # ── Effect Management ────────────────────────────
 
 sub register_effect ($invocant, $name, $effect) {

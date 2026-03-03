@@ -109,14 +109,14 @@ Tie::Scalar 監視  | OFF                  | ON
 - `Typist::Type::Data` — Algebraic data type (tagged union). Supports parameterized types via `datatype 'Option[T]' => Some => '(T)', None => '()'` with covariant type arguments, type inference in constructors, and `instantiate` for concrete types. Values are blessed with `_tag`, `_values`, and optional `_type_args` fields. GADT support via `return_types` field: `is_gadt`, `constructor_return_type($tag)`, `parse_constructor_spec($spec, %opts)`.
 - `Typist::Type::Fold` — Type tree traversal utilities. `map_type($type, $cb)` rebuilds bottom-up; `walk($type, $cb)` visits top-down. Handles all type nodes including Data (variants, type_args, return_types).
 - `Typist::Subtype` — Structural subtype relation + `common_super` (LUB for atom and record types). Atom hierarchy: `Bool <: Int <: Double <: Num <: Any`, `Str <: Any`, `Undef <: Any`. Struct (nominal) is subtype of matching Record (structural), but not vice versa. `_instantiate_check` delegates to `Unify->collect_bindings` for rank-2 polymorphism.
-- `Typist::Registry` — Type/function registration store (singleton + instance). `name_index` reverse index for O(1) `search_function_by_name`. `unregister_function($pkg, $name)` supports differential workspace updates. `merge()` and `reset()` maintain the index.
+- `Typist::Registry` — Type/function registration store (singleton + instance). `name_index` reverse index for O(1) `search_function_by_name`. `unregister_function($pkg, $name)` and `unregister_instance($class_name, $type_expr)` support differential workspace updates. `merge()` and `reset()` maintain the index.
 - `Typist::Parser` — Type expression parser with parse caching. `parse($expr)` and `parse_annotation($input)` results are cached (type objects are immutable). 1000-entry eviction limit.
 - `Typist::Attribute` — Attribute handlers + `parse_generic_decl` (shared between runtime and static paths).
 - `Typist::TypeClass` — Type class Def (with `install_dispatch`, `check_instance_completeness`, `resolve`) and Inst structures.
 - `Typist::LSP::Transport` — JSON-RPC transport (Content-Length framing, partial read loop). `uri_to_path($uri)` shared URI decoder (file:// prefix + percent-decoding), used by Server and Document.
 - `Typist::LSP::Document` — Per-file analysis cache and query interface. `result` and `lines` public accessors. `symbol_at` returns symbols with LSP `range` for precise hover highlighting. `_find_word_occurrences` class method for shared word-boundary search (used by `find_references` and Workspace). `signature_context` supports multi-line calls (20-line lookback).
-- `Typist::LSP::Workspace` — Cross-file type registry. Differential updates via `_unregister_file_types` (removes old entries) + `_register_file_types` (adds new).
-- `Typist::Static::Extractor` — PPI-based type/function/variable extraction. `parse_loop_compound($compound)` shared loop structure parser used by both `_extract_loop_variables` and TypeChecker `_inject_loop_vars`.
+- `Typist::LSP::Workspace` — Cross-file type registry. Tracks aliases, functions, newtypes, datatypes, structs, effects, typeclasses, instances, and declares per file. Differential updates via `_unregister_file_types` (removes old entries) + `_register_file_types` (adds new).
+- `Typist::Static::Extractor` — PPI-based type/function/variable extraction. Extracts aliases, newtypes, datatypes, enums, structs, effects, typeclasses, instances, declares, variables, functions, and loop variables. `parse_loop_compound($compound)` shared loop structure parser used by both `_extract_loop_variables` and TypeChecker `_inject_loop_vars`. Instance extraction (`_extract_instances`) captures `class_name`, `type_expr`, `method_names` from `instance ClassName => TypeExpr, +{...}` statements.
 
 ## Conventions
 
@@ -149,6 +149,7 @@ Tie::Scalar 監視  | OFF                  | ON
 - Literal widening: unannotated `my $var = LITERAL` widens `Literal(v, B)` to `Atom(B)` — `my $total = 0` → `Int`, `my $rate = 3.14` → `Double`, `my $name = "hi"` → `Str`. `Bool` base widens to `Int` (0/1 are numbers in Perl). Expression-level inference is unchanged: `Infer->infer_expr` still returns `Literal(0, 'Bool')`.
 - Variable reassignment: `:sig` annotated variables are checked on reassignment (`$x = expr`); unannotated variables are not checked.
 - Method calls: `$self->method()` (same-package), `$p->name()` (cross-package struct), `Person->new()` (class method), `$p->with(...)->greet()` (chained via return type resolution), generic methods (delegated to `_check_generic_call`), and Record accessor calls are all type-checked. Union receivers and untyped receivers are gradual-skipped.
+- Cross-file typeclass instances: `instance` declarations are extracted by `Extractor._extract_instances`, registered by `Registration.register_instances` (with empty methods hash — existence only), and tracked per-file by `Workspace`. `Registry.unregister_instance` enables differential updates. Static registration does not validate method completeness (cross-file ordering is non-deterministic); completeness checking is deferred to runtime.
 
 ## Commands
 
@@ -210,7 +211,7 @@ Tests are numbered and ordered by dependency:
 - `t/static/02_infer.t` — Static type inference (including anonymous sub inference)
 - `t/static/03_typecheck.t` — Static type mismatch detection (including callback arity checking)
 - `t/static/04_effects.t` — Static effect mismatch detection
-- `t/static/05_extractor_advanced.t` — Extractor: newtype/effect/typeclass extraction
+- `t/static/05_extractor_advanced.t` — Extractor: newtype/effect/typeclass/instance extraction
 - `t/static/06_crossfile_analyzer.t` — Cross-file type resolution via workspace registry
 - `t/static/07_method_typecheck.t` — Method type checking (is_method, -> guard, $self->method())
 - `t/static/08_prelude.t` — Builtin prelude (type checking, effect detection, user override)
@@ -227,7 +228,7 @@ Tests are numbered and ordered by dependency:
 - `t/lsp/03_hover.t` — Hover provider
 - `t/lsp/04_completion.t` — Completion provider
 - `t/lsp/05_workspace.t` — Workspace scanning
-- `t/lsp/06_workspace_crossfile.t` — Cross-file workspace registration
+- `t/lsp/06_workspace_crossfile.t` — Cross-file workspace registration (newtypes, effects, instances)
 - `t/lsp/07_crossfile_diagnostics.t` — Cross-file re-diagnosis on save
 - `t/lsp/09_document_symbol.t` — DocumentSymbol provider
 - `t/lsp/10_definition.t` — Go to Definition
