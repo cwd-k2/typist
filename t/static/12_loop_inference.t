@@ -295,4 +295,45 @@ subtest 'infer: =~ with env-lookup yields Bool' => sub {
     is $t->to_string, 'Bool', '=~ with env yields Bool';
 };
 
+# ── Block Dereference @{$expr} ───────────────────
+
+subtest 'infer iterable: @{$ref} block deref unwraps ArrayRef' => sub {
+    my $env = +{
+        variables => +{
+            '$items' => Typist::Type::Param->new('ArrayRef', Typist::Type::Atom->new('Int')),
+        },
+    };
+
+    my $doc = PPI::Document->new(\'for my $x (@{$items}) {}');
+    my $compounds = $doc->find('PPI::Statement::Compound') || [];
+    my ($list_node);
+    for my $c (@$compounds) {
+        for my $child ($c->schildren) {
+            if ($child->isa('PPI::Structure::List')) {
+                $list_node = $child;
+                last;
+            }
+        }
+    }
+
+    ok $list_node, 'found list node';
+    my $elem = Typist::Static::Infer->infer_iterable_element_type($list_node, $env);
+    ok $elem, 'element type inferred from @{$items}';
+    is $elem->to_string, 'Int', '@{$items} with ArrayRef[Int] → Int';
+};
+
+subtest 'analyzer: loop with @{$ref} block deref' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub process :sig((ArrayRef[Str]) -> Void) ($items) {
+    for my $item (@{$items}) {
+        my $s :sig(Str) = $item;
+    }
+}
+PERL
+    my $result = Typist::Static::Analyzer->analyze($source);
+    my @errors = grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@*;
+    is scalar @errors, 0, 'block deref @{$items} loop body type checks correctly';
+};
+
 done_testing;

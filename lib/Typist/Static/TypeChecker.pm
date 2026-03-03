@@ -431,51 +431,88 @@ sub _check_method_call ($self, $word, $arrow) {
     my $name = $word->content;
 
     my $receiver = $arrow->sprevious_sibling // return;
-    return unless $receiver->isa('PPI::Token::Symbol');
 
     my $env = $self->_env_for_node($word);
-    my ($pkg, $display);
+    my ($pkg, $display, $recv_type);
 
-    if ($receiver->content eq '$self') {
-        # Path A: same-package instance method
-        $pkg     = $self->{extracted}{package};
-        $display = "\$self->${name}";
-    } else {
-        # Path B: resolve receiver type from env
-        my $recv_type = $env->{variables}{$receiver->content} // return;
-
-        # Chase aliases to reach the concrete type
-        if ($recv_type->is_alias) {
-            my $resolved = $self->{registry}->lookup_type($recv_type->alias_name);
-            $recv_type = $resolved if $resolved;
-        }
-
-        # Must be a struct (nominal) type to look up methods
-        if ($recv_type->is_struct) {
-            $pkg = $recv_type->name;
+    if ($receiver->isa('PPI::Token::Symbol')) {
+        if ($receiver->content eq '$self') {
+            # Path A: same-package instance method
+            $pkg     = $self->{extracted}{package};
+            $display = "\$self->${name}";
         } else {
-            return;  # unknown / non-struct → gradual skip
+            # Path B: resolve receiver type from env
+            $recv_type = $env->{variables}{$receiver->content} // return;
+
+            # Chase aliases to reach the concrete type
+            if ($recv_type->is_alias) {
+                my $resolved = $self->{registry}->lookup_type($recv_type->alias_name);
+                $recv_type = $resolved if $resolved;
+            }
+
+            # Must be a struct (nominal) type to look up methods
+            if ($recv_type->is_struct) {
+                $pkg = $recv_type->name;
+            } elsif ($recv_type->is_record) {
+                # Record: handled below in type checking
+                $pkg = undef;
+            } else {
+                return;  # unknown / non-struct → gradual skip
+            }
+            $display = $receiver->content . "->${name}";
         }
-        $display = $receiver->content . "->${name}";
+    } elsif ($receiver->isa('PPI::Token::Word')) {
+        # Path C: Class->method() — bareword class name
+        my $class_name = $receiver->content;
+        my $resolved = $self->{registry}->lookup_type($class_name);
+        if ($resolved && $resolved->is_struct) {
+            $pkg = $class_name;
+        } else {
+            return;  # unknown class → gradual skip
+        }
+        $display = "${class_name}->${name}";
+    } else {
+        return;
     }
+
+    # Record receiver: look up field as accessor
+    if (!$pkg && $recv_type && $recv_type->is_record) {
+        return $self->_check_record_method($word, $name, $recv_type, $display);
+    }
+
+    return unless $pkg;
 
     # Look up method: try source package first, then struct blessed package
     my $method_sig = $self->{registry}->lookup_method($pkg, $name);
     unless ($method_sig) {
         # Struct accessor methods are under the blessed package (Typist::Struct::Name)
-        my $recv_type = $env->{variables}{$receiver->content};
         if ($recv_type && $recv_type->is_struct) {
             $method_sig = $self->{registry}->lookup_method($recv_type->package, $name);
+        } elsif ($receiver->isa('PPI::Token::Word')) {
+            # Class method: try the blessed package pattern
+            my $struct_type = $self->{registry}->lookup_type($pkg);
+            if ($struct_type && $struct_type->is_struct) {
+                $method_sig = $self->{registry}->lookup_method($struct_type->package, $name);
+            }
         }
     }
     return unless $method_sig;
 
-    # Skip generic methods (type variables can't be resolved statically)
-    return if $method_sig->{generics} && $method_sig->{generics}->@*;
-
     # The argument list must follow the method name
     my $arg_list = $word->snext_sibling // return;
     return unless ref $arg_list && $arg_list->isa('PPI::Structure::List');
+
+    # Generic methods: delegate to _check_generic_call with pseudo-fn
+    if ($method_sig->{generics} && $method_sig->{generics}->@*) {
+        my @args = $self->_extract_args($arg_list);
+        my $pseudo_fn = +{
+            params_expr => [map { $_->to_string } ($method_sig->{params} // [])->@*],
+            generics    => $method_sig->{generics},
+            variadic    => $method_sig->{variadic},
+        };
+        $self->_check_generic_call($display, $pseudo_fn, \@args, $env, $word);
+        return;
+    }
 
     my @param_types = ($method_sig->{params} // [])->@*;
     my @param_exprs = map { $_->to_string } @param_types;
@@ -499,31 +536,164 @@ sub _check_method_call ($self, $word, $arrow) {
         return if @args < $min_args;
     }
 
-    return unless @param_exprs;
-
     # ── Type check each argument ─────────────────
-    my $n = @param_exprs < @args ? @param_exprs : @args;
-    for my $i (0 .. $n - 1) {
-        my $declared = $self->_resolve_type($param_exprs[$i]);
-        next unless defined $declared;
-        next if $self->_has_type_var($declared);
+    if (@param_exprs) {
+        my $n = @param_exprs < @args ? @param_exprs : @args;
+        for my $i (0 .. $n - 1) {
+            my $declared = $self->_resolve_type($param_exprs[$i]);
+            next unless defined $declared;
+            next if $self->_has_type_var($declared);
 
-        my $inferred = Typist::Static::Infer->infer_expr($args[$i], $env, $declared);
-        next unless defined $inferred;
-        next if _contains_any($inferred);
+            my $inferred = Typist::Static::Infer->infer_expr($args[$i], $env, $declared);
+            next unless defined $inferred;
+            next if _contains_any($inferred);
 
-        unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
+            unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
+                $self->{errors}->collect(
+                    kind          => 'TypeMismatch',
+                    message       => "Argument " . ($i + 1) . " of $display(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
+                    file          => $self->{file},
+                    line          => $word->line_number,
+                    col           => $word->column_number,
+                    end_col       => $word->column_number + length($word->content),
+                    expected_type => $declared->to_string,
+                    actual_type   => $inferred->to_string,
+                );
+            }
+        }
+    }
+
+    # ── Chain detection ──────────────────────────
+    # If the arg list is followed by '->' Word, check the chain
+    my $chain_arrow = $arg_list->snext_sibling;
+    if ($chain_arrow && ref $chain_arrow
+        && $chain_arrow->isa('PPI::Token::Operator') && $chain_arrow->content eq '->')
+    {
+        my $return_type = $method_sig->{returns};
+        if ($return_type) {
+            $self->_check_chained_method($return_type, $chain_arrow, $env);
+        }
+    }
+}
+
+# Check chained method calls: $obj->m1()->m2()->m3()
+# Resolves return type to struct, looks up next method, and recurses.
+sub _check_chained_method ($self, $return_type, $arrow, $env) {
+    my $method_word = $arrow->snext_sibling // return;
+    return unless ref $method_word && $method_word->isa('PPI::Token::Word');
+    my $name = $method_word->content;
+
+    # Resolve return type to struct
+    my $resolved = $return_type;
+    if ($resolved->is_alias) {
+        my $looked = $self->{registry}->lookup_type($resolved->alias_name);
+        $resolved = $looked if $looked;
+    }
+    return unless $resolved->is_struct;  # non-struct return → gradual skip
+
+    my $pkg = $resolved->name;
+    my $display = "..." . "->${name}";
+
+    # Look up method
+    my $method_sig = $self->{registry}->lookup_method($pkg, $name);
+    unless ($method_sig) {
+        $method_sig = $self->{registry}->lookup_method($resolved->package, $name);
+    }
+    return unless $method_sig;
+
+    my $arg_list = $method_word->snext_sibling // return;
+    return unless ref $arg_list && $arg_list->isa('PPI::Structure::List');
+
+    # Generic methods: delegate
+    if ($method_sig->{generics} && $method_sig->{generics}->@*) {
+        my @args = $self->_extract_args($arg_list);
+        my $pseudo_fn = +{
+            params_expr => [map { $_->to_string } ($method_sig->{params} // [])->@*],
+            generics    => $method_sig->{generics},
+            variadic    => $method_sig->{variadic},
+        };
+        $self->_check_generic_call($display, $pseudo_fn, \@args, $env, $method_word);
+    } else {
+        my @param_types = ($method_sig->{params} // [])->@*;
+        my @param_exprs = map { $_->to_string } @param_types;
+        my @args = $self->_extract_args($arg_list);
+
+        # Arity check
+        my $is_variadic = $method_sig->{variadic};
+        my $min_args = $is_variadic ? @param_exprs - 1 : @param_exprs;
+        if (@args < $min_args || (!$is_variadic && @args > @param_exprs)) {
+            my $expect = $is_variadic ? "at least $min_args" : "${\scalar @param_exprs}";
             $self->{errors}->collect(
-                kind          => 'TypeMismatch',
-                message       => "Argument " . ($i + 1) . " of $display(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
-                file          => $self->{file},
-                line          => $word->line_number,
-                col           => $word->column_number,
-                end_col       => $word->column_number + length($word->content),
-                expected_type => $declared->to_string,
-                actual_type   => $inferred->to_string,
+                kind    => 'ArityMismatch',
+                message => "$display() expects $expect arguments, got ${\scalar @args}",
+                file    => $self->{file},
+                line    => $method_word->line_number,
+                col     => $method_word->column_number,
+                end_col => $method_word->column_number + length($method_word->content),
             );
         }
+
+        # Type check each argument
+        if (@param_exprs) {
+            my $n = @param_exprs < @args ? @param_exprs : @args;
+            for my $i (0 .. $n - 1) {
+                my $declared = $self->_resolve_type($param_exprs[$i]);
+                next unless defined $declared;
+                next if $self->_has_type_var($declared);
+                my $inferred = Typist::Static::Infer->infer_expr($args[$i], $env, $declared);
+                next unless defined $inferred;
+                next if _contains_any($inferred);
+                unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
+                    $self->{errors}->collect(
+                        kind          => 'TypeMismatch',
+                        message       => "Argument " . ($i + 1) . " of $display(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
+                        file          => $self->{file},
+                        line          => $method_word->line_number,
+                        col           => $method_word->column_number,
+                        end_col       => $method_word->column_number + length($method_word->content),
+                        expected_type => $declared->to_string,
+                        actual_type   => $inferred->to_string,
+                    );
+                }
+            }
+        }
+    }
+
+    # Continue the chain recursively
+    my $next_arrow = $arg_list->snext_sibling;
+    if ($next_arrow && ref $next_arrow
+        && $next_arrow->isa('PPI::Token::Operator') && $next_arrow->content eq '->')
+    {
+        my $next_return = $method_sig->{returns};
+        if ($next_return) {
+            $self->_check_chained_method($next_return, $next_arrow, $env);
+        }
+    }
+}
+
+# Record accessor method check: Record field as zero-arg accessor.
+sub _check_record_method ($self, $word, $name, $recv_type, $display) {
+    # Look up field in Record's required/optional fields
+    my $field_type;
+    my %req = $recv_type->required_ref ? $recv_type->required_ref->%* : ();
+    my %opt = $recv_type->optional_ref ? $recv_type->optional_ref->%* : ();
+    $field_type = $req{$name} // $opt{$name};
+    return unless $field_type;  # unknown field → gradual skip
+
+    # Accessor should be called with zero args
+    my $arg_list = $word->snext_sibling // return;
+    return unless ref $arg_list && $arg_list->isa('PPI::Structure::List');
+
+    my @args = $self->_extract_args($arg_list);
+    if (@args > 0) {
+        $self->{errors}->collect(
+            kind    => 'ArityMismatch',
+            message => "$display() is an accessor, expects 0 arguments, got ${\scalar @args}",
+            file    => $self->{file},
+            line    => $word->line_number,
+            col     => $word->column_number,
+            end_col => $word->column_number + length($word->content),
+        );
     }
 }
 
@@ -1235,52 +1405,100 @@ sub _narrow_truthiness ($self, $cond_children, $env) {
     +{ $var_name => $narrowed };
 }
 
-# Rule: `ref($x) eq 'TYPE'` narrows $x to the corresponding reference type.
-# Maps: HASH → HashRef[Any], ARRAY → ArrayRef[Any], SCALAR → Ref[Any].
-# Blessed class names are resolved via registry.
-sub _narrow_ref ($self, $cond_children, $env) {
-    # Pattern: Word('ref') List(Symbol) Operator('eq') Quote('TYPE')
-    return +{} unless @$cond_children >= 4;
+# Shared ref() type map and resolution logic.
+# Returns { var_name => type } or empty hash.
+my %REF_MAP = (
+    HASH    => 'HashRef[Any]',
+    ARRAY   => 'ArrayRef[Any]',
+    SCALAR  => 'Ref[Any]',
+    CODE    => 'Ref[Any]',
+    REF     => 'Ref[Any]',
+    Regexp  => 'Ref[Any]',
+    GLOB    => 'Ref[Any]',
+    IO      => 'Ref[Any]',
+    VSTRING => 'Str',
+);
 
-    my $ref_word = $cond_children->[0];
-    return +{} unless $ref_word->isa('PPI::Token::Word') && $ref_word->content eq 'ref';
-
-    my $list = $cond_children->[1];
-    return +{} unless $list->isa('PPI::Structure::List');
-
-    # Extract the symbol inside the list
-    my @inner = $list->schildren;
-    my $expr = $inner[0];
-    @inner = $expr->schildren if $expr && $expr->isa('PPI::Statement::Expression');
-    return +{} unless @inner == 1 && $inner[0]->isa('PPI::Token::Symbol');
-    my $var_name = $inner[0]->content;
-
-    my $op = $cond_children->[2];
-    return +{} unless $op->isa('PPI::Token::Operator') && $op->content eq 'eq';
-
-    my $quote = $cond_children->[3];
-    return +{} unless $quote->isa('PPI::Token::Quote');
-    my $ref_string = $quote->string;
-
-    my %ref_map = (
-        HASH   => 'HashRef[Any]',
-        ARRAY  => 'ArrayRef[Any]',
-        SCALAR => 'Ref[Any]',
-        CODE   => 'Ref[Any]',
-    );
+sub _narrow_ref_resolve ($self, $var_name, $op_str, $ref_string) {
+    my %result;
 
     my $type_expr;
-    if (exists $ref_map{$ref_string}) {
-        $type_expr = $ref_map{$ref_string};
+    if (exists $REF_MAP{$ref_string}) {
+        $type_expr = $REF_MAP{$ref_string};
     } else {
         # Blessed object: try to resolve as struct/type name
         my $resolved = $self->_resolve_type($ref_string);
         return +{} unless $resolved;
-        return +{ $var_name => $resolved };
+        $type_expr = undef;
+        %result = ($var_name => $resolved);
     }
 
-    my $narrowed = $self->_resolve_type($type_expr) // return +{};
-    +{ $var_name => $narrowed };
+    unless (%result) {
+        my $narrowed = $self->_resolve_type($type_expr) // return +{};
+        %result = ($var_name => $narrowed);
+    }
+
+    # Attach operator metadata for ne handling
+    $result{_ref_op} = $op_str if $op_str ne 'eq';
+
+    +{%result};
+}
+
+# Rule: `ref($x) eq 'TYPE'` or `ref $x eq 'TYPE'` narrows $x.
+# Maps: HASH → HashRef[Any], ARRAY → ArrayRef[Any], SCALAR → Ref[Any], etc.
+# Blessed class names are resolved via registry.
+sub _narrow_ref ($self, $cond_children, $env) {
+    return +{} unless @$cond_children >= 3;
+
+    my $ref_word = $cond_children->[0];
+    return +{} unless $ref_word->isa('PPI::Token::Word') && $ref_word->content eq 'ref';
+
+    my ($var_name, $op_idx);
+
+    # Path A: ref($x) — Word('ref') List(Symbol) ...
+    if ($cond_children->[1]->isa('PPI::Structure::List')) {
+        my $list = $cond_children->[1];
+        my @inner = $list->schildren;
+        my $expr = $inner[0];
+        @inner = $expr->schildren if $expr && $expr->isa('PPI::Statement::Expression');
+        return +{} unless @inner == 1 && $inner[0]->isa('PPI::Token::Symbol');
+        $var_name = $inner[0]->content;
+        $op_idx = 2;
+    }
+    # Path B: ref $x — Word('ref') Symbol('$x') ...
+    elsif ($cond_children->[1]->isa('PPI::Token::Symbol')) {
+        $var_name = $cond_children->[1]->content;
+        $op_idx = 2;
+    }
+    else {
+        return +{};
+    }
+
+    return +{} unless @$cond_children > $op_idx + 1;
+
+    my $op = $cond_children->[$op_idx];
+    return +{} unless $op->isa('PPI::Token::Operator') && ($op->content eq 'eq' || $op->content eq 'ne');
+    my $op_str = $op->content;
+
+    my $quote_node = $cond_children->[$op_idx + 1];
+
+    # The RHS can be a Quote literal or a variable
+    my $ref_string;
+    if ($quote_node->isa('PPI::Token::Quote')) {
+        $ref_string = $quote_node->string;
+    } elsif ($quote_node->isa('PPI::Token::Symbol')) {
+        # Variable comparison: resolve from env to Literal string
+        my $var_type = $env->{variables}{$quote_node->content};
+        if ($var_type && $var_type->is_literal && $var_type->base_type eq 'Str') {
+            $ref_string = $var_type->value;
+        } else {
+            return +{};  # Unknown variable value → gradual skip
+        }
+    } else {
+        return +{};
+    }
+
+    $self->_narrow_ref_resolve($var_name, $op_str, $ref_string);
 }
 
 # Rule: `$x isa Type` narrows $x to Type.
@@ -1305,11 +1523,30 @@ sub _narrow_isa ($self, $cond_children, $env) {
 
 # Compute inverse narrowing for else-blocks.
 # For `defined`: variable is Undef.
-# For truthiness/isa: no useful inverse, return empty.
+# For `ref`/`isa` with Union: subtract narrowed type from Union members.
+# For truthiness: no useful inverse, return empty.
 sub _inverse_narrowing ($self, $rule, $var_name, $original_type) {
     if ($rule eq 'defined') {
         return +{ $var_name => Typist::Type::Atom->new('Undef') };
     }
+
+    # ref/isa inverse: subtract narrowed type from Union
+    if (($rule eq 'ref' || $rule eq 'isa') && $original_type && $original_type->is_union) {
+        my $narrowed = $self->{_last_narrowed_type}{$var_name};
+        if ($narrowed) {
+            my @remaining = grep {
+                !$narrowed->equals($_)
+                && !Typist::Subtype->is_subtype($_, $narrowed, registry => $self->{registry})
+            } $original_type->members;
+
+            if (@remaining == 1) {
+                return +{ $var_name => $remaining[0] };
+            } elsif (@remaining > 1) {
+                return +{ $var_name => Typist::Type::Union->new(@remaining) };
+            }
+        }
+    }
+
     +{};
 }
 
@@ -1394,6 +1631,17 @@ sub _narrow_env_for_block ($self, $env, $node) {
     # For `if`:     block 0 = then (direct), block 1+ = else (inverse)
     # For `unless`: block 0 = body (inverse), block 1+ = else (direct)
     my $apply_direct = $is_unless ? ($block_index > 0) : ($block_index == 0);
+
+    # `ne` operator in ref() flips the polarity
+    if ($rule eq 'ref' && ($narrowing{_ref_op} // '') eq 'ne') {
+        $apply_direct = !$apply_direct;
+    }
+    delete $narrowing{_ref_op};
+
+    # Save narrowed types for inverse narrowing (ref/isa with Union)
+    for my $var_name (keys %narrowing) {
+        $self->{_last_narrowed_type}{$var_name} = $narrowing{$var_name};
+    }
 
     # Compute the narrowed variable set based on polarity
     my %applied;

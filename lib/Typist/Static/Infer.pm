@@ -1084,6 +1084,21 @@ sub infer_iterable_element_type ($class, $list_node, $env = undef) {
         return _unwrap_arrayref($ret) if $ret;
     }
 
+    # Pattern 6: @{$expr} — Cast('@') + Block → extract symbol from block → unwrap
+    if (@children >= 2
+        && $children[0]->isa('PPI::Token::Cast') && $children[0]->content eq '@'
+        && $children[1]->isa('PPI::Structure::Block'))
+    {
+        my $block = $children[1];
+        my @inner = $block->schildren;
+        my $inner_expr = $inner[0];
+        @inner = $inner_expr->schildren if $inner_expr && $inner_expr->isa('PPI::Statement');
+        if (@inner >= 1 && $inner[0]->isa('PPI::Token::Symbol') && $inner[0]->raw_type eq '$') {
+            my $var_type = _lookup_var($inner[0]->content, $env);
+            return _unwrap_arrayref($var_type) if $var_type;
+        }
+    }
+
     undef;
 }
 

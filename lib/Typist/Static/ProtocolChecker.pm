@@ -115,8 +115,24 @@ sub _trace_compound ($self, $compound, $fn_name, $label, $protocol, $current, $p
     my $is_conditional = $kw =~ /\A(?:if|unless|elsif)\z/;
 
     unless ($is_conditional) {
-        # For loops (for/while/etc), trace the single block linearly
-        return $self->_trace_block($blocks[0], $fn_name, $label, $protocol, $current, $pkg);
+        # For loops: body must be idempotent (end state = start state).
+        # The loop may execute zero times, so the entry state is preserved.
+        my $result = $self->_trace_block($blocks[0], $fn_name, $label, $protocol, $current, $pkg);
+        return $result if $result->{error};
+
+        if (!$result->{returns} && $result->{state} ne $current) {
+            $self->{errors}->collect(
+                kind    => 'ProtocolMismatch',
+                message => "Protocol $label: loop body changes state from '$current' "
+                         . "to '$result->{state}' — must be idempotent (in $fn_name())",
+                file    => $self->{file},
+                line    => $compound->line_number,
+                col     => $compound->column_number,
+            );
+            return +{ error => 1 };
+        }
+
+        return +{ state => $current };
     }
 
     # Count else keywords to determine if we have an else branch
@@ -210,8 +226,71 @@ sub _trace_statement ($self, $stmt, $fn_name, $label, $protocol, $current, $pkg)
             next;
         }
 
+        # handle { BODY } Effect => +{...}: trace the body block
+        if ($content eq 'handle') {
+            my $body = $word->snext_sibling;
+            if ($body && ref $body && $body->isa('PPI::Structure::Block')) {
+                my $result = $self->_trace_block($body, $fn_name, $label, $protocol, $current, $pkg);
+                return $result if $result->{error};
+                $current = $result->{state} unless $result->{returns};
+            }
+            next;
+        }
+
+        # match $val, Tag => sub { ... }: trace each arm with convergence
+        if ($content eq 'match') {
+            my @blocks;
+            my $sib = $word->snext_sibling;
+            while ($sib) {
+                if (ref $sib && $sib->isa('PPI::Structure::Block')) {
+                    push @blocks, $sib;
+                }
+                $sib = $sib->snext_sibling;
+            }
+
+            if (@blocks) {
+                my @branch_states;
+                my $all_return = 1;
+                for my $b (@blocks) {
+                    my $result = $self->_trace_block($b, $fn_name, $label, $protocol, $current, $pkg);
+                    return $result if $result->{error};
+                    if ($result->{returns}) {
+                        # branch returns — excluded from convergence
+                    } else {
+                        $all_return = 0;
+                        push @branch_states, $result->{state};
+                    }
+                }
+
+                if ($all_return && @blocks) {
+                    return +{ returns => 1 };
+                }
+
+                # Convergence check
+                if (@branch_states) {
+                    my $first = $branch_states[0];
+                    for my $i (1 .. $#branch_states) {
+                        if ($branch_states[$i] ne $first) {
+                            $self->{errors}->collect(
+                                kind    => 'ProtocolMismatch',
+                                message => "Protocol $label: match arms diverge — "
+                                         . "states '$first' and '$branch_states[$i]' "
+                                         . "(in $fn_name())",
+                                file    => $self->{file},
+                                line    => $word->line_number,
+                                col     => $word->column_number,
+                            );
+                            return +{ error => 1 };
+                        }
+                    }
+                    $current = $branch_states[0];
+                }
+            }
+            next;
+        }
+
         # Pattern 2: Function call with protocol annotation — f(...)
-        next if $content =~ /\A(?:my|our|local|return|if|unless|for|foreach|while|until|do|sub|use|no|handle|match)\z/;
+        next if $content =~ /\A(?:my|our|local|return|if|unless|for|foreach|while|until|do|sub|use|no)\z/;
         my $prev = $word->sprevious_sibling;
         next if $prev && ref $prev && $prev->isa('PPI::Token::Operator') && $prev->content eq '->';
         my $next_sib = $word->snext_sibling;

@@ -872,31 +872,9 @@ Setting `TYPIST_CHECK_QUIET=1` skips the entire `_check_analyze()` pass in the C
 | Limitation | Impact |
 |------------|--------|
 | Operator precedence | Does not influence inferred types |
-| Block dereference | `@{$expr}`, `%{$expr}` — block-form deref not propagated (cast `@$ref` and postfix `->@*` are supported) |
-
-### Type Narrowing
-
-| Limitation | Impact |
-|------------|--------|
-| `ref()` requires `eq` with literal | `ref($x) ne 'HASH'`, `ref($x) eq $var`, negated conditions not recognized |
-| `ref()` requires parenthesized arg | `ref $x eq 'HASH'` (without parens) not parsed |
-| `ref()` limited type map | `GLOB`, `REF`, `Regexp`, `IO`, `VSTRING` not mapped; only `HASH`/`ARRAY`/`SCALAR`/`CODE` |
-| `ref()` no inverse narrowing | Else-block after `ref($x) eq 'HASH'` does not narrow |
-
-### Method Checking
-
-| Limitation | Impact |
-|------------|--------|
-| Non-struct receivers skipped | Only struct-typed variables are resolved; Record, Union, untyped receivers → gradual skip |
-| No chained method calls | `$p->with(name => "Bob")->greet()` — return type of intermediate calls not tracked |
-| No class method calls | `Class->method()` — bareword receivers not resolved |
-| No generic method instantiation | Methods with type parameters are skipped entirely |
 
 ### Effects
 
 | Limitation | Impact |
 |------------|--------|
 | Effect inference is shallow | Only direct callees examined; method calls, closures, callbacks, transitive unannotated chains not traced |
-| Protocol: loops treated as single-pass | `while`/`for` bodies assumed to execute exactly once; no iteration analysis |
-| Protocol: `match`/`handle` not traced | Protocol operations inside match arms or handle blocks are invisible to the checker |
-| Protocol: no nested if analysis | Inner if/else convergence is checked, but outer-scope composition with nested results may miss complex patterns |

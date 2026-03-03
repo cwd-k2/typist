@@ -500,9 +500,9 @@ carton exec -- prove -l t/critic/       # Perl::Critic policy
 ## Known Limitations
 
 - **Expression inference** — Operator precedence does not influence inferred types.
-- **Method checking** — `$self->method()` and struct-typed variable method calls (`$p->name()`) are checked. Chained calls (`$p->with(...)->method()`), class method calls (`Class->method()`), and non-struct receivers are gradual-skipped.
-- **Type narrowing** — Supports `defined($x)`, truthiness, `isa`, `ref($x) eq 'TYPE'`, and early return. `ref()` requires parenthesized arg with `eq` and string literal; `ne` and inverse narrowing are not supported.
-- **Effect system** — Effect inference provides LSP inlay hints for unannotated functions (direct callees only). Protocol checking traces operation sequences with if/else branching convergence; loops are treated as single-pass, and `match`/`handle` blocks are not traced.
+- **Method checking** — Instance (`$self->method()`), cross-package struct (`$p->name()`), class (`Person->new()`), chained (`$p->with(...)->greet()`), generic, and Record accessor calls are checked. Union receivers and untyped receivers are gradual-skipped.
+- **Type narrowing** — Supports `defined($x)`, truthiness, `isa`, `ref($x) eq/ne 'TYPE'` (with/without parens, variable comparison, inverse narrowing for Union types), and early return. Full ref type map: `HASH`, `ARRAY`, `SCALAR`, `CODE`, `REF`, `Regexp`, `GLOB`, `IO`, `VSTRING`, plus blessed class names.
+- **Effect system** — Effect inference provides LSP inlay hints for unannotated functions (direct callees only). Protocol checking traces operation sequences with if/else branching convergence, loop idempotency enforcement, and `match`/`handle` body tracking.
 - **PPI dependency** — Diagnostic quality depends on PPI's parse accuracy.
 
 ## License

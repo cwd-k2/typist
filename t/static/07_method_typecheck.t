@@ -501,4 +501,196 @@ PERL
     is scalar @$errs, 0, 'unknown typed receiver is gradual skipped';
 };
 
+# ── Phase 4: Class Method Calls ──────────────────
+
+subtest 'class method call: Person->greet("hello") OK' => sub {
+    my $errs = type_errors(<<'PERL');
+package PersonCls;
+use v5.40;
+
+struct PersonCls => (name => 'Str', age => 'Int');
+
+sub greet :sig((Str) -> Str) ($class, $msg) {
+    return "Hello: $msg";
+}
+
+sub run :sig(() -> Void) () {
+    PersonCls->greet("hi");
+}
+PERL
+
+    is scalar @$errs, 0, 'class method call with correct args produces no error';
+};
+
+subtest 'class method call: Person->greet(42) TypeMismatch' => sub {
+    my $errs = type_errors(<<'PERL');
+package PersonCls2;
+use v5.40;
+
+struct PersonCls2 => (name => 'Str', age => 'Int');
+
+sub greet :sig((Str) -> Str) ($class, $msg) {
+    return "Hello: $msg";
+}
+
+sub run :sig(() -> Void) () {
+    PersonCls2->greet(42);
+}
+PERL
+
+    is scalar @$errs, 1, 'class method call type mismatch detected';
+    like $errs->[0]{message}, qr/Argument 1.*greet.*Str/, 'error mentions expected Str';
+};
+
+subtest 'class method call: unknown class gradual skip' => sub {
+    my $errs = type_errors(<<'PERL');
+package TestCls;
+use v5.40;
+
+sub run :sig(() -> Void) () {
+    UnknownClass->method("hello");
+}
+PERL
+
+    is scalar @$errs, 0, 'unknown class method call is gradual skipped';
+};
+
+# ── Phase 5: Generic Method Instantiation ────────
+
+subtest 'generic method: $self->transform(42) OK' => sub {
+    my $errs = type_errors(<<'PERL');
+package Container;
+use v5.40;
+
+sub transform :sig(<T: Num>(T) -> T) ($self, $x) {
+    return $x;
+}
+
+sub run :sig(() -> Void) ($self) {
+    $self->transform(42);
+}
+PERL
+
+    is scalar @$errs, 0, 'generic method with correct type produces no error';
+};
+
+subtest 'generic method: $self->transform("hello") TypeMismatch' => sub {
+    my $errs = type_errors(<<'PERL');
+package Container2;
+use v5.40;
+
+sub transform :sig(<T: Num>(T) -> T) ($self, $x) {
+    return $x;
+}
+
+sub run :sig(() -> Void) ($self) {
+    $self->transform("hello");
+}
+PERL
+
+    is scalar @$errs, 1, 'generic method type mismatch detected';
+};
+
+# ── Phase 6: Record Receiver ─────────────────────
+
+subtest 'record method: accessor call OK' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+typedef PersonRec => Record(name => Str, age => Int);
+
+sub check :sig((PersonRec) -> Void) ($p) {
+    $p->name();
+}
+PERL
+
+    is scalar @$errs, 0, 'record accessor call produces no error';
+};
+
+subtest 'record method: accessor with args ArityMismatch' => sub {
+    my $errs = arity_errors(<<'PERL');
+use v5.40;
+typedef PersonRec2 => Record(name => Str, age => Int);
+
+sub check :sig((PersonRec2) -> Void) ($p) {
+    $p->name("extra");
+}
+PERL
+
+    is scalar @$errs, 1, 'record accessor with args produces ArityMismatch';
+    like $errs->[0]{message}, qr/accessor.*0 arguments/, 'error mentions accessor';
+};
+
+subtest 'record method: unknown field gradual skip' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+typedef PersonRec3 => Record(name => Str, age => Int);
+
+sub check :sig((PersonRec3) -> Void) ($p) {
+    $p->unknown_field();
+}
+PERL
+
+    is scalar @$errs, 0, 'unknown record field is gradual skipped';
+};
+
+# ── Phase 7: Chained Method Calls ────────────────
+
+subtest 'chained method: $p->with(name => "Bob")->greet("hi") OK' => sub {
+    my $errs = type_errors(<<'PERL');
+package PersonChain;
+use v5.40;
+
+struct PersonChain => (name => 'Str', age => 'Int');
+
+sub greet :sig((Str) -> Str) ($self, $msg) {
+    return "$msg ${\$self->name}";
+}
+
+sub run :sig(() -> Void) () {
+    my $p = PersonChain(name => "Alice", age => 30);
+    $p->with(name => "Bob")->greet("hello");
+}
+PERL
+
+    is scalar @$errs, 0, 'chained method call with correct types produces no error';
+};
+
+subtest 'chained method: type mismatch on chained call' => sub {
+    my $errs = type_errors(<<'PERL');
+package PersonChain2;
+use v5.40;
+
+struct PersonChain2 => (name => 'Str', age => 'Int');
+
+sub greet :sig((Str) -> Str) ($self, $msg) {
+    return "$msg ${\$self->name}";
+}
+
+sub run :sig(() -> Void) () {
+    my $p = PersonChain2(name => "Alice", age => 30);
+    $p->with(name => "Bob")->greet(42);
+}
+PERL
+
+    is scalar @$errs, 1, 'chained method call type mismatch detected';
+    like $errs->[0]{message}, qr/Argument 1.*greet.*Str/, 'error on chained call';
+};
+
+subtest 'chained method: non-struct return graceful skip' => sub {
+    my $errs = type_errors(<<'PERL');
+package StringChain;
+use v5.40;
+
+sub get_name :sig(() -> Str) ($self) {
+    return "Alice";
+}
+
+sub run :sig(() -> Void) ($self) {
+    $self->get_name()->unknown_method();
+}
+PERL
+
+    is scalar @$errs, 0, 'non-struct return type in chain is gradual skipped';
+};
+
 done_testing;

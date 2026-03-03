@@ -425,4 +425,225 @@ PERL
     is scalar @errors, 0, 'if without else, no state change → convergent';
 };
 
+# ── Branching: nested if/else ──────────────────
+
+subtest 'branching — nested if/else convergence' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => _ws_registry_with_db());
+package ProtoNested;
+use v5.40;
+
+effect DB, [qw(None Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
+    disconnect => ['() -> Void',         protocol('Connected -> None')],
+};
+
+sub nested :sig((Bool, Bool) -> Void ![DB<None -> Authed>]) ($a, $b) {
+    if ($a) {
+        DB::connect("host1");
+        if ($b) {
+            DB::auth("user", "pass");
+        } else {
+            DB::auth("admin", "admin");
+        }
+    } else {
+        DB::connect("host2");
+        DB::auth("guest", "guest");
+    }
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    is scalar @errors, 0, 'nested if/else converges correctly';
+};
+
+# ── Loop: idempotent operation (OK) ───────────
+
+subtest 'loop — idempotent operation in while loop' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => _ws_registry_with_db());
+package ProtoLoop1;
+use v5.40;
+
+effect DB, [qw(None Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
+    disconnect => ['() -> Void',         protocol('Connected -> None')],
+};
+
+sub query_loop :sig(() -> Void ![DB<Authed>]) () {
+    while (1) {
+        DB::query("SELECT 1");
+    }
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    is scalar @errors, 0, 'idempotent loop (Authed → Authed) produces no error';
+};
+
+# ── Loop: state-changing operation (error) ────
+
+subtest 'loop — state-changing operation in for loop' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => _ws_registry_with_db());
+package ProtoLoop2;
+use v5.40;
+
+effect DB, [qw(None Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
+    disconnect => ['() -> Void',         protocol('Connected -> None')],
+};
+
+sub bad_loop :sig(() -> Void ![DB<Connected>]) () {
+    for my $i (1..3) {
+        DB::disconnect();
+    }
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    ok @errors > 0, 'state-changing loop produces ProtocolMismatch';
+    like $errors[0]{message}, qr/loop body changes state/, 'error mentions loop body';
+};
+
+# ── Loop: empty body (OK) ────────────────────
+
+subtest 'loop — empty body is idempotent' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => _ws_registry_with_db());
+package ProtoLoop3;
+use v5.40;
+
+effect DB, [qw(None Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
+    disconnect => ['() -> Void',         protocol('Connected -> None')],
+};
+
+sub noop_loop :sig(() -> Void ![DB<Authed>]) () {
+    for my $i (1..3) {
+        # no protocol operations
+    }
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    is scalar @errors, 0, 'empty loop body is idempotent — no error';
+};
+
+# ── handle: protocol operations inside handle body ──
+
+subtest 'handle — protocol ops inside handle body traced' => sub {
+    my $ws = _ws_registry_with_db();
+    $ws->register_effect('Logger', Typist::Effect->new(name => 'Logger', operations => +{
+        log => '(Str) -> Void',
+    }));
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws);
+package ProtoHandle1;
+use v5.40;
+
+effect DB, [qw(None Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
+    disconnect => ['() -> Void',         protocol('Connected -> None')],
+};
+
+effect Logger => +{ log => '(Str) -> Void' };
+
+sub with_logging :sig(() -> Void ![DB<None -> Authed>, Logger]) () {
+    handle {
+        DB::connect("localhost");
+        DB::auth("user", "pass");
+    } Logger => +{ log => sub ($msg) { } };
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    is scalar @errors, 0, 'protocol operations inside handle body correctly traced';
+};
+
+subtest 'handle — wrong protocol ops inside handle body detected' => sub {
+    my $ws = _ws_registry_with_db();
+    $ws->register_effect('Logger', Typist::Effect->new(name => 'Logger', operations => +{
+        log => '(Str) -> Void',
+    }));
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws);
+package ProtoHandle2;
+use v5.40;
+
+effect DB, [qw(None Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
+    disconnect => ['() -> Void',         protocol('Connected -> None')],
+};
+
+effect Logger => +{ log => '(Str) -> Void' };
+
+sub bad_handle :sig(() -> Void ![DB<None -> Authed>, Logger]) () {
+    handle {
+        DB::query("SELECT 1");
+    } Logger => +{ log => sub ($msg) { } };
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    ok @errors > 0, 'wrong protocol op inside handle body detected';
+};
+
+# ── match: protocol operations inside match arms ──
+
+subtest 'match — protocol ops inside match arms traced' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => _ws_registry_with_db());
+package ProtoMatch1;
+use v5.40;
+
+effect DB, [qw(None Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
+    disconnect => ['() -> Void',         protocol('Connected -> None')],
+};
+
+sub match_ops :sig((Str) -> Void ![DB<Connected -> Authed>]) ($mode) {
+    match $mode,
+        admin => sub { DB::auth("admin", "secret") },
+        user  => sub { DB::auth("user", "pass") };
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    is scalar @errors, 0, 'convergent match arms produce no error';
+};
+
+subtest 'match — divergent match arms detected' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => _ws_registry_with_db());
+package ProtoMatch2;
+use v5.40;
+
+effect DB, [qw(None Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
+    disconnect => ['() -> Void',         protocol('Connected -> None')],
+};
+
+sub bad_match :sig((Str) -> Void ![DB<Connected -> Authed>]) ($mode) {
+    match $mode,
+        admin => sub { DB::auth("admin", "secret") },
+        guest => sub { DB::disconnect() };
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    ok @errors > 0, 'divergent match arms produce ProtocolMismatch';
+    like $errors[0]{message}, qr/match arms diverge/, 'error mentions match arms';
+};
+
 done_testing;
