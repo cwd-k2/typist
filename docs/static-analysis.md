@@ -401,19 +401,31 @@ Generic functions use multi-character type variable names (e.g., `Elem`). Since 
 
 ## Method Type Checking
 
-The TypeChecker supports `$self->method(args)` call-site checking within the same package.
+The TypeChecker supports method call-site checking for `$self` and struct-typed receivers.
 
 ### Scope
 
-- **Supported**: `$self->method()` where `$self` is the receiver (same-package instance methods)
-- **Not supported**: arbitrary receiver types, cross-package method calls, class method calls
+- **Supported**: `$self->method()` (same-package instance methods)
+- **Supported**: `$var->method()` where `$var` has a struct type inferred from env (cross-package via struct name resolution)
+- **Not supported**: class method calls (`Class->method()`), chained calls (`$p->with(...)->method()`), non-struct receiver types, generic methods
 
 ### Algorithm
 
 ```
 _check_method_call(word, arrow):
-  Receiver must be $self (PPI::Token::Symbol)
+  Receiver must be PPI::Token::Symbol
+
+  Path A ($self):
+    pkg = extracted.package (same-package)
+
+  Path B (other variable):
+    recv_type = env.variables[receiver]
+    Chase aliases via registry
+    If recv_type.is_struct → pkg = recv_type.name
+    Else → gradual skip (return)
+
   Lookup: registry->lookup_method(pkg, name)
+  Fallback: registry->lookup_method(recv_type.package, name)  # struct accessors
   Skip if method has generics
 
   Arity check on arguments (excluding $self)
@@ -439,16 +451,19 @@ The TypeChecker narrows types within control-flow guard blocks and after early r
 
 ### Narrowing Rules
 
-Four narrowing rules are supported, dispatched in order of specificity:
+Five narrowing rules are supported, dispatched in order of specificity:
 
 ```
-Rule           Condition                Result in then-block        Result in else-block
-─────────────  ───────────────────────  ────────────────────────    ────────────────────
-defined()      `defined($x)`           Remove Undef from union     Undef only
-truthiness     `if ($x)`               Remove Undef from union     (no inverse)
-isa            `$x isa Type`           Narrow to Type              (no inverse)
-early return   `return unless defined` Narrow remainder of body    N/A
+Rule           Condition                 Result in then-block        Result in else-block
+─────────────  ────────────────────────  ────────────────────────    ────────────────────
+defined()      `defined($x)`            Remove Undef from union     Undef only
+isa            `$x isa Type`            Narrow to Type              (no inverse)
+ref()          `ref($x) eq 'TYPE'`      Narrow to ref type          (no inverse)
+truthiness     `if ($x)`                Remove Undef from union     (no inverse)
+early return   `return unless defined`  Narrow remainder of body    N/A
 ```
+
+The `ref()` rule maps string literals to types: `HASH` → `HashRef[Any]`, `ARRAY` → `ArrayRef[Any]`, `SCALAR` → `Ref[Any]`, `CODE` → `Ref[Any]`. Blessed class names are resolved via registry. Only the `eq` operator with a literal string is recognized; `ne`, negated conditions, and variable comparisons are not supported.
 
 The `unless` keyword reverses polarity: in `unless (defined($x))`, the then-block sees the inverse narrowing.
 
@@ -461,9 +476,10 @@ _narrow_env_for_block(env, node):
   Detect then-block vs else-block position
 
   Dispatch rules (most specific first):
-    1. _narrow_defined   → defined($x) or defined $x
-    2. _narrow_isa       → $x isa Type
-    3. _narrow_truthiness → bare $x
+    1. _narrow_defined    → defined($x) or defined $x
+    2. _narrow_isa        → $x isa Type
+    3. _narrow_ref        → ref($x) eq 'TYPE'
+    4. _narrow_truthiness → bare $x
 
   Apply narrowing or inverse based on block polarity
 
@@ -488,6 +504,10 @@ if ($x) {
 
 if ($x isa Person) {
     # $x is narrowed to Person
+}
+
+if (ref($data) eq 'HASH') {
+    # $data is narrowed to HashRef[Any]
 }
 
 return unless defined($x);
@@ -602,6 +622,23 @@ For each annotated function (skip unannotated entirely):
 ### Builtin Function Set
 
 The EffectChecker maintains a hardcoded set of ~50 Perl builtins that it recognizes as potential call sites (say, print, warn, die, open, close, read, write, etc.). These are treated as unannotated unless the Prelude or a `declare` provides an annotation.
+
+### Effect Inference (LSP Hints)
+
+`infer_effects($extracted, $registry)` computes likely effect labels for unannotated functions. This does **not** change enforcement — unannotated functions remain `[*]` in the gradual typing contract. Results are surfaced as LSP inlay hints only.
+
+```
+For each unannotated function:
+  Collect callee effects via _collect_called_effects
+  Union all closed-row labels from annotated callees
+  If any callee is unannotated → set unknown flag
+
+  Result: { name, labels => [...], unknown, line, col }
+```
+
+Inlay hints render as `![IO, Exn]` (known labels) or `![IO, ...]` (some labels known, others unknown) after the function name.
+
+Inference is shallow: only direct callees in the function body are examined. Effects from method calls, closures, callbacks, and transitive calls through other unannotated functions are not traced.
 
 ---
 
@@ -837,15 +874,29 @@ Setting `TYPIST_CHECK_QUIET=1` skips the entire `_check_analyze()` pass in the C
 | Operator precedence | Does not influence inferred types |
 | Block dereference | `@{$expr}`, `%{$expr}` — block-form deref not propagated (cast `@$ref` and postfix `->@*` are supported) |
 
-### Structural
+### Type Narrowing
 
 | Limitation | Impact |
 |------------|--------|
-| Method calls limited to $self | No cross-package or arbitrary receiver method checking |
+| `ref()` requires `eq` with literal | `ref($x) ne 'HASH'`, `ref($x) eq $var`, negated conditions not recognized |
+| `ref()` requires parenthesized arg | `ref $x eq 'HASH'` (without parens) not parsed |
+| `ref()` limited type map | `GLOB`, `REF`, `Regexp`, `IO`, `VSTRING` not mapped; only `HASH`/`ARRAY`/`SCALAR`/`CODE` |
+| `ref()` no inverse narrowing | Else-block after `ref($x) eq 'HASH'` does not narrow |
+
+### Method Checking
+
+| Limitation | Impact |
+|------------|--------|
+| Non-struct receivers skipped | Only struct-typed variables are resolved; Record, Union, untyped receivers → gradual skip |
+| No chained method calls | `$p->with(name => "Bob")->greet()` — return type of intermediate calls not tracked |
+| No class method calls | `Class->method()` — bareword receivers not resolved |
+| No generic method instantiation | Methods with type parameters are skipped entirely |
 
 ### Effects
 
 | Limitation | Impact |
 |------------|--------|
-| No effect inference | Effects must be manually annotated |
-| Protocol branching | Linear operation sequences only; if/else paths not tracked |
+| Effect inference is shallow | Only direct callees examined; method calls, closures, callbacks, transitive unannotated chains not traced |
+| Protocol: loops treated as single-pass | `while`/`for` bodies assumed to execute exactly once; no iteration analysis |
+| Protocol: `match`/`handle` not traced | Protocol operations inside match arms or handle blocks are invisible to the checker |
+| Protocol: no nested if analysis | Inner if/else convergence is checked, but outer-scope composition with nested results may miss complex patterns |

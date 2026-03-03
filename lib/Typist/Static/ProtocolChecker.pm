@@ -6,6 +6,7 @@ our $VERSION = '0.01';
 # Static protocol state-machine checker.
 # Verifies that effect operations are called in the correct order
 # according to the protocol's finite state machine.
+# Supports branching: if/else blocks must converge to the same state.
 
 sub new ($class, %args) {
     bless +{
@@ -52,17 +53,136 @@ sub analyze ($self) {
 }
 
 sub _trace_body ($self, $block, $fn_name, $label, $protocol, $from, $to, $pkg) {
-    my $current = $from;
-    my $words = $block->find('PPI::Token::Word') || [];
+    my $result = $self->_trace_block($block, $fn_name, $label, $protocol, $from, $pkg);
+    return if $result->{error};
 
-    for my $word (@$words) {
+    # If all paths return, no final state check needed
+    return if $result->{returns};
+
+    my $current = $result->{state};
+    if ($current ne $to) {
+        $self->{errors}->collect(
+            kind    => 'ProtocolMismatch',
+            message => "Protocol $label: function $fn_name() ends in state '$current' "
+                     . "but declared end state is '$to'",
+            file    => $self->{file},
+            line    => $self->{extracted}{functions}{$fn_name}{line},
+            col     => $self->{extracted}{functions}{$fn_name}{col},
+        );
+    }
+}
+
+# Trace a block, walking its direct children (statements).
+# Returns { state => $final } or { returns => 1 } or { error => 1 }.
+sub _trace_block ($self, $block, $fn_name, $label, $protocol, $current, $pkg) {
+    for my $child ($block->schildren) {
+        if ($child->isa('PPI::Statement::Compound')) {
+            my $result = $self->_trace_compound(
+                $child, $fn_name, $label, $protocol, $current, $pkg,
+            );
+            return $result if $result->{error} || $result->{returns};
+            $current = $result->{state};
+            next;
+        }
+
+        if ($child->isa('PPI::Statement')) {
+            # Check for return keyword
+            my $first = $child->schild(0);
+            if ($first && $first->isa('PPI::Token::Word') && $first->content eq 'return') {
+                return +{ state => $current, returns => 1 };
+            }
+
+            my $result = $self->_trace_statement(
+                $child, $fn_name, $label, $protocol, $current, $pkg,
+            );
+            return $result if $result->{error};
+            $current = $result->{state};
+        }
+    }
+
+    +{ state => $current };
+}
+
+# Trace a compound statement (if/elsif/else, while, for).
+# Each branch is traced independently; non-return branches must converge.
+sub _trace_compound ($self, $compound, $fn_name, $label, $protocol, $current, $pkg) {
+    my @blocks = grep { $_->isa('PPI::Structure::Block') } $compound->schildren;
+    return +{ state => $current } unless @blocks;
+
+    # Detect if this is a conditional (if/unless/elsif/else)
+    my ($keyword) = grep { $_->isa('PPI::Token::Word') } $compound->schildren;
+    my $kw = $keyword ? $keyword->content : '';
+    my $is_conditional = $kw =~ /\A(?:if|unless|elsif)\z/;
+
+    unless ($is_conditional) {
+        # For loops (for/while/etc), trace the single block linearly
+        return $self->_trace_block($blocks[0], $fn_name, $label, $protocol, $current, $pkg);
+    }
+
+    # Count else keywords to determine if we have an else branch
+    my @keywords = grep { $_->isa('PPI::Token::Word') } $compound->schildren;
+    my $has_else = grep { $_->content eq 'else' } @keywords;
+
+    my @branch_states;
+    my $all_return = 1;
+
+    for my $b (@blocks) {
+        my $result = $self->_trace_block($b, $fn_name, $label, $protocol, $current, $pkg);
+        return $result if $result->{error};
+
+        if ($result->{returns}) {
+            # This branch returns early — excluded from convergence
+        } else {
+            $all_return = 0;
+            push @branch_states, $result->{state};
+        }
+    }
+
+    # All branches return → propagate
+    if ($all_return && $has_else) {
+        return +{ returns => 1 };
+    }
+
+    # No else: the fallthrough path (no branch taken) has state $current
+    unless ($has_else) {
+        $all_return = 0;
+        push @branch_states, $current;
+    }
+
+    # No non-returning branches: all returned but no else → only fallthrough
+    return +{ state => $current } unless @branch_states;
+
+    # Convergence check: all non-returning branches must end in the same state
+    my $first = $branch_states[0];
+    for my $i (1 .. $#branch_states) {
+        if ($branch_states[$i] ne $first) {
+            $self->{errors}->collect(
+                kind    => 'ProtocolMismatch',
+                message => "Protocol $label: branches diverge — "
+                         . "states '$first' and '$branch_states[$i]' "
+                         . "at end of if/else (in $fn_name())",
+                file    => $self->{file},
+                line    => $compound->line_number,
+                col     => $compound->column_number,
+            );
+            return +{ error => 1 };
+        }
+    }
+
+    +{ state => $first };
+}
+
+# Trace a single statement for protocol operations.
+sub _trace_statement ($self, $stmt, $fn_name, $label, $protocol, $current, $pkg) {
+    my @words = grep { $_->isa('PPI::Token::Word') } $stmt->schildren;
+
+    for my $word (@words) {
         my $content = $word->content;
 
         # Pattern 1: Direct effect operation — Label::op(...)
         if ($content =~ /\A${label}::(\w+)\z/) {
             my $op = $1;
             my $next = $word->snext_sibling;
-            # Must be followed by a List (call pattern)
             next unless $next && ref $next && $next->isa('PPI::Structure::List');
 
             my $next_state = $protocol->next_state($current, $op);
@@ -98,7 +218,6 @@ sub _trace_body ($self, $block, $fn_name, $label, $protocol, $from, $to, $pkg) {
         next if $next_sib && ref $next_sib && $next_sib->isa('PPI::Token::Operator') && $next_sib->content eq '=>';
         next unless $next_sib && ref $next_sib && $next_sib->isa('PPI::Structure::List');
 
-        # Look up callee sig
         my $callee_sig = $self->{registry}->lookup_function($pkg, $content);
         unless ($callee_sig) {
             if ($content =~ /\A(.+)::(\w+)\z/) {
@@ -113,7 +232,6 @@ sub _trace_body ($self, $block, $fn_name, $label, $protocol, $from, $to, $pkg) {
 
         my $callee_state = $callee_row->label_state($label) // next;
 
-        # Verify from-state matches current
         if ($callee_state->{from} ne $current) {
             $self->{errors}->collect(
                 kind    => 'ProtocolMismatch',
@@ -137,17 +255,7 @@ sub _trace_body ($self, $block, $fn_name, $label, $protocol, $from, $to, $pkg) {
         }
     }
 
-    # Final state check
-    if ($current ne $to) {
-        $self->{errors}->collect(
-            kind    => 'ProtocolMismatch',
-            message => "Protocol $label: function $fn_name() ends in state '$current' "
-                     . "but declared end state is '$to'",
-            file    => $self->{file},
-            line    => $self->{extracted}{functions}{$fn_name}{line},
-            col     => $self->{extracted}{functions}{$fn_name}{col},
-        );
-    }
+    +{ state => $current };
 }
 
 1;

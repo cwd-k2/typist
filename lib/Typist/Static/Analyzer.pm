@@ -98,6 +98,9 @@ sub analyze ($class, $source, %opts) {
     );
     $protocol_checker->analyze;
 
+    # 3e. Infer effects for unannotated functions (LSP hints)
+    my $inferred_effects = Typist::Static::EffectChecker->infer_effects($extracted, $registry);
+
     # 4. Build results
     return +{
         diagnostics         => _to_diagnostics($errors, $file, $extracted),
@@ -106,6 +109,7 @@ sub analyze ($class, $source, %opts) {
         registry            => $registry,
         protocol_hints      => $protocol_checker->hints,
         narrowed_accessors  => $type_checker->narrowed_accessor_types,
+        inferred_effects    => $inferred_effects,
     };
 }
 

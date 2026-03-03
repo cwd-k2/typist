@@ -456,4 +456,73 @@ PERL
     like $eff_diags[0]{message}, qr/Exn/, 'reports Exn effect requirement';
 };
 
+# ── Effect Inference ──────────────────────────
+
+subtest 'infer_effects: unannotated function calling say() → IO' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package EffInfer1;
+use v5.40;
+
+sub hello() {
+    say "hello";
+}
+PERL
+
+    my $ie = $result->{inferred_effects} // [];
+    my ($hello) = grep { $_->{name} eq 'hello' } @$ie;
+    ok $hello, 'hello appears in inferred_effects';
+    ok grep({ $_ eq 'IO' } $hello->{labels}->@*), 'IO label inferred';
+    ok !$hello->{unknown}, 'no unknown flag';
+};
+
+subtest 'infer_effects: annotated function not included' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package EffInfer2;
+use v5.40;
+
+sub greet :sig((Str) -> Void ![IO]) ($name) {
+    say "Hello, $name";
+}
+PERL
+
+    my $ie = $result->{inferred_effects} // [];
+    my ($greet) = grep { $_->{name} eq 'greet' } @$ie;
+    ok !$greet, 'annotated function not in inferred_effects';
+};
+
+subtest 'infer_effects: unannotated function calling unannotated → unknown flag' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package EffInfer3;
+use v5.40;
+
+sub helper() {
+    say "side-effect";
+}
+
+sub caller_fn() {
+    helper();
+}
+PERL
+
+    my $ie = $result->{inferred_effects} // [];
+    my ($caller) = grep { $_->{name} eq 'caller_fn' } @$ie;
+    ok $caller, 'caller_fn appears in inferred_effects';
+    ok $caller->{unknown}, 'unknown flag set due to unannotated callee';
+};
+
+subtest 'infer_effects: pure unannotated function → no entry' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package EffInfer4;
+use v5.40;
+
+sub add($a, $b) {
+    return $a + $b;
+}
+PERL
+
+    my $ie = $result->{inferred_effects} // [];
+    my ($add) = grep { $_->{name} eq 'add' } @$ie;
+    ok !$add, 'pure unannotated function has no inferred_effects entry';
+};
+
 done_testing;

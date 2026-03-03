@@ -531,6 +531,31 @@ sub inlay_hints ($self, $start_line, $end_line) {
         };
     }
 
+    # Inferred effect hints for unannotated functions
+    for my $ie (($result->{inferred_effects} // [])->@*) {
+        my $line = ($ie->{line} // 1) - 1;
+        next if $line < $start_line || $line > $end_line;
+
+        my @labels = ($ie->{labels} // [])->@*;
+        my $label_str = join(', ', @labels);
+        $label_str .= ', ...' if $ie->{unknown};
+        $label_str = '...' if !@labels && $ie->{unknown};
+
+        push @hints, +{
+            position => +{
+                line      => $line,
+                character => ($ie->{col} // 1) - 1 + length($ie->{name}),
+            },
+            label   => " ![$label_str]",
+            kind    => 1,
+            tooltip => +{
+                kind  => 'markdown',
+                value => "Inferred effects for `$ie->{name}()`",
+            },
+            paddingLeft => 1,
+        };
+    }
+
     \@hints;
 }
 

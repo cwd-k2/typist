@@ -260,4 +260,169 @@ PERL
     is $hints->[0]{to}, 'Connected', 'first hint to state';
 };
 
+# ── Branching: convergent if/else ─────────────
+
+subtest 'branching — convergent if/else (same transition both branches)' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => _ws_registry_with_db());
+package ProtoBranch1;
+use v5.40;
+
+effect DB, [qw(None Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
+    disconnect => ['() -> Void',         protocol('Connected -> None')],
+};
+
+sub setup :sig((Bool) -> Void ![DB<None -> Connected>]) ($flag) {
+    if ($flag) {
+        DB::connect("host1");
+    } else {
+        DB::connect("host2");
+    }
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    is scalar @errors, 0, 'convergent if/else produces no error';
+};
+
+# ── Branching: divergent if/else ──────────────
+
+subtest 'branching — divergent if/else (different end states)' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => _ws_registry_with_db());
+package ProtoBranch2;
+use v5.40;
+
+effect DB, [qw(None Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
+    disconnect => ['() -> Void',         protocol('Connected -> None')],
+};
+
+sub bad_branch :sig((Bool) -> Void ![DB<None -> Authed>]) ($flag) {
+    DB::connect("localhost");
+    if ($flag) {
+        DB::auth("user", "pass");
+    } else {
+        DB::disconnect();
+    }
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    ok @errors > 0, 'divergent if/else produces ProtocolMismatch';
+    like $errors[0]{message}, qr/branches diverge/, 'message mentions branches diverge';
+};
+
+# ── Branching: one branch returns ─────────────
+
+subtest 'branching — one branch returns, other continues' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => _ws_registry_with_db());
+package ProtoBranch3;
+use v5.40;
+
+effect DB, [qw(None Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
+    disconnect => ['() -> Void',         protocol('Connected -> None')],
+};
+
+sub early_return :sig((Bool) -> Void ![DB<None -> Authed>]) ($flag) {
+    DB::connect("localhost");
+    if ($flag) {
+        return;
+    } else {
+        DB::auth("user", "pass");
+    }
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    is scalar @errors, 0, 'return branch excluded, else branch reaches declared end state';
+};
+
+# ── Branching: all branches return ────────────
+
+subtest 'branching — all branches return (no final state check)' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => _ws_registry_with_db());
+package ProtoBranch4;
+use v5.40;
+
+effect DB, [qw(None Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
+    disconnect => ['() -> Void',         protocol('Connected -> None')],
+};
+
+sub all_return :sig((Bool) -> Void ![DB<None -> Authed>]) ($flag) {
+    DB::connect("localhost");
+    if ($flag) {
+        DB::auth("user", "pass");
+        return;
+    } else {
+        DB::auth("admin", "admin");
+        return;
+    }
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    is scalar @errors, 0, 'all branches return — no final state check';
+};
+
+# ── Branching: if without else (state change) ─
+
+subtest 'branching — if without else (state changes in then block)' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => _ws_registry_with_db());
+package ProtoBranch5;
+use v5.40;
+
+effect DB, [qw(None Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
+    disconnect => ['() -> Void',         protocol('Connected -> None')],
+};
+
+sub maybe_connect :sig((Bool) -> Void ![DB<None -> Connected>]) ($flag) {
+    if ($flag) {
+        DB::connect("localhost");
+    }
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    ok @errors > 0, 'if without else with state change produces error';
+    like $errors[0]{message}, qr/branches diverge/, 'message mentions diverge';
+};
+
+# ── Branching: if without else (no state change) ─
+
+subtest 'branching — if without else (no state change in then block)' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => _ws_registry_with_db());
+package ProtoBranch6;
+use v5.40;
+
+effect DB, [qw(None Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
+    disconnect => ['() -> Void',         protocol('Connected -> None')],
+};
+
+sub query_loop :sig((Bool) -> Void ![DB<Authed>]) ($flag) {
+    if ($flag) {
+        DB::query("SELECT 1");
+    }
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    is scalar @errors, 0, 'if without else, no state change → convergent';
+};
+
 done_testing;

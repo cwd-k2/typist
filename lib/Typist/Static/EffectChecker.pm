@@ -170,6 +170,52 @@ sub _collect_called_effects ($self, $block, $pkg) {
     @calls;
 }
 
+# Infer effects for unannotated functions (for LSP hints).
+# Returns an arrayref of { name, labels => [...], unknown, line, col }.
+sub infer_effects ($class_or_self, $extracted, $registry) {
+    my @results;
+    my $pkg = $extracted->{package} // 'main';
+
+    # Build a temporary instance for _collect_called_effects
+    my $checker = ref $class_or_self
+        ? $class_or_self
+        : bless +{ registry => $registry, extracted => $extracted }, $class_or_self;
+
+    for my $name (sort keys $extracted->{functions}->%*) {
+        my $fn = $extracted->{functions}{$name};
+        next unless $fn->{unannotated};
+        my $block = $fn->{block} // next;
+
+        my @called = $checker->_collect_called_effects($block, $pkg);
+        my (%labels, $unknown);
+
+        for my $call (@called) {
+            if ($call->{unannotated}) {
+                $unknown = 1;
+                next;
+            }
+            my $eff = $call->{effects};
+            next unless ref $eff;
+            my $row = $eff->is_eff ? $eff->row : $eff;
+            next unless $row->is_row;
+            $labels{$_} = 1 for $row->labels;
+        }
+
+        my @sorted = sort keys %labels;
+        next unless @sorted || $unknown;
+
+        push @results, +{
+            name    => $name,
+            labels  => \@sorted,
+            unknown => $unknown ? 1 : 0,
+            line    => $fn->{line},
+            col     => $fn->{col},
+        };
+    }
+
+    \@results;
+}
+
 sub _check_effect_inclusion ($self, $caller_eff, $callee_eff, $caller_name, $callee_name, $line, $col = 0) {
     my $caller_row = $caller_eff->is_eff ? $caller_eff->row : $caller_eff;
     my $callee_row = $callee_eff->is_eff ? $callee_eff->row : $callee_eff;

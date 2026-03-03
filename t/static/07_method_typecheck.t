@@ -423,4 +423,82 @@ PERL
     is scalar @$errs, 0, 'no-arg method call produces no error';
 };
 
+# ── Phase 3: Cross-Package Method Checking ───────
+
+subtest 'cross-package: struct variable method call OK' => sub {
+    my $errs = type_errors(<<'PERL');
+package Person;
+use v5.40;
+
+struct Person => (name => 'Str', age => 'Int');
+
+sub greet :sig((Str) -> Str) ($self, $msg) {
+    return "$msg ${\$self->name}";
+}
+
+sub run :sig(() -> Void) () {
+    my $p = Person(name => "Alice", age => 30);
+    $p->greet("Hello");
+}
+PERL
+
+    is scalar @$errs, 0, 'struct variable method call with correct args OK';
+};
+
+subtest 'cross-package: struct variable method type mismatch' => sub {
+    my $errs = type_errors(<<'PERL');
+package Person;
+use v5.40;
+
+struct Person => (name => 'Str', age => 'Int');
+
+sub greet :sig((Str) -> Str) ($self, $msg) {
+    return "$msg ${\$self->name}";
+}
+
+sub run :sig(() -> Void) () {
+    my $p = Person(name => "Alice", age => 30);
+    $p->greet(42);
+}
+PERL
+
+    is scalar @$errs, 1, 'struct variable method call type mismatch detected';
+    like $errs->[0]{message}, qr/Argument 1.*greet.*Str/, 'error message correct';
+};
+
+subtest 'cross-package: struct variable method arity mismatch' => sub {
+    my $errs = arity_errors(<<'PERL');
+package Person;
+use v5.40;
+
+struct Person => (name => 'Str', age => 'Int');
+
+sub greet :sig((Str) -> Str) ($self, $msg) {
+    return "$msg ${\$self->name}";
+}
+
+sub run :sig(() -> Void) () {
+    my $p = Person(name => "Alice", age => 30);
+    $p->greet("Hello", "extra");
+}
+PERL
+
+    is scalar @$errs, 1, 'struct variable method arity mismatch detected';
+    like $errs->[0]{message}, qr/greet.*expects 1.*got 2/, 'arity error message correct';
+};
+
+subtest 'cross-package: unknown typed receiver gradual skip' => sub {
+    my $errs = type_errors(<<'PERL');
+package Test;
+use v5.40;
+
+sub run :sig(() -> Void) () {
+    my $obj = bless {}, 'Unknown';
+    $obj->method(42);
+}
+PERL
+
+    is scalar @$errs, 0, 'unknown typed receiver is gradual skipped';
+};
+
 done_testing;

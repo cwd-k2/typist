@@ -424,18 +424,50 @@ sub _check_struct_constructor_call ($self, $name, $fn, $list, $env, $word) {
 
 # ── Method Call Check ────────────────────────────
 
-# Check a single method call: $self->method(args)
-# Phase 2: only $self receivers within the same package.
+# Check a method call: $receiver->method(args)
+# Path A: $self → current package lookup
+# Path B: any receiver → env-based type resolution → package lookup
 sub _check_method_call ($self, $word, $arrow) {
     my $name = $word->content;
 
-    # Only handle $self->method() pattern (same-package instance methods)
     my $receiver = $arrow->sprevious_sibling // return;
-    return unless $receiver->isa('PPI::Token::Symbol') && $receiver->content eq '$self';
+    return unless $receiver->isa('PPI::Token::Symbol');
 
-    # Look up the method in the current package's registry
-    my $pkg = $self->{extracted}{package};
+    my $env = $self->_env_for_node($word);
+    my ($pkg, $display);
+
+    if ($receiver->content eq '$self') {
+        # Path A: same-package instance method
+        $pkg     = $self->{extracted}{package};
+        $display = "\$self->${name}";
+    } else {
+        # Path B: resolve receiver type from env
+        my $recv_type = $env->{variables}{$receiver->content} // return;
+
+        # Chase aliases to reach the concrete type
+        if ($recv_type->is_alias) {
+            my $resolved = $self->{registry}->lookup_type($recv_type->alias_name);
+            $recv_type = $resolved if $resolved;
+        }
+
+        # Must be a struct (nominal) type to look up methods
+        if ($recv_type->is_struct) {
+            $pkg = $recv_type->name;
+        } else {
+            return;  # unknown / non-struct → gradual skip
+        }
+        $display = $receiver->content . "->${name}";
+    }
+
+    # Look up method: try source package first, then struct blessed package
     my $method_sig = $self->{registry}->lookup_method($pkg, $name);
+    unless ($method_sig) {
+        # Struct accessor methods are under the blessed package (Typist::Struct::Name)
+        my $recv_type = $env->{variables}{$receiver->content};
+        if ($recv_type && $recv_type->is_struct) {
+            $method_sig = $self->{registry}->lookup_method($recv_type->package, $name);
+        }
+    }
     return unless $method_sig;
 
     # Skip generic methods (type variables can't be resolved statically)
@@ -443,14 +475,12 @@ sub _check_method_call ($self, $word, $arrow) {
 
     # The argument list must follow the method name
     my $arg_list = $word->snext_sibling // return;
-    return unless $arg_list->isa('PPI::Structure::List');
+    return unless ref $arg_list && $arg_list->isa('PPI::Structure::List');
 
     my @param_types = ($method_sig->{params} // [])->@*;
     my @param_exprs = map { $_->to_string } @param_types;
 
-    my $env = $self->_env_for_node($word);
     my @args = $self->_extract_args($arg_list);
-    my $display = "\$self->${name}";
 
     # ── Arity check ──────────────────────────────
     my $is_variadic = $method_sig->{variadic};
@@ -1205,6 +1235,54 @@ sub _narrow_truthiness ($self, $cond_children, $env) {
     +{ $var_name => $narrowed };
 }
 
+# Rule: `ref($x) eq 'TYPE'` narrows $x to the corresponding reference type.
+# Maps: HASH → HashRef[Any], ARRAY → ArrayRef[Any], SCALAR → Ref[Any].
+# Blessed class names are resolved via registry.
+sub _narrow_ref ($self, $cond_children, $env) {
+    # Pattern: Word('ref') List(Symbol) Operator('eq') Quote('TYPE')
+    return +{} unless @$cond_children >= 4;
+
+    my $ref_word = $cond_children->[0];
+    return +{} unless $ref_word->isa('PPI::Token::Word') && $ref_word->content eq 'ref';
+
+    my $list = $cond_children->[1];
+    return +{} unless $list->isa('PPI::Structure::List');
+
+    # Extract the symbol inside the list
+    my @inner = $list->schildren;
+    my $expr = $inner[0];
+    @inner = $expr->schildren if $expr && $expr->isa('PPI::Statement::Expression');
+    return +{} unless @inner == 1 && $inner[0]->isa('PPI::Token::Symbol');
+    my $var_name = $inner[0]->content;
+
+    my $op = $cond_children->[2];
+    return +{} unless $op->isa('PPI::Token::Operator') && $op->content eq 'eq';
+
+    my $quote = $cond_children->[3];
+    return +{} unless $quote->isa('PPI::Token::Quote');
+    my $ref_string = $quote->string;
+
+    my %ref_map = (
+        HASH   => 'HashRef[Any]',
+        ARRAY  => 'ArrayRef[Any]',
+        SCALAR => 'Ref[Any]',
+        CODE   => 'Ref[Any]',
+    );
+
+    my $type_expr;
+    if (exists $ref_map{$ref_string}) {
+        $type_expr = $ref_map{$ref_string};
+    } else {
+        # Blessed object: try to resolve as struct/type name
+        my $resolved = $self->_resolve_type($ref_string);
+        return +{} unless $resolved;
+        return +{ $var_name => $resolved };
+    }
+
+    my $narrowed = $self->_resolve_type($type_expr) // return +{};
+    +{ $var_name => $narrowed };
+}
+
 # Rule: `$x isa Type` narrows $x to Type.
 # Returns { var_name => narrowed_type } or empty hash.
 sub _narrow_isa ($self, $cond_children, $env) {
@@ -1288,6 +1366,14 @@ sub _narrow_env_for_block ($self, $env, $node) {
         if (%try_isa) {
             %narrowing = %try_isa;
             $rule = 'isa';
+        }
+    }
+
+    unless ($rule) {
+        my %try_ref = $self->_narrow_ref(\@cond_children, $env)->%*;
+        if (%try_ref) {
+            %narrowing = %try_ref;
+            $rule = 'ref';
         }
     }
 
