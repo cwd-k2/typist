@@ -271,7 +271,9 @@ sub _check ($sub, $super, $registry = undef) {
         return _check($body, $super, $registry);
     }
     # Concrete ≮: forall (a mono type cannot satisfy a universally quantified type)
+    # Exception: gradual types containing Any are compatible (partial inference)
     if (!$sub->is_quantified && $super->is_quantified) {
+        return 1 if _contains_any($sub);
         return 0;
     }
     # forall <: forall (subsumption: rename and compare bodies)
@@ -346,6 +348,22 @@ sub _instantiate_check ($quant, $target, $registry) {
     }
 
     undef;
+}
+
+# Check whether a type transitively contains Any (gradual typing marker).
+sub _contains_any ($type) {
+    return 1 if $type->is_atom && $type->name eq 'Any';
+    if ($type->is_func) {
+        return 1 if any { _contains_any($_) } $type->params;
+        return 1 if _contains_any($type->returns);
+    }
+    if ($type->is_param) {
+        return 1 if any { _contains_any($_) } $type->params;
+    }
+    if ($type->is_union) {
+        return 1 if any { _contains_any($_) } $type->members;
+    }
+    0;
 }
 
 sub _atom_subtype ($sub_name, $super_name) {

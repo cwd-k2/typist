@@ -331,11 +331,32 @@ sub register_typeclasses ($class, $extracted, $registry, %opts) {
         my $tc_info = $extracted->{typeclasses}{$tc_name};
         my $methods = $tc_info->{methods} // +{};
 
+        # Collect type variable names from var_spec (e.g. "T", "F: * -> *")
+        my %tc_var_names;
+        if (my $vs = $tc_info->{var_spec}) {
+            my ($vname) = $vs =~ /\A(\w+)/;
+            $tc_var_names{$vname} = 1 if $vname;
+        }
+
         for my $method_name (sort keys %$methods) {
             my $sig_str = $methods->{$method_name};
             my $ann = eval { Typist::Parser->parse_annotation($sig_str) };
             next unless $ann;
             my $type = $ann->{type};
+
+            # Merge var names from typeclass var_spec + annotation generics
+            my %var_names = %tc_var_names;
+            for my $g ($ann->{generics_raw}->@*) {
+                my ($gname) = $g =~ /\A(\w+)/;
+                $var_names{$gname} = 1 if $gname;
+            }
+
+            # Convert Alias nodes matching var names to Var nodes
+            if (%var_names) {
+                require Typist::Transform;
+                $type = Typist::Transform->aliases_to_vars($type, \%var_names);
+            }
+
             my (@params, $returns);
             if ($type->is_func) {
                 @params  = $type->params;

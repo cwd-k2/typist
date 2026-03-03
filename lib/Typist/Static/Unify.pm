@@ -4,6 +4,7 @@ use v5.40;
 our $VERSION = '0.01';
 
 use Typist::Subtype;
+use Typist::Type::Atom;
 
 # ── Type-Based Unification ──────────────────────
 #
@@ -46,7 +47,18 @@ sub unify ($class, $formal, $actual, $bindings = +{}, %opts) {
 
     # ── Both Param → base match + recursive ───
     if ($formal->is_param && $actual->is_param) {
-        return undef unless $formal->base eq $actual->base;
+        # HKT: formal has a Var base (e.g., F[A]) → bind the base variable
+        if ($formal->has_var_base) {
+            my $actual_base = $actual->base;
+            # Normalize: wrap string base as Atom for consistent binding
+            my $base_type = ref $actual_base && $actual_base->isa('Typist::Type')
+                ? $actual_base
+                : Typist::Type::Atom->new($actual_base);
+            $bindings = $class->unify($formal->base, $base_type, $bindings, %opts);
+            return undef unless $bindings;
+        } else {
+            return undef unless "${\$formal->base}" eq "${\$actual->base}";
+        }
         my @fp = $formal->params;
         my @ap = $actual->params;
         return undef unless @fp == @ap;
@@ -146,7 +158,16 @@ sub collect_bindings ($class, $formal, $actual, $bindings) {
         return $class->collect_bindings($formal->returns, $actual->returns, $bindings);
     }
     if ($formal->is_param && $actual->is_param) {
-        return 0 unless $formal->base eq $actual->base;
+        # HKT: formal has a Var base (e.g., F[A]) → bind the base variable
+        if ($formal->has_var_base) {
+            my $actual_base = $actual->base;
+            my $base_type = ref $actual_base && $actual_base->isa('Typist::Type')
+                ? $actual_base
+                : Typist::Type::Atom->new($actual_base);
+            $class->collect_bindings($formal->base, $base_type, $bindings) or return 0;
+        } else {
+            return 0 unless "${\$formal->base}" eq "${\$actual->base}";
+        }
         my @fp = $formal->params;
         my @ap = $actual->params;
         return 0 unless @fp == @ap;

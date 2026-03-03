@@ -314,4 +314,38 @@ subtest 'parse_row with state' => sub {
     is $st->{to}, 'Connected', 'to';
 };
 
+# ── HKT / multi-char type variable parsing ──────
+
+subtest 'HKT: F[T] → Param(Var(F), [Var(T)])' => sub {
+    my $t = Typist::Parser->parse('F[T]');
+    ok $t->is_param, 'F[T] is param';
+    ok $t->has_var_base, 'base is a type variable';
+    is $t->base->name, 'F', 'base var name is F';
+    my @p = $t->params;
+    is scalar @p, 1, 'one param';
+    ok $p[0]->is_var, 'param is Var';
+    is $p[0]->name, 'T', 'param name is T';
+};
+
+subtest 'multi-char name: Functor[T] → Param(Alias(Functor), [Var(T)])' => sub {
+    my $t = Typist::Parser->parse('Functor[T]');
+    ok $t->is_param, 'Functor[T] is param';
+    my $base = $t->base;
+    ok ref $base && $base->is_alias, 'base is Alias';
+    is $base->alias_name, 'Functor', 'alias name is Functor';
+    my @p = $t->params;
+    ok $p[0]->is_var, 'param is Var';
+};
+
+subtest 'known constructors still work: ArrayRef[Int]' => sub {
+    my $t = Typist::Parser->parse('ArrayRef[Int]');
+    ok $t->is_param, 'ArrayRef[Int] is param';
+    is $t->base, 'ArrayRef', 'base is string "ArrayRef"';
+};
+
+subtest 'Maybe desugar preserved: Maybe[Int]' => sub {
+    my $t = Typist::Parser->parse('Maybe[Int]');
+    ok $t->is_union, 'Maybe[Int] desugars to union';
+};
+
 done_testing;

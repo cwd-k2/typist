@@ -87,4 +87,43 @@ subtest 'multi-param generic' => sub {
     is $bindings->{T}->to_string, 'Int', 'T bound to Int from hash values';
 };
 
+# ── HKT Unification ─────────────────────────────
+
+subtest 'Unify: HKT var-base binding F[T] vs ArrayRef[Int]' => sub {
+    use Typist::Static::Unify;
+    use Typist::Type::Var;
+    use Typist::Type::Param;
+    use Typist::Type::Atom;
+
+    # formal: F[T] (Param with Var base)
+    my $formal = Typist::Type::Param->new(
+        Typist::Type::Var->new('F'), Typist::Type::Var->new('T'),
+    );
+    # actual: ArrayRef[Int] (Param with string base)
+    my $actual = Typist::Type::Param->new('ArrayRef', Typist::Type::Atom->new('Int'));
+
+    my $bindings = Typist::Static::Unify->unify($formal, $actual);
+    ok $bindings, 'unification succeeds';
+    is $bindings->{F}->to_string, 'ArrayRef', 'F bound to ArrayRef';
+    is $bindings->{T}->to_string, 'Int', 'T bound to Int';
+};
+
+subtest 'Unify: collect_bindings HKT' => sub {
+    use Typist::Static::Unify;
+    use Typist::Type::Var;
+    use Typist::Type::Param;
+    use Typist::Type::Atom;
+
+    my $formal = Typist::Type::Param->new(
+        Typist::Type::Var->new('F'), Typist::Type::Var->new('A'),
+    );
+    my $actual = Typist::Type::Param->new('HashRef', Typist::Type::Atom->new('Str'));
+
+    my %bindings;
+    my $ok = Typist::Static::Unify->collect_bindings($formal, $actual, \%bindings);
+    ok $ok, 'collect_bindings succeeds';
+    is $bindings{F}->to_string, 'HashRef', 'F bound to HashRef';
+    is $bindings{A}->to_string, 'Str', 'A bound to Str';
+};
+
 done_testing;

@@ -289,4 +289,30 @@ subtest 'Fold: map_type rebuilds Quantified' => sub {
     is $mapped->to_string, $q->to_string, 'structure preserved';
 };
 
+# ── Gradual Typing + Rank-2 ───────────────────
+
+subtest 'Subtype: gradual (Any) -> Any <: forall A. (A) -> A' => sub {
+    my $gradual = Typist::Parser->parse('(Any) -> Any');
+    my $q       = Typist::Parser->parse('forall A. A -> A');
+
+    ok Typist::Subtype->is_subtype($gradual, $q),
+        '(Any) -> Any <: (forall A. A -> A) — gradual typing';
+};
+
+subtest 'Subtype: concrete still NOT <: forall' => sub {
+    my $c = Typist::Parser->parse('(Str) -> Str');
+    my $q = Typist::Parser->parse('forall A. A -> A');
+
+    ok !Typist::Subtype->is_subtype($c, $q),
+        '(Str) -> Str ≮: (forall A. A -> A) — still rejected';
+};
+
+subtest 'Subtype: gradual Any atom <: forall' => sub {
+    my $any = Typist::Type::Atom->new('Any');
+    my $q   = Typist::Parser->parse('forall A. A -> A');
+
+    ok Typist::Subtype->is_subtype($any, $q),
+        'Any <: (forall A. A -> A) — atom Any is gradual';
+};
+
 done_testing;

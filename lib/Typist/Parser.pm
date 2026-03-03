@@ -138,15 +138,15 @@ sub _parse_named ($tokens, $pos) {
         unless $$pos < @$tokens && $tokens->[$$pos] eq ']';
     $$pos++;
 
-    # Type variable application: F[T] → Param(Var('F'), [Var('T')])
-    # Single uppercase letter bases are type variables, not constructors.
-    if ($name =~ /\A[A-Z]\z/) {
-        return Typist::Type::Param->new(
-            Typist::Type::Var->new($name), @$params,
-        );
+    # Known constructors (ArrayRef, Maybe, etc.) and primitives: special handling
+    if ($DSL_CONSTRUCTORS{$name} || $PRIMITIVES{$name}) {
+        return _resolve_param_constructor($name, $params, $return_type, $effect_row);
     }
 
-    _resolve_param_constructor($name, $params, $return_type, $effect_row);
+    # Everything else: resolve base via _resolve_name.
+    # Single-char uppercase → Var('F'), multi-char → Alias('Functor').
+    # Both produce Param with a Type object base for HKT support.
+    Typist::Type::Param->new(_resolve_name($name), @$params);
 }
 
 # struct ::= '{' struct_fields '}'
