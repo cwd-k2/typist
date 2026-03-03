@@ -970,6 +970,88 @@ PERL
     is scalar @list_toks, 0, 'List in quoted name is not tokenized as type';
 };
 
+# ── Keywords without extraction: instance, handle, match ──
+
+subtest 'semantic tokens for instance keyword' => sub {
+    my $source = <<'PERL';
+use v5.40;
+typeclass Show => T, +{ show => '(T) -> Str' };
+instance Show => Int, +{ show => sub :sig((Int) -> Str) ($x) { "$x" } };
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # 'instance' keyword on line 2 (0-indexed), len 8
+    my @inst_kw = grep { $_->{type} == 4 && $_->{len} == 8 && $_->{line} == 2 } @tokens;
+    ok scalar @inst_kw >= 1, 'found instance keyword token on line 2';
+    is $inst_kw[0]{col}, 0, 'instance keyword at column 0';
+};
+
+subtest 'semantic tokens for handle keyword' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub run :sig(() -> Str ![Console]) () {
+    handle { Console::writeLine("hi"); "done" } Console => +{
+        writeLine => sub ($msg) { }
+    };
+}
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # 'handle' keyword, len 6
+    my @handle_kw = grep { $_->{type} == 4 && $_->{len} == 6 } @tokens;
+    ok scalar @handle_kw >= 1, 'found handle keyword token';
+};
+
+subtest 'semantic tokens for match keyword' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub describe :sig((Int) -> Str) ($x) {
+    match $x, 0 => sub { "zero" }, _ => sub { "other" };
+}
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # 'match' keyword, len 5
+    my @match_kw = grep { $_->{type} == 4 && $_->{len} == 5 } @tokens;
+    ok scalar @match_kw >= 1, 'found match keyword token';
+};
+
 done_testing;
 
 # ── Test Helpers ─────────────────────────────────

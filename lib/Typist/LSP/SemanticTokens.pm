@@ -32,6 +32,14 @@ $TYPE_INDEX{$TOKEN_TYPES[$_]} = $_ for 0 .. $#TOKEN_TYPES;
 my %MOD_BIT;
 $MOD_BIT{$TOKEN_MODIFIERS[$_]} = 1 << $_ for 0 .. $#TOKEN_MODIFIERS;
 
+# ── Typist keyword set (PPI-based scan) ──────────
+my @TYPIST_KEYWORDS = qw(
+    typedef newtype effect typeclass instance
+    datatype enum struct declare
+    handle match protocol sub
+);
+my %TYPIST_KEYWORD_SET = map { $_ => 1 } @TYPIST_KEYWORDS;
+
 # ── Public API ───────────────────────────────────
 
 # Returns the LSP semantic tokens legend.
@@ -55,7 +63,7 @@ sub compute ($class, $doc) {
     for my $name (keys $extracted->{aliases}->%*) {
         my $info = $extracted->{aliases}{$name};
         my $line0 = ($info->{line} // 1) - 1;
-        _scan_keyword_name(\@tokens, \@lines, $line0, 'typedef', $name, 'type');
+        _scan_defined_name(\@tokens, \@lines, $line0, $name, 'type');
         _tokenize_quoted_types(\@tokens, \@lines, $line0, +{}, 0);
     }
 
@@ -63,14 +71,14 @@ sub compute ($class, $doc) {
     for my $name (keys $extracted->{newtypes}->%*) {
         my $info = $extracted->{newtypes}{$name};
         my $line0 = ($info->{line} // 1) - 1;
-        _scan_keyword_name(\@tokens, \@lines, $line0, 'newtype', $name, 'type');
+        _scan_defined_name(\@tokens, \@lines, $line0, $name, 'type');
     }
 
     # ── effect declarations ───────────────────
     for my $name (keys $extracted->{effects}->%*) {
         my $info = $extracted->{effects}{$name};
         my $line0 = ($info->{line} // 1) - 1;
-        _scan_keyword_name(\@tokens, \@lines, $line0, 'effect', $name, 'enum');
+        _scan_defined_name(\@tokens, \@lines, $line0, $name, 'enum');
         _tokenize_sig_strings(\@tokens, \@lines, $line0, $info->{operations} // +{});
     }
 
@@ -78,7 +86,7 @@ sub compute ($class, $doc) {
     for my $name (keys $extracted->{typeclasses}->%*) {
         my $info = $extracted->{typeclasses}{$name};
         my $line0 = ($info->{line} // 1) - 1;
-        _scan_keyword_name(\@tokens, \@lines, $line0, 'typeclass', $name, 'class');
+        _scan_defined_name(\@tokens, \@lines, $line0, $name, 'class');
 
         my $var = $info->{var_spec} // '';
         $var =~ s/\s*:.*\z//;
@@ -91,13 +99,7 @@ sub compute ($class, $doc) {
         my $info = $extracted->{datatypes}{$name};
         my $line0 = ($info->{line} // 1) - 1;
 
-        # Detect keyword: 'enum' vs 'datatype'
-        my $kw = 'datatype';
-        if ($line0 < @lines && $lines[$line0] =~ /\benum\b/) {
-            $kw = 'enum';
-        }
-
-        _scan_keyword_name(\@tokens, \@lines, $line0, $kw, $name, 'type');
+        _scan_defined_name(\@tokens, \@lines, $line0, $name, 'type');
 
         # Variant / enum member tokens
         my $variants = $info->{variants} // +{};
@@ -121,7 +123,7 @@ sub compute ($class, $doc) {
     for my $name (keys(($extracted->{structs} // +{})->%*)) {
         my $info = $extracted->{structs}{$name};
         my $line0 = ($info->{line} // 1) - 1;
-        _scan_keyword_name(\@tokens, \@lines, $line0, 'struct', $name, 'type');
+        _scan_defined_name(\@tokens, \@lines, $line0, $name, 'type');
 
         # Field name tokens with readonly modifier
         my $fields = $info->{fields} // +{};
@@ -147,10 +149,6 @@ sub compute ($class, $doc) {
         my $line0 = ($decl->{line} // 1) - 1;
         next unless $line0 < @lines;
 
-        # 'declare' keyword
-        my $kw_pos = _word_pos($lines[$line0], 'declare');
-        push @tokens, [$line0, $kw_pos, 7, 'keyword', 0] if defined $kw_pos;
-
         # Function name (bare word or inside quotes)
         my $fn = $decl->{func_name};
         my $fn_pos = _word_pos($lines[$line0], $fn);
@@ -173,12 +171,6 @@ sub compute ($class, $doc) {
         my $fn = $extracted->{functions}{$name};
         my $line0 = ($fn->{line} // 1) - 1;
         next unless $line0 < @lines;
-
-        # keyword 'sub'
-        my $kw_pos = _word_pos($lines[$line0], 'sub');
-        if (defined $kw_pos) {
-            push @tokens, [$line0, $kw_pos, 3, 'keyword', 0];
-        }
 
         # function name
         my $name_pos = _word_pos($lines[$line0], $name);
@@ -216,6 +208,17 @@ sub compute ($class, $doc) {
         _tokenize_annotation(\@tokens, $line0, $lines[$line0], +{});
     }
 
+    # ── Typist keywords (PPI-based) ──────────
+    if (my $ppi_doc = $extracted->{ppi_doc}) {
+        my $words = $ppi_doc->find('PPI::Token::Word') || [];
+        for my $w (@$words) {
+            next unless $TYPIST_KEYWORD_SET{$w->content};
+            my $line0 = $w->line_number - 1;
+            my $col   = $w->column_number - 1;
+            push @tokens, [$line0, $col, length($w->content), 'keyword', 0];
+        }
+    }
+
     # ── Delta Encoding ────────────────────────
     # Sort by line, then column
     @tokens = sort { $a->[0] <=> $b->[0] || $a->[1] <=> $b->[1] } @tokens;
@@ -240,18 +243,11 @@ sub compute ($class, $doc) {
 
 # ── Helpers ──────────────────────────────────────
 
-# Find keyword and defined name on a source line, push tokens.
-sub _scan_keyword_name ($tokens, $lines, $line0, $keyword, $name, $name_type) {
+# Find a defined name on a source line, push a token with definition modifier.
+sub _scan_defined_name ($tokens, $lines, $line0, $name, $name_type) {
     return unless $line0 < scalar @$lines;
     my $text = $lines->[$line0];
 
-    # Keyword token
-    my $kw_pos = _word_pos($text, $keyword);
-    if (defined $kw_pos) {
-        push @$tokens, [$line0, $kw_pos, length($keyword), 'keyword', 0];
-    }
-
-    # Name token (with definition modifier)
     my $name_pos = _word_pos($text, $name);
     if (defined $name_pos) {
         my $mods = $MOD_BIT{definition};
@@ -433,7 +429,7 @@ The following token types are registered:
 
 =item C<function> - Function name definitions
 
-=item C<keyword> - Keywords (C<sub>, C<typedef>, C<newtype>, C<effect>, C<typeclass>, C<datatype>, C<enum>)
+=item C<keyword> - Keywords (C<sub>, C<typedef>, C<newtype>, C<effect>, C<typeclass>, C<instance>, C<datatype>, C<enum>, C<struct>, C<declare>, C<handle>, C<match>, C<protocol>)
 
 =item C<class> - Typeclass names
 
