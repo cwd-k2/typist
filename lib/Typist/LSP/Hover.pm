@@ -90,6 +90,8 @@ sub _format ($class, $sym) {
 # ── Kind-specific formatters ─────────────────────
 
 sub _format_function ($class, $sym) {
+    return $class->_format_struct_constructor($sym) if $sym->{struct_constructor};
+
     my $sig = "sub $sym->{name}";
 
     # Generics
@@ -128,6 +130,24 @@ sub _format_function ($class, $sym) {
     }
 
     $md;
+}
+
+sub _format_struct_constructor ($class, $sym) {
+    my @fields = map { (my $f = $_) =~ s/:\s/ => /; $f } ($sym->{params_expr} // [])->@*;
+    my $ret = $sym->{returns_expr} // $sym->{name};
+
+    if (@fields <= 2) {
+        my $args = @fields ? join(', ', @fields) : '';
+        return _code("$sym->{name}($args) -> $ret")
+             . _note("constructor of `$ret`");
+    }
+
+    my $body = "$sym->{name}(\n";
+    for my $f (@fields) {
+        $body .= "    $f,\n";
+    }
+    $body .= ") -> $ret";
+    _code($body) . _note("constructor of `$ret`");
 }
 
 sub _format_struct ($class, $sym) {

@@ -152,9 +152,10 @@ sub register_structs ($class, $extracted, $registry, %opts) {
             returns      => $struct_type,
             generics     => [],
             variadic     => 1,
-            params_expr  => \@ctor_params_expr,
-            returns_expr => $name,
-            constructor  => 1,
+            params_expr        => \@ctor_params_expr,
+            returns_expr       => $name,
+            constructor        => 1,
+            struct_constructor => 1,
         });
 
         # Accessor methods on the struct package

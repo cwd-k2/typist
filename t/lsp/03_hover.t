@@ -1591,41 +1591,64 @@ subtest 'hover keeps ArrayRef for $scalar variable' => sub {
     like $hover->{contents}{value}, qr/\$ref: ArrayRef\[Int\]/, '$ref keeps ArrayRef[Int]';
 };
 
-# ── Struct constructor hover shows fields ────────
+# ── Struct constructor hover shows fields (=> style) ──
 
-subtest 'hover shows struct constructor with field info' => sub {
+subtest 'hover shows struct constructor with hash-style fields' => sub {
     require Typist::LSP::Hover;
 
     my $sym = +{
-        kind         => 'function',
-        name         => 'Person',
-        params_expr  => ['age: Int', 'name: Str'],
-        returns_expr => 'Person',
-        constructor  => 1,
+        kind               => 'function',
+        name               => 'Person',
+        params_expr        => ['age: Int', 'name: Str'],
+        returns_expr       => 'Person',
+        constructor        => 1,
+        struct_constructor => 1,
     };
     my $hover = Typist::LSP::Hover->hover($sym);
     ok $hover, 'got hover response';
-    like $hover->{contents}{value}, qr/age: Int/, 'shows age field';
-    like $hover->{contents}{value}, qr/name: Str/, 'shows name field';
+    like $hover->{contents}{value}, qr/age => Int/, 'shows age with =>';
+    like $hover->{contents}{value}, qr/name => Str/, 'shows name with =>';
     like $hover->{contents}{value}, qr/-> Person/, 'shows return type';
     like $hover->{contents}{value}, qr/\*constructor of `Person`\*/, 'shows constructor note';
+    unlike $hover->{contents}{value}, qr/^sub /m, 'no sub prefix';
 };
 
 subtest 'hover shows struct constructor with optional fields' => sub {
     require Typist::LSP::Hover;
 
     my $sym = +{
-        kind         => 'function',
-        name         => 'Customer',
-        params_expr  => ['name: Str', 'phone?: Str'],
-        returns_expr => 'Customer',
-        constructor  => 1,
+        kind               => 'function',
+        name               => 'Customer',
+        params_expr        => ['name: Str', 'phone?: Str'],
+        returns_expr       => 'Customer',
+        constructor        => 1,
+        struct_constructor => 1,
     };
     my $hover = Typist::LSP::Hover->hover($sym);
     ok $hover, 'got hover response';
-    like $hover->{contents}{value}, qr/name: Str/, 'shows required field';
-    like $hover->{contents}{value}, qr/phone\?: Str/, 'shows optional field with ?';
+    like $hover->{contents}{value}, qr/name => Str/, 'shows required field with =>';
+    like $hover->{contents}{value}, qr/phone\? => Str/, 'shows optional field with ? =>';
     like $hover->{contents}{value}, qr/\*constructor of `Customer`\*/, 'shows constructor note';
+};
+
+subtest 'hover formats struct constructor multi-line for 3+ fields' => sub {
+    require Typist::LSP::Hover;
+
+    my $sym = +{
+        kind               => 'function',
+        name               => 'Config',
+        params_expr        => ['host: Str', 'port: Int', 'tls?: Bool'],
+        returns_expr       => 'Config',
+        constructor        => 1,
+        struct_constructor => 1,
+    };
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'got hover response';
+    like $hover->{contents}{value}, qr/Config\(\n/, 'opens multi-line';
+    like $hover->{contents}{value}, qr/    host => Str,/, 'indented host field';
+    like $hover->{contents}{value}, qr/    port => Int,/, 'indented port field';
+    like $hover->{contents}{value}, qr/    tls\? => Bool,/, 'indented optional tls field';
+    like $hover->{contents}{value}, qr/\) -> Config/, 'closes with return type';
 };
 
 # ── Cross-file struct constructor hover ──────────
@@ -1676,12 +1699,14 @@ PERL
     like $sym->{returns_expr}, qr/Point/, 'returns Point';
     ok scalar(grep { /x: Int/ } @{$sym->{params_expr}}), 'params_expr contains x: Int';
     ok scalar(grep { /y: Int/ } @{$sym->{params_expr}}), 'params_expr contains y: Int';
+    is $sym->{struct_constructor}, 1, 'struct_constructor flag is set';
 
     my $hover = Typist::LSP::Hover->hover($sym);
     ok $hover, 'got hover response';
-    like $hover->{contents}{value}, qr/x: Int/, 'hover shows x field';
-    like $hover->{contents}{value}, qr/y: Int/, 'hover shows y field';
+    like $hover->{contents}{value}, qr/x => Int/, 'hover shows x field with =>';
+    like $hover->{contents}{value}, qr/y => Int/, 'hover shows y field with =>';
     like $hover->{contents}{value}, qr/\*constructor of `Point`\*/, 'hover shows constructor note';
+    unlike $hover->{contents}{value}, qr/^sub /m, 'no sub prefix for struct constructor';
 };
 
 done_testing;

@@ -1014,7 +1014,8 @@ sub _synthesize_function_symbol ($name, $sig) {
         returns_expr => $returns_expr,
         generics     => \@generics,
         eff_expr     => $eff_expr,
-        ($sig->{constructor} ? (constructor => 1) : ()),
+        ($sig->{constructor}        ? (constructor        => 1) : ()),
+        ($sig->{struct_constructor} ? (struct_constructor => 1) : ()),
     };
 }
 
