@@ -103,7 +103,7 @@ sub with_log :sig(<r: Row>(Str) -> Str ![Log, r]) ($msg) {
 | LSP server | Hover, completion, diagnostics, go-to-definition, references, rename, code actions, semantic tokens, and more |
 | Cross-file checking | Workspace-level type resolution across modules |
 | Gradual typing | Annotation density determines check strictness |
-| Type inference | Bidirectional inference, control flow narrowing (`defined`, truthiness, `isa`, early return) |
+| Type inference | Bidirectional inference, control flow narrowing (`defined`, truthiness, `isa`, `ref()`, early return) |
 | Builtin prelude | 80 builtins with type annotations and three standard effect labels (`IO`, `Exn`, `Decl`) |
 
 ### Modes
@@ -378,7 +378,7 @@ The standalone LSP server provides a comprehensive editing experience:
 | Rename | Symbol rename across all workspace files |
 | Signature Help | Function parameter hints with active parameter tracking |
 | Document Symbols | Outline of functions, variables, typedefs, newtypes, datatypes, effects, typeclasses |
-| Inlay Hints | Inferred types shown inline for unannotated variables |
+| Inlay Hints | Inferred types for unannotated variables, inferred effects for unannotated functions |
 | Code Actions | Quick-fix suggestions for effect mismatches and type errors |
 | Semantic Tokens | Syntax highlighting for Typist keywords, type names, constructors, and type parameters |
 
@@ -487,7 +487,7 @@ carton exec -- perl example/01_foundations.pl
 ## Testing
 
 ```sh
-# All tests (65 files)
+# All tests (66 files)
 carton exec -- prove -l t/ t/static/ t/lsp/ t/critic/
 
 # By category
@@ -500,9 +500,9 @@ carton exec -- prove -l t/critic/       # Perl::Critic policy
 ## Known Limitations
 
 - **Expression inference** — Operator precedence does not influence inferred types.
-- **Method checking** — Only `$self->method()` within the same package is checked. Cross-package and chained method calls are skipped under gradual typing.
-- **Type narrowing** — Supports `defined($x)`, truthiness, `isa`, and early return. Does not support `ref()` checks or user-defined predicates.
-- **Effect system** — Effects require explicit annotations; there is no effect inference. Protocol checking traces linear operation sequences; branching control flow within effectful functions is not yet tracked.
+- **Method checking** — `$self->method()` and struct-typed variable method calls (`$p->name()`) are checked. Chained calls (`$p->with(...)->method()`), class method calls (`Class->method()`), and non-struct receivers are gradual-skipped.
+- **Type narrowing** — Supports `defined($x)`, truthiness, `isa`, `ref($x) eq 'TYPE'`, and early return. `ref()` requires parenthesized arg with `eq` and string literal; `ne` and inverse narrowing are not supported.
+- **Effect system** — Effect inference provides LSP inlay hints for unannotated functions (direct callees only). Protocol checking traces operation sequences with if/else branching convergence; loops are treated as single-pass, and `match`/`handle` blocks are not traced.
 - **PPI dependency** — Diagnostic quality depends on PPI's parse accuracy.
 
 ## License
