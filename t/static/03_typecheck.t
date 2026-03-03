@@ -1646,4 +1646,54 @@ PERL
     is scalar @$errs, 0, 'Func-containing-Any arg skipped at call site';
 };
 
+# ── Literal Widening for Mutable Variables ──────
+
+subtest 'widening: zero inferred as Int, not Literal(0)' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+sub calc :sig(() -> Int) () {
+    my $total = 0;
+    $total;
+}
+PERL
+    my @vars = grep { ($_->{kind} // '') eq 'variable' && $_->{name} eq '$total' }
+               $result->{symbols}->@*;
+    is scalar @vars, 1, 'found $total symbol';
+    is $vars[0]{type}, 'Int', '$total widened from Literal(0, Bool) to Int';
+    ok $vars[0]{inferred}, '$total is inferred';
+};
+
+subtest 'widening: integer literal inferred as Int' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+my $count = 42;
+PERL
+    my @vars = grep { ($_->{kind} // '') eq 'variable' && $_->{name} eq '$count' }
+               $result->{symbols}->@*;
+    is scalar @vars, 1, 'found $count symbol';
+    is $vars[0]{type}, 'Int', '$count widened from Literal(42, Int) to Int';
+};
+
+subtest 'widening: float literal inferred as Double' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+my $rate = 3.14;
+PERL
+    my @vars = grep { ($_->{kind} // '') eq 'variable' && $_->{name} eq '$rate' }
+               $result->{symbols}->@*;
+    is scalar @vars, 1, 'found $rate symbol';
+    is $vars[0]{type}, 'Double', '$rate widened from Literal(3.14, Double) to Double';
+};
+
+subtest 'widening: string literal inferred as Str' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+my $name = "hello";
+PERL
+    my @vars = grep { ($_->{kind} // '') eq 'variable' && $_->{name} eq '$name' }
+               $result->{symbols}->@*;
+    is scalar @vars, 1, 'found $name symbol';
+    is $vars[0]{type}, 'Str', '$name widened from Literal("hello", Str) to Str';
+};
+
 done_testing;

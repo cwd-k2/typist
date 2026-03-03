@@ -991,10 +991,20 @@ sub _build_env ($self) {
         next unless defined $inferred;
         next if $inferred->is_atom && $inferred->name eq 'Any';
 
-        $variables{$var->{name}} = $inferred;
+        $variables{$var->{name}} = _widen_literal($inferred);
     }
 
     $partial_env;
+}
+
+# Widen literal types for mutable variable bindings.
+# Perl's `my` is always mutable, so Literal(v, B) → Atom(B).
+# Special case: Bool → Int because 0/1 are numbers in Perl.
+sub _widen_literal ($type) {
+    return $type unless $type->is_literal;
+    my $base = $type->base_type;
+    $base = 'Int' if $base eq 'Bool';
+    Typist::Type::Atom->new($base);
 }
 
 sub _resolve_type ($self, $expr) {
@@ -1192,7 +1202,7 @@ sub _collect_local_var_types ($self) {
             my $key = $var_name . ':' . $var_sym->line_number;
             $self->{_local_var_types}{$key} = +{
                 name        => $var_name,
-                type        => $inferred,
+                type        => _widen_literal($inferred),
                 line        => $var_sym->line_number,
                 col         => $var_sym->column_number,
                 scope_start => $fn->{line},
