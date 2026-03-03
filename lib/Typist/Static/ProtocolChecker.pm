@@ -338,3 +338,50 @@ sub _trace_statement ($self, $stmt, $fn_name, $label, $protocol, $current, $pkg)
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Typist::Static::ProtocolChecker - Static protocol state-machine verification
+
+=head1 DESCRIPTION
+
+Traces effect operation sequences in function bodies and verifies them
+against the protocol finite state machine attached to each effect.  Supports
+if/else branching convergence, loop idempotency enforcement, C<handle> body
+tracing, C<match> arm convergence, and cross-function protocol composition.
+Collects C<ProtocolMismatch> errors and state-transition hints for LSP.
+
+=head2 new
+
+    my $pc = Typist::Static::ProtocolChecker->new(
+        registry  => $registry,
+        errors    => $error_collector,
+        extracted => $extracted,
+        ppi_doc   => $ppi_doc,
+        file      => $filename,
+    );
+
+Construct a new ProtocolChecker for a single compilation unit.
+
+=head2 analyze
+
+    $pc->analyze;
+
+Run protocol verification over all annotated functions whose effect rows
+contain protocol state annotations (C<< ![Label<From -E<gt> To>] >>).  Traces
+each function body against the protocol FSM, checking that every operation
+is allowed in the current state and that the final state matches the
+declared end state.
+
+=head2 hints
+
+    my $hints = $pc->hints;
+
+Return an arrayref of state-transition hint entries collected during
+C<analyze>.  Each entry is a hashref with C<label>, C<op>, C<from>, C<to>,
+C<line>, and C<col> keys, recording successful protocol transitions for
+use by LSP inlay hints.
+
+=cut

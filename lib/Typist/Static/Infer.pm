@@ -1398,3 +1398,58 @@ sub _param_col ($sig_node, $name) {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Typist::Static::Infer - Static type inference from PPI elements
+
+=head1 DESCRIPTION
+
+Infers L<Typist::Type> objects from PPI syntax nodes without executing code.
+Handles literals, variables, operators, function calls, anonymous subs,
+C<handle>/C<match> expressions, and bidirectional propagation from expected types.
+
+=head2 infer_expr
+
+    my $type = Typist::Static::Infer->infer_expr($ppi_element, $env, $expected);
+
+Infer a Typist type from a single PPI element.  Returns C<undef> for
+expressions that cannot be statically resolved.  C<$env> is an optional
+hashref mapping variable/function names to types; C<$expected> is an optional
+type for bidirectional propagation into arrays, hashes, ternary arms, and
+anonymous sub parameters.
+
+=head2 infer_expr_with_siblings
+
+    my $type = Typist::Static::Infer->infer_expr_with_siblings($element, $env);
+
+Like C<infer_expr>, but also inspects the element's right sibling for a binary
+operator.  Use this for initializer expressions where PPI does not wrap the
+right-hand side in a sub-statement (e.g. C<my $x = "  " x $indent>).
+
+=head2 infer_iterable_element_type
+
+    my $elem_type = Typist::Static::Infer->infer_iterable_element_type($list_node, $env);
+
+Given the PPI list node of a C<for> loop's iterable expression, infer the
+element type.  Supports C<@$ref>, C<@array>, bare C<$ref>, function calls,
+and accessor chains with postfix dereference (C<< $obj->method->@* >>).
+
+=head2 clear_callback_params
+
+    Typist::Static::Infer->clear_callback_params;
+
+Reset the internal callback parameter accumulator.  Called at the start of
+each L<Typist::Static::TypeChecker> analysis pass.
+
+=head2 callback_params
+
+    my $params = Typist::Static::Infer->callback_params;
+
+Return an arrayref of callback parameter bindings collected during the most
+recent inference pass.  Each entry records a parameter name and its inferred
+type, for consumption by the symbol index.
+
+=cut

@@ -238,3 +238,25 @@ sub _print_help () {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Check - CLI driver for the typist-check static analysis tool
+
+=head1 DESCRIPTION
+
+Implements the C<typist-check> command-line interface. Scans Perl module files,
+runs L<Typist::Static::Analyzer> with cross-file resolution via
+L<Typist::LSP::Workspace>, and prints colorized diagnostics with severity
+classification. Exit codes: C<0> (clean), C<1> (errors), C<2> (warnings only).
+
+=head2 run
+
+    Typist::Check->run(@ARGV);
+
+Entry point for the CLI. Parses command-line options (C<--root>, C<--no-color>,
+C<--verbose>, C<--help>), collects C<.pm> files from the workspace root or
+explicit file arguments, analyzes each file, and prints diagnostics with a
+summary line. Calls C<exit> with the appropriate exit code.
+
+=cut

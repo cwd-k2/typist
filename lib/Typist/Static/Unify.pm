@@ -130,7 +130,7 @@ sub unify ($class, $formal, $actual, $bindings = +{}, %opts) {
         return Typist::Subtype->is_subtype($actual, $formal, registry => $registry) ? $bindings : undef;
     }
 
-    # Structural mismatch with unresolved vars → cannot unify
+    # Structural mismatch with unresolved vars -- cannot unify
     undef;
 }
 
@@ -190,3 +190,42 @@ sub substitute ($class, $type, $bindings) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Static::Unify - Structural type unification with variable binding extraction
+
+=head1 DESCRIPTION
+
+Pairs formal (annotated) types against actual (inferred) types, extracting
+type-variable bindings. Handles atoms, parametric types, functions, records,
+quantified types, HKT variable bases, and union fallback via subtype checking.
+
+=head2 unify
+
+    my $bindings = Typist::Static::Unify->unify($formal, $actual);
+    my $bindings = Typist::Static::Unify->unify($formal, $actual, \%existing, registry => $reg);
+
+Structurally unifies C<$formal> against C<$actual>, returning a hashref of
+type-variable bindings on success or C<undef> on mismatch. When a variable is
+seen more than once, existing bindings are widened via
+L<Typist::Subtype/common_super>. Accepts an optional C<registry> for alias
+resolution in LSP context.
+
+=head2 collect_bindings
+
+    my $ok = Typist::Static::Unify->collect_bindings($formal, $actual, \%bindings);
+
+Recursively collects type-variable bindings by strict structural matching.
+Returns C<1> on success and C<0> on conflict. Unlike C<unify>, conflicting
+bindings for the same variable are rejected rather than widened. Populates the
+provided C<%bindings> hashref in place.
+
+=head2 substitute
+
+    my $resolved = Typist::Static::Unify->substitute($type, \%bindings);
+
+Replaces type variables in C<$type> with their bound values from
+C<%bindings>. Delegates to the type node's own C<substitute> method.
+
+=cut

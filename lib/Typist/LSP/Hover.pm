@@ -296,3 +296,27 @@ sub _note ($text) { "\n\n*$text*" }
 sub _display_type ($type_str, $) { $type_str }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Typist::LSP::Hover - Hover tooltip formatter for the Typist LSP server
+
+=head1 DESCRIPTION
+
+Generates LSP Hover responses from symbol information hashes produced
+by L<Typist::LSP::Document>.  Each symbol kind (function, variable,
+parameter, typedef, newtype, datatype, struct, effect, typeclass, field,
+method) is rendered as a fenced Markdown code block with Typist syntax.
+
+=head2 hover
+
+    my $hover = Typist::LSP::Hover->hover($symbol);
+
+Returns an LSP Hover response hashref for the given C<$symbol>, or
+C<undef> if the symbol is unknown or cannot be formatted.  The response
+contains a C<contents> field with C<kind =E<gt> 'markdown'> and an
+optional C<range> when the symbol provides positional information.
+
+=cut

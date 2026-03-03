@@ -56,3 +56,66 @@ sub _timestamp () {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Typist::LSP::Logger - Leveled stderr logger for the Typist LSP server
+
+=head1 DESCRIPTION
+
+Provides timestamped, level-filtered logging to stderr (or a custom
+handle).  The log level can be set via the C<TYPIST_LSP_LOG> environment
+variable or the C<level> constructor argument.  Levels are: C<off>,
+C<error>, C<warn>, C<info>, C<debug>, C<trace>.
+
+=head2 new
+
+    my $log = Typist::LSP::Logger->new(
+        level => 'debug',   # or 0..5, default: $ENV{TYPIST_LSP_LOG} // 'info'
+        fh    => \*STDERR,  # default
+    );
+
+Creates a new logger.  Accepts a level name or numeric value and an
+optional output filehandle.
+
+=head2 level
+
+    my $current = $log->level;
+    $log->level('debug');
+
+Gets or sets the current log level.  Accepts both level names and
+numeric values.
+
+=head2 error
+
+    $log->error('something failed:', $detail);
+
+Logs a message at the C<error> level (1).
+
+=head2 warn
+
+    $log->warn('potential issue');
+
+Logs a message at the C<warn> level (2).
+
+=head2 info
+
+    $log->info('server started');
+
+Logs a message at the C<info> level (3).
+
+=head2 debug
+
+    $log->debug('processing file', $path);
+
+Logs a message at the C<debug> level (4).
+
+=head2 trace
+
+    $log->trace('raw message', $data);
+
+Logs a message at the C<trace> level (5).
+
+=cut

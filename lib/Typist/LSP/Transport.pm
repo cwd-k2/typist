@@ -121,3 +121,67 @@ sub send_notification ($self, $method, $params) {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Typist::LSP::Transport - JSON-RPC transport layer with Content-Length framing
+
+=head1 DESCRIPTION
+
+Handles reading and writing LSP JSON-RPC messages over stdio.  Implements
+the Content-Length header framing protocol with partial-read support for
+pipes, and provides optional JSONL tracing via the C<TYPIST_LSP_TRACE>
+environment variable.
+
+=head2 uri_to_path
+
+    my $path = Typist::LSP::Transport::uri_to_path($uri);
+
+Strips the C<file://> prefix and percent-decodes a URI, returning a
+filesystem path.  Shared utility used by L<Typist::LSP::Server> and
+L<Typist::LSP::Document>.
+
+=head2 new
+
+    my $transport = Typist::LSP::Transport->new(
+        in  => \*STDIN,
+        out => \*STDOUT,
+    );
+
+Creates a new transport.  C<in> and C<out> default to C<STDIN>/C<STDOUT>.
+Both handles are set to C<:raw> mode and output is unbuffered.  If
+C<TYPIST_LSP_TRACE> is set to a file path, all messages are recorded
+there in JSONL format.
+
+=head2 read_message
+
+    my $msg = $transport->read_message;
+
+Reads one JSON-RPC message from the input handle.  Parses
+Content-Length headers, performs a partial-read loop to collect the
+full body, and returns the decoded hashref.  Returns C<undef> on EOF.
+
+=head2 send_response
+
+    $transport->send_response($id, $result);
+
+Sends a JSON-RPC success response with the given C<$id> and C<$result>
+payload.
+
+=head2 send_error
+
+    $transport->send_error($id, $code, $message);
+
+Sends a JSON-RPC error response with the given C<$id>, numeric
+C<$code>, and human-readable C<$message>.
+
+=head2 send_notification
+
+    $transport->send_notification($method, $params);
+
+Sends a JSON-RPC notification (no C<id> field) with the given
+C<$method> name and C<$params> hashref.
+
+=cut

@@ -531,3 +531,92 @@ sub register_functions ($class, $extracted, $registry, %opts) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Static::Registration - Type definition registration into Registry
+
+=head1 DESCRIPTION
+
+Registers extracted type definitions (from L<Typist::Static::Extractor>) into
+a L<Typist::Registry> instance. Each C<register_*> method parses type
+expressions and populates the registry with resolved types, constructors,
+accessor methods, and effect operations.
+
+All C<register_*> methods accept C<$extracted> (the Extractor result hashref),
+C<$registry> (a L<Typist::Registry> instance), and optional C<%opts> with
+C<errors> (a collector) and C<file> (filename for diagnostics).
+
+=head2 register_all
+
+    Typist::Static::Registration->register_all($extracted, $registry, %opts);
+
+Registers all type definitions in dependency order: aliases, newtypes, structs,
+datatypes, effects, typeclasses, instances, declares, and functions.
+
+=head2 register_aliases
+
+    Typist::Static::Registration->register_aliases($extracted, $registry, %opts);
+
+Parses and registers C<typedef> alias definitions into the registry.
+
+=head2 register_newtypes
+
+    Typist::Static::Registration->register_newtypes($extracted, $registry, %opts);
+
+Parses and registers C<newtype> definitions, creating both the newtype entry
+and its constructor function (C<Name(Inner) -E<gt> Name>).
+
+=head2 register_structs
+
+    Typist::Static::Registration->register_structs($extracted, $registry, %opts);
+
+Parses and registers C<struct> definitions, creating the struct type, its
+constructor function, field accessor methods, and the C<with()> method.
+
+=head2 register_datatypes
+
+    Typist::Static::Registration->register_datatypes($extracted, $registry, %opts);
+
+Parses and registers C<datatype> (ADT/GADT) definitions, creating the data type
+and a constructor function for each variant.
+
+=head2 register_effects
+
+    Typist::Static::Registration->register_effects($extracted, $registry, %opts);
+
+Registers C<effect> definitions with their operations, builds protocol objects
+for stateful effects, and registers each operation as a qualified function with
+its effect row annotation.
+
+=head2 register_typeclasses
+
+    Typist::Static::Registration->register_typeclasses($extracted, $registry, %opts);
+
+Registers C<typeclass> definitions and their method signatures as generic
+functions in the registry.
+
+=head2 register_instances
+
+    Typist::Static::Registration->register_instances($extracted, $registry, %opts);
+
+Registers C<instance> declarations into the registry. Static registration uses
+empty method maps; completeness checking is deferred to runtime.
+
+=head2 register_declares
+
+    Typist::Static::Registration->register_declares($extracted, $registry, %opts);
+
+Parses and registers C<declare> statements, which provide type annotations for
+external or builtin functions.
+
+=head2 register_functions
+
+    Typist::Static::Registration->register_functions($extracted, $registry, %opts);
+
+Parses function signatures from C<:sig()> attributes and registers them in the
+registry. Unannotated functions are registered with C<Any> parameter and return
+types. Methods (C<$self>/C<$class> first param) are registered via
+C<register_method>.
+
+=cut

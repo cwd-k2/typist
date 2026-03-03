@@ -544,3 +544,40 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Static::Analyzer - Static analysis pipeline for Typist source code
+
+=head1 DESCRIPTION
+
+Orchestrates the full static analysis pipeline: extraction, registration,
+structural checking, type checking, effect checking, and protocol verification.
+Returns a result hashref containing diagnostics, symbols, and inferred metadata.
+
+=head2 analyze
+
+    my $result = Typist::Static::Analyzer->analyze($source, %opts);
+
+Analyzes a Perl source string for Typist type errors. Runs the complete
+pipeline: L<Typist::Static::Extractor>, L<Typist::Static::Registration>,
+L<Typist::Static::Checker>, L<Typist::Static::TypeChecker>,
+L<Typist::Static::EffectChecker>, and L<Typist::Static::ProtocolChecker>.
+
+Options:
+
+=over 4
+
+=item C<workspace_registry> - A L<Typist::Registry> instance with external type definitions to merge.
+
+=item C<file> - Filename for diagnostic messages (defaults to C<(buffer)>).
+
+=item C<extracted> - Pre-extracted result from L<Typist::Static::Extractor> (skips re-extraction).
+
+=back
+
+Returns a hashref with keys: C<diagnostics>, C<symbols>, C<extracted>,
+C<registry>, C<protocol_hints>, C<narrowed_accessors>, C<inferred_effects>,
+and C<inferred_fn_returns>.
+
+=cut

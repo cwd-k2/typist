@@ -57,3 +57,74 @@ sub validate ($self, $effect_ops) {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Typist::Protocol - Finite state machine for effect protocol verification
+
+=head1 DESCRIPTION
+
+Typist::Protocol models a finite state machine attached to an Effect
+definition. It maps C<(state, operation)> pairs to successor states,
+enabling static verification of operation sequencing.
+
+=head2 new
+
+    my $proto = Typist::Protocol->new(
+        transitions => +{ None => +{ connect => 'Connected' } },
+        states      => [qw(None Connected)],
+    );
+
+Construct a new Protocol from a transitions hash. The optional C<states>
+argument provides an explicit states list; otherwise states are inferred
+from the transitions.
+
+=head2 transitions
+
+    my $map = $proto->transitions;
+
+Returns the raw transitions hashref mapping each state to its
+C<< { operation => successor_state } >> entries.
+
+=head2 next_state
+
+    my $next = $proto->next_state($state, $op);
+
+Returns the successor state for the given C<($state, $op)> pair, or
+C<undef> if the operation is not allowed in that state.
+
+=head2 states
+
+    my @states = $proto->states;
+
+Returns a sorted list of all declared states. Uses the explicit states
+list if one was provided at construction; otherwise infers states from
+the transitions.
+
+=head2 has_explicit_states
+
+    my $bool = $proto->has_explicit_states;
+
+Returns true if the protocol was constructed with an explicit states
+list rather than relying on inference from transitions.
+
+=head2 ops_in
+
+    my @ops = $proto->ops_in($state);
+
+Returns a sorted list of operations that are valid in the given state.
+
+=head2 validate
+
+    my @unreachable = $proto->validate(\@effect_ops);
+
+Given a list of all operations defined on the parent effect, returns
+those that are unreachable from any state in the protocol.
+
+=head1 SEE ALSO
+
+L<Typist::Effect>, L<Typist::Static::ProtocolChecker>
+
+=cut

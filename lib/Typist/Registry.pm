@@ -436,14 +436,14 @@ Typist::Registry - Type, function, and effect registration store
 =head1 DESCRIPTION
 
 Typist::Registry is the central store for type aliases, newtypes,
-datatypes, functions, methods, effects, typeclasses, and instances.
-It supports both class-level (singleton) and instance-level usage
-through invocant dispatch: class method calls operate on a shared
+datatypes, structs, functions, methods, effects, typeclasses, and
+instances. It supports both class-level (singleton) and instance-level
+usage through invocant dispatch: class method calls operate on a shared
 default instance, while object method calls operate on the receiver.
 
-Alias resolution is lazy with cycle detection. Newtypes and datatypes
-take precedence over aliases during lookup. The resolution cache is
-cleared on merge to accommodate new definitions.
+Alias resolution is lazy with cycle detection. Newtypes, structs, and
+datatypes take precedence over aliases during lookup. The resolution
+cache is cleared on merge to accommodate new definitions.
 
 =head1 CONSTRUCTOR
 
@@ -467,14 +467,16 @@ L<Typist::Type> objects.
 
     my $type = $reg->lookup_type($name);
 
-Resolve a type alias by name. Handles recursive aliases through
-lazy resolution with cycle detection. Returns a type object or C<undef>.
+Resolve a type name by looking up newtypes, structs, and datatypes
+first, then aliases. Handles recursive aliases through lazy resolution
+with cycle detection. Returns a type object or C<undef>.
 
 =head2 has_alias
 
     my $bool = $reg->has_alias($name);
 
-Returns true if the name is registered as an alias, newtype, or datatype.
+Returns true if the name is registered as an alias, newtype, struct,
+or datatype.
 
 =head2 all_aliases
 
@@ -482,17 +484,105 @@ Returns true if the name is registered as an alias, newtype, or datatype.
 
 Returns all raw alias definitions as name-expression pairs.
 
+=head2 unregister_alias
+
+    $reg->unregister_alias($name);
+
+Remove a type alias and its resolved cache entry.
+
 =head1 NEWTYPE MANAGEMENT
 
-=head2 register_newtype / lookup_newtype / all_newtypes
+=head2 register_newtype
 
-Register, look up, or list all nominal types.
+    $reg->register_newtype($name, $type_obj);
+
+Register a nominal newtype under the given name.
+
+=head2 lookup_newtype
+
+    my $type = $reg->lookup_newtype($name);
+
+Look up a newtype by name. Returns the type object or C<undef>.
+
+=head2 all_newtypes
+
+    my %newtypes = $reg->all_newtypes;
+
+Returns all registered newtypes as name-type pairs.
+
+=head2 unregister_newtype
+
+    $reg->unregister_newtype($name);
+
+Remove a newtype registration.
 
 =head1 DATATYPE MANAGEMENT
 
-=head2 register_datatype / lookup_datatype / all_datatypes
+=head2 register_datatype
 
-Register, look up, or list all algebraic data types.
+    $reg->register_datatype($name, $type_obj);
+
+Register an algebraic data type (tagged union) under the given name.
+
+=head2 lookup_datatype
+
+    my $type = $reg->lookup_datatype($name);
+
+Look up a datatype by name. Returns the L<Typist::Type::Data> object
+or C<undef>.
+
+=head2 all_datatypes
+
+    my %datatypes = $reg->all_datatypes;
+
+Returns all registered datatypes as name-type pairs.
+
+=head2 unregister_datatype
+
+    $reg->unregister_datatype($name);
+
+Remove a datatype registration.
+
+=head1 STRUCT MANAGEMENT
+
+=head2 register_type
+
+    $reg->register_type($name, $type_obj);
+
+Register a struct type under the given name.
+
+=head2 lookup_struct
+
+    my $type = $reg->lookup_struct($name);
+
+Look up a struct by name. Returns the type object or C<undef>.
+
+=head2 all_structs
+
+    my %structs = $reg->all_structs;
+
+Returns all registered structs as name-type pairs.
+
+=head2 unregister_type
+
+    $reg->unregister_type($name);
+
+Remove a struct registration.
+
+=head1 VARIABLE TRACKING
+
+=head2 register_variable
+
+    $reg->register_variable(+{ ref => \$var, type => $type, name => '$x' });
+
+Register a typed variable. The info hashref must contain a C<ref> key.
+The reference is weakened to avoid preventing garbage collection.
+
+=head2 all_variables
+
+    my @vars = $reg->all_variables;
+
+Returns all registered variable info hashrefs.
 
 =head1 FUNCTION TRACKING
 
@@ -500,8 +590,9 @@ Register, look up, or list all algebraic data types.
 
     $reg->register_function($package, $name, $signature);
 
-Register a function signature. The signature is a hashref with C<params>,
-C<returns>, C<generics>, and C<effects> keys.
+Register a function signature and update the C<name_index> for O(1)
+bare-name lookup. The signature is a hashref with C<params>, C<returns>,
+C<generics>, and C<effects> keys.
 
 =head2 lookup_function
 
@@ -514,7 +605,7 @@ Look up a function signature by package and name.
     my $sig = $reg->search_function_by_name($name);
 
 Search all packages for a function matching the given bare name.
-Used for cross-package resolution of imported or constructor functions.
+Uses C<name_index> for O(1) lookup. Returns the first match or C<undef>.
 
 =head2 all_functions
 
@@ -522,29 +613,137 @@ Used for cross-package resolution of imported or constructor functions.
 
 Returns all registered function signatures keyed by qualified name.
 
+=head2 unregister_function
+
+    $reg->unregister_function($package, $name);
+
+Remove a function registration and its C<name_index> entry.
+
 =head1 METHOD TRACKING
 
-=head2 register_method / lookup_method / all_methods
+=head2 register_method
 
-Register, look up, or list all method signatures. Methods are stored
-separately from functions for C<$self-E<gt>method()> resolution.
+    $reg->register_method($package, $name, $signature);
+
+Register a method signature. Methods are stored separately from
+functions for C<< $self->method() >> resolution.
+
+=head2 lookup_method
+
+    my $sig = $reg->lookup_method($package, $name);
+
+Look up a method signature by package and name.
+
+=head2 all_methods
+
+    my %methods = $reg->all_methods;
+
+Returns all registered method signatures keyed by qualified name.
+
+=head2 unregister_method
+
+    $reg->unregister_method($package, $name);
+
+Remove a method registration.
+
+=head1 PACKAGE TRACKING
+
+=head2 register_package
+
+    $reg->register_package($package);
+
+Record that a package has been seen during analysis.
+
+=head2 all_packages
+
+    my @pkgs = $reg->all_packages;
+
+Returns the names of all registered packages.
 
 =head1 TYPECLASS MANAGEMENT
 
-=head2 register_typeclass / lookup_typeclass / has_typeclass / all_typeclasses
+=head2 register_typeclass
 
-Register, look up, check existence, or list all typeclass definitions.
+    $reg->register_typeclass($name, $def);
 
-=head2 register_instance / resolve_instance
+Register a typeclass definition (L<Typist::TypeClass::Def>).
 
-Register a typeclass instance or resolve an instance by class name and
-type expression.
+=head2 lookup_typeclass
+
+    my $def = $reg->lookup_typeclass($name);
+
+Look up a typeclass definition by name. Returns the definition or
+C<undef>.
+
+=head2 has_typeclass
+
+    my $bool = $reg->has_typeclass($name);
+
+Returns true if a typeclass with the given name is registered.
+
+=head2 all_typeclasses
+
+    my %tcs = $reg->all_typeclasses;
+
+Returns all registered typeclass definitions as name-definition pairs.
+
+=head2 unregister_typeclass
+
+    $reg->unregister_typeclass($name);
+
+Remove a typeclass registration.
+
+=head2 register_instance
+
+    $reg->register_instance($class_name, $type_expr, $inst);
+
+Register a typeclass instance for the given class and type expression.
+
+=head2 resolve_instance
+
+    my $inst = $reg->resolve_instance($class_name, $type_or_types);
+
+Resolve a typeclass instance by class name and concrete type. Delegates
+to L<Typist::TypeClass::Def/resolve>.
+
+=head2 unregister_instance
+
+    $reg->unregister_instance($class_name, $type_expr);
+
+Remove a typeclass instance matching the given class name and type
+expression.
 
 =head1 EFFECT MANAGEMENT
 
-=head2 register_effect / lookup_effect / all_effects / is_effect_label
+=head2 register_effect
 
-Register, look up, list, or check existence of effect definitions.
+    $reg->register_effect($name, $effect);
+
+Register an effect definition under the given label.
+
+=head2 lookup_effect
+
+    my $effect = $reg->lookup_effect($name);
+
+Look up an effect by label name. Returns the effect object or C<undef>.
+
+=head2 all_effects
+
+    my %effects = $reg->all_effects;
+
+Returns all registered effects as name-effect pairs.
+
+=head2 unregister_effect
+
+    $reg->unregister_effect($name);
+
+Remove an effect registration.
+
+=head2 is_effect_label
+
+    my $bool = $reg->is_effect_label($name);
+
+Returns true if the given name is a registered effect label.
 
 =head1 UTILITY
 
@@ -561,6 +760,13 @@ not overwritten. Clears the resolution cache.
 
 Clear all stored definitions. On instances, resets all hashes. On the
 class, resets the default singleton.
+
+=head2 typedef
+
+    Typist::Registry::typedef($name, $expr);
+
+Convenience function that coerces C<$expr> via L<Typist::Type/coerce>
+and registers it as an alias on the singleton registry.
 
 =head1 SEE ALSO
 

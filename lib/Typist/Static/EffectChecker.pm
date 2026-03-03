@@ -214,3 +214,47 @@ sub _check_effect_inclusion ($self, $caller_eff, $callee_eff, $caller_name, $cal
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Typist::Static::EffectChecker - Static effect label inclusion checker
+
+=head1 DESCRIPTION
+
+PPI-based checker that verifies each annotated function's body only calls
+functions whose effect labels are a subset of the caller's declared effect row.
+Unannotated functions are treated as pure under gradual typing and are skipped.
+
+=head2 new
+
+    my $ec = Typist::Static::EffectChecker->new(
+        registry  => $registry,
+        errors    => $error_collector,
+        extracted => $extracted,
+        ppi_doc   => $ppi_doc,
+        file      => $filename,
+    );
+
+Construct a new EffectChecker for a single compilation unit.
+
+=head2 analyze
+
+    $ec->analyze;
+
+Run effect-inclusion analysis over all annotated functions in the extracted
+data.  For each callee with a declared effect row, verify that its labels
+are included in the caller's declared row.  Collects C<EffectMismatch>
+errors into the error collector.
+
+=head2 infer_effects
+
+    my $results = Typist::Static::EffectChecker->infer_effects($extracted, $registry);
+
+Class method that infers effect labels for unannotated functions by scanning
+their call graphs.  Returns an arrayref of hashrefs, each with C<name>,
+C<labels>, C<line>, C<col>, and C<name_col> keys.  Used by LSP inlay hints
+to display inferred effects.
+
+=cut

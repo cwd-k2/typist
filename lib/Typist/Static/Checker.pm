@@ -365,3 +365,40 @@ sub _check_protocols ($self) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Static::Checker - CHECK-phase structural validation
+
+=head1 DESCRIPTION
+
+Validates structural well-formedness of type definitions, function signatures,
+typeclass hierarchies, and effect protocols. Detects alias cycles, undeclared
+type/row variables, unknown types and effects, kind errors, superclass cycles,
+and protocol state-machine inconsistencies.
+
+=head2 new
+
+    my $checker = Typist::Static::Checker->new(
+        registry  => $registry,
+        errors    => $collector,
+        extracted => $extracted,
+        file      => $filename,
+    );
+
+Constructs a new Checker instance. C<registry> is a L<Typist::Registry>
+(defaults to the class singleton). C<errors> is an error collector (defaults
+to L<Typist::Error::Global>). C<extracted> is the hashref from
+L<Typist::Static::Extractor>. C<file> is used for diagnostic locations.
+
+=head2 analyze
+
+    $checker->analyze;
+
+Runs all structural checks: alias cycle detection, function signature
+validation (undeclared type variables, bound expressions, kind
+well-formedness, effect annotation well-formedness), typeclass superclass
+validation (unknown references and cycle detection), and protocol
+well-formedness (state consistency and operation reachability).
+
+=cut

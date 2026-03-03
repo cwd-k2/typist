@@ -1995,3 +1995,91 @@ sub _contains_placeholder ($type) {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Typist::Static::TypeChecker - Static type mismatch detection
+
+=head1 DESCRIPTION
+
+PPI-based checker that detects type mismatches at variable initializers,
+assignments, call sites, and return statements.  Builds a type environment
+from extracted annotations and inferred types, then validates each usage
+site against the L<Typist::Subtype> relation.  Supports generic instantiation,
+control-flow narrowing, literal widening, and method call resolution.
+
+=head2 new
+
+    my $tc = Typist::Static::TypeChecker->new(
+        registry  => $registry,
+        errors    => $error_collector,
+        extracted => $extracted,
+        ppi_doc   => $ppi_doc,
+        file      => $filename,
+    );
+
+Construct a new TypeChecker for a single compilation unit.  C<$extracted> is
+the output of L<Typist::Static::Extractor>, C<$registry> is a
+L<Typist::Registry> instance, and C<$errors> is an L<Typist::Error> collector.
+
+=head2 analyze
+
+    $tc->analyze;
+
+Run the full type-checking pipeline: build the type environment, collect
+loop and local variable types, check variable initializers, assignments,
+call-site arguments, and return types, then harvest callback parameter
+bindings from L<Typist::Static::Infer>.
+
+=head2 env
+
+    my $env = $tc->env;
+
+Return the type environment hashref built during C<analyze>.  Maps
+variable symbols and function names to their resolved types.
+
+=head2 loop_var_types
+
+    my $vars = $tc->loop_var_types;
+
+Return a hashref mapping C<for>-loop variable names to their inferred
+element types (derived from the iterable expression).
+
+=head2 local_var_types
+
+    my $vars = $tc->local_var_types;
+
+Return a hashref mapping unannotated local variable names to their
+inferred initializer types (with literal widening applied).
+
+=head2 callback_param_types
+
+    my $params = $tc->callback_param_types;
+
+Return the arrayref of callback parameter type bindings collected
+during the most recent C<analyze> pass.
+
+=head2 narrowed_var_types
+
+    my $narrowings = $tc->narrowed_var_types;
+
+Return an arrayref of variable narrowing entries produced by control-flow
+analysis (C<defined>, truthiness, C<isa>, C<ref> checks, and early return).
+
+=head2 narrowed_accessor_types
+
+    my $narrowings = $tc->narrowed_accessor_types;
+
+Return an arrayref of accessor narrowing entries produced by control-flow
+analysis on method-call receivers.
+
+=head2 inferred_fn_returns
+
+    my $returns = $tc->inferred_fn_returns;
+
+Return a hashref mapping function names to their inferred return types,
+collected from the last expression or explicit C<return> in each function body.
+
+=cut

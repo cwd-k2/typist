@@ -1035,3 +1035,34 @@ sub _list_content ($class, $list) {
 }
 
 1;
+
+=head1 NAME
+
+Typist::Static::Extractor - PPI-based type annotation extraction
+
+=head1 DESCRIPTION
+
+Parses Perl source text via L<PPI> and extracts all Typist type annotations
+into a structured hashref. This is the first stage of the static analysis
+pipeline, producing input for L<Typist::Static::Registration> and
+L<Typist::Static::Checker>.
+
+=head2 extract
+
+    my $result = Typist::Static::Extractor->extract($source);
+
+Extracts type annotations from a Perl source string. Returns a hashref with
+keys: C<aliases>, C<variables>, C<functions>, C<newtypes>, C<datatypes>,
+C<effects>, C<structs>, C<typeclasses>, C<instances>, C<declares>,
+C<loop_variables>, C<package>, C<ppi_doc>, and C<ignore_lines>.
+
+=head2 parse_loop_compound
+
+    my $parsed = Typist::Static::Extractor->parse_loop_compound($compound);
+
+Parses a C<PPI::Statement::Compound> node into its for-loop components.
+Returns a hashref with keys C<var_sym>, C<list>, and C<block>, or C<undef>
+if the compound is not a C<for>/C<foreach> loop. Used by both the Extractor
+and L<Typist::Static::TypeChecker> for loop variable inference.
+
+=cut
