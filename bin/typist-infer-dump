@@ -1,0 +1,211 @@
+#!/usr/bin/env perl
+use v5.40;
+use FindBin;
+use lib "$FindBin::Bin/../lib";
+
+use Getopt::Long ();
+use Cwd          ();
+use File::Find   ();
+
+use Typist::LSP::Workspace;
+use Typist::Static::Analyzer;
+
+# ── Argument Parsing ────────────────────────────
+
+my %opts;
+Getopt::Long::Configure('no_auto_abbrev', 'bundling');
+Getopt::Long::GetOptions(
+    \%opts,
+    'root=s',
+    'no-color',
+    'filter=s',    # ok, undef, Any_skip, no_init
+    'scope=s',     # top, fn:NAME
+    'help|h',
+);
+
+if ($opts{help}) {
+    print <<~'HELP';
+    Usage: typist-infer-dump [OPTIONS] [FILES...]
+
+    Dump inferred types for all variables in Perl source files.
+    Uses the same Workspace + Analyzer pipeline as typist-check.
+
+    Options:
+      --root DIR        Workspace root for cross-file resolution
+      --no-color        Disable colored output
+      --filter STATUS   Show only variables with given status
+                        (ok, undef, Any_skip, no_init, annotated)
+      --scope SCOPE     Filter by scope (top, fn:NAME)
+      -h, --help        Show this help message
+
+    Output columns:
+      LINE  VARIABLE  TYPE  (STATUS)  [SCOPE]
+    HELP
+    exit 0;
+}
+
+my $use_color = _should_color(\%opts);
+
+# ── Resolve workspace root ──────────────────────
+
+my $root;
+if ($opts{root}) {
+    $root = Cwd::abs_path($opts{root});
+    die "Root directory not found: $opts{root}\n" unless $root && -d $root;
+} else {
+    my $cwd = Cwd::getcwd();
+    my $lib = "$cwd/lib";
+    $root = -d $lib ? $lib : $cwd;
+}
+
+# ── Collect files ───────────────────────────────
+
+my @files = @ARGV;
+unless (@files) {
+    File::Find::find(sub {
+        return unless /\.pm\z/ && -f;
+        push @files, $File::Find::name;
+    }, $root);
+}
+@files = map { Cwd::abs_path($_) // $_ } @files;
+
+die "No files to analyze.\n" unless @files;
+
+# ── Build cross-file registry ──────────────────
+
+my $ws = Typist::LSP::Workspace->new(root => $root);
+
+# ── Analyze each file ──────────────────────────
+
+for my $file (sort @files) {
+    open my $fh, '<:encoding(UTF-8)', $file or do {
+        warn "Cannot open $file: $!\n";
+        next;
+    };
+    my $source = do { local $/; <$fh> };
+    close $fh;
+
+    my $result = eval {
+        Typist::Static::Analyzer->analyze(
+            $source,
+            workspace_registry => $ws->registry,
+            file               => $file,
+        );
+    };
+    if ($@) {
+        warn "Analysis failed for $file: $@\n";
+        next;
+    }
+
+    say _c('1', $file, $use_color);
+
+    # Collect annotated variables
+    my @entries;
+    my $extracted = $result->{extracted};
+    for my $var ($extracted->{variables}->@*) {
+        if ($var->{type_expr}) {
+            push @entries, +{
+                line   => $var->{line},
+                name   => $var->{name},
+                type   => $var->{type_expr},
+                status => 'annotated',
+                scope  => 'top',
+            };
+        }
+    }
+
+    # Merge infer_log entries
+    for my $log ($result->{infer_log}->@*) {
+        push @entries, $log;
+    }
+
+    # Sort by line number
+    @entries = sort { $a->{line} <=> $b->{line} } @entries;
+
+    # Apply filters
+    if (my $f = $opts{filter}) {
+        @entries = grep { $_->{status} eq $f } @entries;
+    }
+    if (my $s = $opts{scope}) {
+        @entries = grep { $_->{scope} eq $s } @entries;
+    }
+
+    # Output
+    for my $e (@entries) {
+        my $line   = sprintf 'L%-4d', $e->{line};
+        my $name   = sprintf '%-20s', $e->{name};
+        my $type   = $e->{type} // '(none)';
+        my $status = $e->{status};
+        my $scope  = $e->{scope} // '';
+
+        my $colored_status = _status_color($status, $use_color);
+        my $colored_scope  = $scope ne 'top' ? _c('2', "[$scope]", $use_color) : '';
+
+        say "  $line  $name  $type  $colored_status  $colored_scope";
+    }
+
+    say '';
+}
+
+# ── Helpers ─────────────────────────────────────
+
+sub _should_color ($opts) {
+    return 0 if $opts->{'no-color'};
+    return 0 if defined $ENV{NO_COLOR};
+    return 0 unless -t STDOUT;
+    1;
+}
+
+sub _c ($code, $text, $use_color) {
+    $use_color ? "\e[${code}m${text}\e[0m" : $text;
+}
+
+sub _status_color ($status, $use_color) {
+    my $label = "($status)";
+    return $label unless $use_color;
+    return _c('32', $label, 1) if $status eq 'ok';
+    return _c('36', $label, 1) if $status eq 'annotated';
+    return _c('33', $label, 1) if $status eq 'Any_skip';
+    return _c('31', $label, 1) if $status eq 'undef';
+    return _c('2',  $label, 1) if $status eq 'no_init';
+    $label;
+}
+
+__END__
+
+=head1 NAME
+
+typist-infer-dump - Dump inferred types for all variables
+
+=head1 SYNOPSIS
+
+    typist-infer-dump script/app.pl
+    typist-infer-dump --filter undef script/app.pl
+    typist-infer-dump --root lib/ --scope top
+
+=head1 DESCRIPTION
+
+Diagnostic tool that shows what type Typist's static analysis infers for
+each variable. Uses the same Workspace + Analyzer pipeline as C<typist-check>.
+
+Each variable is shown with its inferred type and status:
+
+=over 4
+
+=item C<annotated> - Has explicit C<:sig()> type annotation
+
+=item C<ok> - Successfully inferred a specific type
+
+=item C<Any_skip> - Inferred as C<Any> (gradual typing, no constraint)
+
+=item C<undef> - Inference returned nothing
+
+=item C<no_init> - No initializer expression to infer from
+
+=back
+
+=head1 SEE ALSO
+
+L<typist-check>, L<Typist::Static::Analyzer>, L<Typist::Static::TypeChecker>
+
+=cut

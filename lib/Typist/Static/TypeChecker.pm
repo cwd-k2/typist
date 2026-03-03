@@ -28,6 +28,7 @@ sub new ($class, %args) {
         _narrowed_vars       => [],
         _narrowed_accessors  => [],
         _inferred_fn_returns => +{},
+        _infer_log           => [],
     }, $class;
 }
 
@@ -37,6 +38,7 @@ sub callback_param_types ($self) { $self->{_callback_param_types} }
 sub narrowed_var_types      ($self) { $self->{_narrowed_vars} }
 sub narrowed_accessor_types ($self) { $self->{_narrowed_accessors} }
 sub inferred_fn_returns     ($self) { $self->{_inferred_fn_returns} }
+sub infer_log               ($self) { $self->{_infer_log} }
 
 # ── Public API ───────────────────────────────────
 
@@ -1125,11 +1127,31 @@ sub _build_env ($self) {
     for my $var ($self->{extracted}{variables}->@*) {
         next if $var->{type_expr};
         next if exists $variables{$var->{name}};
-        my $init_node = $var->{init_node} // next;
+        my $init_node = $var->{init_node};
+
+        unless ($init_node) {
+            push $self->{_infer_log}->@*, +{
+                name   => $var->{name}, line => $var->{line},
+                type   => undef,        status => 'no_init',
+                scope  => 'top',
+            };
+            next;
+        }
 
         # Enrich env with enclosing function parameters for accurate inference
         my $infer_env = $self->_scoped_env($partial_env, $init_node);
         my $inferred = Typist::Static::Infer->infer_expr_with_siblings($init_node, $infer_env);
+
+        my $status = !defined $inferred  ? 'undef'
+                   : ($inferred->is_atom && $inferred->name eq 'Any') ? 'Any_skip'
+                   : 'ok';
+        push $self->{_infer_log}->@*, +{
+            name   => $var->{name}, line => $var->{line},
+            type   => $inferred ? $inferred->to_string : undef,
+            status => $status,
+            scope  => 'top',
+        };
+
         next unless defined $inferred;
         next if $inferred->is_atom && $inferred->name eq 'Any';
 
@@ -1378,6 +1400,17 @@ sub _collect_local_var_types ($self) {
             }
 
             my $inferred = Typist::Static::Infer->infer_expr_with_siblings($init_node, $env);
+
+            my $status = !defined $inferred  ? 'undef'
+                       : ($inferred->is_atom && $inferred->name eq 'Any') ? 'Any_skip'
+                       : 'ok';
+            push $self->{_infer_log}->@*, +{
+                name   => $var_name, line => $var_sym->line_number,
+                type   => $inferred ? $inferred->to_string : undef,
+                status => $status,
+                scope  => "fn:$fn_name",
+            };
+
             next unless defined $inferred;
             next if $inferred->is_atom && $inferred->name eq 'Any';
 

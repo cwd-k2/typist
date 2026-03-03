@@ -115,6 +115,7 @@ sub analyze ($class, $source, %opts) {
         narrowed_accessors  => $type_checker->narrowed_accessor_types,
         inferred_effects    => $inferred_effects,
         inferred_fn_returns => $type_checker->inferred_fn_returns,
+        infer_log           => $type_checker->infer_log,
     };
 }
 
