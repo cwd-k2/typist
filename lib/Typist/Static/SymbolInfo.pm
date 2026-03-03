@@ -1,4 +1,4 @@
-package Typist::LSP::SymbolInfo;
+package Typist::Static::SymbolInfo;
 use v5.40;
 
 our $VERSION = '0.01';

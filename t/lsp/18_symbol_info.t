@@ -2,7 +2,7 @@ use v5.40;
 use Test::More;
 use lib 'lib';
 
-use Typist::LSP::SymbolInfo qw(
+use Typist::Static::SymbolInfo qw(
     sym_function sym_parameter sym_variable sym_typedef sym_newtype
     sym_effect sym_typeclass sym_datatype sym_struct sym_field sym_method
 );

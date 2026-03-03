@@ -14,7 +14,7 @@ use Typist::Static::Checker;
 use Typist::Error;
 use Typist::Prelude;
 use Typist::Type::Data;
-use Typist::LSP::SymbolInfo qw(
+use Typist::Static::SymbolInfo qw(
     sym_function sym_parameter sym_variable sym_typedef sym_newtype
     sym_effect sym_typeclass sym_datatype sym_struct
 );

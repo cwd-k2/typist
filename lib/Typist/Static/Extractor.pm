@@ -789,6 +789,12 @@ sub _extract_functions ($class, $doc, $result) {
     for my $sub_stmt (@$subs) {
         my $name = $sub_stmt->name // next;
 
+        # Name token column (schild(1) = function name after 'sub')
+        my $name_tok = $sub_stmt->schild(1);
+        my $name_col = ($name_tok && $name_tok->isa('PPI::Token::Word'))
+            ? $name_tok->column_number
+            : $sub_stmt->column_number + 4;  # fallback: "sub " = 4 chars
+
         # Detect method: first parameter is $self or $class
         my $param_names = $class->_extract_sig_params($sub_stmt);
         my $default_count = $class->_count_sig_defaults($sub_stmt);
@@ -847,6 +853,7 @@ sub _extract_functions ($class, $doc, $result) {
                     line          => $sub_stmt->line_number,
                     end_line      => $class->_end_line($sub_stmt),
                     col           => $sub_stmt->column_number,
+                    name_col      => $name_col,
                     block         => $sub_stmt->block,
                 };
             }
@@ -871,6 +878,7 @@ sub _extract_functions ($class, $doc, $result) {
                 line          => $sub_stmt->line_number,
                 end_line      => $class->_end_line($sub_stmt),
                 col           => $sub_stmt->column_number,
+                name_col      => $name_col,
                 block         => $sub_stmt->block,
             };
         }

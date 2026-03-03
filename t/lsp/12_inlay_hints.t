@@ -183,4 +183,40 @@ PERL
     ok $msg_hint, 'found $msg hint with Str type on handler line';
 };
 
+# ── Effect inlay hint position (after function name) ──
+
+subtest 'inferred effect hint positioned after function name' => sub {
+    my $source = <<'PERL';
+package TestPkg;
+use v5.40;
+effect Console => +{ writeLine => '(Str) -> Void' };
+sub greet ($name) { Console::writeLine("Hello, $name") }
+PERL
+    #   ^--- "sub greet" → name starts at col 5, name_col=5, len=5 → character=9
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/inlayHint', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            range => +{
+                start => +{ line => 0, character => 0 },
+                end   => +{ line => 5, character => 0 },
+            },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got inlayHint response';
+    my $hints = $resp->{result};
+    my ($eff_hint) = grep { ($_->{label} // '') =~ /!\[/ } @$hints;
+    ok $eff_hint, 'found inferred effect hint';
+    # "sub greet" at col 1: name_col=5 (1-indexed), name len=5
+    # character = (5-1) + 5 = 9 (0-indexed, right after "greet")
+    is $eff_hint->{position}{character}, 9, 'effect hint at end of function name';
+    is $eff_hint->{position}{line}, 3, 'effect hint on function line';
+    like $eff_hint->{label}, qr/Console/, 'label includes Console effect';
+};
+
 done_testing;

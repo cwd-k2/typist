@@ -205,11 +205,12 @@ sub infer_effects ($class_or_self, $extracted, $registry) {
         next unless @sorted || $unknown;
 
         push @results, +{
-            name    => $name,
-            labels  => \@sorted,
-            unknown => $unknown ? 1 : 0,
-            line    => $fn->{line},
-            col     => $fn->{col},
+            name     => $name,
+            labels   => \@sorted,
+            unknown  => $unknown ? 1 : 0,
+            line     => $fn->{line},
+            col      => $fn->{col},
+            name_col => $fn->{name_col},
         };
     }
 

@@ -7,7 +7,7 @@ use Typist::Static::Analyzer;
 use Typist::Parser;
 use Typist::Prelude;
 use Typist::LSP::Transport;
-use Typist::LSP::SymbolInfo qw(
+use Typist::Static::SymbolInfo qw(
     sym_function sym_variable sym_typedef sym_newtype
     sym_effect sym_typeclass sym_datatype sym_struct sym_field sym_method
 );
@@ -541,7 +541,7 @@ sub inlay_hints ($self, $start_line, $end_line) {
         push @hints, +{
             position => +{
                 line      => $line,
-                character => ($ie->{col} // 1) - 1 + length($ie->{name}),
+                character => ($ie->{name_col} // (($ie->{col} // 1) + 4)) - 1 + length($ie->{name}),
             },
             label   => " ![$label_str]",
             kind    => 1,

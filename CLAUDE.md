@@ -17,7 +17,7 @@ Static::EffectChecker                                       LSP::Completion
 Static::Extractor                                           LSP::Transport
 Static::Infer                                               LSP::CodeAction
 Static::Unify                                               LSP::SemanticTokens
-                                                            LSP::Logger
+Static::SymbolInfo                                          LSP::Logger
 
 Shared Infrastructure
 ──────────────────────────
@@ -116,7 +116,8 @@ Tie::Scalar 監視  | OFF                  | ON
 - `Typist::LSP::Transport` — JSON-RPC transport (Content-Length framing, partial read loop). `uri_to_path($uri)` shared URI decoder (file:// prefix + percent-decoding), used by Server and Document.
 - `Typist::LSP::Document` — Per-file analysis cache and query interface. `result` and `lines` public accessors. `symbol_at` returns symbols with LSP `range` for precise hover highlighting. `_find_word_occurrences` class method for shared word-boundary search (used by `find_references` and Workspace). `signature_context` supports multi-line calls (20-line lookback).
 - `Typist::LSP::Workspace` — Cross-file type registry. Tracks aliases, functions, newtypes, datatypes, structs, effects, typeclasses, instances, and declares per file. Differential updates via `_unregister_file_types` (removes old entries) + `_register_file_types` (adds new).
-- `Typist::Static::Extractor` — PPI-based type/function/variable extraction. Extracts aliases, newtypes, datatypes, enums, structs, effects, typeclasses, instances, declares, variables, functions, and loop variables. `parse_loop_compound($compound)` shared loop structure parser used by both `_extract_loop_variables` and TypeChecker `_inject_loop_vars`. Instance extraction (`_extract_instances`) captures `class_name`, `type_expr`, `method_names` from `instance ClassName => TypeExpr, +{...}` statements.
+- `Typist::Static::Extractor` — PPI-based type/function/variable extraction. Extracts aliases, newtypes, datatypes, enums, structs, effects, typeclasses, instances, declares, variables, functions, and loop variables. `parse_loop_compound($compound)` shared loop structure parser used by both `_extract_loop_variables` and TypeChecker `_inject_loop_vars`. Instance extraction (`_extract_instances`) captures `class_name`, `type_expr`, `method_names` from `instance ClassName => TypeExpr, +{...}` statements. Function entries include `name_col` (PPI column of the function name token) in addition to `col` (PPI column of the `sub` keyword).
+- `Typist::Static::SymbolInfo` — Factory functions for symbol hashref construction. Provides `sym_function`, `sym_parameter`, `sym_variable`, `sym_typedef`, `sym_newtype`, `sym_effect`, `sym_typeclass`, `sym_datatype`, `sym_struct`, `sym_field`, `sym_method`. Each factory sets `kind` and provides defaults for optional fields. Used by Analyzer (symbol_index construction) and Document (registry fallback symbols).
 
 ## Conventions
 
@@ -184,6 +185,7 @@ Tests are numbered and ordered by dependency:
 - `t/04_inference.t` — Type inference and unification
 - `t/05_integration.t` — End-to-end scenarios
 - `t/06_instance.t` — Instance-based Registry/Checker
+- `t/06b_registry_unregister.t` — Registry unregister methods (all type stores, idempotency)
 - `t/07_multivar.t` — Multi-character type variables and Transform
 - `t/08_literal.t` — Literal types (string, numeric)
 - `t/09_newtype.t` — Nominal types (newtype, contains, subtype)
@@ -239,6 +241,7 @@ Tests are numbered and ordered by dependency:
 - `t/lsp/15_code_actions.t` — Code Actions (quick fixes)
 - `t/lsp/16_semantic_tokens.t` — Semantic Tokens
 - `t/lsp/17_protocol.t` — Protocol hover and inlay hints
+- `t/lsp/18_symbol_info.t` — SymbolInfo factory functions (kind, defaults, required fields)
 - `t/critic/00_policy.t` — Perl::Critic policy bridge
 - `t/critic/01_annotation_style.t` — Annotation style policy
 - `t/critic/02_effect_completeness.t` — Effect completeness policy
