@@ -103,7 +103,7 @@ sub with_log :sig(<r: Row>(Str) -> Str ![Log, r]) ($msg) {
 | LSP server | Hover, completion, diagnostics, go-to-definition, references, rename, code actions, semantic tokens, and more |
 | Cross-file checking | Workspace-level type resolution across modules |
 | Gradual typing | Annotation density determines check strictness |
-| Type inference | Bidirectional inference, control flow narrowing (`defined`, truthiness, `isa`, `ref()`, early return) |
+| Type inference | Bidirectional inference, literal widening for mutable bindings, control flow narrowing (`defined`, truthiness, `isa`, `ref()`, early return) |
 | Builtin prelude | 80 builtins with type annotations and three standard effect labels (`IO`, `Exn`, `Decl`) |
 
 ### Modes
@@ -499,7 +499,7 @@ carton exec -- prove -l t/critic/       # Perl::Critic policy
 
 ## Known Limitations
 
-- **Expression inference** — Operator precedence does not influence inferred types.
+- **Type inference** — Literal types are widened to base atoms for unannotated mutable bindings (`my $x = 0` → `Int`, `my $x = 3.14` → `Double`). Operator precedence does not influence inferred types.
 - **Method checking** — Instance (`$self->method()`), cross-package struct (`$p->name()`), class (`Person->new()`), chained (`$p->with(...)->greet()`), generic, and Record accessor calls are checked. Union receivers and untyped receivers are gradual-skipped.
 - **Type narrowing** — Supports `defined($x)`, truthiness, `isa`, `ref($x) eq/ne 'TYPE'` (with/without parens, variable comparison, inverse narrowing for Union types), and early return. Full ref type map: `HASH`, `ARRAY`, `SCALAR`, `CODE`, `REF`, `Regexp`, `GLOB`, `IO`, `VSTRING`, plus blessed class names.
 - **Effect system** — Effect inference provides LSP inlay hints for unannotated functions (direct callees only). Protocol checking traces operation sequences with if/else branching convergence, loop idempotency enforcement, and `match`/`handle` body tracking.
