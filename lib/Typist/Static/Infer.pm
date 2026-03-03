@@ -239,7 +239,16 @@ sub _maybe_instantiate_return ($sig, $env, $list_element) {
 
     # No generics or no argument list → return as-is
     return $ret unless $generics && @$generics && $list_element;
-    return $ret unless $sig->{params} && @{$sig->{params}};
+
+    # Zero-param generic constructor (e.g., None() -> Option[T]):
+    # no args to bind type vars, so replace free vars with Any
+    unless ($sig->{params} && @{$sig->{params}}) {
+        return $ret unless $ret->free_vars;
+        require Typist::Type::Fold;
+        return Typist::Type::Fold->map_type($ret, sub ($t) {
+            $t->is_var ? Typist::Type::Atom->new('Any') : $t;
+        });
+    }
 
     # Extract PPI argument nodes
     my @arg_nodes;
