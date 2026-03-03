@@ -342,6 +342,12 @@ sub is_effect_label ($invocant, $name) {
     exists $self->{effects}{$name};
 }
 
+sub is_ambient_effect ($invocant, $name) {
+    my $self = _self($invocant);
+    my $eff = $self->{effects}{$name} // return 0;
+    $eff->is_ambient;
+}
+
 # ── Merge ────────────────────────────────────────
 
 sub merge ($self, $other) {

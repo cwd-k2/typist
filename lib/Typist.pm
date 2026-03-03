@@ -590,6 +590,11 @@ sub _instance ($class_name, $type_expr_arg, $methods_ref) {
 CHECK {
     Typist::Error::Global->reset;
 
+    # 0. Ensure Prelude effects (IO/Exn/Decl) + CORE builtins are in the default
+    #    Registry so CHECK-phase analysis can resolve them.  Idempotent.
+    require Typist::Prelude;
+    Typist::Prelude->install(Typist::Registry->_default);
+
     # 1. Structural checks on global Registry (alias cycles, free vars, bounds, kinds)
     Typist::Static::Checker->new->analyze;
 

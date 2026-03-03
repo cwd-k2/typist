@@ -132,12 +132,12 @@ sub builtin_names ($class) { keys %BUILTINS }
 sub is_typist_builtin ($class, $name) { $TYPIST_BUILTIN_SET{$name} }
 
 sub install ($class, $registry) {
-    # Register standard effect labels
+    # Register standard effect labels (ambient — no handler required)
     for my $eff_name (@EFFECTS) {
         next if $registry->lookup_effect($eff_name);
         $registry->register_effect(
             $eff_name,
-            Typist::Effect->new(name => $eff_name, operations => +{}),
+            Typist::Effect->new(name => $eff_name, operations => +{}, ambient => 1),
         );
     }
 

@@ -50,6 +50,14 @@ sub analyze ($self) {
 
             # Caller has no effects declared but callee does
             unless ($caller_eff) {
+                # Skip if all callee labels are ambient (IO/Exn/Decl — no handler needed)
+                my $callee_row = $callee_eff->is_eff ? $callee_eff->row : $callee_eff;
+                if ($callee_row->is_row) {
+                    my @labels = $callee_row->labels;
+                    my $all_ambient = @labels && !grep { !$self->{registry}->is_ambient_effect($_) } @labels;
+                    next if $all_ambient;
+                }
+
                 $self->{errors}->collect(
                     kind    => 'EffectMismatch',
                     message => "Function $name() calls $call->{name}() which requires "
@@ -199,6 +207,7 @@ sub _check_effect_inclusion ($self, $caller_eff, $callee_eff, $caller_name, $cal
     my %caller_labels = map { $_ => 1 } $caller_row->labels;
 
     for my $label ($callee_row->labels) {
+        next if $self->{registry}->is_ambient_effect($label);
         unless ($caller_labels{$label}) {
             $self->{errors}->collect(
                 kind    => 'EffectMismatch',

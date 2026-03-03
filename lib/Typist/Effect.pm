@@ -16,6 +16,7 @@ sub new ($class, %args) {
         name       => ($args{name}       // die("Effect requires name\n")),
         operations => ($args{operations} // +{}),
         protocol   => $args{protocol},
+        ambient    => $args{ambient} ? 1 : 0,
         _parsed    => +{},
     }, $class;
 }
@@ -24,6 +25,7 @@ sub name         ($self) { $self->{name} }
 sub operations   ($self) { $self->{operations}->%* }
 sub protocol     ($self) { $self->{protocol} }
 sub has_protocol ($self) { defined $self->{protocol} }
+sub is_ambient   ($self) { $self->{ambient} }
 
 sub op_names ($self) { sort keys $self->{operations}->%* }
 

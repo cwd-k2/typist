@@ -77,6 +77,24 @@ sub infer_expr ($class, $element, $env = undef, $expected = undef) {
         }
     }
 
+    # ── Code reference: \&Package::function ─────
+    if ($element->isa('PPI::Token::Cast') && $element->content eq '\\') {
+        my $next = $element->snext_sibling;
+        if ($next && $next->isa('PPI::Token::Symbol') && $next->content =~ /\A&(.+)::(\w+)\z/) {
+            my ($pkg, $fname) = ($1, $2);
+            if (my $registry = $env && $env->{registry}) {
+                my $sig = $registry->lookup_function($pkg, $fname)
+                       // $registry->search_function_by_name($fname);
+                if ($sig && $sig->{params} && $sig->{returns}) {
+                    require Typist::Type::Func;
+                    return Typist::Type::Func->new(
+                        $sig->{params}, $sig->{returns}, $sig->{effects});
+                }
+            }
+        }
+        return undef;
+    }
+
     # ── Variable symbol → lookup in type env ────
     if ($element->isa('PPI::Token::Symbol')) {
         return undef unless $env;
@@ -123,7 +141,7 @@ sub infer_expr ($class, $element, $env = undef, $expected = undef) {
     if ($element->isa('PPI::Token::Word')) {
         my $next = $element->snext_sibling;
         if ($next && $next->isa('PPI::Structure::List')) {
-            my $result = _infer_call($element->content, $env, $next);
+            my $result = _infer_call($element->content, $env, $next, $expected);
             return _chase_subscript_chain($result, $next, $env) if defined $result;
             return undef;
         }
@@ -152,6 +170,11 @@ sub infer_expr ($class, $element, $env = undef, $expected = undef) {
 sub infer_expr_with_siblings ($class, $element, $env = undef) {
     return undef unless defined $element;
 
+    # Code reference: \&Package::func — Cast followed by &-sigil Symbol
+    if ($element->isa('PPI::Token::Cast') && $element->content eq '\\') {
+        return $class->infer_expr($element, $env);
+    }
+
     if ($element->isa('PPI::Token') && !$element->isa('PPI::Token::Operator')) {
         my $next = $element->snext_sibling;
         if ($next && $next->isa('PPI::Token::Operator')) {
@@ -171,7 +194,7 @@ sub infer_expr_with_siblings ($class, $element, $env = undef) {
 
 # ── Function Call Inference ──────────────────────
 
-sub _infer_call ($name, $env, $list_element = undef) {
+sub _infer_call ($name, $env, $list_element = undef, $expected = undef) {
     return undef unless $env;
 
     # Local function with known return type
@@ -189,7 +212,7 @@ sub _infer_call ($name, $env, $list_element = undef) {
         if ($registry) {
             my $sig = $registry->lookup_function($pkg, $fname);
             if ($sig && $sig->{returns}) {
-                return _maybe_instantiate_return($sig, $env, $list_element);
+                return _maybe_instantiate_return($sig, $env, $list_element, $expected);
             }
             # Registered but no return type → partially annotated
             return undef if $sig;
@@ -201,7 +224,7 @@ sub _infer_call ($name, $env, $list_element = undef) {
         my $core_sig = $registry->lookup_function('CORE', $name);
         if ($core_sig && $core_sig->{returns}) {
             return $core_sig->{generics} && @{$core_sig->{generics}}
-                ? _maybe_instantiate_return($core_sig, $env, $list_element)
+                ? _maybe_instantiate_return($core_sig, $env, $list_element, $expected)
                 : $core_sig->{returns};
         }
     }
@@ -211,7 +234,7 @@ sub _infer_call ($name, $env, $list_element = undef) {
         my $pkg = $env->{package} // 'main';
         my $pkg_sig = $registry->lookup_function($pkg, $name);
         if ($pkg_sig && $pkg_sig->{returns}) {
-            return _maybe_instantiate_return($pkg_sig, $env, $list_element);
+            return _maybe_instantiate_return($pkg_sig, $env, $list_element, $expected);
         }
     }
 
@@ -219,7 +242,7 @@ sub _infer_call ($name, $env, $list_element = undef) {
     if (my $registry = $env->{registry}) {
         if (my $sig = $registry->search_function_by_name($name)) {
             if ($sig->{returns}) {
-                my $ret = _maybe_instantiate_return($sig, $env, $list_element);
+                my $ret = _maybe_instantiate_return($sig, $env, $list_element, $expected);
                 # Replace unresolved type vars with '_' placeholder.
                 # Handles: None() -> Option[T], Err("msg") -> Result[T]
                 # where T can't be bound from arguments.
@@ -240,7 +263,7 @@ sub _infer_call ($name, $env, $list_element = undef) {
 
 # For generic functions (incl. GADT constructors), resolve type variables
 # in the return type by unifying formal param types against inferred arg types.
-sub _maybe_instantiate_return ($sig, $env, $list_element) {
+sub _maybe_instantiate_return ($sig, $env, $list_element, $expected = undef) {
     my $ret = $sig->{returns};
     my $generics = $sig->{generics};
 
@@ -287,6 +310,14 @@ sub _maybe_instantiate_return ($sig, $env, $list_element) {
 
     return $ret unless %bindings;
     my $result = $ret->substitute(\%bindings);
+
+    # Pass 3: bind remaining free vars from expected type (bidirectional)
+    if ($expected && $result->free_vars) {
+        my %extra;
+        if (Typist::Static::Unify->collect_bindings($result, $expected, \%extra) && %extra) {
+            $result = $ret->substitute(+{ %bindings, %extra });
+        }
+    }
 
     # Fallback: replace remaining free vars with placeholder '_'
     if ($result->free_vars) {
@@ -775,6 +806,19 @@ sub _infer_operator_expr ($stmt, $env, $expected = undef) {
         return undef;
     }
 
+    # CodeRef application: $f->(...) where $f :: (A) -> B
+    if (@children >= 3
+        && $children[0]->isa('PPI::Token::Symbol')
+        && $children[1]->isa('PPI::Token::Operator') && $children[1]->content eq '->'
+        && $children[2]->isa('PPI::Structure::List'))
+    {
+        if ($env) {
+            my $var_type = $env->{variables}{$children[0]->content};
+            return _chase_subscript_chain($var_type, $children[0], $env) if $var_type;
+        }
+        return undef;
+    }
+
     # Function call chain: func()->{key}, func()->method, func()->[0]->{name}
     if (@children >= 4
         && $children[0]->isa('PPI::Token::Word')
@@ -954,6 +998,34 @@ sub _chase_subscript_chain ($type, $start_node, $env = undef) {
             } else {
                 $node = $after;
             }
+            next;
+        }
+
+        # -> List: CodeRef application $f->(args)
+        if ($next->isa('PPI::Structure::List') && $type->is_func) {
+            if ($type->free_vars) {
+                my @params = $type->params;
+                my %bindings;
+                my $expr = $next->schild(0);
+                if ($expr && $expr->isa('PPI::Statement::Expression')) {
+                    my @arg_nodes;
+                    for my $child ($expr->schildren) {
+                        next if $child->isa('PPI::Token::Operator') && $child->content eq ',';
+                        push @arg_nodes, $child;
+                    }
+                    for my $i (0 .. $#params) {
+                        last if $i > $#arg_nodes;
+                        my $t = __PACKAGE__->infer_expr($arg_nodes[$i], $env);
+                        Typist::Static::Unify->collect_bindings($params[$i], $t, \%bindings) if $t;
+                    }
+                }
+                $type = %bindings ? $type->returns->substitute(\%bindings) : $type->returns;
+            } else {
+                $type = $type->returns;
+            }
+            # Can't fully resolve (e.g. HKT vars) → bail out
+            return undef if $type->free_vars;
+            $node = $next->snext_sibling;
             next;
         }
 

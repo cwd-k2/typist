@@ -262,7 +262,7 @@ subtest 'HKT typeclass definition' => sub {
         name    => 'Functor',
         var     => 'F: * -> *',
         methods => +{
-            fmap => 'CodeRef[CodeRef[A -> B], F[A] -> F[B]]',
+            fmap => '(CodeRef[A -> B], F[A]) -> F[B]',
         },
     );
 
@@ -278,7 +278,7 @@ subtest 'HKT instance (Functor for ArrayRef)' => sub {
     my $def = Typist::TypeClass->new_class(
         name    => 'Functor',
         var     => 'F: * -> *',
-        methods => +{ fmap => 'CodeRef[CodeRef[A -> B], F[A] -> F[B]]' },
+        methods => +{ fmap => '(CodeRef[A -> B], F[A]) -> F[B]' },
     );
     Typist::Registry->register_typeclass('Functor', $def);
 
@@ -309,7 +309,7 @@ subtest 'multiple HKT instances' => sub {
     my $def = Typist::TypeClass->new_class(
         name    => 'Functor',
         var     => 'F: * -> *',
-        methods => +{ fmap => 'CodeRef[CodeRef[A -> B], F[A] -> F[B]]' },
+        methods => +{ fmap => '(CodeRef[A -> B], F[A]) -> F[B]' },
     );
     Typist::Registry->register_typeclass('Functor', $def);
 

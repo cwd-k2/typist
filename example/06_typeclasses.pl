@@ -118,7 +118,7 @@ say "serialize(42, '%04d'): ", Serialize::serialize(42, "%04d");
 
 BEGIN {
     typeclass Functor => 'F: * -> *', +{
-        fmap => 'CodeRef[F[A], CodeRef[A -> B] -> F[B]]',
+        fmap => '(F[A], CodeRef[A -> B]) -> F[B]',
     };
 
     instance Functor => 'ArrayRef', +{

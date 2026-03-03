@@ -237,14 +237,14 @@ sub _parse_func_type ($tokens, $pos) {
             $$pos++;
             $variadic = 1;
         }
-        push @params, _parse_union($tokens, $pos);
+        push @params, _parse_func_param($tokens, $pos);
         while ($$pos < @$tokens && $tokens->[$$pos] eq ',') {
             $$pos++;
             if ($$pos < @$tokens && $tokens->[$$pos] eq '...') {
                 $$pos++;
                 $variadic = 1;
             }
-            push @params, _parse_union($tokens, $pos);
+            push @params, _parse_func_param($tokens, $pos);
         }
     }
 
@@ -265,6 +265,25 @@ sub _parse_func_type ($tokens, $pos) {
     }
 
     Typist::Type::Func->new(\@params, $return_type, $effects, variadic => $variadic);
+}
+
+# Parse a function parameter that may contain a bare arrow function type.
+# Inside a param list, A -> B is itself a function type (right-associative).
+sub _parse_func_param ($tokens, $pos) {
+    my $type = _parse_union($tokens, $pos);
+
+    if ($$pos < @$tokens && $tokens->[$$pos] eq '->') {
+        $$pos++;
+        my $ret = _parse_func_param($tokens, $pos);
+        my $effects;
+        if ($$pos < @$tokens && $tokens->[$$pos] eq '!') {
+            $$pos++;
+            $effects = _parse_effect_row($tokens, $pos);
+        }
+        $type = Typist::Type::Func->new([$type], $ret, $effects);
+    }
+
+    $type;
 }
 
 # ── DSL Constructors ─────────────────────────────
@@ -618,28 +637,10 @@ sub parse_annotation ($class, $input) {
         $trimmed =~ s/\A\s+//;
     }
 
-    # Tokenize and parse the type expression
+    # Tokenize and parse — function type detection handled by _parse_grouped
     my @tokens = _tokenize($trimmed);
     my $pos = 0;
-    my $type;
-
-    # Detect function type: starts with '(' and has '->' after matching ')'
-    if (@tokens && $tokens[0] eq '(') {
-        my $depth = 0;
-        my $close_pos;
-        for my $i (0 .. $#tokens) {
-            $depth++ if $tokens[$i] eq '(';
-            if ($tokens[$i] eq ')') {
-                $depth--;
-                if ($depth == 0) { $close_pos = $i; last; }
-            }
-        }
-        if (defined $close_pos && $close_pos + 1 < @tokens && $tokens[$close_pos + 1] eq '->') {
-            $type = _parse_func_type(\@tokens, \$pos);
-        }
-    }
-
-    $type //= _parse_union(\@tokens, \$pos);
+    my $type = _parse_union(\@tokens, \$pos);
 
     die "Typist::Parser: unexpected token '$tokens[$pos]' in annotation '$input'"
         if $pos < @tokens;

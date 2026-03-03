@@ -243,7 +243,7 @@ PERL
 
 # ── Builtin functions are [*] ─────────────────────
 
-subtest 'Analyzer: builtin say in ![Console] function is flagged' => sub {
+subtest 'Analyzer: builtin say in ![Console] function — IO is ambient' => sub {
     my $ws_reg = Typist::Registry->new;
     require Typist::Effect;
     $ws_reg->register_effect('Console', Typist::Effect->new(
@@ -260,11 +260,10 @@ sub greet :sig((Str) -> Void ![Console]) ($name) {
 PERL
 
     my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
-    ok @eff_diags > 0, 'calling builtin say inside ![Console] is flagged';
-    like $eff_diags[0]{message}, qr/say.*IO/, 'reports missing IO effect for builtin say';
+    is scalar @eff_diags, 0, 'IO is ambient — no EffectMismatch for builtin say';
 };
 
-subtest 'Analyzer: builtin in pure function is flagged' => sub {
+subtest 'Analyzer: builtin in pure function — IO is ambient' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 package BuiltinInPure;
 use v5.40;
@@ -276,8 +275,7 @@ sub compute :sig((Int) -> Int) ($n) {
 PERL
 
     my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
-    ok @eff_diags > 0, 'calling builtin print inside pure function is flagged';
-    like $eff_diags[0]{message}, qr/print.*IO/, 'reports IO effect mismatch for builtin print';
+    is scalar @eff_diags, 0, 'IO is ambient — no EffectMismatch for builtin print';
 };
 
 # ── Declared builtins override [*] ────────────────
@@ -438,7 +436,7 @@ PERL
     is scalar @eff_diags, 0, 'eval in ![Exn] function — no effect error';
 };
 
-subtest 'Analyzer: eval in pure function → EffectMismatch' => sub {
+subtest 'Analyzer: eval in pure function — Exn is ambient' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 package EvalPure;
 use v5.40;
@@ -449,8 +447,7 @@ sub try_parse :sig((Str) -> Any) ($s) {
 PERL
 
     my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
-    ok @eff_diags > 0, 'eval in pure function flagged';
-    like $eff_diags[0]{message}, qr/Exn/, 'reports Exn effect requirement';
+    is scalar @eff_diags, 0, 'Exn is ambient — no EffectMismatch for eval';
 };
 
 # ── Effect Inference ──────────────────────────

@@ -141,7 +141,7 @@ PERL
     is scalar @$errs, 0, 'say in ![IO] function — no effect error';
 };
 
-subtest 'effects: say in pure function → EffectMismatch' => sub {
+subtest 'effects: say in pure function — IO is ambient' => sub {
     my $errs = diags_of(<<'PERL', 'EffectMismatch');
 package SayInPure;
 use v5.40;
@@ -152,8 +152,7 @@ sub greet :sig((Str) -> Str) ($name) {
 }
 PERL
 
-    ok scalar @$errs > 0, 'say in pure function flagged';
-    like $errs->[0]{message}, qr/IO/, 'reports IO effect requirement';
+    is scalar @$errs, 0, 'IO is ambient — no EffectMismatch for say in pure function';
 };
 
 subtest 'effects: die in ![Exn] function → no error' => sub {
@@ -169,7 +168,7 @@ PERL
     is scalar @$errs, 0, 'die in ![Exn] function — no effect error';
 };
 
-subtest 'effects: die in ![IO] function → EffectMismatch' => sub {
+subtest 'effects: die in ![IO] function — Exn is ambient' => sub {
     my $errs = diags_of(<<'PERL', 'EffectMismatch');
 package DieInIO;
 use v5.40;
@@ -179,8 +178,7 @@ sub io_only :sig((Str) -> Void ![IO]) ($msg) {
 }
 PERL
 
-    ok scalar @$errs > 0, 'die in ![IO] function flagged (needs Exn)';
-    like $errs->[0]{message}, qr/Exn/, 'reports Exn effect requirement';
+    is scalar @$errs, 0, 'Exn is ambient — no EffectMismatch for die in ![IO] function';
 };
 
 subtest 'effects: pure builtin (length) in pure function → no error' => sub {
@@ -264,7 +262,7 @@ PERL
     is scalar @$errs, 0, 'IO + Exn builtins in ![IO, Exn] function — no error';
 };
 
-subtest 'effects: mixed builtins missing one effect → flagged' => sub {
+subtest 'effects: mixed builtins — Exn is ambient' => sub {
     my $errs = diags_of(<<'PERL', 'EffectMismatch');
 package MissingEffect;
 use v5.40;
@@ -275,8 +273,7 @@ sub bail :sig((Str) -> Never ![IO]) ($msg) {
 }
 PERL
 
-    ok scalar @$errs > 0, 'die requires Exn, caller only has IO';
-    like $errs->[0]{message}, qr/Exn/, 'reports missing Exn effect';
+    is scalar @$errs, 0, 'Exn is ambient — no EffectMismatch even without ![Exn]';
 };
 
 # ── Decl effect: Typist declaration builtins ──
@@ -294,7 +291,7 @@ PERL
     is scalar @$errs, 0, 'typedef in ![Decl] function — no effect error';
 };
 
-subtest 'effects: typedef in pure function → EffectMismatch' => sub {
+subtest 'effects: typedef in pure function — Decl is ambient' => sub {
     my $errs = diags_of(<<'PERL', 'EffectMismatch');
 package TypedefPure;
 use v5.40;
@@ -304,8 +301,7 @@ sub setup :sig(() -> Void) () {
 }
 PERL
 
-    ok scalar @$errs > 0, 'typedef in pure function flagged';
-    like $errs->[0]{message}, qr/Decl/, 'reports Decl effect requirement';
+    is scalar @$errs, 0, 'Decl is ambient — no EffectMismatch for typedef in pure function';
 };
 
 subtest 'effects: ->base is pure (method call, no effect)' => sub {
@@ -325,7 +321,7 @@ PERL
 
 # ── New IO/Exn effects on core builtins ───────
 
-subtest 'effects: rand requires IO' => sub {
+subtest 'effects: rand in pure function — IO is ambient' => sub {
     my $errs = diags_of(<<'PERL', 'EffectMismatch');
 package RandPure;
 use v5.40;
@@ -335,11 +331,10 @@ sub roll :sig(() -> Num) () {
 }
 PERL
 
-    ok scalar @$errs > 0, 'rand in pure function flagged';
-    like $errs->[0]{message}, qr/IO/, 'reports IO effect requirement for rand';
+    is scalar @$errs, 0, 'IO is ambient — no EffectMismatch for rand in pure function';
 };
 
-subtest 'effects: time requires IO' => sub {
+subtest 'effects: time in pure function — IO is ambient' => sub {
     my $errs = diags_of(<<'PERL', 'EffectMismatch');
 package TimePure;
 use v5.40;
@@ -349,11 +344,10 @@ sub now :sig(() -> Int) () {
 }
 PERL
 
-    ok scalar @$errs > 0, 'time in pure function flagged';
-    like $errs->[0]{message}, qr/IO/, 'reports IO effect requirement for time';
+    is scalar @$errs, 0, 'IO is ambient — no EffectMismatch for time in pure function';
 };
 
-subtest 'effects: sleep requires IO' => sub {
+subtest 'effects: sleep in pure function — IO is ambient' => sub {
     my $errs = diags_of(<<'PERL', 'EffectMismatch');
 package SleepPure;
 use v5.40;
@@ -363,11 +357,10 @@ sub wait_a_bit :sig(() -> Int) () {
 }
 PERL
 
-    ok scalar @$errs > 0, 'sleep in pure function flagged';
-    like $errs->[0]{message}, qr/IO/, 'reports IO effect requirement for sleep';
+    is scalar @$errs, 0, 'IO is ambient — no EffectMismatch for sleep in pure function';
 };
 
-subtest 'effects: eval requires Exn' => sub {
+subtest 'effects: eval in pure function — Exn is ambient' => sub {
     my $errs = diags_of(<<'PERL', 'EffectMismatch');
 package EvalPure;
 use v5.40;
@@ -377,11 +370,10 @@ sub try_it :sig((Any) -> Any) ($code) {
 }
 PERL
 
-    ok scalar @$errs > 0, 'eval in pure function flagged';
-    like $errs->[0]{message}, qr/Exn/, 'reports Exn effect requirement for eval';
+    is scalar @$errs, 0, 'Exn is ambient — no EffectMismatch for eval in pure function';
 };
 
-subtest 'effects: exit requires Exn' => sub {
+subtest 'effects: exit in pure function — Exn is ambient' => sub {
     my $errs = diags_of(<<'PERL', 'EffectMismatch');
 package ExitPure;
 use v5.40;
@@ -391,8 +383,7 @@ sub abort :sig(() -> Never) () {
 }
 PERL
 
-    ok scalar @$errs > 0, 'exit in pure function flagged';
-    like $errs->[0]{message}, qr/Exn/, 'reports Exn effect requirement for exit';
+    is scalar @$errs, 0, 'Exn is ambient — no EffectMismatch for exit in pure function';
 };
 
 subtest 'effects: rand in ![IO] function → no error' => sub {
@@ -423,7 +414,7 @@ PERL
 
 # ── struct builtin ────────────────────────────
 
-subtest 'effects: struct requires Decl' => sub {
+subtest 'effects: struct in pure function — Decl is ambient' => sub {
     my $errs = diags_of(<<'PERL', 'EffectMismatch');
 package StructPure;
 use v5.40;
@@ -433,8 +424,7 @@ sub define :sig(() -> Void) () {
 }
 PERL
 
-    ok scalar @$errs > 0, 'struct in pure function flagged';
-    like $errs->[0]{message}, qr/Decl/, 'reports Decl effect requirement for struct';
+    is scalar @$errs, 0, 'Decl is ambient — no EffectMismatch for struct in pure function';
 };
 
 done_testing;
