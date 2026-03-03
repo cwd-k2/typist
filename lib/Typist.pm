@@ -688,64 +688,98 @@ via the LSP server, with zero runtime overhead by default.
 
 The following are exported into the caller's namespace:
 
-=over 4
+=head2 typedef
 
-=item C<typedef>
+    typedef Name => Str;
 
-Define a type alias: C<typedef Name =E<gt> 'Str'>
+Define a type alias. The right-hand side is a type expression string
+or a L<Typist::Type> object.
 
-=item C<newtype>
+=head2 newtype
 
-Define a nominal type: C<newtype UserId =E<gt> 'Int'>
+    newtype UserId => 'Int';
 
-=item C<< $val->base >>
+Define a nominal type with boundary enforcement. Constructor validates
+values at creation time. Use C<< $val->base >> (L<Typist::Newtype::Base>)
+to extract the inner value.
 
-Extract the inner value from a newtype: C<< $uid->base >>
+=head2 struct
 
-=item C<typeclass>
+    struct Person => (name => 'Str', age => 'Int');
 
-Define a type class: C<typeclass Show =E<gt> T, +{ show =E<gt> '(T) -E<gt> Str' }>
+Define a nominal struct type with a constructor, field accessors,
+and immutable update via C<< $obj->with(field => val) >>.
+Use C<optional(Type)> for optional fields.
 
-=item C<instance>
+=head2 datatype
 
-Provide a type class instance: C<instance Show =E<gt> Int, +{ show =E<gt> sub ($x) { "$x" } }>
+    datatype Shape => Circle => '(Int)', Rectangle => '(Int, Int)';
 
-=item C<effect>
+Define an algebraic data type (tagged union) with constructors
+installed into the caller's namespace.
 
-Define an algebraic effect: C<effect Console =E<gt> +{ log =E<gt> '(Str) -E<gt> Void' }>
+=head2 enum
+
+    enum Color => qw(Red Green Blue);
+
+Define a nullary-only ADT (pure enumeration).
+Sugar for C<datatype> with all zero-argument variants.
+
+=head2 match
+
+    match $value, Tag => sub (...) { ... }, _ => sub { ... };
+
+Pattern match on an ADT value. Dispatches on C<_tag> and splats C<_values>
+into handlers. C<_> is the optional fallback arm.
+
+=head2 handle
+
+    handle { BODY } Effect => +{ op => sub { ... } };
+
+Install scoped effect handlers, execute BODY, and guarantee cleanup.
+No comma after the block (same rule as C<map>/C<grep>).
+
+=head2 typeclass
+
+    typeclass Show => T, +{ show => '(T) -> Str' };
+
+Define a type class with method signatures. Methods are installed as
+qualified dispatch subs into the caller's namespace.
+
+=head2 instance
+
+    instance Show => Int, +{ show => sub ($x) { "$x" } };
+
+Provide a type class instance. Validates method completeness
+against the class definition and checks superclass instances.
+
+=head2 effect
+
+    effect Console => +{ log => '(Str) -> Void' };
+
+Define an algebraic effect with named operations. Operations are
+auto-installed as qualified subs (e.g. C<< Console::log(@args) >>).
 
 With protocol (stateful effects):
 
-    effect DB, [qw(None Connected Authed)] => +{
+    effect 'DB', [qw(None Connected Authed)] => +{
         connect => ['(Str) -> Void', protocol('None -> Connected')],
         query   => ['(Str) -> Str',  protocol('Authed -> Authed')],
     };
 
-=item C<protocol>
+=head2 protocol
 
-Inline state transition marker for effect protocols: C<protocol('From -E<gt> To')>
+    protocol('From -> To')
 
-=item C<declare>
+Inline state transition marker for effect protocols.
+Used inside C<effect> definitions to attach FSM transitions to operations.
 
-Annotate an external function: C<declare say =E<gt> '(Str) -E<gt> Void ![Console]'>
+=head2 declare
 
-=item C<datatype>
+    declare say => '(Str) -> Void ![Console]';
 
-Define an algebraic data type: C<datatype Shape =E<gt> Circle =E<gt> '(Int)'>
-
-=item C<enum>
-
-Define an enumeration: C<enum Color =E<gt> qw(Red Green Blue)>
-
-=item C<handle>
-
-Install scoped effect handlers: C<handle { BODY } Effect =E<gt> +{ op =E<gt> sub { ... } }>
-
-=item C<match>
-
-Pattern match on an ADT: C<match $value, Tag =E<gt> sub { ... }>
-
-=back
+Annotate an external function's type signature. Overrides
+L<Typist::Prelude> entries for the declared name.
 
 =head1 ENVIRONMENT
 

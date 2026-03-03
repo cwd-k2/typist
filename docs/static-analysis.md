@@ -2,6 +2,8 @@
 
 This document describes the internal workings of Typist's static analysis pipeline: how type and effect errors are detected at compile time.
 
+> **Related documentation**: [architecture.md](architecture.md) (system overview) | [type-system.md](type-system.md) (type theory) | [conventions.md](conventions.md) (coding conventions) | [lsp-coverage.md](lsp-coverage.md) (LSP features)
+
 ## Table of Contents
 
 - [Pipeline Overview](#pipeline-overview)

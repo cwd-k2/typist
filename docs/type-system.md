@@ -2,6 +2,9 @@
 
 This document provides a comprehensive reference for all type constructs, subtyping rules, and advanced features in Typist.
 
+> For static analysis implementation details, see [static-analysis.md](static-analysis.md).
+> For architecture overview, see [architecture.md](architecture.md).
+
 ## Table of Contents
 
 - [Primitive Types](#primitive-types)
@@ -23,6 +26,9 @@ This document provides a comprehensive reference for all type constructs, subtyp
 - [Row Polymorphism](#row-polymorphism)
 - [Subtyping Rules](#subtyping-rules)
 - [Type DSL](#type-dsl)
+- [Gradual Typing](#gradual-typing)
+- [Type Narrowing](#type-narrowing)
+- [Builtin Prelude](#builtin-prelude)
 - [Type Constructors Summary](#type-constructors-summary)
 
 ---
@@ -933,6 +939,258 @@ use Typist::DSL qw(:all);       # All symbols (types + vars + internal)
 use Typist::DSL qw(:vars);      # T, U, V, A, B, K
 use Typist::DSL qw(:internal);  # TVar, Alias, Row, Eff, Func
 ```
+
+---
+
+## Gradual Typing
+
+Typist implements gradual typing: the density of type annotations determines how strictly a program is checked. Code with full annotations receives rigorous verification; code with no annotations passes through unconstrained. This allows incremental adoption -- annotate what matters, leave the rest alone.
+
+### Annotation Levels
+
+```
+Level                    Signature                          Behavior
+─────────────────────    ──────────────────────────────     ──────────────────────────────────
+Fully annotated          :sig((Str) -> Int ![Console])     All checks enforced: params, return,
+                                                            arity, effects
+Partial (return)         :sig((Str) -> Any)                Param types checked; return type
+                                                            unknown (Any), skipped
+Partial (effects)        :sig((Str) -> Int)                Types checked; no :Eff annotation
+                                                            means treated as pure (no constraint)
+Unannotated              sub foo ($x) { ... }              Signature is (Any...) -> Any;
+                                                            type checks skip; effect is pure
+```
+
+The governing principle: **no annotation means no constraint**. Types default to `Any` (compatible with everything), and effects default to pure (no effects declared). Both directions are permissive -- `Any` satisfies any expected type, and any type satisfies an `Any` expectation.
+
+### The Any Guard
+
+Every check method in the static analyzer includes an `Any` guard that short-circuits when either the inferred or declared type is `Any`:
+
+```perl
+next if $inferred->is_atom && $inferred->name eq 'Any';
+```
+
+This guard appears in variable initializer checks, assignment checks, call-site argument checks, return type checks, method call checks, and generic instantiation checks. It prevents false positives when one side of a comparison is unknown.
+
+### How Gradual Typing Interacts with Analysis
+
+The type environment distinguishes three states for function names:
+
+```
+State                         Meaning                        Type Check Behavior
+───────────────────────────   ────────────────────────────   ──────────────────────────
+env.functions{name} defined   Return type is known           Use the return type
+env.known{name} exists        Partial annotation (no return) Return type is undef; skip check
+Neither entry exists          Completely unannotated          Return type is Any; gradual bypass
+```
+
+For the effect checker, the same principle applies:
+
+- **Unannotated caller**: the entire function is skipped (no effect checking performed).
+- **Unannotated callee**: treated as pure. Calling an unannotated function from an annotated caller produces no `EffectMismatch`.
+- **Annotated caller with annotated callee**: full label-inclusion check (callee labels must be a subset of caller labels).
+
+This design ensures that adding annotations to one function never causes errors in unrelated unannotated code.
+
+### Usage
+
+```perl
+# Fully annotated -- all checks active
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
+
+# Partial -- param types checked, return inferred but not validated
+sub greet :sig((Str) -> Any) ($name) { "Hello, $name" }
+
+# Unannotated -- no type errors, no effect errors, acts as (Any...) -> Any
+sub helper ($x) { do_something($x) }
+```
+
+---
+
+## Type Narrowing
+
+Within control-flow guards, the static analyzer narrows variable types to more specific types based on the condition. This enables precise checking inside branches without requiring explicit casts or additional annotations.
+
+### Narrowing Rules
+
+Five rules are applied in order of specificity. The first matching rule wins:
+
+#### 1. `defined()` Narrowing
+
+`defined($x)` narrows `Maybe[T]` (i.e., `T | Undef`) to `T` by removing `Undef` from the union.
+
+```perl
+my $x :sig(Str | Undef) = get_value();
+if (defined($x)) {
+    # $x is Str here -- Undef removed
+    process($x);
+}
+```
+
+In the else-block, the type narrows to `Undef` only.
+
+#### 2. `isa` Narrowing
+
+`$x isa Foo` narrows the variable to `Foo` in the then-block.
+
+```perl
+if ($x isa Person) {
+    # $x is Person here
+    say $x->name;
+}
+```
+
+For Union types in the else-block, `isa` applies inverse narrowing: the matched type is subtracted from the union members.
+
+#### 3. `ref()` Narrowing
+
+`ref($x) eq 'TYPE'` narrows based on a mapping from Perl's `ref()` return strings to Typist types:
+
+```
+ref() String    Narrowed Type
+────────────    ─────────────
+HASH            HashRef[Any]
+ARRAY           ArrayRef[Any]
+SCALAR          Ref[Any]
+CODE            Ref[Any]
+REF             Ref[Any]
+Regexp          Ref[Any]
+GLOB            Ref[Any]
+IO              Ref[Any]
+VSTRING         Str
+```
+
+Both forms `ref($x)` and `ref $x` are recognized. Blessed class names are resolved through the registry. The `ne` operator flips the polarity (narrows in the else-block instead).
+
+```perl
+if (ref($data) eq 'HASH') {
+    # $data is HashRef[Any] here
+}
+```
+
+Variable comparison is also supported: `ref($x) eq $type` resolves `$type` when it holds a `Literal(String)` value.
+
+#### 4. Truthiness Narrowing
+
+A bare variable in a condition (`if ($x)`) narrows by removing `Undef` from the type, similar to `defined()` but with lower priority.
+
+```perl
+my $x :sig(Str | Undef) = get_value();
+if ($x) {
+    # $x is Str here -- Undef removed by truthiness
+}
+```
+
+#### 5. Early Return Narrowing
+
+`return unless defined($x)` narrows `$x` for the remainder of the enclosing function body. The analyzer scans preceding siblings of the current statement for this pattern.
+
+```perl
+sub process :sig((Str | Undef) -> Str) ($x) {
+    return unless defined($x);
+    # $x is Str from this point forward
+    uc($x);
+}
+```
+
+### Inverse Narrowing in Else-Blocks
+
+For `if/else` structures, the else-block receives the inverse of the narrowing applied in the then-block:
+
+| Rule | Then-block | Else-block |
+|------|-----------|------------|
+| `defined` | Remove `Undef` | `Undef` only |
+| `isa` (Union) | Narrow to matched type | Subtract matched type from Union members |
+| `ref` (Union) | Narrow to ref type | Subtract ref type from Union members |
+| Truthiness | Remove `Undef` | No inverse |
+
+The `unless` keyword reverses polarity: in `unless (defined($x))`, the body sees the inverse narrowing (i.e., `Undef`), and the else-block sees the direct narrowing.
+
+### Literal Widening
+
+When an unannotated variable is initialized with a literal, the type is **widened** from `Literal(value, Base)` to `Atom(Base)`. This reflects Perl's mutable `my` semantics -- a variable declared as `my $x = 0` may later hold any integer, not just `0`.
+
+```
+Expression        Literal Type            Widened Type
+──────────────    ──────────────────────  ────────────
+my $x = 0         Literal(0, Bool)        Int (Bool widens to Int)
+my $x = 1         Literal(1, Bool)        Int (Bool widens to Int)
+my $x = 42        Literal(42, Int)        Int
+my $x = 3.14      Literal(3.14, Double)   Double
+my $x = "hi"      Literal("hi", Str)      Str
+```
+
+The `Bool` to `Int` widening reflects Perl's treatment of `0` and `1` as numeric values. Widening is applied in the type environment construction phase and in local variable type collection. Expression-level inference (via `Infer->infer_expr`) is unaffected -- it still produces precise `Literal` types.
+
+Widening also propagates into parameterized types: `[1, 2, 3]` infers as `ArrayRef[Int]`, not `ArrayRef[Literal(1, Int) | Literal(2, Int) | Literal(3, Int)]`.
+
+---
+
+## Builtin Prelude
+
+`Typist::Prelude` provides standard type annotations for Perl builtin functions, establishing a baseline of type and effect information that the static analyzer can rely on without requiring user annotations.
+
+### Installation
+
+The prelude is installed during `Analyzer->analyze()` and `Workspace->new()` via `Prelude->install($registry)`. All entries are registered under the `CORE::` namespace, matching Perl's own namespace for builtins.
+
+### Standard Effect Labels
+
+Three standard effect labels are registered by the prelude so that the Checker does not report them as `UnknownEffect`:
+
+| Label | Scope | Examples |
+|-------|-------|---------|
+| `IO` | I/O, time, randomness | `say`, `print`, `warn`, `open`, `close`, `rand`, `time`, `sleep` |
+| `Exn` | Exceptions, evaluation, exit | `die`, `eval`, `exit` |
+| `Decl` | Type and effect declarations | `typedef`, `newtype`, `struct`, `effect`, `typeclass`, `instance`, `datatype`, `enum`, `declare` |
+
+### Builtin Annotations
+
+The prelude annotates approximately 80 functions across several categories:
+
+```
+Category              Functions                                    Effect
+────────────────────  ─────────────────────────────────────────    ──────
+I/O operations        say, print, warn, open, close, read, write  ![IO]
+Exception control     die, eval, exit                              ![Exn]
+Typist declarations   typedef, newtype, struct, effect, ...        ![Decl]
+String operations     length, substr, uc, lc, index, chr, ord     pure
+Numeric operations    abs, int, sqrt, log, exp, sin, cos           pure
+Array operations      push, pop, shift, unshift, reverse, sort     pure
+Hash operations       keys, values, exists, delete                 pure
+System interaction    system, exec, require, sleep, time           ![IO]
+Randomness            rand, srand                                  ![IO]
+```
+
+Pure functions carry no effect annotation and can be called from any context without triggering `EffectMismatch`.
+
+### Override with `declare`
+
+User `declare` statements override prelude entries. Since `register_function` uses plain hash assignment, a later write replaces the prelude's default:
+
+```perl
+# Override the prelude's annotation for say
+declare say => '(Str) -> Bool ![Console]';
+
+# Override die with a custom effect label
+declare die => '(Any) -> Never ![Abort]';
+
+# Declare a pure override (removes the IO effect)
+declare time => '() -> Int';
+```
+
+This mechanism allows projects to refine builtin annotations to match their specific effect vocabulary or to tighten parameter types beyond the prelude's permissive defaults.
+
+### Integration with the Analyzer
+
+The TypeChecker resolves builtin calls through a three-step lookup:
+
+1. **Local**: check if the name matches a locally defined function.
+2. **Cross-package**: if the name contains `::`, split and look up in the registry.
+3. **CORE fallback**: look up `CORE::name` in the registry (prelude or `declare`).
+
+The EffectChecker follows the same resolution order. Builtins that appear in the prelude with effect annotations (e.g., `say → ![IO]`) produce `EffectMismatch` if called from a pure annotated function. Builtins not in the prelude or declared pure are treated as effectless.
 
 ---
 

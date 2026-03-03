@@ -15,6 +15,16 @@ Typist brings static type annotations to Perl through standard attribute syntax.
   warn STDERR  exit code   Diagnostics  die on mismatch
 ```
 
+## Documentation
+
+| Document | Audience | Content |
+|----------|----------|---------|
+| [Type System Reference](docs/type-system.md) | Users, Contributors | Complete type constructs, subtyping rules, DSL |
+| [Architecture](docs/architecture.md) | Contributors | System design, module graph, data flow |
+| [Static Analysis](docs/static-analysis.md) | Contributors | Analyzer pipeline, inference, checking |
+| [LSP Coverage](docs/lsp-coverage.md) | Contributors | Feature matrix and diagnostic kinds |
+| [Conventions](docs/conventions.md) | Contributors | Coding conventions and Perl gotchas |
+
 ## Synopsis
 
 ```perl
@@ -68,6 +78,8 @@ sub with_log :sig(<r: Row>(Str) -> Str ![Log, r]) ($msg) {
 ```
 
 ## Features
+
+For the complete type system reference, see [docs/type-system.md](docs/type-system.md).
 
 ### Type System
 
@@ -364,6 +376,8 @@ sub handler :sig((Str) -> Str ![Console]) ($s) {
 
 ## Gradual Typing
 
+For implementation details, see [docs/static-analysis.md](docs/static-analysis.md#gradual-typing-semantics).
+
 Typist enforces checks proportional to annotation density:
 
 | Annotation Level | Type Checks | Effect Checks |
@@ -509,6 +523,8 @@ carton exec -- prove -l t/critic/       # Perl::Critic policy
 ```
 
 ## Known Limitations
+
+For detailed analysis internals, see [docs/static-analysis.md](docs/static-analysis.md#known-limitations).
 
 - **Type inference** — Literal types are widened to base atoms for unannotated mutable bindings (`my $x = 0` → `Int`, `my $x = 3.14` → `Double`). Operator precedence does not influence inferred types.
 - **Method checking** — Instance (`$self->method()`), cross-package struct (`$p->name()`), class (`Person->new()`), chained (`$p->with(...)->greet()`), generic, and Record accessor calls are checked. Union receivers and untyped receivers are gradual-skipped.

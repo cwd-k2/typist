@@ -2,6 +2,8 @@
 
 This document describes the internal architecture of Typist, including module dependencies, data flow, and design decisions.
 
+> **Related documentation**: [type-system.md](type-system.md) (type theory) | [static-analysis.md](static-analysis.md) (analyzer algorithms) | [conventions.md](conventions.md) (coding conventions) | [lsp-coverage.md](lsp-coverage.md) (LSP features)
+
 ## Table of Contents
 
 - [System Overview](#system-overview)

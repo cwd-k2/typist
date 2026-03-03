@@ -2,6 +2,8 @@
 
 Static analysis capabilities vs LSP feature coverage.
 
+> **Related documentation**: [architecture.md](architecture.md) (system overview) | [static-analysis.md](static-analysis.md) (diagnostic sources) | [type-system.md](type-system.md) (type theory)
+
 **Rule**: When adding or modifying static analysis features, update this document.
 New analysis outputs must have corresponding LSP entries (or an explicit "N/A" with rationale).
 

@@ -209,59 +209,195 @@ parametric type constructors. Combined with the operator overloading
 defined in L<Typist::Type>, this enables a concise DSL for building type
 expressions in Perl code.
 
-=head1 EXPORTS
+=head1 ATOM CONSTANTS
 
-All symbols are exported by default.
+Exported by default. Each is a singleton L<Typist::Type::Atom> instance.
+Subtype hierarchy: C<< Bool <: Int <: Double <: Num <: Any >>, C<< Str <: Any >>,
+C<< Undef <: Any >>.
 
-=head2 Atom Constants
+=head2 Int
 
-C<Int>, C<Str>, C<Double>, C<Num>, C<Bool>, C<Any>, C<Void>, C<Never>, C<Undef>
+Integer type.
 
-Each is a singleton L<Typist::Type::Atom> instance.
+=head2 Str
 
-=head2 Type Variable Constants
+String type.
 
-C<T>, C<U>, C<V>, C<A>, C<B>, C<K>
+=head2 Double
 
+Floating-point type. Float and exponential literals infer as C<Double>.
+
+=head2 Num
+
+Numeric supertype (encompasses C<Int> and C<Double>).
+
+=head2 Bool
+
+Boolean type. Widens to C<Int> for unannotated variables
+(0/1 are numbers in Perl).
+
+=head2 Any
+
+Top type. Compatible with all types. Used in gradual typing.
+
+=head2 Void
+
+Unit return type for functions with no meaningful return value.
+
+=head2 Never
+
+Bottom type. Subtype of all types. Used for functions that never return.
+
+=head2 Undef
+
+The undefined value type. C<Maybe[T]> is sugar for C<T | Undef>.
+
+=head1 PARAMETRIC CONSTRUCTORS
+
+Exported by default.
+
+=head2 ArrayRef
+
+    ArrayRef(Int)
+
+Scalar reference to an array. What C<[LIST]> produces.
+
+=head2 HashRef
+
+    HashRef(Str, Int)
+
+Scalar reference to a hash. What C<+{LIST}> produces.
+
+=head2 Array
+
+    Array(Int)
+
+List type. What C<grep>/C<map>/C<sort>/C<@deref> produce.
+C<[Array[T]]> flattens to C<ArrayRef[T]>.
+C<Array> is NOT a subtype of C<ArrayRef>.
+
+=head2 Hash
+
+    Hash(Str, Int)
+
+List type for hash entries. Independent from C<HashRef>.
+
+=head2 Maybe
+
+    Maybe(Str)
+
+Nullable type. Equivalent to C<T | Undef>.
+
+=head2 Tuple
+
+    Tuple(Int, Str, Bool)
+
+Fixed-length heterogeneous array reference type.
+
+=head2 Ref
+
+    Ref(Int)
+
+Generic scalar reference type.
+
+=head2 Record
+
+    Record(name => Str, age => Int)
+
+Structural record type (plain hashrefs).
+See also C<struct> (L<Typist>) for nominal records.
+
+=head2 Literal
+
+    Literal(42)
+
+Literal type for a specific value.
+Base type is inferred from the value.
+
+=head2 optional
+
+    optional(Str)
+
+Mark a struct or record field as optional (may be omitted at construction).
+
+=head1 TYPE VARIABLE CONSTANTS
+
+Importable via C<use Typist::DSL qw(T U V)> or the C<:vars> tag.
 Each is a L<Typist::Type::Var> instance.
 
-=head2 Parametric Constructors
+=head2 T
 
-=over 4
+Type variable C<T>.
 
-=item C<ArrayRef(T)>
+=head2 U
 
-=item C<HashRef(K, V)>
+Type variable C<U>.
 
-=item C<Maybe(T)>
+=head2 V
 
-=item C<Tuple(T, ...)>
+Type variable C<V>.
 
-=item C<Ref(T)>
+=head2 A
 
-=item C<Struct(key =E<gt> T, ...)>
+Type variable C<A>.
 
-=item C<Func(A, B, ..., returns =E<gt> R)>
+=head2 B
 
-=item C<Literal(value)>
+Type variable C<B>.
 
-=item C<TVar(name, %opts)>
+=head2 K
 
-=item C<Alias(name)>
+Type variable C<K>.
 
-=item C<Row(labels)>
+=head1 INTERNAL CONSTRUCTORS
 
-=item C<Eff(row)>
+Importable via the C<:internal> tag.
+For building type expressions programmatically.
 
-=back
+=head2 TVar
 
-=head2 Type Operators
+    TVar('T', bound => Num)
+
+Create a type variable with optional bounds or kind.
+
+=head2 Alias
+
+    Alias('MyType')
+
+Create a type alias reference. Resolved lazily via the registry.
+
+=head2 Row
+
+    Row(IO => 1, Exn => 1)
+
+Create an effect row type.
+
+=head2 Eff
+
+    Eff(Row(IO => 1))
+
+Wrap a row type into an effect type.
+
+=head2 Func
+
+    Func(Int, Str, returns => Bool)
+
+Create a function type. Requires C<returns =E<gt> Type>.
+
+=head2 export_map
+
+    my $map = Typist::DSL->export_map;
+
+Returns a hashref mapping all exported names to coderefs.
+Covers both C<@EXPORT> and C<@EXPORT_OK>.
+
+=head1 TYPE OPERATORS
 
 Provided by L<Typist::Type> overloading (available on all type objects):
 
-    Int | Str          # Union
+    Int | Str            # Union
     Readable & Writable  # Intersection
-    "$type"            # Stringify
+    "$type"              # Stringify
 
 =head1 SEE ALSO
 
