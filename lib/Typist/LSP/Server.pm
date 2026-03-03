@@ -339,7 +339,28 @@ sub _handle_signature_help ($self, $params) {
     $doc->analyze(workspace_registry => $self->_ws_registry);
 
     my $ctx = $doc->signature_context($line, $col) // return undef;
-    my $sym = $doc->find_function_symbol($ctx->{name});
+    my $sym;
+
+    # Method call: $var->method( → resolve variable type for signature
+    if ($ctx->{is_method}) {
+        my $type_str = $doc->_resolve_var_type($ctx->{var}, $line);
+        if ($type_str) {
+            my $type = eval { Typist::Parser->parse($type_str) };
+            if ($type && !$@) {
+                my $reg = $self->_ws_registry;
+                my $resolved = $doc->_resolve_type_deep($type, $reg);
+                if ($resolved && $resolved->is_struct) {
+                    my $struct_pkg = "Typist::Struct::" . $resolved->name;
+                    my $method_sig = $reg->lookup_function($struct_pkg, $ctx->{name});
+                    $sym = Typist::LSP::Document::_synthesize_function_symbol($ctx->{name}, $method_sig) if $method_sig;
+                }
+            }
+        }
+    }
+
+    if (!$sym) {
+        $sym = $doc->find_function_symbol($ctx->{name});
+    }
 
     # Fallback: search workspace registry for imported/cross-package functions
     if (!$sym) {
@@ -352,6 +373,29 @@ sub _handle_signature_help ($self, $params) {
 
     return undef unless $sym;
     return undef unless ($sym->{kind} // '') eq 'function';
+
+    # Struct constructor: show field-based signature
+    if ($sym->{struct_constructor}) {
+        my $reg = $self->_ws_registry;
+        my $struct = $reg ? $reg->lookup_struct($sym->{name}) : undef;
+        if ($struct) {
+            my @params;
+            my %req = $struct->required_fields;
+            my %opt = $struct->optional_fields;
+            for my $f (sort keys %req) {
+                push @params, "$f => " . $req{$f}->to_string;
+            }
+            for my $f (sort keys %opt) {
+                push @params, "$f? => " . $opt{$f}->to_string;
+            }
+            my $label = "$sym->{name}(" . join(', ', @params) . ")";
+            return +{
+                signatures => [+{ label => $label, parameters => [map { +{ label => $_ } } @params] }],
+                activeSignature => 0,
+                activeParameter => $ctx->{active_parameter},
+            };
+        }
+    }
 
     my $params_expr  = $sym->{params_expr} // [];
     my $returns_expr = $sym->{returns_expr};
@@ -401,6 +445,40 @@ sub _handle_definition ($self, $params) {
         my $word = $doc->word_at($line, $col);
         if ($word) {
             (my $bare = $word) =~ s/^[\$\@%]//;
+
+            # Qualified Effect::op → try effect name
+            if ($bare =~ /\A([A-Z]\w*)::\w+\z/) {
+                if (my $def = $self->{workspace}->find_definition($1)) {
+                    return +{
+                        uri   => $def->{uri},
+                        range => +{
+                            start => +{ line => $def->{line}, character => $def->{col} },
+                            end   => +{ line => $def->{line}, character => $def->{col} + length($def->{name}) },
+                        },
+                    };
+                }
+            }
+
+            # Struct field accessor: $var->field → find struct definition
+            if ($bare !~ /::/) {
+                my $text = ($doc->lines)->[$line] // '';
+                if ($text =~ /(\$\w+)\s*->\s*\Q$bare\E/) {
+                    my $type_str = $doc->_resolve_var_type($1, $line);
+                    if ($type_str) {
+                        (my $type_name = $type_str) =~ s/\[.*\]//;
+                        if (my $def = $self->{workspace}->find_definition($type_name)) {
+                            return +{
+                                uri   => $def->{uri},
+                                range => +{
+                                    start => +{ line => $def->{line}, character => $def->{col} },
+                                    end   => +{ line => $def->{line}, character => $def->{col} + length($def->{name}) },
+                                },
+                            };
+                        }
+                    }
+                }
+            }
+
             if (my $def = $self->{workspace}->find_definition($bare)) {
                 return +{
                     uri   => $def->{uri},
@@ -434,12 +512,20 @@ sub _handle_references ($self, $params) {
     my $line = $params->{position}{line};
     my $col  = $params->{position}{character};
 
-    my $word = $doc->word_at($line, $col) // return undef;
-    (my $bare = $word) =~ s/^[\$\@%]//;
+    $doc->analyze(workspace_registry => $self->_ws_registry);
 
-    my $refs = $self->{workspace}
-        ? $self->{workspace}->find_all_references($bare, $self->{documents})
-        : $doc->find_references($bare);
+    my $word = $doc->word_at($line, $col) // return undef;
+
+    my $refs;
+    if ($word =~ /^[\$\@%]/) {
+        # Variable: scope-aware single-file search
+        $refs = $doc->find_scoped_references($word, $line);
+    } else {
+        (my $bare = $word) =~ s/^[\$\@%]//;
+        $refs = $self->{workspace}
+            ? $self->{workspace}->find_all_references($bare, $self->{documents})
+            : $doc->find_references($bare);
+    }
 
     my @locations = map {
         +{
@@ -463,12 +549,20 @@ sub _handle_rename ($self, $params) {
     my $col      = $params->{position}{character};
     my $new_name = $params->{newName};
 
-    my $word = $doc->word_at($line, $col) // return undef;
-    (my $bare = $word) =~ s/^[\$\@%]//;
+    $doc->analyze(workspace_registry => $self->_ws_registry);
 
-    my $refs = $self->{workspace}
-        ? $self->{workspace}->find_all_references($bare, $self->{documents})
-        : $doc->find_references($bare);
+    my $word = $doc->word_at($line, $col) // return undef;
+
+    my $refs;
+    if ($word =~ /^[\$\@%]/) {
+        # Variable: scope-aware single-file rename
+        $refs = $doc->find_scoped_references($word, $line);
+    } else {
+        (my $bare = $word) =~ s/^[\$\@%]//;
+        $refs = $self->{workspace}
+            ? $self->{workspace}->find_all_references($bare, $self->{documents})
+            : $doc->find_references($bare);
+    }
 
     my %changes;
     for my $ref (@$refs) {
@@ -562,7 +656,9 @@ sub _emit_diagnostics ($self, $doc, $result) {
             message  => $d->{message},
             data     => +{
                 _typist_kind => $d->{kind},
-                ($d->{suggestions} ? (_suggestions => $d->{suggestions}) : ()),
+                ($d->{suggestions}   ? (_suggestions   => $d->{suggestions})   : ()),
+                ($d->{expected_type} ? (_expected_type => $d->{expected_type}) : ()),
+                ($d->{actual_type}   ? (_actual_type   => $d->{actual_type})   : ()),
             },
         };
 

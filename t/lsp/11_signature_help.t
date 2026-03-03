@@ -201,4 +201,66 @@ PERL
     like $sigs->[0]{label}, qr/!\[Console\]/, 'label includes effect expression';
 };
 
+# ── Signature help for struct constructor ──────────
+
+subtest 'signatureHelp shows struct field parameters' => sub {
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Server;
+    require Typist::LSP::Transport;
+    require Typist::LSP::Logger;
+
+    my $ws = Typist::LSP::Workspace->new;
+    my $type_source = <<'PERL';
+use v5.40;
+package Types;
+struct Point => (x => 'Int', y => 'Int');
+PERL
+    $ws->update_file('/fake/Types.pm', $type_source);
+
+    my $server = Typist::LSP::Server->new(
+        transport => Typist::LSP::Transport->new,
+        logger    => Typist::LSP::Logger->new(level => 'off'),
+    );
+    # Manually set workspace
+    $server->{workspace} = $ws;
+
+    my $source = <<'PERL';
+use v5.40;
+Point(
+PERL
+    $server->_handle_did_open(+{
+        textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+    });
+
+    my $result = $server->_handle_signature_help(+{
+        textDocument => +{ uri => 'file:///test.pm' },
+        position     => +{ line => 1, character => 6 },
+    });
+    ok $result, 'signatureHelp for struct constructor';
+    my $sigs = $result->{signatures};
+    ok $sigs && @$sigs, 'has signatures';
+    like $sigs->[0]{label}, qr/Point\(/, 'label starts with Point(';
+    like $sigs->[0]{label}, qr/x => Int/, 'label includes x => Int';
+    like $sigs->[0]{label}, qr/y => Int/, 'label includes y => Int';
+};
+
+# ── Signature help for method call ─────────────────
+
+subtest 'signatureHelp context detects method call' => sub {
+    use Typist::LSP::Document;
+
+    my $source = <<'PERL';
+use v5.40;
+my $p :sig(Point) = Point(x => 1, y => 2);
+$p->with(
+PERL
+
+    my $doc = Typist::LSP::Document->new(uri => 'file:///test_method.pm', content => $source);
+    my $ctx = $doc->signature_context(2, length('$p->with('));
+    ok $ctx, 'got signature context for method call';
+    ok $ctx->{is_method}, 'is_method flag set';
+    is $ctx->{name}, 'with', 'method name is with';
+    is $ctx->{var}, '$p', 'var is $p';
+};
+
 done_testing;

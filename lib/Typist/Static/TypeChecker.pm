@@ -26,6 +26,7 @@ sub new ($class, %args) {
         _local_var_types     => +{},
         _narrowed_vars       => [],
         _narrowed_accessors  => [],
+        _inferred_fn_returns => +{},
     }, $class;
 }
 
@@ -34,6 +35,7 @@ sub local_var_types      ($self) { $self->{_local_var_types} }
 sub callback_param_types ($self) { $self->{_callback_param_types} }
 sub narrowed_var_types      ($self) { $self->{_narrowed_vars} }
 sub narrowed_accessor_types ($self) { $self->{_narrowed_accessors} }
+sub inferred_fn_returns     ($self) { $self->{_inferred_fn_returns} }
 
 # ── Public API ───────────────────────────────────
 
@@ -48,6 +50,7 @@ sub analyze ($self) {
     $self->_check_assignments;
     $self->_check_call_sites;
     $self->_check_return_types;
+    $self->_collect_fn_return_types;
     $self->_collect_match_callback_params;
     $self->{_callback_param_types} = Typist::Static::Infer->callback_params;
 }
@@ -698,6 +701,54 @@ sub _check_record_method ($self, $word, $name, $recv_type, $display) {
 }
 
 # ── Return Type Check ───────────────────────────
+
+# Collect inferred return types for unannotated functions (for inlay hints).
+sub _collect_fn_return_types ($self) {
+    for my $name (sort keys $self->{extracted}{functions}->%*) {
+        my $fn = $self->{extracted}{functions}{$name};
+        next unless $fn->{unannotated};
+        my $block = $fn->{block} // next;
+
+        my $env = $self->_fn_env($fn);
+        my @types;
+
+        # Explicit returns
+        my $words = $block->find('PPI::Token::Word') || [];
+        for my $ret (@$words) {
+            next unless $ret->content eq 'return';
+            my $val = $ret->snext_sibling // next;
+            next if $val->isa('PPI::Token::Structure') && $val->content eq ';';
+            my $t = Typist::Static::Infer->infer_expr($val, $self->_env_for_node($ret));
+            push @types, $t if $t;
+        }
+
+        # Implicit return (last expression)
+        my @stmts = $block->schildren;
+        if (@stmts) {
+            my $last = $stmts[-1];
+            my $first = $last->schild(0);
+            if ($first && !($first->isa('PPI::Token::Word') && $first->content eq 'return')) {
+                my $t = Typist::Static::Infer->infer_expr($first, $env);
+                push @types, $t if $t;
+            }
+        }
+
+        next unless @types;
+        my $result = $types[0];
+        for my $i (1 .. $#types) {
+            $result = Typist::Subtype->common_super($result, $types[$i]);
+        }
+        $result = _widen_literal($result);
+        next if $result->is_atom && $result->name eq 'Any';
+
+        $self->{_inferred_fn_returns}{$name} = +{
+            type     => $result->to_string,
+            line     => $fn->{line},
+            name_col => $fn->{name_col},
+            name     => $name,
+        };
+    }
+}
 
 sub _check_return_types ($self) {
     for my $name (sort keys $self->{extracted}{functions}->%*) {

@@ -160,4 +160,60 @@ PERL
     ok scalar(@$locs) == 2, 'found exactly 2 occurrences of foo';
 };
 
+# ── Scoped references for variables ──────────────
+
+subtest 'scoped references: $x in different functions' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub foo :sig((Int) -> Int) ($x) {
+    $x + 1;
+}
+sub bar :sig((Str) -> Str) ($x) {
+    $x . "!";
+}
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/references', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 2, character => 5 },  # on $x inside foo
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got references response';
+    my $locs = $resp->{result};
+    ok $locs && ref $locs eq 'ARRAY', 'result is an array';
+
+    # Should only find $x within foo (lines 1-3), not bar (lines 4-6)
+    my @lines = sort map { $_->{range}{start}{line} } @$locs;
+    ok !grep({ $_ >= 4 } @lines), 'no $x references from bar()';
+};
+
+subtest 'scoped references: function names remain global' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub greet :sig((Str) -> Str) ($name) { "hi $name" }
+greet("world");
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/references', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 1, character => 5 },  # on 'greet'
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got references response';
+    my $locs = $resp->{result};
+    is scalar @$locs, 2, 'function name still finds all occurrences (global)';
+};
+
 done_testing;

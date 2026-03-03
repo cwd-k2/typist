@@ -21,6 +21,7 @@ Every field returned by `Analyzer->analyze()` and its LSP consumers.
 | `registry` | Hover, Completion, Definition (cross-file), SignatureHelp | Complete |
 | `protocol_hints` | InlayHints (state transition labels) | Complete |
 | `inferred_effects` | InlayHints (unannotated function effect labels) | Complete |
+| `inferred_fn_returns` | InlayHints (unannotated function return type labels) | Complete |
 | `narrowed_accessors` | Hover (accessor chain type narrowing in defined() guards) | Complete |
 
 ---
@@ -33,7 +34,7 @@ All error kinds produced by static analysis and their LSP surface.
 |---|---|---|---|---|
 | CycleError | Checker | Yes | — | |
 | TypeError | Checker/Registration | Yes | — | |
-| TypeMismatch | TypeChecker | Yes | Suggestion text (no auto-edit) | `data._suggestions` passed to CodeAction |
+| TypeMismatch | TypeChecker | Yes | Suggestion text + auto-edit | `data._suggestions`, `_expected_type`, `_actual_type` passed to CodeAction |
 | ArityMismatch | TypeChecker | Yes | — | |
 | ResolveError | Registration/Checker | Yes | — | |
 | EffectMismatch | EffectChecker | Yes | Auto-edit (`![Label]` insertion) | |
@@ -68,10 +69,10 @@ All error kinds produced by static analysis and their LSP surface.
 | `effect_op` | `Effect::` | Effect operations (with signature) | Done |
 | Constructor (fallback) | uppercase word | `all_constructor_names` from Workspace | Done (basic) |
 | Function name | bare word | Registry functions | **Not implemented** |
-| Match arm | `match $val,` | Datatype variant names | **Not implemented** |
+| Match arm | `match $val,` | Datatype variant names (with snippets, excludes used) | Done |
 | Handle handler | `handle { } Eff =>` | Effect operation stubs | **Not implemented** |
 | Variable name | `$` prefix | In-scope variables from symbols | **Not implemented** |
-| Cross-package method | `$obj->` (non-self) | Methods from inferred type | **Not implemented** |
+| Cross-package method | `$obj->` (non-self) | Struct fields + `with` from inferred type | Done |
 
 ---
 
@@ -112,8 +113,8 @@ All error kinds produced by static analysis and their LSP surface.
 | Type definitions (alias, newtype, datatype, struct, effect, typeclass) | symbols scan | `Workspace.find_definition` | Done |
 | Functions | symbols scan | `Workspace.find_definition` | Done |
 | Datatype constructor → owning datatype | — | `Workspace.find_definition` (variants scan) | Done |
-| Struct field → struct definition | — | — | **Not implemented** |
-| Effect operation → effect definition | — | — | **Not implemented** |
+| Struct field → struct definition | `$var->field` type resolution | `Workspace.find_definition` (type name) | Done |
+| Effect operation → effect definition | `Effect::op` qualified name parse | `Workspace.find_definition` (effect name) | Done |
 | Typeclass method → typeclass definition | — | — | **Not implemented** |
 | Local variable → declaration site | `definition_at` (first symbol match) | — | Partial (no scope awareness) |
 
@@ -126,8 +127,8 @@ All error kinds produced by static analysis and their LSP surface.
 | Function call `fn(` | `signature_context` + `find_function_symbol` | Done |
 | Cross-package function | Registry `search_function_by_name` fallback | Done |
 | Multi-line call | 20-line lookback | Done |
-| Method call `$obj->method(` | — | **Not implemented** |
-| Constructor call `Name(field =>` | — | **Not implemented** |
+| Method call `$obj->method(` | Var type resolution → struct method sig | Done |
+| Constructor call `Name(field =>` | Struct lookup → field parameters | Done |
 
 ---
 
@@ -140,7 +141,7 @@ All error kinds produced by static analysis and their LSP surface.
 | Callback parameter type | `symbols` (from `callback_param_types`) | Done |
 | Protocol state transition | `protocol_hints` | Done |
 | Inferred effects (unannotated fn) | `inferred_effects` | Done |
-| Unannotated function return type | — | **Not implemented** |
+| Unannotated function return type | `inferred_fn_returns` (TypeChecker) | Done |
 
 ---
 
@@ -149,7 +150,7 @@ All error kinds produced by static analysis and their LSP surface.
 | Diagnostic Kind | Action Type | Status |
 |---|---|---|
 | EffectMismatch | Auto-edit: insert/append `![Label]` to `:sig()` | Done |
-| TypeMismatch | Suggestion text display (no edit) | Partial |
+| TypeMismatch | Auto-edit: change `:sig()` type annotation | Done |
 | ArityMismatch | — | **Not implemented** |
 | Match exhaustiveness warning | Insert missing arms | **Not implemented** |
 | Unannotated function | Add `:sig()` from inferred types | **Not implemented** |
@@ -170,8 +171,8 @@ All error kinds produced by static analysis and their LSP surface.
 | Datatype variant names | `enumMember` | Yes | — | Definition only |
 | Struct field names | `property` + `readonly` | Yes | — | Definition only |
 | Operators in `:sig()` | `operator` | Yes | N/A | Done |
-| Constructor usage (code body) | — | — | — | **Not implemented** |
-| Effect operation usage (code body) | — | — | — | **Not implemented** |
+| Constructor usage (code body) | `enumMember` / `function` | — | Yes (PPI scan) | Done |
+| Effect operation usage (code body) | `enum` + `function` | — | Yes (PPI scan) | Done |
 
 ---
 
@@ -182,7 +183,7 @@ All error kinds produced by static analysis and their LSP surface.
 | Same-file word search | `Document.find_references` (word boundary regex) | Done |
 | Cross-file word search | `Workspace.find_all_references` | Done |
 | Rename (all files) | Word boundary replace | Done |
-| Scope-aware resolution | — | **Not implemented** (text-based, no scope distinction) |
+| Scope-aware resolution | `find_scoped_references` (variable scope filtering) | Done (variables only) |
 
 ---
 

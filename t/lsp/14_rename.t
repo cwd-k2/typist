@@ -145,4 +145,38 @@ PERL
     is_deeply \@lines, [1, 3], 'edits on lines 1 and 3 only';
 };
 
+# ── Scoped rename for variables ──────────────────
+
+subtest 'rename variable only in its scope' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub foo :sig((Int) -> Int) ($x) {
+    $x + 1;
+}
+sub bar :sig((Int) -> Int) ($x) {
+    $x * 2;
+}
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/rename', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 2, character => 5 },  # on $x inside foo
+            newName  => '$y',
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got rename response';
+    my $edits = $resp->{result}{changes}{'file:///test.pm'};
+    ok $edits, 'has edits';
+
+    # Should NOT rename $x in bar()
+    my @lines = sort map { $_->{range}{start}{line} } @$edits;
+    ok !grep({ $_ >= 4 } @lines), 'no edits in bar() scope';
+};
+
 done_testing;

@@ -219,6 +219,47 @@ sub compute ($class, $doc) {
         }
     }
 
+    # ── Usage-site tokens (PPI-based) ────────
+    if (my $ppi_doc = $extracted->{ppi_doc}) {
+        # Collect known constructor names
+        my %constructors;
+        for my $dt_name (keys(($extracted->{datatypes} // +{})->%*)) {
+            my $dt = $extracted->{datatypes}{$dt_name};
+            $constructors{$_} = 'enumMember' for keys(($dt->{variants} // +{})->%*);
+        }
+        $constructors{$_} = 'function' for keys(($extracted->{structs} // +{})->%*);
+        $constructors{$_} = 'function' for keys(($extracted->{newtypes} // +{})->%*);
+
+        my %effects;
+        $effects{$_} = 1 for keys(($extracted->{effects} // +{})->%*);
+
+        # Definition keywords (to skip definition sites)
+        my %def_kw = map { $_ => 1 } qw(datatype struct newtype effect typeclass typedef sub enum);
+
+        my $words = $ppi_doc->find('PPI::Token::Word') || [];
+        for my $w (@$words) {
+            my $c = $w->content;
+            my $line0 = $w->line_number - 1;
+            my $col   = $w->column_number - 1;
+
+            # Constructor usage (Some, None, Point, UserId)
+            if (my $tok_type = $constructors{$c}) {
+                my $prev = $w->sprevious_sibling;
+                next if $prev && $prev->isa('PPI::Token::Word') && $def_kw{$prev->content};
+                push @tokens, [$line0, $col, length($c), $tok_type, 0];
+                next;
+            }
+
+            # Effect::op usage (Console::writeLine)
+            if ($c =~ /\A([A-Z]\w*)::(\w+)\z/) {
+                my ($eff, $op) = ($1, $2);
+                next unless $effects{$eff};
+                push @tokens, [$line0, $col, length($eff), 'enum', 0];
+                push @tokens, [$line0, $col + length($eff) + 2, length($op), 'function', 0];
+            }
+        }
+    }
+
     # ── Delta Encoding ────────────────────────
     # Sort by line, then column
     @tokens = sort { $a->[0] <=> $b->[0] || $a->[1] <=> $b->[1] } @tokens;

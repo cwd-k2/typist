@@ -91,6 +91,9 @@ sub complete_code ($class, $context, $doc, $registry) {
     if ($kind eq 'effect_op') {
         return $class->_complete_effect_ops($context, $registry);
     }
+    if ($kind eq 'match_arm') {
+        return $class->_complete_match_arms($context, $doc, $registry);
+    }
 
     [];
 }
@@ -139,16 +142,21 @@ sub _complete_record_fields ($class, $context, $doc, $registry) {
 
 sub _complete_methods ($class, $context, $doc, $registry) {
     my $prefix = $context->{prefix} // '';
+    my $var    = $context->{var} // '$self';
 
     return [] unless $registry;
 
-    # Find the current package from the document analysis
+    # Cross-package: resolve variable type → struct fields/methods
+    if ($var ne '$self') {
+        return $class->_complete_cross_package_methods($context, $doc, $registry);
+    }
+
+    # Same-package ($self->): existing logic
     my $result = $doc->result // return [];
     my $pkg    = $result->{extracted}{package} // 'main';
 
     my @items;
 
-    # Collect methods registered for this package
     my %methods = $registry->all_methods;
     my $pkg_prefix = "${pkg}::";
     for my $fqn (sort keys %methods) {
@@ -164,17 +172,14 @@ sub _complete_methods ($class, $context, $doc, $registry) {
         };
     }
 
-    # Also look at functions marked as methods in the extracted data
     my %functions = $registry->all_functions;
     for my $fqn (sort keys %functions) {
         next unless index($fqn, $pkg_prefix) == 0;
         my $name = substr($fqn, length($pkg_prefix));
         next if $prefix ne '' && index($name, $prefix) != 0;
-        # Skip if already added from methods
         next if exists $methods{"${pkg}::${name}"};
         my $sig = $functions{$fqn};
-        # Only include functions that look like methods (from extracted data)
-        my $extracted_fn = ($result->{extracted}{functions} // +{})->{$name};
+        my $extracted_fn = ($doc->result // +{})->{extracted}{functions}{$name};
         next unless $extracted_fn && $extracted_fn->{is_method};
         my $detail = _sig_detail($sig);
         push @items, +{
@@ -184,6 +189,92 @@ sub _complete_methods ($class, $context, $doc, $registry) {
         };
     }
 
+    \@items;
+}
+
+sub _complete_cross_package_methods ($class, $context, $doc, $registry) {
+    my $var    = $context->{var};
+    my $prefix = $context->{prefix} // '';
+
+    my $type_str = $doc->_resolve_var_type($var) // return [];
+
+    require Typist::Parser;
+    my $type = eval { Typist::Parser->parse($type_str) };
+    return [] if $@ || !$type;
+
+    my $resolved = $doc->_resolve_type_deep($type, $registry);
+
+    # Must resolve to a struct for field/method completion
+    my $struct = ($resolved && $resolved->is_struct) ? $resolved
+               : $registry->lookup_struct($type_str =~ s/\[.*//r) // return [];
+
+    my @items;
+    my %req = $struct->required_fields;
+    my %opt = $struct->optional_fields;
+
+    for my $f (sort keys %req) {
+        next if $prefix ne '' && index($f, $prefix) != 0;
+        push @items, +{
+            label  => $f,
+            kind   => 5,  # Field
+            detail => $req{$f}->to_string,
+        };
+    }
+    for my $f (sort keys %opt) {
+        next if $prefix ne '' && index($f, $prefix) != 0;
+        push @items, +{
+            label  => $f,
+            kind   => 5,  # Field
+            detail => $opt{$f}->to_string . '?',
+        };
+    }
+    unless ($prefix ne '' && index('with', $prefix) != 0) {
+        push @items, +{
+            label  => 'with',
+            kind   => 2,  # Method
+            detail => "(fields...) -> $type_str",
+        };
+    }
+
+    \@items;
+}
+
+sub _complete_match_arms ($class, $context, $doc, $registry) {
+    my $var  = $context->{var};
+    my %used = map { $_ => 1 } ($context->{used} // [])->@*;
+
+    my $type_str = $doc->_resolve_var_type($var) // return [];
+    require Typist::Parser;
+    my $type = eval { Typist::Parser->parse($type_str) };
+    return [] if $@ || !$type;
+
+    # Alias → datatype resolution
+    my $dt_name = $type->is_alias ? $type->alias_name : $type->to_string;
+    my $dt = $registry ? $registry->lookup_datatype($dt_name) : undef;
+    return [] unless $dt;
+
+    my @items;
+    for my $tag (sort keys($dt->variants->%*)) {
+        next if $used{$tag};
+        my @fields = ($dt->variants->{$tag} // [])->@*;
+        my $detail = @fields ? "$tag(" . join(', ', map { $_->to_string } @fields) . ")" : $tag;
+        push @items, +{
+            label            => $tag,
+            kind             => 20,  # EnumMember
+            detail           => $detail,
+            insertText       => "$tag => sub (\${1}) {\n\t\${0}\n}",
+            insertTextFormat => 2,
+        };
+    }
+    unless ($used{'_'}) {
+        push @items, +{
+            label            => '_',
+            kind             => 20,  # EnumMember
+            detail           => 'fallback',
+            insertText       => '_ => sub { ${0} }',
+            insertTextFormat => 2,
+        };
+    }
     \@items;
 }
 

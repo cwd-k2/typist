@@ -219,4 +219,46 @@ PERL
     like $eff_hint->{label}, qr/Console/, 'label includes Console effect';
 };
 
+# ── Inferred return type for unannotated function ──
+
+subtest 'inlayHint shows inferred return type for unannotated function' => sub {
+    my $source = <<'PERL';
+package InferRet;
+use v5.40;
+sub answer () { 42 }
+sub greet :sig((Str) -> Str) ($name) { "Hello, $name" }
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/inlayHint', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            range => +{
+                start => +{ line => 0, character => 0 },
+                end   => +{ line => 5, character => 0 },
+            },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got inlayHint response';
+    my $hints = $resp->{result};
+
+    # Unannotated 'answer' should get a return type hint " -> Int"
+    my @ret_hints = grep { ($_->{label} // '') =~ /^\s*->/ } @$hints;
+    ok @ret_hints, 'found inferred return type hint(s)';
+
+    my ($ans_hint) = grep { ($_->{tooltip}{value} // '') =~ /answer/ } @ret_hints;
+    ok $ans_hint, 'found return type hint for answer()';
+    is $ans_hint->{position}{line}, 2, 'hint on line 2 (sub answer)';
+    is $ans_hint->{kind}, 1, 'kind is Type (1)';
+    like $ans_hint->{label}, qr/-> Int/, 'label shows widened type Int (not literal 42)';
+
+    # Annotated 'greet' should NOT get a return type hint
+    my @greet_hints = grep { ($_->{tooltip}{value} // '') =~ /greet/ } @ret_hints;
+    is scalar @greet_hints, 0, 'no return type hint for annotated greet()';
+};
+
 done_testing;

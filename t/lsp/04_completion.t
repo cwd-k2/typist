@@ -512,4 +512,111 @@ PERL
     ok((grep { $_ eq 'UserId' } @ctors), 'UserId from newtype');
 };
 
+# ── Code Completion: cross-package method ─────────
+
+subtest 'code completion: cross-package struct methods' => sub {
+    use Typist::LSP::Workspace;
+    use Typist::LSP::Document;
+    use Typist::LSP::Completion;
+
+    my $ws = Typist::LSP::Workspace->new;
+    my $type_source = <<'PERL';
+use v5.40;
+package Types;
+struct Point => (x => 'Int', y => 'Int');
+PERL
+    $ws->update_file('/fake/Types.pm', $type_source);
+
+    my $doc_source = <<'PERL';
+use v5.40;
+my $p :sig(Point) = Point(x => 1, y => 2);
+$p->
+PERL
+
+    my $doc = Typist::LSP::Document->new(uri => 'file:///test_cross.pm', content => $doc_source);
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    my $ctx = $doc->code_completion_at(2, length('$p->'));
+    ok $ctx, 'detected method context for $p->';
+    is $ctx->{kind}, 'method', 'kind is method';
+    is $ctx->{var}, '$p', 'var is $p';
+
+    my $items = Typist::LSP::Completion->complete_code($ctx, $doc, $ws->registry);
+    ok ref $items eq 'ARRAY', 'items is array';
+
+    my @labels = map { $_->{label} } @$items;
+    ok((grep { $_ eq 'x' }    @labels), 'x in completions');
+    ok((grep { $_ eq 'y' }    @labels), 'y in completions');
+    ok((grep { $_ eq 'with' } @labels), 'with in completions');
+};
+
+# ── Code Completion: match arm ────────────────────
+
+subtest 'code completion: match arm' => sub {
+    use Typist::LSP::Workspace;
+    use Typist::LSP::Document;
+    use Typist::LSP::Completion;
+
+    my $ws = Typist::LSP::Workspace->new;
+    my $dt_source = <<'PERL';
+use v5.40;
+package Shapes;
+datatype Shape =>
+    Circle    => '(Int)',
+    Rectangle => '(Int, Int)';
+PERL
+    $ws->update_file('/fake/Shapes.pm', $dt_source);
+
+    my $doc_source = <<'PERL';
+use v5.40;
+my $s :sig(Shape) = Circle(5);
+match $s,
+PERL
+
+    my $doc = Typist::LSP::Document->new(uri => 'file:///test_match.pm', content => $doc_source);
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    my $ctx = $doc->code_completion_at(2, length('match $s, '));
+    ok $ctx, 'detected match_arm context';
+    is $ctx->{kind}, 'match_arm', 'kind is match_arm';
+    is $ctx->{var}, '$s', 'var is $s';
+
+    my $items = Typist::LSP::Completion->complete_code($ctx, $doc, $ws->registry);
+    ok ref $items eq 'ARRAY', 'items is array';
+
+    my @labels = map { $_->{label} } @$items;
+    ok((grep { $_ eq 'Circle' }    @labels), 'Circle in match arms');
+    ok((grep { $_ eq 'Rectangle' } @labels), 'Rectangle in match arms');
+    ok((grep { $_ eq '_' }         @labels), '_ fallback in match arms');
+};
+
+subtest 'code completion: match arm excludes used arms' => sub {
+    my $ws = Typist::LSP::Workspace->new;
+    my $dt_source = <<'PERL';
+use v5.40;
+package Shapes2;
+datatype Color => Red => '()', Green => '()', Blue => '()';
+PERL
+    $ws->update_file('/fake/Shapes2.pm', $dt_source);
+
+    my $doc_source = <<'PERL';
+use v5.40;
+my $c :sig(Color) = Red();
+match $c, Red => sub { "r" },
+PERL
+
+    my $doc = Typist::LSP::Document->new(uri => 'file:///test_match2.pm', content => $doc_source);
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    my $ctx = $doc->code_completion_at(2, length('match $c, Red => sub { "r" }, '));
+    ok $ctx, 'detected match_arm context';
+    is_deeply $ctx->{used}, ['Red'], 'Red is already used';
+
+    my $items = Typist::LSP::Completion->complete_code($ctx, $doc, $ws->registry);
+    my @labels = map { $_->{label} } @$items;
+    ok(!(grep { $_ eq 'Red' }   @labels), 'Red excluded');
+    ok((grep { $_ eq 'Green' }  @labels), 'Green still available');
+    ok((grep { $_ eq 'Blue' }   @labels), 'Blue still available');
+};
+
 done_testing;

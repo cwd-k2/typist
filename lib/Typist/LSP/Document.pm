@@ -411,6 +411,49 @@ sub definition_at ($self, $line, $col) {
     # Strip sigil for type/function lookup
     (my $bare = $word) =~ s/^[\$\@%]//;
 
+    # Effect operation: Console::writeLine → jump to effect Console
+    if ($bare =~ /\A([A-Z]\w*)::\w+\z/) {
+        my $eff_name = $1;
+        for my $sym (@$symbols) {
+            next unless ($sym->{kind} // '') eq 'effect';
+            next unless ($sym->{name} // '') eq $eff_name;
+            return +{
+                uri  => $self->{uri},
+                line => ($sym->{line} // 1) - 1,
+                col  => ($sym->{col} // 1) - 1,
+                name => $eff_name,
+            };
+        }
+    }
+
+    # Struct field accessor: $var->field → jump to struct definition
+    my $lines = $self->_lines;
+    my $text_to_cursor = substr($lines->[$line] // '', 0, $col + length($bare));
+    if ($text_to_cursor =~ /(\$\w+)\s*->\s*\Q$bare\E\s*\z/ && $bare !~ /::/) {
+        my $var = $1;
+        my $type_str = $self->_resolve_var_type($var, $line);
+        if ($type_str) {
+            my $type = eval { Typist::Parser->parse($type_str) };
+            if ($type && !$@) {
+                my $resolved = $self->_resolve_type_deep($type, $result->{registry});
+                my $struct_name = ($resolved && $resolved->is_struct) ? $resolved->name
+                                : ($resolved && $resolved->is_alias)  ? $resolved->alias_name
+                                : undef;
+                if ($struct_name) {
+                    for my $sym (@$symbols) {
+                        next unless ($sym->{kind} // '') eq 'struct' && ($sym->{name} // '') eq $struct_name;
+                        return +{
+                            uri  => $self->{uri},
+                            line => ($sym->{line} // 1) - 1,
+                            col  => ($sym->{col} // 1) - 1,
+                            name => $struct_name,
+                        };
+                    }
+                }
+            }
+        }
+    }
+
     for my $sym (@$symbols) {
         next if ($sym->{kind} // '') eq 'parameter';
         next unless defined $sym->{name};
@@ -477,6 +520,32 @@ sub find_references ($self, $name) {
     [ map { +{ %$_, uri => $uri } } @$hits ];
 }
 
+# Find scoped references for variables (sigil-prefixed names).
+# Non-variable names (types, functions) return all references unchanged.
+sub find_scoped_references ($self, $name, $cursor_line) {
+    my $all = $self->find_references($name);
+
+    # Only scope-filter variables
+    return $all unless $name =~ /^[\$\@%]/;
+
+    my $symbols = ($self->{result} // +{})->{symbols} // return $all;
+    my $ppi_line = $cursor_line + 1;  # LSP 0-indexed → PPI 1-indexed
+
+    # Find the scope containing the cursor
+    my ($scope_start, $scope_end);
+    for my $sym (@$symbols) {
+        next unless ($sym->{name} // '') eq $name;
+        next unless $sym->{scope_start} && $sym->{scope_end};
+        if ($ppi_line >= $sym->{scope_start} && $ppi_line <= $sym->{scope_end}) {
+            ($scope_start, $scope_end) = ($sym->{scope_start} - 1, $sym->{scope_end} - 1);
+            last;
+        }
+    }
+    return $all unless defined $scope_start;
+
+    [grep { $_->{line} >= $scope_start && $_->{line} <= $scope_end } @$all];
+}
+
 # ── Inlay Hints ─────────────────────────────────
 
 sub inlay_hints ($self, $start_line, $end_line) {
@@ -525,6 +594,29 @@ sub inlay_hints ($self, $start_line, $end_line) {
                 value => "Protocol $ph->{label}: $ph->{from} \x{2192} $ph->{to}",
             },
             paddingLeft => 1,
+        };
+    }
+
+    # Inferred function return types
+    for my $ifr (values(($result->{inferred_fn_returns} // +{})->%*)) {
+        my $line = ($ifr->{line} // 1) - 1;
+        next if $line < $start_line || $line > $end_line;
+
+        my $name = $ifr->{name};
+        my $hint_col = ($ifr->{name_col} // 1) - 1 + length($name);
+
+        push @hints, +{
+            position => +{
+                line      => $line,
+                character => $hint_col,
+            },
+            label   => " -> $ifr->{type}",
+            kind    => 1,
+            tooltip => +{
+                kind  => 'markdown',
+                value => "Inferred return type for `$name()`",
+            },
+            paddingLeft => \1,
         };
     }
 
@@ -586,6 +678,15 @@ sub signature_context ($self, $line, $col) {
                 else {
                     # Found unmatched opening paren
                     my $before = substr($text, 0, $i);
+                    # Method call: $var->method(
+                    if ($before =~ /(\$\w+)\s*->\s*(\w+)\s*\z/) {
+                        return +{
+                            name             => $2,
+                            var              => $1,
+                            is_method        => 1,
+                            active_parameter => $commas,
+                        };
+                    }
                     return undef unless $before =~ /(\w+)\s*\z/;
                     return +{
                         name             => $1,
@@ -684,9 +785,17 @@ sub code_completion_at ($self, $line, $col) {
         return +{ kind => 'record_field', var => $1, prefix => ($2 // '') };
     }
 
-    # $self->  → method completion (only $self, not arbitrary variables)
-    if ($text =~ /\$self\s*->\s*(\w*)\z/) {
-        return +{ kind => 'method', prefix => ($1 // '') };
+    # match $var, ... → match arm completion
+    if ($text =~ /\bmatch\s+(\$\w+)\s*,\s*(.*)\z/s) {
+        my ($var, $rest) = ($1, $2);
+        my @used;
+        push @used, $1 while $rest =~ /(\w+)\s*=>/g;
+        return +{ kind => 'match_arm', var => $var, used => \@used };
+    }
+
+    # $var->  → method completion ($self for same-package, $var for cross-package)
+    if ($text =~ /(\$\w+)\s*->\s*(\w*)\z/) {
+        return +{ kind => 'method', var => $1, prefix => ($2 // '') };
     }
 
     # Effect::  → effect operation completion

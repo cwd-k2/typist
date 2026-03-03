@@ -1052,6 +1052,62 @@ PERL
     ok scalar @match_kw >= 1, 'found match keyword token';
 };
 
+# ── Usage-site tokens for constructors ─────────
+
+subtest 'usage-site tokens: datatype constructor' => sub {
+    my $source = <<'PERL';
+use v5.40;
+datatype Option => Some => '(Int)', None => '()';
+my $val = Some(42);
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # Some on line 2 (usage) should be enumMember (index 7)
+    my @usage_some = grep { $_->{type} == 7 && $_->{line} == 2 && $_->{len} == 4 } @tokens;
+    ok scalar @usage_some >= 1, 'Some usage token as enumMember on line 2';
+};
+
+subtest 'usage-site tokens: effect op' => sub {
+    my $source = <<'PERL';
+use v5.40;
+effect Console => +{ writeLine => '(Str) -> Void' };
+Console::writeLine("hello");
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # Console on line 2 should be enum (index 6)
+    my @eff_name = grep { $_->{type} == 6 && $_->{line} == 2 && $_->{len} == 7 } @tokens;
+    ok scalar @eff_name >= 1, 'Console usage token as enum on line 2';
+
+    # writeLine on line 2 should be function (index 3)
+    my @op_name = grep { $_->{type} == 3 && $_->{line} == 2 && $_->{len} == 9 } @tokens;
+    ok scalar @op_name >= 1, 'writeLine usage token as function on line 2';
+};
+
 done_testing;
 
 # ── Test Helpers ─────────────────────────────────

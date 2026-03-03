@@ -114,6 +114,7 @@ sub analyze ($class, $source, %opts) {
         protocol_hints      => $protocol_checker->hints,
         narrowed_accessors  => $type_checker->narrowed_accessor_types,
         inferred_effects    => $inferred_effects,
+        inferred_fn_returns => $type_checker->inferred_fn_returns,
     };
 }
 

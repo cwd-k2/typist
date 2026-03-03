@@ -20,9 +20,14 @@ sub actions_for_diagnostics ($class, $diagnostics, $doc, $registry) {
             push @actions, $action if $action;
         }
 
-        if ($kind eq 'TypeMismatch' && $data->{_suggestions}) {
-            for my $suggestion (@{$data->{_suggestions}}) {
-                push @actions, $class->_make_suggestion_action($diag, $suggestion, $doc);
+        if ($kind eq 'TypeMismatch') {
+            if ($data->{_suggestions}) {
+                for my $suggestion (@{$data->{_suggestions}}) {
+                    push @actions, $class->_make_suggestion_action($diag, $suggestion, $doc);
+                }
+            }
+            if (my $action = $class->_suggest_type_fix($diag, $doc)) {
+                push @actions, $action;
             }
         }
     }
@@ -125,6 +130,69 @@ sub _build_effect_edit ($class, $doc, $fn_name, $effect_label) {
                 }],
             },
         };
+    }
+
+    undef;
+}
+
+# ── TypeMismatch Auto-Fix Actions ──────────────
+
+# Suggest changing the annotation type to match the actual type.
+sub _suggest_type_fix ($class, $diag, $doc) {
+    my $data     = $diag->{data} // +{};
+    my $expected = $data->{_expected_type} // return undef;
+    my $actual   = $data->{_actual_type}   // return undef;
+    my $msg      = $diag->{message} // '';
+    my $lines    = $doc->lines;
+    my $uri      = $doc->uri;
+    my $diag_line = $diag->{range}{start}{line};
+
+    # Case 1: "Return value of foo(): expected X, got Y"
+    # or "Implicit return of foo(): expected X, got Y"
+    if ($msg =~ /(?:Return value|Implicit return) of (\w+)\(\)/) {
+        my $fn = $1;
+        for my $i (0 .. $#$lines) {
+            my $l = $lines->[$i];
+            next unless $l =~ /\bsub\s+\Q$fn\E\b/ && $l =~ /:sig\(/;
+            (my $new = $l) =~ s/\Q$expected\E/$actual/;
+            next if $new eq $l;
+            return +{
+                title       => "Change return type to $actual",
+                kind        => 'quickfix',
+                diagnostics => [$class->_strip_internal($diag)],
+                edit => +{ changes => +{ $uri => [+{
+                    range   => +{
+                        start => +{ line => $i, character => 0 },
+                        end   => +{ line => $i, character => length($l) },
+                    },
+                    newText => $new,
+                }] } },
+            };
+        }
+    }
+
+    # Case 2: "Variable $x: expected X, got Y" or "Assignment to $x: expected X, got Y"
+    if ($msg =~ /(?:Variable|Assignment to) (\$\w+):/) {
+        my $var = $1;
+        # Search for the :sig() declaration line for this variable
+        for my $i (0 .. $#$lines) {
+            my $l = $lines->[$i];
+            next unless $l =~ /\Q$var\E\b/ && $l =~ /:sig\(/;
+            (my $new = $l) =~ s/:sig\(\Q$expected\E\)/:sig($actual)/;
+            next if $new eq $l;
+            return +{
+                title       => "Change type annotation to $actual",
+                kind        => 'quickfix',
+                diagnostics => [$class->_strip_internal($diag)],
+                edit => +{ changes => +{ $uri => [+{
+                    range   => +{
+                        start => +{ line => $i, character => 0 },
+                        end   => +{ line => $i, character => length($l) },
+                    },
+                    newText => $new,
+                }] } },
+            };
+        }
     }
 
     undef;
