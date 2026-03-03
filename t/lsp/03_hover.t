@@ -1709,4 +1709,61 @@ PERL
     unlike $hover->{contents}{value}, qr/^sub /m, 'no sub prefix for struct constructor';
 };
 
+# ── Cross-file effect hover via Registry ─────────
+
+subtest 'cross-file effect hover shows operations' => sub {
+    require File::Temp;
+    require File::Path;
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib");
+
+    open my $fh, '>', "$dir/lib/Logger.pm" or die;
+    print $fh <<'PERL';
+package Logger;
+use v5.40;
+use Typist;
+effect Logger => +{
+    log => '(Str) -> Void',
+};
+1;
+PERL
+    close $fh;
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source = <<'PERL';
+package App;
+use v5.40;
+use Typist;
+use Logger;
+sub run :sig(() -> Void ![Logger]) () {
+    Logger::log("hello");
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///app.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Line 4 (0-indexed): "sub run :sig(() -> Void ![Logger]) () {"
+    #                       0         1         2         3
+    #                       0123456789012345678901234567890
+    my $sym = $doc->symbol_at(4, 27);
+    ok $sym, 'found symbol for cross-file effect';
+    is $sym->{kind}, 'effect', 'kind is effect';
+
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'got hover response';
+    like $hover->{contents}{value}, qr/effect Logger/, 'shows effect name';
+    like $hover->{contents}{value}, qr/log/, 'shows log operation';
+    like $hover->{contents}{value}, qr/\(Str\) -> Void/, 'shows operation signature';
+};
+
 done_testing;

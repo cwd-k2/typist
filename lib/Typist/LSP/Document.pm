@@ -336,10 +336,10 @@ sub symbol_at ($self, $line, $col) {
         if (my $eff = $registry->lookup_effect($lookup_name)) {
             my @op_names;
             my %operations;
-            for my $op_name (sort keys %{$eff->ops // +{}}) {
+            for my $op_name ($eff->op_names) {
                 push @op_names, $op_name;
                 my $op_type = $eff->get_op_type($op_name);
-                $operations{$op_name} = $op_type ? $op_type->to_string : $eff->ops->{$op_name};
+                $operations{$op_name} = $op_type ? $op_type->to_string : $eff->get_op($op_name);
             }
             return $with_range->(+{
                 name       => $lookup_name,
