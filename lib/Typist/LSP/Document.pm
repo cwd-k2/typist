@@ -7,6 +7,10 @@ use Typist::Static::Analyzer;
 use Typist::Parser;
 use Typist::Prelude;
 use Typist::LSP::Transport;
+use Typist::LSP::SymbolInfo qw(
+    sym_function sym_variable sym_typedef sym_newtype
+    sym_effect sym_typeclass sym_datatype sym_struct sym_field sym_method
+);
 
 # ── Perl Builtins ───────────────────────────────
 
@@ -54,6 +58,7 @@ sub analyze ($self, %opts) {
         $self->{content},
         file               => $file,
         workspace_registry => $opts{workspace_registry},
+        ($opts{extracted} ? (extracted => $opts{extracted}) : ()),
     );
 
     $self->{result};
@@ -240,15 +245,14 @@ sub symbol_at ($self, $line, $col) {
                 return $with_range->($sym);
             }
         }
-        return $with_range->(+{
+        return $with_range->(sym_function(
             name         => $builtin_name,
-            kind         => 'function',
             params_expr  => ['Any...'],
             returns_expr => 'Any',
             eff_expr     => '[*]',
             builtin      => 1,
             (Typist::Prelude->is_typist_builtin($builtin_name) ? (typist_builtin => 1) : ()),
-        });
+        ));
     }
 
     # Fallback: registry lookup for cross-package or constructor symbols
@@ -280,20 +284,18 @@ sub symbol_at ($self, $line, $col) {
 
         # Type-level symbols: newtype, typedef, datatype, effect, typeclass
         if (my $nt = $registry->lookup_newtype($lookup_name)) {
-            return $with_range->(+{
+            return $with_range->(sym_newtype(
                 name => $lookup_name,
-                kind => 'newtype',
                 type => $nt->inner->to_string,
-            });
+            ));
         }
         if ($registry->has_alias($lookup_name)) {
             my $resolved = $registry->lookup_type($lookup_name);
             if ($resolved) {
-                return $with_range->(+{
+                return $with_range->(sym_typedef(
                     name => $lookup_name,
-                    kind => 'typedef',
                     type => $resolved->to_string,
-                });
+                ));
             }
         }
         if (my $dt = $registry->lookup_datatype($lookup_name)) {
@@ -309,13 +311,12 @@ sub symbol_at ($self, $line, $col) {
                 }
                 push @variants, +{ tag => $tag, spec => $spec };
             }
-            return $with_range->(+{
+            return $with_range->(sym_datatype(
                 name        => $lookup_name,
-                kind        => 'datatype',
                 type        => $dt->to_string,
                 type_params => \@tp,
                 variants    => \@variants,
-            });
+            ));
         }
         if (my $st = $registry->lookup_struct($lookup_name)) {
             my @field_descs;
@@ -327,11 +328,10 @@ sub symbol_at ($self, $line, $col) {
             for my $f (sort keys %opt) {
                 push @field_descs, "$f?: " . $opt{$f}->to_string;
             }
-            return $with_range->(+{
+            return $with_range->(sym_struct(
                 name   => $lookup_name,
-                kind   => 'struct',
                 fields => \@field_descs,
-            });
+            ));
         }
         if (my $eff = $registry->lookup_effect($lookup_name)) {
             my @op_names;
@@ -341,12 +341,11 @@ sub symbol_at ($self, $line, $col) {
                 my $op_type = $eff->get_op_type($op_name);
                 $operations{$op_name} = $op_type ? $op_type->to_string : $eff->get_op($op_name);
             }
-            return $with_range->(+{
+            return $with_range->(sym_effect(
                 name       => $lookup_name,
-                kind       => 'effect',
                 op_names   => \@op_names,
                 operations => \%operations,
-            });
+            ));
         }
         if ($registry->has_typeclass($lookup_name)) {
             my $tc = $registry->lookup_typeclass($lookup_name);
@@ -357,13 +356,12 @@ sub symbol_at ($self, $line, $col) {
                 @method_names = sort keys %m;
                 %methods = %m;
             }
-            return $with_range->(+{
+            return $with_range->(sym_typeclass(
                 name         => $lookup_name,
-                kind         => 'typeclass',
                 var_spec     => $tc ? $tc->var : undef,
                 method_names => \@method_names,
                 methods      => \%methods,
-            });
+            ));
         }
     }
 
@@ -813,12 +811,11 @@ sub _walk_accessor_chain ($self, $type, $chain, $word, $registry, $narrowed = 0)
             return undef unless $field eq 'base';
             $type = $resolved->inner;
             if ($i == $#$chain) {
-                return +{
-                    kind     => 'variable',
+                return sym_variable(
                     name     => 'base',
                     type     => $type->to_string,
                     inferred => 1,
-                };
+                );
             }
             next;
         }
@@ -833,34 +830,31 @@ sub _walk_accessor_chain ($self, $type, $chain, $word, $registry, $narrowed = 0)
         if (exists $req{$field}) {
             $type = $req{$field};
             if ($i == $#$chain) {
-                return +{
-                    kind        => 'field',
+                return sym_field(
                     name        => $field,
                     type        => $type->to_string,
                     struct_name => $struct->name,
                     optional    => 0,
-                };
+                );
             }
         } elsif (exists $opt{$field}) {
             $type = $opt{$field};
             if ($i == $#$chain) {
-                return +{
-                    kind        => 'field',
+                return sym_field(
                     name        => $field,
                     type        => $type->to_string,
                     struct_name => $struct->name,
                     optional    => $narrowed ? 0 : 1,
-                };
+                );
             }
         } elsif ($field eq 'with') {
             $type = $resolved;
             if ($i == $#$chain) {
-                return +{
-                    kind        => 'method',
+                return sym_method(
                     name        => 'with',
                     struct_name => $struct->name,
                     returns     => $resolved->to_string,
-                };
+                );
             }
         } else {
             return undef;
@@ -1031,16 +1025,16 @@ sub _synthesize_function_symbol ($name, $sig) {
         $eff_expr = ref $sig->{effects} ? $sig->{effects}->to_string : $sig->{effects};
     }
 
-    +{
+    sym_function(
         name         => $name,
-        kind         => 'function',
         params_expr  => \@params_expr,
         returns_expr => $returns_expr,
         generics     => \@generics,
         eff_expr     => $eff_expr,
         ($sig->{constructor}        ? (constructor        => 1) : ()),
         ($sig->{struct_constructor} ? (struct_constructor => 1) : ()),
-    };
+        (defined $sig->{protocol_transitions} ? (protocol_transitions => $sig->{protocol_transitions}) : ()),
+    );
 }
 
 # Array and Hash are now first-class list types — no display rewriting needed.

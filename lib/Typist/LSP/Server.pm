@@ -207,15 +207,22 @@ sub _handle_did_save ($self, $params) {
         $doc->update($text, $doc->version);
     }
 
-    # Update workspace index
+    # Update workspace index — returns extracted data for the saved file
     my $path = _uri_to_path($uri);
-    $self->{workspace}->update_file($path, $doc->content) if $self->{workspace};
+    my $extracted = $self->{workspace}
+        ? $self->{workspace}->update_file($path, $doc->content)
+        : undef;
     $self->{log}->debug("didSave $uri -> workspace updated");
 
     # Invalidate and re-diagnose all open documents (cross-file types may have changed)
     for my $other_doc (values $self->{documents}->%*) {
         $other_doc->invalidate;
-        $self->_publish_diagnostics($other_doc);
+        # Pass extracted only to the saved file itself (same source)
+        if ($other_doc->uri eq $uri && $extracted) {
+            $self->_publish_diagnostics_with_extracted($other_doc, $extracted);
+        } else {
+            $self->_publish_diagnostics($other_doc);
+        }
     }
 
     undef;
@@ -492,6 +499,26 @@ sub _handle_code_action ($self, $params) {
 
 # ── Diagnostics Publishing ──────────────────────
 
+sub _publish_diagnostics_with_extracted ($self, $doc, $extracted) {
+    my $result = eval {
+        $doc->analyze(
+            workspace_registry => $self->_ws_registry,
+            extracted          => $extracted,
+        );
+    };
+    if ($@) {
+        my $err = "$@";
+        chomp $err;
+        $self->{log}->error("analyze failed for @{[$doc->uri]}: $err");
+        $self->{transport}->send_notification('textDocument/publishDiagnostics', +{
+            uri         => $doc->uri,
+            diagnostics => [],
+        });
+        return;
+    }
+    $self->_emit_diagnostics($doc, $result);
+}
+
 sub _publish_diagnostics ($self, $doc) {
     my $result = eval {
         $doc->analyze(
@@ -502,27 +529,28 @@ sub _publish_diagnostics ($self, $doc) {
         my $err = "$@";
         chomp $err;
         $self->{log}->error("analyze failed for @{[$doc->uri]}: $err");
-        # Publish empty diagnostics to clear stale markers
         $self->{transport}->send_notification('textDocument/publishDiagnostics', +{
             uri         => $doc->uri,
             diagnostics => [],
         });
         return;
     }
+    $self->_emit_diagnostics($doc, $result);
+}
 
+sub _emit_diagnostics ($self, $doc, $result) {
     my @lsp_diags;
     for my $d ($result->{diagnostics}->@*) {
-        my $line = ($d->{line} // 1) - 1;  # Convert to 0-indexed
+        my $line = ($d->{line} // 1) - 1;
         $line = 0 if $line < 0;
 
-        my $start_col = ($d->{col} // 1) - 1;  # Convert 1-indexed to 0-indexed
+        my $start_col = ($d->{col} // 1) - 1;
         $start_col = 0 if $start_col < 0;
 
         my $end_line = defined $d->{end_line} ? ($d->{end_line} - 1) : $line;
         $end_line = 0 if $end_line < 0;
 
         my $end_col = defined $d->{end_col} ? ($d->{end_col} - 1) : ($start_col + 20);
-        # If we don't have end_col, span 20 chars from start as a reasonable highlight width
 
         my $diag = +{
             range => +{

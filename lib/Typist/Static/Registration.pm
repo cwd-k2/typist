@@ -434,10 +434,13 @@ sub register_declares ($class, $extracted, $registry, %opts) {
         }
 
         $registry->register_function($decl->{package}, $decl->{func_name}, +{
-            params   => \@param_types,
-            returns  => $return_type,
-            generics => \@generics,
-            effects  => $effects,
+            params       => \@param_types,
+            returns      => $return_type,
+            generics     => \@generics,
+            effects      => $effects,
+            params_expr  => [map { $_->to_string } @param_types],
+            returns_expr => $return_type ? $return_type->to_string : undef,
+            declared     => 1,
         });
     }
 }
@@ -513,6 +516,10 @@ sub register_functions ($class, $extracted, $registry, %opts) {
             generics      => \@generics,
             effects       => $effects,
             default_count => $fn->{default_count} // 0,
+            params_expr   => $fn->{params_expr},
+            returns_expr  => $fn->{returns_expr},
+            ($fn->{variadic}     ? (variadic     => 1) : ()),
+            ($fn->{unannotated}  ? (unannotated  => 1) : ()),
         };
 
         if ($fn->{is_method}) {

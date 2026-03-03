@@ -14,6 +14,10 @@ use Typist::Static::Checker;
 use Typist::Error;
 use Typist::Prelude;
 use Typist::Type::Data;
+use Typist::LSP::SymbolInfo qw(
+    sym_function sym_parameter sym_variable sym_typedef sym_newtype
+    sym_effect sym_typeclass sym_datatype sym_struct
+);
 
 # ── Severity Mapping ─────────────────────────────
 
@@ -39,7 +43,7 @@ my %SEVERITY = (
 #   workspace_registry => Typist::Registry instance with external typedefs
 #   file               => filename for diagnostics
 sub analyze ($class, $source, %opts) {
-    my $extracted = Typist::Static::Extractor->extract($source);
+    my $extracted = $opts{extracted} // Typist::Static::Extractor->extract($source);
     my $registry  = Typist::Registry->new;
     my $errors    = Typist::Error->collector;
     my $file      = $opts{file} // '(buffer)';
@@ -202,13 +206,12 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
     # Aliases
     for my $name (sort keys $extracted->{aliases}->%*) {
         my $info = $extracted->{aliases}{$name};
-        push @symbols, +{
+        push @symbols, sym_typedef(
             name => $name,
-            kind => 'typedef',
             type => $info->{expr},
             line => $info->{line},
             col  => $info->{col},
-        };
+        );
     }
 
     # Variables
@@ -241,15 +244,14 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
         my $dedup_key = $var->{name} . ':' . $var->{line};
         next if $inferred && $local_var_keys{$dedup_key};
 
-        push @symbols, +{
+        push @symbols, sym_variable(
             name     => $var->{name},
-            kind     => 'variable',
             type     => $type,
             inferred => $inferred,
             ($unknown ? (unknown => 1) : ()),
             line     => $var->{line},
             col      => $var->{col},
-        };
+        );
     }
 
     # Functions
@@ -260,17 +262,16 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
         my $eff = $fn->{eff_expr};
         $eff = $fn->{unannotated} ? '[*]' : $eff && "[$eff]";
 
-        push @symbols, +{
-            name        => $name,
-            kind        => 'function',
-            params_expr => $fn->{params_expr},
+        push @symbols, sym_function(
+            name         => $name,
+            params_expr  => $fn->{params_expr},
             returns_expr => $fn->{returns_expr},
-            generics    => $fn->{generics},
-            eff_expr    => $eff,
+            generics     => $fn->{generics},
+            eff_expr     => $eff,
             ($fn->{unannotated} ? (unannotated => 1) : ()),
-            line        => $fn->{line},
-            col         => $fn->{col},
-        };
+            line         => $fn->{line},
+            col          => $fn->{col},
+        );
     }
 
     # Declares (external function annotations)
@@ -291,9 +292,8 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
             $returns_expr = $type->to_string;
         }
 
-        push @symbols, +{
+        push @symbols, sym_function(
             name         => $decl->{func_name},
-            kind         => 'function',
             params_expr  => \@params_expr,
             returns_expr => $returns_expr,
             generics     => $ann->{generics_raw},
@@ -301,7 +301,7 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
             declared     => 1,
             line         => $decl->{line},
             col          => $decl->{col},
-        };
+        );
     }
 
     # Parameters
@@ -314,9 +314,8 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
             my $pname = $param_names->[$i];
             my $ptype = $param_exprs->[$i] // 'Any';
 
-            push @symbols, +{
+            push @symbols, sym_parameter(
                 name        => $pname,
-                kind        => 'parameter',
                 type        => $ptype,
                 fn_name     => $name,
                 ($fn->{unannotated} ? (unannotated => 1) : ()),
@@ -324,48 +323,45 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
                 col         => $fn->{col},
                 scope_start => $fn->{line},
                 scope_end   => $fn->{end_line},
-            };
+            );
         }
     }
 
     # Newtypes
     for my $name (sort keys $extracted->{newtypes}->%*) {
         my $info = $extracted->{newtypes}{$name};
-        push @symbols, +{
+        push @symbols, sym_newtype(
             name => $name,
-            kind => 'newtype',
             type => $info->{inner_expr},
             line => $info->{line},
             col  => $info->{col},
-        };
+        );
     }
 
     # Effects
     for my $name (sort keys $extracted->{effects}->%*) {
         my $info = $extracted->{effects}{$name};
-        push @symbols, +{
+        push @symbols, sym_effect(
             name       => $name,
-            kind       => 'effect',
             op_names   => $info->{op_names},
             operations => $info->{operations},
             protocol   => $info->{protocol},
             line       => $info->{line},
             col        => $info->{col},
-        };
+        );
     }
 
     # Typeclasses
     for my $name (sort keys $extracted->{typeclasses}->%*) {
         my $info = $extracted->{typeclasses}{$name};
-        push @symbols, +{
+        push @symbols, sym_typeclass(
             name         => $name,
-            kind         => 'typeclass',
             var_spec     => $info->{var_spec},
             method_names => $info->{method_names},
             methods      => $info->{methods},
             line         => $info->{line},
             col          => $info->{col},
-        };
+        );
     }
 
     # Datatypes (ADT/GADT)
@@ -383,15 +379,14 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
             push @variants, +{ tag => $tag, spec => $spec // '' };
         }
 
-        push @symbols, +{
+        push @symbols, sym_datatype(
             name        => $name,
-            kind        => 'datatype',
             type        => join(' | ', @parts),
             variants    => \@variants,
             type_params => \@tp,
             line        => $info->{line},
             col         => $info->{col},
-        };
+        );
 
         # Constructor symbols for each variant
         for my $tag (sort keys $info->{variants}->%*) {
@@ -409,16 +404,15 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
             }
             my @generics = @tp ? @tp : ();
 
-            push @symbols, +{
+            push @symbols, sym_function(
                 name         => $tag,
-                kind         => 'function',
                 params_expr  => \@params_expr,
                 returns_expr => $returns_expr,
                 generics     => \@generics,
                 constructor  => 1,
                 line         => $info->{line},
                 col          => $info->{col},
-            };
+            );
         }
     }
 
@@ -435,13 +429,12 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
             push @field_descs, "$key: $fields->{$f}";
         }
 
-        push @symbols, +{
+        push @symbols, sym_struct(
             name   => $name,
-            kind   => 'struct',
             fields => \@field_descs,
             line   => $info->{line},
             col    => $info->{col},
-        };
+        );
     }
 
     # Loop variables (inferred by TypeChecker)
@@ -449,16 +442,15 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
         my $lvt = $type_checker->loop_var_types;
         for my $key (sort keys %$lvt) {
             my $lv = $lvt->{$key};
-            push @symbols, +{
+            push @symbols, sym_variable(
                 name        => $lv->{name},
-                kind        => 'variable',
                 type        => $lv->{type}->to_string,
                 inferred    => 1,
                 line        => $lv->{line},
                 col         => $lv->{col},
                 scope_start => $lv->{scope_start},
                 scope_end   => $lv->{scope_end},
-            };
+            );
         }
     }
 
@@ -467,16 +459,15 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
         my $lvt = $type_checker->local_var_types;
         for my $key (sort keys %$lvt) {
             my $lv = $lvt->{$key};
-            push @symbols, +{
+            push @symbols, sym_variable(
                 name        => $lv->{name},
-                kind        => 'variable',
                 type        => $lv->{type}->to_string,
                 inferred    => 1,
                 line        => $lv->{line},
                 col         => $lv->{col},
                 scope_start => $lv->{scope_start},
                 scope_end   => $lv->{scope_end},
-            };
+            );
         }
     }
 
@@ -484,16 +475,15 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
     if ($type_checker && $type_checker->can('callback_param_types')) {
         my $cpt = $type_checker->callback_param_types // [];
         for my $cp (@$cpt) {
-            push @symbols, +{
+            push @symbols, sym_variable(
                 name        => $cp->{name},
-                kind        => 'variable',
                 type        => $cp->{type}->to_string,
                 inferred    => 1,
                 line        => $cp->{line},
                 col         => $cp->{col},
                 scope_start => $cp->{scope_start},
                 scope_end   => $cp->{scope_end},
-            };
+            );
         }
     }
 
@@ -501,15 +491,14 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
     if ($type_checker && $type_checker->can('narrowed_var_types')) {
         my $nvt = $type_checker->narrowed_var_types // [];
         for my $nv (@$nvt) {
-            push @symbols, +{
+            push @symbols, sym_variable(
                 name        => $nv->{name},
-                kind        => 'variable',
                 type        => $nv->{type}->to_string,
                 inferred    => 1,
                 narrowed    => 1,
                 scope_start => $nv->{scope_start},
                 scope_end   => $nv->{scope_end},
-            };
+            );
         }
     }
 
@@ -541,15 +530,14 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
             }
             my @generics = sort keys %seen;
 
-            push @symbols, +{
+            push @symbols, sym_function(
                 name         => $method_name,
-                kind         => 'function',
                 params_expr  => \@params_expr,
                 returns_expr => $returns_expr,
                 generics     => \@generics,
                 line         => $tc_info->{line},
                 col          => $tc_info->{col},
-            };
+            );
         }
     }
 

@@ -100,6 +100,8 @@ sub update_file ($self, $path, $source) {
     };
 
     $self->_register_file_types($extracted);
+
+    $extracted;
 }
 
 sub _unregister_file_types ($self, $old_info) {
@@ -159,6 +161,43 @@ sub _unregister_file_types ($self, $old_info) {
     for my $name (keys(($old_info->{declares} // +{})->%*)) {
         my $decl = $old_info->{declares}{$name};
         $reg->unregister_function($decl->{package}, $decl->{func_name});
+    }
+
+    # ── Unregister type objects (prevent ghosts) ──
+
+    # Aliases
+    for my $name (keys(($old_info->{aliases} // +{})->%*)) {
+        $reg->unregister_alias($name);
+    }
+
+    # Newtypes (type object)
+    for my $name (keys(($old_info->{newtypes} // +{})->%*)) {
+        $reg->unregister_newtype($name);
+    }
+
+    # Datatypes (type object)
+    for my $name (keys(($old_info->{datatypes} // +{})->%*)) {
+        $reg->unregister_datatype($name);
+    }
+
+    # Structs (type object + accessor methods)
+    for my $name (keys(($old_info->{structs} // +{})->%*)) {
+        $reg->unregister_type($name);
+        my $spkg = "Typist::Struct::${name}";
+        for my $f (keys(($old_info->{structs}{$name}{fields} // +{})->%*)) {
+            $reg->unregister_method($spkg, $f);
+        }
+        $reg->unregister_method($spkg, 'with');
+    }
+
+    # Effects (type object)
+    for my $name (keys(($old_info->{effects} // +{})->%*)) {
+        $reg->unregister_effect($name);
+    }
+
+    # Typeclasses (type object)
+    for my $name (keys(($old_info->{typeclasses} // +{})->%*)) {
+        $reg->unregister_typeclass($name);
     }
 
     # Clear resolved cache since aliases/types may have changed

@@ -101,6 +101,12 @@ sub has_alias ($invocant, $name) {
     exists $self->{aliases}{$name} || exists $self->{newtypes}{$name} || exists $self->{structs}{$name} || exists $self->{datatypes}{$name};
 }
 
+sub unregister_alias ($invocant, $name) {
+    my $self = _self($invocant);
+    delete $self->{aliases}{$name};
+    delete $self->{resolved}{$name};
+}
+
 # ── Newtype Management ─────────────────────────
 
 sub register_newtype ($invocant, $name, $type_obj) {
@@ -116,6 +122,11 @@ sub lookup_newtype ($invocant, $name) {
 sub all_newtypes ($invocant) {
     my $self = _self($invocant);
     $self->{newtypes}->%*;
+}
+
+sub unregister_newtype ($invocant, $name) {
+    my $self = _self($invocant);
+    delete $self->{newtypes}{$name};
 }
 
 sub all_aliases ($invocant) {
@@ -140,6 +151,11 @@ sub all_datatypes ($invocant) {
     $self->{datatypes}->%*;
 }
 
+sub unregister_datatype ($invocant, $name) {
+    my $self = _self($invocant);
+    delete $self->{datatypes}{$name};
+}
+
 # ── Struct Management ──────────────────────────
 
 sub register_type ($invocant, $name, $type_obj) {
@@ -155,6 +171,11 @@ sub lookup_struct ($invocant, $name) {
 sub all_structs ($invocant) {
     my $self = _self($invocant);
     $self->{structs}->%*;
+}
+
+sub unregister_type ($invocant, $name) {
+    my $self = _self($invocant);
+    delete $self->{structs}{$name};
 }
 
 # ── Variable Tracking ───────────────────────────
@@ -231,6 +252,11 @@ sub all_methods ($invocant) {
     $self->{methods}->%*;
 }
 
+sub unregister_method ($invocant, $pkg, $name) {
+    my $self = _self($invocant);
+    delete $self->{methods}{"${pkg}::${name}"};
+}
+
 # ── Package Tracking ────────────────────────────
 
 sub register_package ($invocant, $pkg) {
@@ -263,6 +289,11 @@ sub lookup_typeclass ($invocant, $name) {
 sub all_typeclasses ($invocant) {
     my $self = _self($invocant);
     $self->{typeclasses}->%*;
+}
+
+sub unregister_typeclass ($invocant, $name) {
+    my $self = _self($invocant);
+    delete $self->{typeclasses}{$name};
 }
 
 sub register_instance ($invocant, $class_name, $type_expr, $inst) {
@@ -299,6 +330,11 @@ sub lookup_effect ($invocant, $name) {
 sub all_effects ($invocant) {
     my $self = _self($invocant);
     $self->{effects}->%*;
+}
+
+sub unregister_effect ($invocant, $name) {
+    my $self = _self($invocant);
+    delete $self->{effects}{$name};
 }
 
 sub is_effect_label ($invocant, $name) {
