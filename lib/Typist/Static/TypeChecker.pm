@@ -729,8 +729,9 @@ sub _collect_fn_return_types ($self) {
             my $first = $last->schild(0);
             if ($first && !($first->isa('PPI::Token::Word') && $first->content eq 'return')) {
                 # Try statement-level first (ternary/binary), then first-child (match/handle/call)
-                my $t = Typist::Static::Infer->infer_expr($last, $env)
-                     // Typist::Static::Infer->infer_expr($first, $env);
+                my $impl_env = $self->_env_for_node($last);
+                my $t = Typist::Static::Infer->infer_expr($last, $impl_env)
+                     // Typist::Static::Infer->infer_expr($first, $impl_env);
                 push @types, $t if $t;
             }
         }
@@ -1412,6 +1413,32 @@ sub _inject_loop_vars ($self, $env, $node) {
 
 # ── Narrowing Rules ──────────────────────────────
 
+# Resolve the type of a struct field accessor: $var->field.
+# Returns the field type or undef.
+sub _resolve_accessor_type ($self, $env, $var_name, $field_name) {
+    my $var_type = $env->{variables}{$var_name} // return undef;
+
+    # Resolve aliases (e.g. Product → Struct)
+    my $resolved = $var_type;
+    if ($resolved->is_alias && $self->{registry}) {
+        my $looked_up = $self->{registry}->lookup_type($resolved->alias_name);
+        $resolved = $looked_up if $looked_up;
+    }
+    return undef unless $resolved->is_struct;
+
+    my $record = $resolved->record;
+    my $req = $record->required_ref;
+    my $opt = $record->optional_ref;
+
+    return $req->{$field_name} if exists $req->{$field_name};
+    if (exists $opt->{$field_name}) {
+        return Typist::Type::Union->new(
+            $opt->{$field_name}, Typist::Type::Atom->new('Undef'),
+        );
+    }
+    undef;
+}
+
 # Remove Undef from a Union type, returning the narrowed type or undef if no change.
 sub _remove_undef_from_type ($self, $type) {
     return undef unless $type && $type->is_union;
@@ -1798,6 +1825,7 @@ sub _scan_early_returns ($self, $env, $node) {
 
     # Walk preceding sibling statements
     my %narrowed_vars;
+    my %narrowed_accessors;
     my $sib = $stmt->sprevious_sibling;
     while ($sib) {
         if ($sib->isa('PPI::Statement')) {
@@ -1809,13 +1837,30 @@ sub _scan_early_returns ($self, $env, $node) {
                     my $var_type = $env->{variables}{$var_name};
                     my $narrowed = $self->_remove_undef_from_type($var_type);
                     $narrowed_vars{$var_name} = $narrowed if $narrowed;
+                } else {
+                    # Try accessor chain: return ... unless defined($var->accessor)
+                    my $accessor = $self->_early_return_accessor(\@children);
+                    if ($accessor && @{$accessor->{chain}} == 1) {
+                        my $vname = $accessor->{var_name};
+                        my $field = $accessor->{chain}[0];
+                        my $field_type = $self->_resolve_accessor_type($env, $vname, $field);
+                        if ($field_type) {
+                            my $narrowed = $self->_remove_undef_from_type($field_type);
+                            if ($narrowed) {
+                                $narrowed_accessors{"$vname\0$field"} = +{
+                                    var_name => $vname, accessor => $field,
+                                    type => $narrowed,
+                                };
+                            }
+                        }
+                    }
                 }
             }
         }
         $sib = $sib->sprevious_sibling;
     }
 
-    return $env unless %narrowed_vars;
+    return $env unless %narrowed_vars || %narrowed_accessors;
 
     # Record narrowed variables for LSP visibility
     my $fn_block = $parent_block;
@@ -1833,7 +1878,31 @@ sub _scan_early_returns ($self, $env, $node) {
 
     my %new_vars = $env->{variables}->%*;
     $new_vars{$_} = $narrowed_vars{$_} for keys %narrowed_vars;
-    +{ %$env, variables => \%new_vars };
+    my $new_env = +{ %$env, variables => \%new_vars };
+
+    # Add accessor narrowings to env for Infer to use
+    if (%narrowed_accessors) {
+        my %acc = ($env->{narrowed_accessors} // +{})->%*;
+        for my $key (keys %narrowed_accessors) {
+            my $info = $narrowed_accessors{$key};
+            $acc{$info->{var_name}}{$info->{accessor}} = $info->{type};
+        }
+        $new_env->{narrowed_accessors} = \%acc;
+
+        # Record for LSP visibility
+        for my $key (keys %narrowed_accessors) {
+            my $info = $narrowed_accessors{$key};
+            push $self->{_narrowed_accessors}->@*, +{
+                var_name    => $info->{var_name},
+                chain       => [$info->{accessor}],
+                type        => $info->{type},
+                scope_start => $scope_start,
+                scope_end   => $scope_end,
+            };
+        }
+    }
+
+    $new_env;
 }
 
 # Check if statement children match: return [exprs] unless defined $var [;]
@@ -1873,10 +1942,47 @@ sub _early_return_var ($self, $children) {
                 my @lc = grep { $_->isa('PPI::Statement::Expression') } $next->schildren;
                 if (@lc) {
                     my @exprs = $lc[0]->schildren;
+                    # Only match bare $var, not accessor chains like $var->field
                     return $exprs[0]->content
-                        if @exprs && $exprs[0]->isa('PPI::Token::Symbol');
+                        if @exprs == 1 && $exprs[0]->isa('PPI::Token::Symbol');
                 }
             }
+        }
+    }
+    undef;
+}
+
+# Extract accessor chain from `return ... unless defined($var->accessor)`.
+# Returns { var_name => '$x', chain => ['field'] } or undef.
+sub _early_return_accessor ($self, $children) {
+    for my $i (1 .. $#$children - 2) {
+        if ($children->[$i]->isa('PPI::Token::Word')
+            && $children->[$i]->content eq 'unless'
+            && $children->[$i + 1]->isa('PPI::Token::Word')
+            && $children->[$i + 1]->content eq 'defined')
+        {
+            my $next = $children->[$i + 2];
+            my @tokens;
+            if ($next->isa('PPI::Structure::List')) {
+                my @lc = grep { $_->isa('PPI::Statement::Expression') } $next->schildren;
+                @tokens = $lc[0]->schildren if @lc;
+            } else {
+                @tokens = @$children[$i + 2 .. $#$children];
+            }
+            # Expect: Symbol -> Word [-> Word ...]
+            next unless @tokens >= 3;
+            next unless $tokens[0]->isa('PPI::Token::Symbol');
+            my $var_name = $tokens[0]->content;
+            my @chain;
+            my $j = 1;
+            while ($j + 1 <= $#tokens) {
+                last unless $tokens[$j]->isa('PPI::Token::Operator')
+                         && $tokens[$j]->content eq '->';
+                last unless $tokens[$j + 1]->isa('PPI::Token::Word');
+                push @chain, $tokens[$j + 1]->content;
+                $j += 2;
+            }
+            return +{ var_name => $var_name, chain => \@chain } if @chain;
         }
     }
     undef;

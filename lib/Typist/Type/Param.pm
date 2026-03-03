@@ -91,11 +91,12 @@ sub contains ($self, $value) {
 }
 
 sub free_vars ($self) {
-    my @base_vars;
+    my @fv;
     if (ref $self->{base} && $self->{base}->isa('Typist::Type')) {
-        @base_vars = $self->{base}->free_vars;
+        push @fv, $self->{base}->free_vars;
     }
-    (@base_vars, map { $_->free_vars } $self->{params}->@*);
+    push @fv, map { $_->free_vars } $self->{params}->@*;
+    @fv;
 }
 
 sub substitute ($self, $bindings) {

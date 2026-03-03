@@ -67,9 +67,11 @@ sub contains ($self, $value) {
 }
 
 sub free_vars ($self) {
-    (map { $_->free_vars } $self->{params}->@*),
-    $self->{returns}->free_vars,
-    ($self->{effects} ? $self->{effects}->free_vars : ());
+    my @fv;
+    push @fv, map { $_->free_vars } $self->{params}->@*;
+    push @fv, $self->{returns}->free_vars;
+    push @fv, $self->{effects}->free_vars if $self->{effects};
+    @fv;
 }
 
 sub substitute ($self, $bindings) {

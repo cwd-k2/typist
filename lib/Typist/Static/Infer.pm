@@ -199,6 +199,14 @@ sub _infer_call ($name, $env, $list_element = undef, $expected = undef) {
 
     # Local function with known return type
     if (my $ret = $env->{functions}{$name}) {
+        # Generic local functions: instantiate via registry sig when args present
+        if ($ret->free_vars && $list_element && $env->{registry}) {
+            my $pkg = $env->{package} // 'main';
+            my $sig = $env->{registry}->lookup_function($pkg, $name);
+            if ($sig && $sig->{generics} && @{$sig->{generics}}) {
+                return _maybe_instantiate_return($sig, $env, $list_element, $expected);
+            }
+        }
         return $ret;
     }
 
@@ -680,9 +688,10 @@ sub _infer_array ($constructor, $env = undef, $expected = undef) {
             }
         }
 
-        # @{$expr} — array dereference spread inside array constructor
+        # @{$expr} or @$var — array dereference spread inside array constructor
         if ($child->isa('PPI::Token::Cast') && $child->content eq '@') {
             my $next_child = $children[$i + 1] // undef;
+            # @{BLOCK} form
             if ($next_child && $next_child->isa('PPI::Structure::Block')) {
                 my $inner = $next_child->find_first('PPI::Statement');
                 if ($inner) {
@@ -696,6 +705,16 @@ sub _infer_array ($constructor, $env = undef, $expected = undef) {
                     }
                 }
                 $i += 2;  # skip both Cast and Block
+                next;
+            }
+            # @$var form
+            if ($next_child && $next_child->isa('PPI::Token::Symbol')) {
+                my $var_type = _lookup_var($next_child->content, $env);
+                if ($var_type) {
+                    my $elem = _unwrap_arrayref($var_type);
+                    push @elem_types, $elem if $elem;
+                }
+                $i += 2;  # skip both Cast and Symbol
                 next;
             }
         }
@@ -1119,6 +1138,15 @@ sub _chase_subscript_chain ($type, $start_node, $env = undef) {
         if ($next->isa('PPI::Token::Word')) {
             $type = _infer_method_access($type, $next, $env);
             last unless defined $type;
+            # Apply accessor narrowing from defined() guards
+            if ($env && $env->{narrowed_accessors}
+                && $start_node->isa('PPI::Token::Symbol')) {
+                my $var_name = $start_node->content;
+                my $acc_name = $next->content;
+                if (my $narrowed = $env->{narrowed_accessors}{$var_name}{$acc_name}) {
+                    $type = $narrowed;
+                }
+            }
             # Skip past optional argument list: ->method(...)
             my $after = $next->snext_sibling;
             if ($after && $after->isa('PPI::Structure::List')) {
@@ -1134,19 +1162,36 @@ sub _chase_subscript_chain ($type, $start_node, $env = undef) {
             if ($type->free_vars) {
                 my @params = $type->params;
                 my %bindings;
+                my @arg_nodes;
                 my $expr = $next->schild(0);
                 if ($expr && $expr->isa('PPI::Statement::Expression')) {
-                    my @arg_nodes;
                     for my $child ($expr->schildren) {
                         next if $child->isa('PPI::Token::Operator') && $child->content eq ',';
                         push @arg_nodes, $child;
                     }
+                }
+
+                # Pass 1: infer all args without expected, collect bindings
+                for my $i (0 .. $#params) {
+                    last if $i > $#arg_nodes;
+                    my $t = __PACKAGE__->infer_expr($arg_nodes[$i], $env);
+                    Typist::Static::Unify->collect_bindings($params[$i], $t, \%bindings) if $t;
+                }
+
+                # Pass 2: re-infer callback args with substituted expected type
+                if (%bindings) {
                     for my $i (0 .. $#params) {
                         last if $i > $#arg_nodes;
-                        my $t = __PACKAGE__->infer_expr($arg_nodes[$i], $env);
-                        Typist::Static::Unify->collect_bindings($params[$i], $t, \%bindings) if $t;
+                        next unless $params[$i]->is_func;
+                        my $expected = $params[$i]->substitute(\%bindings);
+                        my $refined = __PACKAGE__->infer_expr($arg_nodes[$i], $env, $expected);
+                        if ($refined) {
+                            Typist::Static::Unify->collect_bindings(
+                                $params[$i], $refined, \%bindings);
+                        }
                     }
                 }
+
                 $type = %bindings ? $type->returns->substitute(\%bindings) : $type->returns;
             } else {
                 $type = $type->returns;

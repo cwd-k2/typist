@@ -279,4 +279,22 @@ PERL
     is scalar @$errs, 0, 'isa else-block narrows Union to remaining struct';
 };
 
+# ── defined() accessor narrowing ────────────────────
+
+subtest 'early return defined accessor narrows Option[Str] to Str' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+struct Widget => (
+    label => 'Str',
+    tooltip => 'optional Str',
+);
+sub get_tooltip :sig((Widget) -> Str) ($w) {
+    return "none" unless defined($w->tooltip);
+    $w->tooltip;
+}
+PERL
+
+    is scalar @$errs, 0, 'defined($w->tooltip) narrows Option[Str] to Str';
+};
+
 done_testing;

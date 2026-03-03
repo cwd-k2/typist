@@ -103,8 +103,10 @@ sub contains ($self, $value) {
 }
 
 sub free_vars ($self) {
-    (map { $_->free_vars } values %{$self->{required}}),
-    (map { $_->free_vars } values %{$self->{optional}});
+    my @fv;
+    push @fv, map { $_->free_vars } values %{$self->{required}};
+    push @fv, map { $_->free_vars } values %{$self->{optional}};
+    @fv;
 }
 
 sub substitute ($self, $bindings) {
