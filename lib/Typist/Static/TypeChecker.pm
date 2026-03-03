@@ -1040,7 +1040,9 @@ sub _build_env ($self) {
         next if exists $variables{$var->{name}};
         my $init_node = $var->{init_node} // next;
 
-        my $inferred = Typist::Static::Infer->infer_expr_with_siblings($init_node, $partial_env);
+        # Enrich env with enclosing function parameters for accurate inference
+        my $infer_env = $self->_scoped_env($partial_env, $init_node);
+        my $inferred = Typist::Static::Infer->infer_expr_with_siblings($init_node, $infer_env);
         next unless defined $inferred;
         next if $inferred->is_atom && $inferred->name eq 'Any';
 
@@ -1048,6 +1050,33 @@ sub _build_env ($self) {
     }
 
     $partial_env;
+}
+
+# Enrich base env with enclosing function's parameter types.
+# Walks up from init_node to find the enclosing PPI::Statement::Sub,
+# then adds its declared parameter types to the variables hash.
+sub _scoped_env ($self, $base_env, $node) {
+    my $parent = $node->parent;
+    while ($parent) {
+        if ($parent->isa('PPI::Statement::Sub') && $parent->name) {
+            my $fn = $self->{extracted}{functions}{$parent->name};
+            if ($fn && $fn->{param_names} && @{$fn->{param_names}}) {
+                my %vars = $base_env->{variables}->%*;
+                my $names = $fn->{param_names};
+                my $exprs = $fn->{params_expr} // [];
+                for my $i (0 .. $#$names) {
+                    my $expr = $exprs->[$i] // next;
+                    my $type = $self->_resolve_type($expr);
+                    next unless $type;
+                    $vars{$names->[$i]} = $type;
+                }
+                return +{ %$base_env, variables => \%vars };
+            }
+            last;
+        }
+        $parent = $parent->parent;
+    }
+    $base_env;
 }
 
 # Widen literal types for mutable variable bindings.

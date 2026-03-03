@@ -132,7 +132,7 @@ sub infer_expr ($class, $element, $env = undef, $expected = undef) {
     {
         my $next = $element->snext_sibling;
         if ($next && $next->isa('PPI::Structure::Block')) {
-            my $result = _infer_map_grep_sort($element, $env);
+            my $result = _infer_map_grep_sort($element, $env, $expected);
             return $result if defined $result;
         }
     }
@@ -567,6 +567,24 @@ sub _infer_match_return ($match_word, $env, $expected = undef) {
     return undef unless @arm_types;
     return $arm_types[0] if @arm_types == 1;
 
+    # If $expected is available, check if all arms conform to it.
+    # Check original types first (preserves literal precision for union expected types),
+    # then fall back to widened types (for atom expected types like Int, Str).
+    if ($expected) {
+        my $registry = $env ? $env->{registry} : undef;
+        my @sub_args = $registry ? (registry => $registry) : ();
+        my $all_conform = 1;
+        for my $t (@arm_types) {
+            unless (Typist::Subtype->is_subtype($t, $expected, @sub_args)
+                    || ($t->is_literal && Typist::Subtype->is_subtype(
+                        Typist::Type::Atom->new($t->base_type), $expected, @sub_args))) {
+                $all_conform = 0;
+                last;
+            }
+        }
+        return $expected if $all_conform;
+    }
+
     # Widen literals to base atoms (consistent with _infer_ternary)
     my @widened = map {
         $_->is_literal ? Typist::Type::Atom->new($_->base_type) : $_
@@ -576,6 +594,20 @@ sub _infer_match_return ($match_word, $env, $expected = undef) {
     my $result = $widened[0];
     for my $i (1 .. $#widened) {
         $result = Typist::Subtype->common_super($result, $widened[$i]);
+    }
+
+    # If LUB has free vars and $expected is available, prefer $expected
+    if ($expected && $result->free_vars) {
+        my $registry = $env ? $env->{registry} : undef;
+        my $all_ok = 1;
+        for my $t (@widened) {
+            unless (Typist::Subtype->is_subtype($t, $expected,
+                    $registry ? (registry => $registry) : ())) {
+                $all_ok = 0;
+                last;
+            }
+        }
+        return $expected if $all_ok;
     }
 
     # If LUB is too coarse (Any), try Union instead
@@ -644,6 +676,26 @@ sub _infer_array ($constructor, $env = undef, $expected = undef) {
                          && $children[$i]->content eq ',';
                     $i++;
                 }
+                next;
+            }
+        }
+
+        # @{$expr} — array dereference spread inside array constructor
+        if ($child->isa('PPI::Token::Cast') && $child->content eq '@') {
+            my $next_child = $children[$i + 1] // undef;
+            if ($next_child && $next_child->isa('PPI::Structure::Block')) {
+                my $inner = $next_child->find_first('PPI::Statement');
+                if ($inner) {
+                    my $first = $inner->schild(0);
+                    if ($first) {
+                        my $ref_type = __PACKAGE__->infer_expr($first, $env);
+                        if ($ref_type) {
+                            my $elem = _unwrap_arrayref($ref_type);
+                            push @elem_types, $elem if $elem;
+                        }
+                    }
+                }
+                $i += 2;  # skip both Cast and Block
                 next;
             }
         }
@@ -853,6 +905,13 @@ sub _infer_operator_expr ($stmt, $env, $expected = undef) {
         return _infer_ternary($children[2], $children[4], $env, $expected);
     }
 
+    # Nested ternary: PPI flattens `A ? B : C ? D : E` into a flat children list.
+    # Find the first `?` and its matching `:` to split into then/else branches.
+    if (@children >= 5) {
+        my $result = _infer_flat_ternary(\@children, $env, $expected);
+        return $result if defined $result;
+    }
+
     # Chained binary: Expr Op Expr Op Expr ... (5+ children, same operator)
     if (@children >= 5) {
         my @ops = grep { $_->isa('PPI::Token::Operator') } @children;
@@ -868,11 +927,71 @@ sub _infer_operator_expr ($stmt, $env, $expected = undef) {
     undef;
 }
 
+# Handle nested ternary from a flat PPI children list.
+# PPI flattens `Cond ? Then : Cond2 ? Then2 : Else` into a single list.
+# Finds the first ? and its matching :, then recurses for nested else branches.
+sub _infer_flat_ternary ($children, $env, $expected) {
+    # Find first ? operator
+    my $q_idx;
+    for my $i (0 .. $#$children) {
+        if ($children->[$i]->isa('PPI::Token::Operator') && $children->[$i]->content eq '?') {
+            $q_idx = $i;
+            last;
+        }
+    }
+    return undef unless defined $q_idx;
+
+    # Find matching : (depth-counted for nested ternary)
+    my ($depth, $c_idx) = (0, undef);
+    for my $i ($q_idx + 1 .. $#$children) {
+        if ($children->[$i]->isa('PPI::Token::Operator')) {
+            if    ($children->[$i]->content eq '?') { $depth++ }
+            elsif ($children->[$i]->content eq ':') {
+                if ($depth == 0) { $c_idx = $i; last }
+                $depth--;
+            }
+        }
+    }
+    return undef unless defined $c_idx;
+
+    # Then: single token between ? and :
+    my @then_slice = @$children[$q_idx + 1 .. $c_idx - 1];
+    return undef unless @then_slice == 1;  # multi-token then not supported
+    my $then_type = __PACKAGE__->infer_expr($then_slice[0], $env, $expected);
+
+    # Else: everything after :
+    my @else_slice = @$children[$c_idx + 1 .. $#$children];
+    my $else_type;
+    if (@else_slice == 1) {
+        $else_type = __PACKAGE__->infer_expr($else_slice[0], $env, $expected);
+    } elsif (@else_slice >= 5) {
+        # Recurse for nested ternary in else branch
+        $else_type = _infer_flat_ternary(\@else_slice, $env, $expected);
+    }
+
+    return undef unless defined $then_type && defined $else_type;
+    _infer_ternary_types($then_type, $else_type, $env, $expected);
+}
+
 sub _infer_ternary ($then_expr, $else_expr, $env, $expected = undef) {
     my $then_type = __PACKAGE__->infer_expr($then_expr, $env, $expected);
     my $else_type = __PACKAGE__->infer_expr($else_expr, $env, $expected);
-
     return undef unless defined $then_type && defined $else_type;
+    _infer_ternary_types($then_type, $else_type, $env, $expected);
+}
+
+# Combine two branch types from a ternary expression.
+# Shared logic for both simple and nested ternary.
+sub _infer_ternary_types ($then_type, $else_type, $env, $expected = undef) {
+    # If expected type is available, check if both branches conform (before widening)
+    if ($expected) {
+        my $registry = $env ? $env->{registry} : undef;
+        my @sub_args = $registry ? (registry => $registry) : ();
+        if (Typist::Subtype->is_subtype($then_type, $expected, @sub_args)
+            && Typist::Subtype->is_subtype($else_type, $expected, @sub_args)) {
+            return $expected;
+        }
+    }
 
     # Widen literals to base atoms for result typing
     my $then_w = $then_type->is_literal ? Typist::Type::Atom->new($then_type->base_type) : $then_type;
@@ -1032,8 +1151,10 @@ sub _chase_subscript_chain ($type, $start_node, $env = undef) {
             } else {
                 $type = $type->returns;
             }
-            # Can't fully resolve (e.g. HKT vars) → bail out
-            return undef if $type->free_vars;
+            # Naked type vars (e.g. B from HKT foldr) can't be resolved → bail out.
+            # But parameterized types with free vars (e.g. Result[B]) are kept:
+            # their outer structure is concrete and useful for inference.
+            return undef if $type->is_var;
             $node = $next->snext_sibling;
             next;
         }
@@ -1210,7 +1331,7 @@ sub _lookup_var ($name, $env) {
 # grep { BLOCK } @list → Array[ElemType]
 # sort { BLOCK } @list → Array[ElemType]
 
-sub _infer_map_grep_sort ($word, $env) {
+sub _infer_map_grep_sort ($word, $env, $expected = undef) {
     my $name = $word->content;
     my $next = $word->snext_sibling;
     return undef unless $next && $next->isa('PPI::Structure::Block');
@@ -1255,7 +1376,10 @@ sub _infer_map_grep_sort ($word, $env) {
         my %new_vars = ($env->{variables} // +{})->%*;
         $new_vars{'$_'} = $elem_type;
         my $inner_env = +{ %$env, variables => \%new_vars };
-        my $ret = _infer_block_return($block, $inner_env);
+        # Extract element expected type from Array[T]
+        my $block_expected = ($expected && $expected->is_param && $expected->base eq 'Array')
+            ? ($expected->params)[0] : undef;
+        my $ret = _infer_block_return($block, $inner_env, $block_expected);
         # Widen literals to base atoms
         $ret = Typist::Type::Atom->new($ret->base_type)
             if $ret && $ret->is_literal;
