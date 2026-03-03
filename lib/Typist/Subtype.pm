@@ -33,6 +33,13 @@ sub is_subtype ($class, $sub, $super, %opts) {
 sub common_super ($class, $a, $b) {
     return $a if $a->equals($b);
 
+    # Placeholder '_' acts as bottom in LUB: unknown absorbs into any known type.
+    # This ensures e.g. common_super(Option[Str], Option[_]) → Option[Str]
+    # rather than Option[Any], which preserves information through ternary
+    # branches like Some(x) : None().
+    return $b if $a->is_atom && $a->name eq '_';
+    return $a if $b->is_atom && $b->name eq '_';
+
     # Promote literals to their base Atom for LUB computation
     my $a_eff = $a->is_literal ? Typist::Type::Atom->new($a->base_type) : $a;
     my $b_eff = $b->is_literal ? Typist::Type::Atom->new($b->base_type) : $b;

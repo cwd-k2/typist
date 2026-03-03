@@ -102,4 +102,58 @@ subtest 'Subtype: forall A. (A, A) -> A roundtrip' => sub {
     is scalar($q2->body->params), 2, 'body has two params';
 };
 
+# ── Codensity pattern: Rank-2 + HKT ──────────
+
+subtest 'Codensity: lift_list → lower_list chain no TypeMismatch' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+
+sub lift_list :sig(<A>(ArrayRef[A]) -> forall R. (A -> ArrayRef[R]) -> ArrayRef[R]) ($arr) {
+    sub ($k) { [map { $k->($_)->@* } @$arr] };
+}
+
+sub lower_list :sig(<A>(forall R. (A -> ArrayRef[R]) -> ArrayRef[R]) -> ArrayRef[A]) ($m) {
+    $m->(sub ($a) { [$a] });
+}
+
+my $xs   = lift_list([1, 2, 3]);
+my $list = lower_list($xs);
+PERL
+
+    is scalar @$errs, 0, 'no TypeMismatch for lift_list → lower_list';
+};
+
+subtest 'Codensity: bind chain no TypeMismatch' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+
+sub c_unit :sig(<A>(A) -> forall R. (A -> ArrayRef[R]) -> ArrayRef[R]) ($a) {
+    sub ($k) { $k->($a) };
+}
+
+sub c_bind :sig(<A, B>(forall R. (A -> ArrayRef[R]) -> ArrayRef[R], (A) -> forall R. (B -> ArrayRef[R]) -> ArrayRef[R]) -> forall R. (B -> ArrayRef[R]) -> ArrayRef[R]) ($m, $f) {
+    sub ($k) { $m->(sub ($a) { $f->($a)->($k) }) };
+}
+
+sub lift_list :sig(<A>(ArrayRef[A]) -> forall R. (A -> ArrayRef[R]) -> ArrayRef[R]) ($arr) {
+    sub ($k) { [map { $k->($_)->@* } @$arr] };
+}
+
+sub lower_list :sig(<A>(forall R. (A -> ArrayRef[R]) -> ArrayRef[R]) -> ArrayRef[A]) ($m) {
+    $m->(sub ($a) { [$a] });
+}
+
+my $xs = lift_list(["a", "b"]);
+my $ys = lift_list([1, 2]);
+my $combined = c_bind($xs, sub ($x) {
+    c_bind($ys, sub ($y) {
+        c_unit($x);
+    });
+});
+my $result = lower_list($combined);
+PERL
+
+    is scalar @$errs, 0, 'no TypeMismatch for bind chain with Codensity';
+};
+
 done_testing;

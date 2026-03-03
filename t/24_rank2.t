@@ -10,6 +10,7 @@ use Typist::Type::Param;
 use Typist::Parser;
 use Typist::Subtype;
 use Typist::Type::Fold;
+use Typist::Static::Unify;
 
 # ── Construction ───────────────────────────────
 
@@ -313,6 +314,74 @@ subtest 'Subtype: Any atom NOT <: forall' => sub {
 
     ok !Typist::Subtype->is_subtype($any, $q),
         'Any ≮: (forall A. A -> A) — mono cannot satisfy forall';
+};
+
+# ── collect_bindings: Quantified ──────────────
+
+subtest 'collect_bindings: both Quantified with HKT' => sub {
+    # formal: forall R. ((A) -> F[R]) -> F[R]
+    # actual: forall R. ((A) -> ArrayRef[R]) -> ArrayRef[R]
+    # Should bind F => ArrayRef, A stays free (already bound outside)
+    my $formal = Typist::Parser->parse('forall R. ((A) -> F[R]) -> F[R]');
+    my $actual = Typist::Parser->parse('forall R. ((A) -> ArrayRef[R]) -> ArrayRef[R]');
+    my %bindings;
+    my $ok = Typist::Static::Unify->collect_bindings($formal, $actual, \%bindings);
+    ok $ok, 'both-quantified collect_bindings succeeds';
+    ok exists $bindings{F}, 'F is bound';
+    is $bindings{F}->name, 'ArrayRef', 'F => ArrayRef';
+};
+
+subtest 'collect_bindings: both Quantified same var names' => sub {
+    my $formal = Typist::Parser->parse('forall A. (A) -> A');
+    my $actual = Typist::Parser->parse('forall A. (A) -> A');
+    my %bindings;
+    my $ok = Typist::Static::Unify->collect_bindings($formal, $actual, \%bindings);
+    ok $ok, 'identical quantified types succeed';
+    # Body vars produce identity binding A => Var(A)
+    ok exists $bindings{A}, 'A bound (identity)';
+    is $bindings{A}->name, 'A', 'A => A';
+};
+
+subtest 'collect_bindings: both Quantified different var names' => sub {
+    my $formal = Typist::Parser->parse('forall A. (A) -> A');
+    my $actual = Typist::Parser->parse('forall B. (B) -> B');
+    my %bindings;
+    my $ok = Typist::Static::Unify->collect_bindings($formal, $actual, \%bindings);
+    ok $ok, 'different var names succeed (renamed)';
+};
+
+subtest 'collect_bindings: Quantified vars count mismatch' => sub {
+    my $formal = Typist::Parser->parse('forall A. (A) -> A');
+    my $actual = Typist::Parser->parse('forall A B. (A, B) -> A');
+    my %bindings;
+    my $ok = Typist::Static::Unify->collect_bindings($formal, $actual, \%bindings);
+    ok !$ok, 'vars count mismatch fails';
+};
+
+subtest 'collect_bindings: formal-only Quantified' => sub {
+    my $formal = Typist::Parser->parse('forall R. (R) -> R');
+    my $actual = Typist::Type::Func->new(
+        [Typist::Type::Var->new('X')],
+        Typist::Type::Var->new('X'),
+    );
+    my %bindings;
+    my $ok = Typist::Static::Unify->collect_bindings($formal, $actual, \%bindings);
+    ok $ok, 'formal-only Quantified succeeds';
+    ok exists $bindings{R}, 'R is bound';
+    is $bindings{R}->name, 'X', 'R => X';
+};
+
+subtest 'collect_bindings: actual-only Quantified' => sub {
+    my $formal = Typist::Type::Func->new(
+        [Typist::Type::Var->new('T')],
+        Typist::Type::Var->new('T'),
+    );
+    my $actual = Typist::Parser->parse('forall A. (A) -> A');
+    my %bindings;
+    my $ok = Typist::Static::Unify->collect_bindings($formal, $actual, \%bindings);
+    ok $ok, 'actual-only Quantified succeeds';
+    ok exists $bindings{T}, 'T is bound';
+    is $bindings{T}->name, 'A', 'T => A (from unwrapped body)';
 };
 
 done_testing;

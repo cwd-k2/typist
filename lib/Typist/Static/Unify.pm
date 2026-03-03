@@ -176,6 +176,29 @@ sub collect_bindings ($class, $formal, $actual, $bindings) {
         }
         return 1;
     }
+    # ── Quantified types ──────────────────────
+    # Both Quantified: match vars count, rename, recurse on bodies
+    if ($formal->is_quantified && $actual->is_quantified) {
+        my @fv = $formal->vars;
+        my @av = $actual->vars;
+        return 0 unless @fv == @av;
+        my %rename;
+        for my $i (0 .. $#fv) {
+            require Typist::Type::Var;
+            $rename{$av[$i]{name}} = Typist::Type::Var->new($fv[$i]{name});
+        }
+        my $actual_body = $actual->body->substitute(\%rename);
+        return $class->collect_bindings($formal->body, $actual_body, $bindings);
+    }
+    # formal only Quantified: unwrap body
+    if ($formal->is_quantified && !$actual->is_quantified) {
+        return $class->collect_bindings($formal->body, $actual, $bindings);
+    }
+    # actual only Quantified: unwrap body
+    if (!$formal->is_quantified && $actual->is_quantified) {
+        return $class->collect_bindings($formal, $actual->body, $bindings);
+    }
+
     # Non-variable leaf: must be structurally equal
     $formal->equals($actual) ? 1 : 0;
 }

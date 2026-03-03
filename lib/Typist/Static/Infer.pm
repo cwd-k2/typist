@@ -323,6 +323,15 @@ sub _maybe_instantiate_return ($sig, $env, $list_element, $expected = undef) {
                 }
                 next;
             }
+            # Skip function call argument list: Word + List forms a single call.
+            # infer_expr(Word) follows snext_sibling to discover the List.
+            if ($child->isa('PPI::Token::Word') && $child->content ne 'sub'
+                && $i + 1 <= $#children
+                && $children[$i + 1]->isa('PPI::Structure::List'))
+            {
+                $i += 2;
+                next;
+            }
             $i++;
         }
     }
@@ -994,6 +1003,23 @@ sub _infer_operator_expr ($stmt, $env, $expected = undef) {
 
     return undef unless @children >= 2;
 
+    # Ternary pre-check: if any child is `?`, this is a ternary expression.
+    # Must be checked before subscript/method chain patterns which would
+    # greedily match the condition part (e.g., $p->stock > 0 ? ... : ...).
+    if (@children >= 5
+        && grep { $_->isa('PPI::Token::Operator') && $_->content eq '?' } @children)
+    {
+        # Simple ternary: exactly 5 children
+        if (@children == 5
+            && $children[1]->isa('PPI::Token::Operator') && $children[1]->content eq '?'
+            && $children[3]->isa('PPI::Token::Operator') && $children[3]->content eq ':')
+        {
+            return _infer_ternary($children[2], $children[4], $env, $expected);
+        }
+        my $result = _infer_flat_ternary(\@children, $env, $expected);
+        return $result if defined $result;
+    }
+
     # Unary: ! Expr  or  not Expr
     if (@children == 2
         && $children[0]->isa('PPI::Token::Operator')
@@ -1045,21 +1071,6 @@ sub _infer_operator_expr ($stmt, $env, $expected = undef) {
         return _infer_binop($children[1]->content, $children[0], $children[2], $env);
     }
 
-    # Ternary: Expr ? Expr : Expr  (exactly 5 significant children)
-    if (@children == 5
-        && $children[1]->isa('PPI::Token::Operator') && $children[1]->content eq '?'
-        && $children[3]->isa('PPI::Token::Operator') && $children[3]->content eq ':')
-    {
-        return _infer_ternary($children[2], $children[4], $env, $expected);
-    }
-
-    # Nested ternary: PPI flattens `A ? B : C ? D : E` into a flat children list.
-    # Find the first `?` and its matching `:` to split into then/else branches.
-    if (@children >= 5) {
-        my $result = _infer_flat_ternary(\@children, $env, $expected);
-        return $result if defined $result;
-    }
-
     # Chained binary: Expr Op Expr Op Expr ... (5+ children, same operator)
     if (@children >= 5) {
         my @ops = grep { $_->isa('PPI::Token::Operator') } @children;
@@ -1073,6 +1084,22 @@ sub _infer_operator_expr ($stmt, $env, $expected = undef) {
     }
 
     undef;
+}
+
+# Infer a ternary branch slice (tokens between ? and : or after :).
+# Handles: single token, function call (Word + List), nested ternary.
+sub _infer_branch_slice ($slice, $env, $expected) {
+    return undef unless $slice && @$slice;
+    if (@$slice == 1) {
+        return __PACKAGE__->infer_expr($slice->[0], $env, $expected);
+    }
+    # Check for nested ternary (has ? operator)
+    my $has_ternary = grep { $_->isa('PPI::Token::Operator') && $_->content eq '?' } @$slice;
+    if ($has_ternary) {
+        return _infer_flat_ternary($slice, $env, $expected);
+    }
+    # Multi-token: infer from first element (PPI sibling chain handles Word+List etc.)
+    return __PACKAGE__->infer_expr($slice->[0], $env, $expected);
 }
 
 # Handle nested ternary from a flat PPI children list.
@@ -1102,20 +1129,14 @@ sub _infer_flat_ternary ($children, $env, $expected) {
     }
     return undef unless defined $c_idx;
 
-    # Then: single token between ? and :
+    # Then: tokens between ? and :
     my @then_slice = @$children[$q_idx + 1 .. $c_idx - 1];
-    return undef unless @then_slice == 1;  # multi-token then not supported
-    my $then_type = __PACKAGE__->infer_expr($then_slice[0], $env, $expected);
+    return undef unless @then_slice;
+    my $then_type = _infer_branch_slice(\@then_slice, $env, $expected);
 
     # Else: everything after :
     my @else_slice = @$children[$c_idx + 1 .. $#$children];
-    my $else_type;
-    if (@else_slice == 1) {
-        $else_type = __PACKAGE__->infer_expr($else_slice[0], $env, $expected);
-    } elsif (@else_slice >= 5) {
-        # Recurse for nested ternary in else branch
-        $else_type = _infer_flat_ternary(\@else_slice, $env, $expected);
-    }
+    my $else_type = _infer_branch_slice(\@else_slice, $env, $expected);
 
     return undef unless defined $then_type && defined $else_type;
     _infer_ternary_types($then_type, $else_type, $env, $expected);
@@ -1312,6 +1333,14 @@ sub _chase_subscript_chain ($type, $start_node, $env = undef) {
                             if ($ci <= $#children && $children[$ci]->isa('PPI::Structure::Block')) {
                                 $ci++;
                             }
+                            next;
+                        }
+                        # Skip function call argument list
+                        if ($child->isa('PPI::Token::Word') && $child->content ne 'sub'
+                            && $ci + 1 <= $#children
+                            && $children[$ci + 1]->isa('PPI::Structure::List'))
+                        {
+                            $ci += 2;
                             next;
                         }
                         $ci++;
