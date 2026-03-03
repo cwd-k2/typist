@@ -101,13 +101,25 @@ sub free_vars ($self) {
 sub substitute ($self, $bindings) {
     my $new_base = $self->{base};
     if (ref $new_base && $new_base->isa('Typist::Type')) {
-        $new_base = $new_base->substitute($bindings);
-        # Normalize: Alias/Atom results collapse to string names.
-        if (ref $new_base && $new_base->isa('Typist::Type')) {
-            if ($new_base->is_alias) {
-                $new_base = $new_base->alias_name;
-            } elsif ($new_base->is_atom) {
-                $new_base = $new_base->name;
+        if ($new_base->is_alias) {
+            # Alias base = type constructor name reference (e.g. Option in
+            # Option[B]).  Extract the name directly — do NOT resolve through
+            # the registry, which would turn it into a Data/Param type and
+            # produce double-nesting like Option[T][B].
+            $new_base = $new_base->alias_name;
+        } else {
+            $new_base = $new_base->substitute($bindings);
+            # Normalize: collapse type objects to string names.
+            if (ref $new_base && $new_base->isa('Typist::Type')) {
+                if ($new_base->is_alias) {
+                    $new_base = $new_base->alias_name;
+                } elsif ($new_base->is_atom) {
+                    $new_base = $new_base->name;
+                } elsif ($new_base->is_data) {
+                    $new_base = $new_base->name;
+                } elsif ($new_base->is_param) {
+                    $new_base = ref($new_base->base) ? "${\$new_base->base}" : $new_base->base;
+                }
             }
         }
     }

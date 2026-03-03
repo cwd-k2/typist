@@ -308,19 +308,28 @@ sub _maybe_instantiate_return ($sig, $env, $list_element, $expected = undef) {
         }
     }
 
-    return $ret unless %bindings;
-    my $result = $ret->substitute(\%bindings);
+    my $result = %bindings ? $ret->substitute(\%bindings) : $ret;
+    my $any_bound = !!%bindings;
 
-    # Pass 3: bind remaining free vars from expected type (bidirectional)
-    if ($expected && $result->free_vars) {
+    # Pass 3: bind remaining free vars from expected type (bidirectional).
+    # This handles cases like Err("msg") -> Result[T] where T can't be
+    # bound from arguments but CAN be bound from the expected return type.
+    # Guard: only when result and expected share the same Param base,
+    # to avoid incorrect binding like Expr[A] + Int → Expr[Int].
+    if ($expected && $result->free_vars
+        && $result->is_param && $expected->is_param
+        && "${\$result->base}" eq "${\$expected->base}") {
         my %extra;
         if (Typist::Static::Unify->collect_bindings($result, $expected, \%extra) && %extra) {
             $result = $ret->substitute(+{ %bindings, %extra });
+            $any_bound = 1;
         }
     }
 
-    # Fallback: replace remaining free vars with placeholder '_'
-    if ($result->free_vars) {
+    # Fallback: replace remaining free vars with placeholder '_'.
+    # Only when at least one binding was made — if nothing was bound,
+    # preserve live Vars so TypeChecker can detect type mismatches.
+    if ($result->free_vars && $any_bound) {
         require Typist::Type::Fold;
         $result = Typist::Type::Fold->map_type($result, sub ($t) {
             $t->is_var ? Typist::Type::Atom->new('_') : $t;

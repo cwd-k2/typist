@@ -310,6 +310,16 @@ sub _enum ($name, @tags) {
     }
     my $data_type = Typist::Type::Data->new($name, \%parsed_variants);
     Typist::Registry->register_datatype($name, $data_type);
+
+    # Register constructor functions for CHECK-phase cross-file inference.
+    for my $tag (@tags) {
+        Typist::Registry->register_function($caller, $tag, +{
+            params      => [],
+            returns     => $data_type,
+            generics    => [],
+            constructor => 1,
+        });
+    }
 }
 
 # ── Struct Support (nominal blessed immutable structs) ──
@@ -403,6 +413,14 @@ sub _struct ($name, $caller, @field_pairs) {
             bless +{%given}, $pkg;
         };
     }
+
+    # 4. Register constructor function so CHECK-phase cross-file inference
+    #    can resolve calls like OrderItem(...) from other packages.
+    Typist::Registry->register_function($caller, $name, +{
+        params             => [],
+        returns            => $type,
+        struct_constructor => 1,
+    });
 }
 
 # ── Declare Support (external function annotations) ──
@@ -564,6 +582,28 @@ sub _datatype ($name_spec, %variants) {
         return_types => (%return_types ? \%return_types : +{}),
     );
     Typist::Registry->register_datatype($name, $data_type);
+
+    # Register constructor functions so CHECK-phase cross-file inference
+    # can resolve calls like Ok(1), Some(v), None() from other packages.
+    for my $tag (keys %parsed_variants) {
+        my $param_types = $parsed_variants{$tag};
+        my $return_type;
+        if (exists $return_types{$tag}) {
+            $return_type = $return_types{$tag};
+        } elsif (@type_params) {
+            my @vars = map { Typist::Type::Var->new($_) } @type_params;
+            $return_type = Typist::Type::Param->new($name, @vars);
+        } else {
+            $return_type = $data_type;
+        }
+        my @generics = map { +{ name => $_, bound_expr => undef } } @type_params;
+        Typist::Registry->register_function($caller, $tag, +{
+            params    => $param_types,
+            returns   => $return_type,
+            generics  => \@generics,
+            constructor => 1,
+        });
+    }
 }
 
 sub _instance ($class_name, $type_expr_arg, $methods_ref) {
