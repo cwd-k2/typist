@@ -1766,4 +1766,59 @@ PERL
     like $hover->{contents}{value}, qr/\(Str\) -> Void/, 'shows operation signature';
 };
 
+# ── Cross-file typeclass hover ──────────────────
+
+subtest 'cross-file typeclass hover shows methods' => sub {
+    require Typist::LSP::Workspace;
+    require File::Temp;
+    require File::Path;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib");
+
+    open my $fh, '>', "$dir/lib/Classes.pm" or die;
+    print $fh <<'PERL';
+package Classes;
+use v5.40;
+use Typist;
+typeclass Show => 'T', +{
+    show => '(T) -> Str',
+};
+1;
+PERL
+    close $fh;
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source = <<'PERL';
+package Impls;
+use v5.40;
+use Typist 'Int';
+instance Show => Int, +{
+    show => sub ($x) { "$x" },
+};
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///impls.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Line 3 (0-indexed): "instance Show => Int, +{"
+    #                       0         1
+    #                       0123456789012345
+    my $sym = $doc->symbol_at(3, 10);
+    ok $sym, 'found symbol for cross-file typeclass';
+    is $sym->{kind}, 'typeclass', 'kind is typeclass';
+    ok $sym->{var_spec}, 'has var_spec';
+
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'got hover response';
+    like $hover->{contents}{value}, qr/typeclass Show/, 'shows typeclass name';
+    like $hover->{contents}{value}, qr/show/, 'shows method name';
+    like $hover->{contents}{value}, qr/\(T\) -> Str/, 'shows method signature';
+};
+
 done_testing;

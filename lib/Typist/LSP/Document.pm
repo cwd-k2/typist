@@ -360,7 +360,7 @@ sub symbol_at ($self, $line, $col) {
             return $with_range->(+{
                 name         => $lookup_name,
                 kind         => 'typeclass',
-                var_spec     => $tc ? $tc->var_name : undef,
+                var_spec     => $tc ? $tc->var : undef,
                 method_names => \@method_names,
                 methods      => \%methods,
             });

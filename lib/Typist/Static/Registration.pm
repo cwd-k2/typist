@@ -320,8 +320,9 @@ sub register_typeclasses ($class, $extracted, $registry, %opts) {
         my $info = $extracted->{typeclasses}{$name};
         my $def = eval {
             Typist::TypeClass->new_class(
-                name => $name,
-                var  => $info->{var_spec} // 'T',
+                name    => $name,
+                var     => $info->{var_spec} // 'T',
+                methods => $info->{methods}  // +{},
             );
         };
         $registry->register_typeclass($name, $def // undef);
