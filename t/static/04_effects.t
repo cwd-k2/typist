@@ -179,9 +179,9 @@ PERL
     like $undecl[0]{message}, qr/\br\b/, 'reports the undeclared row variable';
 };
 
-# ── Unannotated function → any effect ───────────
+# ── Unannotated function → pure (no effect) ─────
 
-subtest 'Analyzer: annotated caller calls unannotated local function' => sub {
+subtest 'Analyzer: annotated caller calls unannotated local function — no error' => sub {
     my $ws_reg = Typist::Registry->new;
     require Typist::Effect;
     $ws_reg->register_effect('Console', Typist::Effect->new(
@@ -202,11 +202,10 @@ sub main_fn :sig((Str) -> Str ![Console]) ($s) {
 PERL
 
     my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
-    ok @eff_diags > 0, 'calling unannotated function flagged';
-    like $eff_diags[0]{message}, qr/unannotated.*helper/, 'reports unannotated callee';
+    is scalar @eff_diags, 0, 'unannotated callee is pure — no EffectMismatch';
 };
 
-subtest 'Analyzer: pure caller calls unannotated local function' => sub {
+subtest 'Analyzer: pure caller calls unannotated local function — no error' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 package PureCallsUnannotated;
 use v5.40;
@@ -221,8 +220,7 @@ sub pure_fn :sig((Str) -> Str) ($s) {
 PERL
 
     my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
-    ok @eff_diags > 0, 'pure fn calling unannotated function flagged';
-    like $eff_diags[0]{message}, qr/unannotated.*helper/, 'reports unannotated callee';
+    is scalar @eff_diags, 0, 'unannotated callee is pure — no EffectMismatch';
 };
 
 subtest 'Analyzer: annotated callee without effect is pure' => sub {
@@ -354,14 +352,14 @@ subtest '@typist-ignore suppresses EffectMismatch' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 package Ignore;
 use v5.40;
-sub helper ($x) { $x }
-sub main_fn :sig((Str) -> Str ![Console]) ($s) {
+sub pure_fn :sig((Str) -> Str) ($s) {
     # @typist-ignore
-    helper($s);
+    print "debug";
+    $s;
 }
 PERL
     my @eff = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
-    is scalar @eff, 0, '@typist-ignore suppresses EffectMismatch';
+    is scalar @eff, 0, '@typist-ignore suppresses EffectMismatch for builtin print';
 };
 
 # ── Column Precision ────────────────────────────
@@ -394,7 +392,7 @@ PERL
     ok $eff_diags[0]{col} > 0, 'col is set on EffectMismatch';
 };
 
-subtest 'diagnostic: col on unannotated callee EffectMismatch' => sub {
+subtest 'diagnostic: no col on unannotated callee (pure)' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 package ColUnannotated;
 use v5.40;
@@ -407,8 +405,7 @@ sub main_fn :sig((Str) -> Str) ($s) {
 PERL
 
     my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
-    ok @eff_diags > 0, 'unannotated callee mismatch detected';
-    ok $eff_diags[0]{col} > 0, 'col is set on unannotated callee EffectMismatch';
+    is scalar @eff_diags, 0, 'unannotated callee is pure — no EffectMismatch';
 };
 
 # ── Decl effect: declaration builtins ─────────
@@ -490,7 +487,7 @@ PERL
     ok !$greet, 'annotated function not in inferred_effects';
 };
 
-subtest 'infer_effects: unannotated function calling unannotated → unknown flag' => sub {
+subtest 'infer_effects: unannotated calling unannotated → pure, no entry' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 package EffInfer3;
 use v5.40;
@@ -506,8 +503,8 @@ PERL
 
     my $ie = $result->{inferred_effects} // [];
     my ($caller) = grep { $_->{name} eq 'caller_fn' } @$ie;
-    ok $caller, 'caller_fn appears in inferred_effects';
-    ok $caller->{unknown}, 'unknown flag set due to unannotated callee';
+    # helper() is unannotated → pure → skipped. No effects collected for caller_fn.
+    ok !$caller, 'caller_fn has no inferred effects (unannotated callee is pure)';
 };
 
 subtest 'infer_effects: pure unannotated function → no entry' => sub {

@@ -259,9 +259,7 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
     for my $name (sort keys $extracted->{functions}->%*) {
         my $fn = $extracted->{functions}{$name};
 
-        # Unannotated functions: show ![*] to indicate any-effect
-        my $eff = $fn->{eff_expr};
-        $eff = $fn->{unannotated} ? '[*]' : $eff && "[$eff]";
+        my $eff = $fn->{eff_expr} && "[$fn->{eff_expr}]";
 
         push @symbols, sym_function(
             name         => $name,

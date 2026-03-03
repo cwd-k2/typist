@@ -244,7 +244,7 @@ say "  result: $db_result";
 #   caller ![A, B]  calling callee ![A]         → OK (superset)
 #   caller ![A]     calling callee ![A, B]      → NG (missing B)
 #   caller (pure)   calling callee ![A]         → NG
-#   caller (annotated) calling unannotated       → NG ([*])
+#   caller (any)      calling unannotated         → OK (pure)
 #
 # See lsp/effects.pm for an LSP diagnostic showcase.
 

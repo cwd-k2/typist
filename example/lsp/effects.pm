@@ -14,7 +14,7 @@ use Typist;
 #    caller ![A, B]  calling callee ![A]     → OK (superset)
 #    caller ![A]     calling callee ![A, B]  → NG (missing B)
 #    caller (pure)   calling callee ![A]     → NG
-#    caller (annotated) calling unannotated   → NG ([*])
+#    caller (any)      calling unannotated    → OK (pure)
 # ═══════════════════════════════════════════════════════════
 
 # ── Effect Declarations ───────────────────────────────────
@@ -52,14 +52,14 @@ sub pure_fn :sig((Str) -> Str) ($x) {
     io_fn($x);              # ← DIAGNOSTIC: pure → no effects allowed
 }
 
-# ── NG: annotated caller calls unannotated ────────────────
+# ── OK: annotated caller calls unannotated (pure) ───────
 
 sub unknown_helper ($x) {
     $x;
 }
 
 sub safe_fn :sig((Str) -> Str ![Console]) ($s) {
-    unknown_helper($s);     # ← DIAGNOSTIC: unannotated → [*]
+    unknown_helper($s);     # OK: unannotated → pure (no effect)
 }
 
 # ── OK: unannotated caller — no check ────────────────────

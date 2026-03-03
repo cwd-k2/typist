@@ -712,7 +712,7 @@ Pure caller calls pure callee               OK
 Effectful caller calls callee with subset   OK
 Effectful caller calls callee with extras   EffectMismatch
 Pure caller calls effectful callee          EffectMismatch
-Any caller calls unannotated callee         EffectMismatch (warning)
+Any caller calls unannotated callee         OK (pure)
 ```
 
 ### Effect Superset Rule
@@ -721,7 +721,7 @@ A caller with `[A, B, C]` can call a callee with `[A]` — the caller's effects 
 
 ### Unannotated Functions
 
-Unannotated functions are treated as `[*]` — they may perform any effect. Calling an unannotated function from an annotated function triggers an `EffectMismatch` warning.
+Unannotated functions are treated as pure (no effects). This follows the gradual typing principle: no annotation means no constraint. Calling an unannotated function from any caller produces no effect diagnostic.
 
 ### Declare for Builtins
 

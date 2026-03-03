@@ -371,7 +371,7 @@ Typist enforces checks proportional to annotation density:
 | Fully annotated | All params, return, call sites | Full effect inclusion |
 | Partially annotated (no return) | Params only, return type unknown | As declared |
 | Partially annotated (no `:Eff`) | As declared | Treated as pure |
-| Completely unannotated | Skipped (`Any -> Any`) | Treated as `[*]` — flags in callers |
+| Completely unannotated | Skipped (`Any -> Any`) | Treated as pure (no constraint) |
 
 ## Editor Integration
 

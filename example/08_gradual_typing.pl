@@ -12,7 +12,7 @@ use Typist::DSL;
 #
 #    Fully annotated    → all checks (types + effects)
 #    Partially annotated → only checkable parts verified
-#    Unannotated         → treated as (Any...) -> Any ![*]
+#    Unannotated         → treated as (Any...) -> Any (pure)
 #
 #  This lets you incrementally adopt types in an existing
 #  codebase — annotate what matters, leave the rest.
@@ -77,9 +77,9 @@ say "5^2 = $result";
 
 # ── 5. Unannotated Functions ─────────────────────────────
 #
-# No annotations at all → (Any...) -> Any ![*]
-# Type checks skip; effect checks flag annotated callers
-# that call this function (as it may perform any effect).
+# No annotations at all → (Any...) -> Any (pure)
+# Type checks skip; effect treated as pure (no constraint).
+# This follows gradual typing: no annotation = no restriction.
 
 sub helper ($x) {
     $x;
@@ -186,7 +186,7 @@ say format_or_default(undef);
 # ├─────────────────────┼──────────────────┼──────────────────┤
 # │ Fully annotated     │ All checks       │ Effects verified │
 # │ Any return type     │ Params checked   │ Pure (no effects)│
-# │ Completely unannot. │ Any (skip)       │ [*] (any)        │
+# │ Completely unannot. │ Any (skip)       │ Pure (no constr.) │
 # └─────────────────────┴──────────────────┴──────────────────┘
 #
 # Flow Typing:

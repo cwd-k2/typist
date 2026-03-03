@@ -178,9 +178,9 @@ PERL
     like $hover->{result}{contents}{value}, qr/sub fetch<T>\(Str\) -> T !\[Console\]/, 'shows sub fetch<T>(Str) -> T ![Console]';
 };
 
-# ── Hover on unannotated function shows [*] ──
+# ── Hover on unannotated function (no effect) ──
 
-subtest 'hover shows unannotated function as Any with [*]' => sub {
+subtest 'hover shows unannotated function as Any without effects' => sub {
     my $source = <<'PERL';
 use v5.40;
 sub helper ($x) { $x }
@@ -201,7 +201,7 @@ PERL
     ok $hover->{result}, 'hover has result';
     like $hover->{result}{contents}{value}, qr/sub helper/, 'contains function name';
     like $hover->{result}{contents}{value}, qr/Any/, 'shows Any for params/returns';
-    like $hover->{result}{contents}{value}, qr/!\[\*\]/, 'shows ![*] for unannotated';
+    unlike $hover->{result}{contents}{value}, qr/!\[/, 'no effect annotation for unannotated';
 };
 
 # ── Hover on inferred variable type ──────────────

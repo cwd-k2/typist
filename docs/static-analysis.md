@@ -597,16 +597,13 @@ For each annotated function (skip unannotated entirely):
       If builtin (say, print, die, open, ...):
         Check CORE registry for declare'd annotation:
           - Declared with effects → use those
-          - Declared pure → skip
-          - Not declared → unannotated ([*])
+          - Declared pure or not declared → skip (pure)
 
       If local/cross-package function with argument list:
-        Lookup in registry → { effects, unannotated }
+        Lookup in registry → { effects }
+        Unannotated functions (row_var '*') → skip (pure)
 
   For each callee:
-    If callee.unannotated:
-      → EffectMismatch: "calls unannotated function X (may perform any effect)"
-
     If caller has no effects (pure) but callee does:
       → EffectMismatch: "caller has no :Eff but calls effectful callee"
 
@@ -621,17 +618,17 @@ For each annotated function (skip unannotated entirely):
 
 ### Builtin Function Set
 
-The EffectChecker maintains a hardcoded set of ~50 Perl builtins that it recognizes as potential call sites (say, print, warn, die, open, close, read, write, etc.). These are treated as unannotated unless the Prelude or a `declare` provides an annotation.
+The EffectChecker maintains a hardcoded set of ~50 Perl builtins that it recognizes as potential call sites (say, print, warn, die, open, close, read, write, etc.). These are treated as pure (no effects) unless the Prelude or a `declare` provides an annotation.
 
 ### Effect Inference (LSP Hints)
 
-`infer_effects($extracted, $registry)` computes likely effect labels for unannotated functions. This does **not** change enforcement — unannotated functions remain `[*]` in the gradual typing contract. Results are surfaced as LSP inlay hints only.
+`infer_effects($extracted, $registry)` computes likely effect labels for unannotated functions by collecting effects from annotated callees in the function body. Results are surfaced as LSP inlay hints only.
 
 ```
 For each unannotated function:
   Collect callee effects via _collect_called_effects
   Union all closed-row labels from annotated callees
-  If any callee is unannotated → set unknown flag
+  (Unannotated callees are pure → skipped)
 
   Result: { name, labels => [...], unknown, line, col }
 ```
@@ -728,7 +725,7 @@ Level                    Example                               Behavior
 Fully annotated          :sig((Str) -> Int ![Console])        All checks active
 Partial (no return)      :sig((Str) -> Any)                   Params checked, return unknown
 Partial (no effect)      :sig((Str) -> Int)                   Types checked, treated as pure
-Unannotated              sub foo ($x) { ... }                  Skipped (Any -> Any ! [*])
+Unannotated              sub foo ($x) { ... }                  Skipped (Any -> Any, pure)
 ```
 
 ### Implementation: The Any Guard

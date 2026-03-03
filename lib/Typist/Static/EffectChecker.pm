@@ -7,7 +7,7 @@ use Typist::Type::Row;
 use Typist::Type::Eff;
 use Typist::Prelude;
 
-# ── Perl Builtins (unannotated → [*]) ────────
+# ── Perl Builtins ────────────────────────────
 
 my %BUILTINS = map { $_ => 1 } Typist::Prelude->builtin_names;
 
@@ -32,7 +32,7 @@ sub analyze ($self) {
         my $fn    = $self->{extracted}{functions}{$name};
         my $block = $fn->{block} // next;
 
-        # Skip unannotated callers — they are [*] themselves
+        # Skip unannotated callers — gradual typing: no annotation = no constraint
         next if $fn->{unannotated};
 
         # Lookup the caller's registered sig
@@ -47,20 +47,6 @@ sub analyze ($self) {
         for my $call (@called) {
             my $callee_eff = $call->{effects};
             next unless $callee_eff;
-
-            # Callee is unannotated (open row with *) → any effect
-            if ($call->{unannotated}) {
-                $self->{errors}->collect(
-                    kind    => 'EffectMismatch',
-                    message => "Function $name() calls unannotated $call->{name}()"
-                             . " which may perform any effect",
-                    file    => $self->{file},
-                    line    => $call->{line},
-                    col     => $call->{col} // 0,
-                    end_col => ($call->{col} // 0) + length($call->{name}),
-                );
-                next;
-            }
 
             # Caller has no effects declared but callee does
             unless ($caller_eff) {
@@ -108,34 +94,25 @@ sub _collect_called_effects ($self, $block, $pkg) {
         my $next = $word->snext_sibling;
         next if $next && ref $next && $next->isa('PPI::Token::Operator') && $next->content eq '=>';
 
-        # Builtin functions: check CORE registry for declared type, fallback to [*]
+        # Builtin functions: check CORE registry for declared effects.
         # Builtins can be called without parens (say "hello"), so no List check needed.
         if ($BUILTINS{$callee_name}) {
             my $declared_sig = $self->{registry}->lookup_function('CORE', $callee_name);
             if ($declared_sig && $declared_sig->{effects}) {
-                # Use declared effects for inclusion checking
                 my $eff = $declared_sig->{effects};
                 my $row = $eff->is_eff ? $eff->row : $eff;
-                my $is_unannotated = $row->is_row && ($row->row_var_name // '') eq '*';
 
-                push @calls, +{
-                    name        => $callee_name,
-                    effects     => $eff,
-                    unannotated => $is_unannotated,
-                    line        => $word->line_number,
-                    col         => $word->column_number,
-                };
-            } elsif (!$declared_sig) {
-                # No declaration → original behavior: unannotated [*]
-                push @calls, +{
-                    name        => $callee_name,
-                    effects     => 1,  # sentinel; unannotated branch does not inspect
-                    unannotated => 1,
-                    line        => $word->line_number,
-                    col         => $word->column_number,
-                };
+                # Skip unannotated builtins (row_var '*') — pure
+                unless ($row->is_row && ($row->row_var_name // '') eq '*') {
+                    push @calls, +{
+                        name    => $callee_name,
+                        effects => $eff,
+                        line    => $word->line_number,
+                        col     => $word->column_number,
+                    };
+                }
             }
-            # else: declared pure (no effects) → skip
+            # else: no declaration or declared pure → skip (pure)
             next;
         }
 
@@ -153,17 +130,16 @@ sub _collect_called_effects ($self, $block, $pkg) {
         next unless $callee_sig;
         next unless $callee_sig->{effects};
 
-        # Detect unannotated function: open row with row_var '*'
+        # Unannotated functions (row_var '*') are treated as pure → skip
         my $eff = $callee_sig->{effects};
         my $row = $eff->is_eff ? $eff->row : $eff;
-        my $is_unannotated = $row->is_row && ($row->row_var_name // '') eq '*';
+        next if $row->is_row && ($row->row_var_name // '') eq '*';
 
         push @calls, +{
-            name        => $callee_name,
-            effects     => $eff,
-            unannotated => $is_unannotated,
-            line        => $word->line_number,
-            col         => $word->column_number,
+            name    => $callee_name,
+            effects => $eff,
+            line    => $word->line_number,
+            col     => $word->column_number,
         };
     }
 
@@ -190,10 +166,6 @@ sub infer_effects ($class_or_self, $extracted, $registry) {
         my (%labels, $unknown);
 
         for my $call (@called) {
-            if ($call->{unannotated}) {
-                $unknown = 1;
-                next;
-            }
             my $eff = $call->{effects};
             next unless ref $eff;
             my $row = $eff->is_eff ? $eff->row : $eff;

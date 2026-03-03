@@ -135,10 +135,10 @@ PERL
     my ($diag_notif) = grep { ($_->{method} // '') eq 'textDocument/publishDiagnostics' } @results;
     ok $diag_notif, 'got publishDiagnostics';
 
-    my @eff_diags = grep { $_->{message} =~ /[Ee]ff|unannotated/ }
+    my @eff_diags = grep { $_->{message} =~ /[Ee]ff/ }
                     @{$diag_notif->{params}{diagnostics}};
 
-    ok @eff_diags >= 3, 'at least 3 effect diagnostics';
+    ok @eff_diags >= 2, 'at least 2 effect diagnostics';
 
     # Case 1: caller missing callee's effect (State)
     my ($missing) = grep { $_->{message} =~ /State/ } @eff_diags;
@@ -150,10 +150,9 @@ PERL
     ok $pure, 'pure-calls-effectful reported';
     like $pure->{message}, qr/pure_fn.*write_msg/, 'identifies pure caller';
 
-    # Case 3: annotated caller calls unannotated
+    # Case 3: annotated caller calls unannotated → NO diagnostic (pure)
     my ($unann) = grep { $_->{message} =~ /unannotated/ } @eff_diags;
-    ok $unann, 'unannotated callee reported';
-    like $unann->{message}, qr/safe_fn.*helper/, 'identifies annotated caller and unannotated callee';
+    ok !$unann, 'unannotated callee is pure — no diagnostic';
 };
 
 # ── Diagnostic range has column precision ────────
