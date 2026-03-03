@@ -251,9 +251,15 @@ sub _infer_call ($name, $env, $list_element = undef, $expected = undef) {
         if (my $sig = $registry->search_function_by_name($name)) {
             if ($sig->{returns}) {
                 my $ret = _maybe_instantiate_return($sig, $env, $list_element, $expected);
-                # Replace unresolved type vars with '_' placeholder.
-                # Handles: None() -> Option[T], Err("msg") -> Result[T]
-                # where T can't be bound from arguments.
+                # Bidirectional: bind remaining free vars from expected type.
+                # Handles: None() -> Option[T] with expected Option[Str] → Option[Str]
+                if ($ret->free_vars && $expected) {
+                    my %extra;
+                    if (Typist::Static::Unify->collect_bindings($ret, $expected, \%extra) && %extra) {
+                        $ret = $ret->substitute(\%extra);
+                    }
+                }
+                # Replace remaining unresolved type vars with '_' placeholder.
                 if ($ret->free_vars) {
                     require Typist::Type::Fold;
                     $ret = Typist::Type::Fold->map_type($ret, sub ($t) {
@@ -288,12 +294,36 @@ sub _maybe_instantiate_return ($sig, $env, $list_element, $expected = undef) {
     # Extract PPI argument nodes
     # PPI wraps argument lists as Statement::Expression (multi-arg) or
     # plain Statement (single complex arg like [...]/{...}).
+    # Anonymous subs are split by PPI into sub + Prototype + Block;
+    # we keep only the 'sub' token and skip its continuations, since
+    # infer_expr(sub_token) walks snext_sibling internally.
     my @arg_nodes;
     my $expr = $list_element->schild(0);
     if ($expr && $expr->isa('PPI::Statement')) {
-        for my $child ($expr->schildren) {
-            next if $child->isa('PPI::Token::Operator') && $child->content eq ',';
+        my @children = $expr->schildren;
+        my $i = 0;
+        while ($i <= $#children) {
+            my $child = $children[$i];
+            if ($child->isa('PPI::Token::Operator') && $child->content eq ',') {
+                $i++; next;
+            }
             push @arg_nodes, $child;
+            # Skip anonymous sub continuations (Prototype/List + Block)
+            if ($child->isa('PPI::Token::Word') && $child->content eq 'sub'
+                && !($child->parent && $child->parent->isa('PPI::Statement::Sub'))) {
+                $i++;
+                # Skip signature (Prototype or List)
+                if ($i <= $#children && ($children[$i]->isa('PPI::Token::Prototype')
+                                      || $children[$i]->isa('PPI::Structure::List'))) {
+                    $i++;
+                }
+                # Skip block
+                if ($i <= $#children && $children[$i]->isa('PPI::Structure::Block')) {
+                    $i++;
+                }
+                next;
+            }
+            $i++;
         }
     }
     return $ret unless @arg_nodes;
@@ -1264,9 +1294,27 @@ sub _chase_subscript_chain ($type, $start_node, $env = undef) {
                 my @arg_nodes;
                 my $expr = $next->schild(0);
                 if ($expr && $expr->isa('PPI::Statement')) {
-                    for my $child ($expr->schildren) {
-                        next if $child->isa('PPI::Token::Operator') && $child->content eq ',';
+                    my @children = $expr->schildren;
+                    my $ci = 0;
+                    while ($ci <= $#children) {
+                        my $child = $children[$ci];
+                        if ($child->isa('PPI::Token::Operator') && $child->content eq ',') {
+                            $ci++; next;
+                        }
                         push @arg_nodes, $child;
+                        if ($child->isa('PPI::Token::Word') && $child->content eq 'sub'
+                            && !($child->parent && $child->parent->isa('PPI::Statement::Sub'))) {
+                            $ci++;
+                            if ($ci <= $#children && ($children[$ci]->isa('PPI::Token::Prototype')
+                                                   || $children[$ci]->isa('PPI::Structure::List'))) {
+                                $ci++;
+                            }
+                            if ($ci <= $#children && $children[$ci]->isa('PPI::Structure::Block')) {
+                                $ci++;
+                            }
+                            next;
+                        }
+                        $ci++;
                     }
                 }
 
