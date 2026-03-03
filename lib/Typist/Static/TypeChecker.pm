@@ -1145,9 +1145,10 @@ sub _build_env ($self) {
         my $status = !defined $inferred  ? 'undef'
                    : ($inferred->is_atom && $inferred->name eq 'Any') ? 'Any_skip'
                    : 'ok';
+        my $widened = ($status eq 'ok') ? _widen_literal($inferred) : $inferred;
         push $self->{_infer_log}->@*, +{
             name   => $var->{name}, line => $var->{line},
-            type   => $inferred ? $inferred->to_string : undef,
+            type   => $widened ? $widened->to_string : undef,
             status => $status,
             scope  => 'top',
         };
@@ -1155,7 +1156,7 @@ sub _build_env ($self) {
         next unless defined $inferred;
         next if $inferred->is_atom && $inferred->name eq 'Any';
 
-        $variables{$var->{name}} = _widen_literal($inferred);
+        $variables{$var->{name}} = $widened;
     }
 
     $partial_env;
@@ -1404,9 +1405,10 @@ sub _collect_local_var_types ($self) {
             my $status = !defined $inferred  ? 'undef'
                        : ($inferred->is_atom && $inferred->name eq 'Any') ? 'Any_skip'
                        : 'ok';
+            my $widened = ($status eq 'ok') ? _widen_literal($inferred) : $inferred;
             push $self->{_infer_log}->@*, +{
                 name   => $var_name, line => $var_sym->line_number,
-                type   => $inferred ? $inferred->to_string : undef,
+                type   => $widened ? $widened->to_string : undef,
                 status => $status,
                 scope  => "fn:$fn_name",
             };
@@ -1417,7 +1419,7 @@ sub _collect_local_var_types ($self) {
             my $key = $var_name . ':' . $var_sym->line_number;
             $self->{_local_var_types}{$key} = +{
                 name        => $var_name,
-                type        => _widen_literal($inferred),
+                type        => $widened,
                 line        => $var_sym->line_number,
                 col         => $var_sym->column_number,
                 scope_start => $fn->{line},

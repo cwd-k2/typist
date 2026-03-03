@@ -286,9 +286,11 @@ sub _maybe_instantiate_return ($sig, $env, $list_element, $expected = undef) {
     return $ret unless $sig->{params} && @{$sig->{params}};
 
     # Extract PPI argument nodes
+    # PPI wraps argument lists as Statement::Expression (multi-arg) or
+    # plain Statement (single complex arg like [...]/{...}).
     my @arg_nodes;
     my $expr = $list_element->schild(0);
-    if ($expr && $expr->isa('PPI::Statement::Expression')) {
+    if ($expr && $expr->isa('PPI::Statement')) {
         for my $child ($expr->schildren) {
             next if $child->isa('PPI::Token::Operator') && $child->content eq ',';
             push @arg_nodes, $child;
@@ -1261,7 +1263,7 @@ sub _chase_subscript_chain ($type, $start_node, $env = undef) {
                 my %bindings;
                 my @arg_nodes;
                 my $expr = $next->schild(0);
-                if ($expr && $expr->isa('PPI::Statement::Expression')) {
+                if ($expr && $expr->isa('PPI::Statement')) {
                     for my $child ($expr->schildren) {
                         next if $child->isa('PPI::Token::Operator') && $child->content eq ',';
                         push @arg_nodes, $child;
