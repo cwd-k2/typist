@@ -1562,6 +1562,25 @@ sub _contains_any ($type) {
     if ($type->is_union) {
         return 1 if any { _contains_any($_) } $type->members;
     }
+    # '_' placeholder (unresolved type var) — recurse into Param as well.
+    # Unlike Any inside Param (which is a legitimate LUB result), '_' is never
+    # produced by LUB and always indicates incomplete inference.
+    return 1 if _contains_placeholder($type);
+    0;
+}
+
+sub _contains_placeholder ($type) {
+    return 1 if $type->is_atom && $type->name eq '_';
+    if ($type->is_param) {
+        return 1 if any { _contains_placeholder($_) } $type->params;
+    }
+    if ($type->is_func) {
+        return 1 if any { _contains_placeholder($_) } $type->params;
+        return 1 if _contains_placeholder($type->returns);
+    }
+    if ($type->is_union) {
+        return 1 if any { _contains_placeholder($_) } $type->members;
+    }
     0;
 }
 

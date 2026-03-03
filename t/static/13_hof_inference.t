@@ -298,4 +298,40 @@ PERL
     is scalar @vals, 1, '$val appears exactly once (no duplication)';
 };
 
+# ═══════════════════════════════════════════════════
+# Generic callback return type resolution (two-pass)
+# ═══════════════════════════════════════════════════
+
+subtest 'generic callback: bind resolves B from callback return' => sub {
+    my $errs = diags_of(<<'PERL', 'TypeMismatch');
+use v5.40;
+declare bind => '<A, B>(ArrayRef[A], (A) -> ArrayRef[B]) -> ArrayRef[B]';
+my $ids :sig(ArrayRef[Int]) = [1, 2, 3];
+my $result :sig(ArrayRef[Str]) = bind($ids, sub ($n) { ["x"] });
+PERL
+
+    is scalar @$errs, 0, 'B=Str resolved from callback return — no error';
+};
+
+subtest 'generic callback: bind type mismatch when B mismatches' => sub {
+    my $errs = diags_of(<<'PERL', 'TypeMismatch');
+use v5.40;
+declare bind => '<A, B>(ArrayRef[A], (A) -> ArrayRef[B]) -> ArrayRef[B]';
+my $ids :sig(ArrayRef[Int]) = [1, 2, 3];
+my $result :sig(ArrayRef[Int]) = bind($ids, sub ($n) { ["x"] });
+PERL
+
+    is scalar @$errs, 1, 'ArrayRef[Str] vs ArrayRef[Int] — mismatch detected';
+};
+
+subtest 'generic callback: unresolvable type var falls back to _' => sub {
+    my $errs = diags_of(<<'PERL', 'TypeMismatch');
+use v5.40;
+declare wrap => '<A, B>(A) -> ArrayRef[B]';
+my $x :sig(ArrayRef[Str]) = wrap(42);
+PERL
+
+    is scalar @$errs, 0, 'B unresolved → ArrayRef[_] — gradual skip, no error';
+};
+
 done_testing;

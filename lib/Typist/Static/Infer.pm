@@ -200,7 +200,9 @@ sub _infer_call ($name, $env, $list_element = undef) {
     if (my $registry = $env->{registry}) {
         my $core_sig = $registry->lookup_function('CORE', $name);
         if ($core_sig && $core_sig->{returns}) {
-            return $core_sig->{returns};
+            return $core_sig->{generics} && @{$core_sig->{generics}}
+                ? _maybe_instantiate_return($core_sig, $env, $list_element)
+                : $core_sig->{returns};
         }
     }
 
@@ -239,29 +241,55 @@ sub _maybe_instantiate_return ($sig, $env, $list_element) {
     return $ret unless $generics && @$generics && $list_element;
     return $ret unless $sig->{params} && @{$sig->{params}};
 
-    # Infer argument types from PPI List
-    my @arg_types;
+    # Extract PPI argument nodes
+    my @arg_nodes;
     my $expr = $list_element->schild(0);
     if ($expr && $expr->isa('PPI::Statement::Expression')) {
         for my $child ($expr->schildren) {
             next if $child->isa('PPI::Token::Operator') && $child->content eq ',';
-            my $t = __PACKAGE__->infer_expr($child, $env);
-            push @arg_types, $t if $t;
+            push @arg_nodes, $child;
         }
     }
-    return $ret unless @arg_types;
+    return $ret unless @arg_nodes;
 
-    # Build bindings by matching formal params against actual arg types
-    my %bindings;
     my @params = @{$sig->{params}};
-    for my $i (0 .. $#params) {
-        last if $i > $#arg_types;
-        Typist::Static::Unify->collect_bindings($params[$i], $arg_types[$i], \%bindings);
-    }
-    return $ret unless %bindings;
+    my %bindings;
 
-    # Substitute bindings into return type
-    $ret->substitute(\%bindings);
+    # Pass 1: infer all args without expected, collect initial bindings
+    for my $i (0 .. $#params) {
+        last if $i > $#arg_nodes;
+        my $t = __PACKAGE__->infer_expr($arg_nodes[$i], $env);
+        if ($t) {
+            Typist::Static::Unify->collect_bindings($params[$i], $t, \%bindings);
+        }
+    }
+
+    # Pass 2: re-infer callback args with substituted formal type as expected
+    if (%bindings) {
+        for my $i (0 .. $#params) {
+            last if $i > $#arg_nodes;
+            next unless $params[$i]->is_func;
+            my $expected = $params[$i]->substitute(\%bindings);
+            my $refined = __PACKAGE__->infer_expr($arg_nodes[$i], $env, $expected);
+            if ($refined) {
+                Typist::Static::Unify->collect_bindings(
+                    $params[$i], $refined, \%bindings);
+            }
+        }
+    }
+
+    return $ret unless %bindings;
+    my $result = $ret->substitute(\%bindings);
+
+    # Fallback: replace remaining free vars with placeholder '_'
+    if ($result->free_vars) {
+        require Typist::Type::Fold;
+        $result = Typist::Type::Fold->map_type($result, sub ($t) {
+            $t->is_var ? Typist::Type::Atom->new('_') : $t;
+        });
+    }
+
+    $result;
 }
 
 # ── Handle Handler Type Propagation ─────────────
