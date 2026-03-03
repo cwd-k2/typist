@@ -414,6 +414,45 @@ sub _check_struct_constructor_call ($self, $name, $fn, $list, $env, $word) {
         };
     }
 
+    # Bound / typeclass constraint check on struct generic params
+    if ($fn->{generics} && @tp) {
+        for my $g ($fn->{generics}->@*) {
+            if ($g->{bound_expr}) {
+                my $actual = $bindings{$g->{name}} // next;
+                my $bound = $self->_resolve_type($g->{bound_expr}) // next;
+                unless (Typist::Subtype->is_subtype($actual, $bound, registry => $self->{registry})) {
+                    $self->{errors}->collect(
+                        kind          => 'TypeMismatch',
+                        message       => "${name}(): type ${\$actual->to_string} does not satisfy bound ${\$bound->to_string} for $g->{name}",
+                        file          => $self->{file},
+                        line          => $word->line_number,
+                        col           => $word->column_number,
+                        end_col       => $word->column_number + length($word->content),
+                        expected_type => $bound->to_string,
+                        actual_type   => $actual->to_string,
+                    );
+                }
+            }
+            if ($g->{tc_constraints}) {
+                my $actual = $bindings{$g->{name}} // next;
+                for my $tc_name ($g->{tc_constraints}->@*) {
+                    unless ($self->{registry}->resolve_instance($tc_name, $actual)) {
+                        $self->{errors}->collect(
+                            kind          => 'TypeMismatch',
+                            message       => "${name}(): no instance of $tc_name for ${\$actual->to_string}",
+                            file          => $self->{file},
+                            line          => $word->line_number,
+                            col           => $word->column_number,
+                            end_col       => $word->column_number + length($word->content),
+                            expected_type => $tc_name,
+                            actual_type   => $actual->to_string,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     # Pass 2: type check fields (with substituted types for generics)
     for my $check (@field_checks) {
         my $expected = $check->{expected_type};

@@ -17,6 +17,7 @@ sub new ($class, %args) {
         package     => $args{package},  # blessed package name
         type_params => $args{type_params} // [],
         type_args   => $args{type_args}   // [],
+        type_bounds => $args{type_bounds} // {},  # { T => 'Ord' } display strings
     }, $class;
 }
 
@@ -41,7 +42,12 @@ sub to_string ($self) {
     if ($self->{type_args}->@*) {
         $base .= '[' . join(', ', map { $_->to_string } $self->{type_args}->@*) . ']';
     } elsif ($self->{type_params}->@*) {
-        $base .= '[' . join(', ', $self->{type_params}->@*) . ']';
+        my @parts;
+        for my $p ($self->{type_params}->@*) {
+            my $b = $self->{type_bounds}{$p};
+            push @parts, $b ? "$p: $b" : $p;
+        }
+        $base .= '[' . join(', ', @parts) . ']';
     }
     $base;
 }
@@ -96,6 +102,7 @@ sub substitute ($self, $bindings) {
         package     => $self->{package},
         type_params => [$self->{type_params}->@*],
         type_args   => \@new_args,
+        type_bounds => $self->{type_bounds},
     );
 }
 
@@ -107,6 +114,7 @@ sub instantiate ($self, @args) {
         package     => $self->{package},
         type_params => [$self->{type_params}->@*],
         type_args   => \@args,
+        type_bounds => $self->{type_bounds},
     );
 }
 

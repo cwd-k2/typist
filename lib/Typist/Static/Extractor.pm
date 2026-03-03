@@ -255,11 +255,12 @@ sub _extract_structs ($class, $doc, $result) {
         next unless $children[2]->isa('PPI::Token::Operator')
                  && $children[2]->content eq '=>';
 
-        # Parse name and type parameters (e.g., 'Rect[T]')
-        my ($base_name, @type_params);
+        # Parse name and type parameters (e.g., 'Rect[T]', 'NumBox[T: Num]')
+        my ($base_name, @type_params, @raw_specs);
         if ($name_raw =~ /\A(\w+)\[(.+)\]\z/) {
             $base_name = $1;
-            @type_params = map { s/\s//gr } split /,/, $2;
+            @raw_specs  = map { s/^\s+|\s+$//gr } split /,/, $2;
+            @type_params = map { /\A(\w+)/ ? $1 : $_ } @raw_specs;
         } else {
             $base_name = $name_raw;
         }
@@ -273,11 +274,12 @@ sub _extract_structs ($class, $doc, $result) {
         }
 
         $result->{structs}{$base_name} = +{
-            fields          => \%fields,
-            optional_fields => \@optional_fields,
-            type_params     => \@type_params,
-            line            => $stmt->line_number,
-            col             => $stmt->column_number,
+            fields           => \%fields,
+            optional_fields  => \@optional_fields,
+            type_params      => \@type_params,
+            type_param_specs => \@raw_specs,
+            line             => $stmt->line_number,
+            col              => $stmt->column_number,
         };
     }
 }

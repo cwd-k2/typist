@@ -636,4 +636,126 @@ PERL
         'no TypeMismatch for generic struct param type';
 };
 
+# ── Bounded generic struct: extraction ──────────
+
+subtest 'extractor preserves type_param_specs with bounds' => sub {
+    my $source = <<'PERL';
+use Typist;
+use Typist::DSL;
+struct 'NumBox[T: Num]' => (val => T);
+PERL
+    my $extracted = Typist::Static::Extractor->extract($source);
+    ok exists $extracted->{structs}{NumBox}, 'NumBox struct extracted';
+
+    my $info = $extracted->{structs}{NumBox};
+    is_deeply $info->{type_params}, ['T'], 'type_params = [T]';
+    is_deeply $info->{type_param_specs}, ['T: Num'], 'type_param_specs preserved';
+};
+
+subtest 'extractor preserves mixed bounded/unbounded specs' => sub {
+    my $source = <<'PERL';
+use Typist;
+use Typist::DSL;
+struct 'Mixed[T: Num, U]' => (val => T, extra => U);
+PERL
+    my $extracted = Typist::Static::Extractor->extract($source);
+    my $info = $extracted->{structs}{Mixed};
+    is_deeply $info->{type_params}, ['T', 'U'], 'type_params names';
+    is_deeply $info->{type_param_specs}, ['T: Num', 'U'], 'mixed specs preserved';
+};
+
+# ── Bounded generic struct: registration ────────
+
+subtest 'registration creates bounded generics for constructor' => sub {
+    my $source = <<'PERL';
+use Typist;
+use Typist::DSL;
+struct 'NumBox[T: Num]' => (val => T);
+PERL
+    my $extracted = Typist::Static::Extractor->extract($source);
+    my $registry  = Typist::Registry->new;
+    Typist::Static::Registration->register_structs($extracted, $registry);
+
+    my $pkg = $extracted->{package};
+    my $fn = $registry->lookup_function($pkg, 'NumBox');
+    ok $fn, 'NumBox constructor registered';
+    ok $fn->{generics} && @{$fn->{generics}} == 1, 'one generic';
+    is $fn->{generics}[0]{name}, 'T', 'generic name is T';
+    is $fn->{generics}[0]{bound_expr}, 'Num', 'bound_expr is Num';
+};
+
+subtest 'registration: bounded struct to_string shows bounds' => sub {
+    my $source = <<'PERL';
+use Typist;
+use Typist::DSL;
+struct 'NumBox[T: Num]' => (val => T);
+PERL
+    my $extracted = Typist::Static::Extractor->extract($source);
+    my $registry  = Typist::Registry->new;
+    Typist::Static::Registration->register_structs($extracted, $registry);
+
+    my $type = $registry->lookup_type('NumBox');
+    like $type->to_string, qr/NumBox\[T: Num\]/, 'to_string shows bounds';
+};
+
+# ── Bounded generic struct: static type checking ──
+
+subtest 'bounded struct: Int satisfies Num — no errors' => sub {
+    my $errs = _struct_type_errors(<<'PERL');
+package main;
+use Typist;
+use Typist::DSL;
+struct 'NumBox[T: Num]' => (val => T);
+sub test :sig(() -> Void) () {
+    my $nb = NumBox(val => 42);
+}
+PERL
+    is scalar @$errs, 0, 'no errors when bound satisfied';
+};
+
+subtest 'bounded struct: Str violates Num bound' => sub {
+    my $errs = _struct_type_errors(<<'PERL');
+package main;
+use Typist;
+use Typist::DSL;
+struct 'NumBox[T: Num]' => (val => T);
+sub test :sig(() -> Void) () {
+    my $nb = NumBox(val => "hello");
+}
+PERL
+    ok scalar @$errs >= 1, 'detects bound violation';
+    like $errs->[0]{message}, qr/does not satisfy bound Num/, 'error message mentions bound';
+};
+
+subtest 'bounded struct: typeclass constraint violation' => sub {
+    my $errs = _struct_type_errors(<<'PERL');
+package main;
+use Typist;
+use Typist::DSL;
+typeclass Show2 => (show2 => '(T) -> Str');
+instance Show2 => Int, (show2 => sub ($x) { "$x" });
+struct 'ShowBox2[T: Show2]' => (val => T);
+sub test :sig(() -> Void) () {
+    my $sb = ShowBox2(val => "hello");
+}
+PERL
+    ok scalar @$errs >= 1, 'detects typeclass constraint violation';
+    like $errs->[0]{message}, qr/no instance of Show2 for/, 'error mentions missing instance';
+};
+
+subtest 'bounded struct: typeclass constraint satisfied' => sub {
+    my $errs = _struct_type_errors(<<'PERL');
+package main;
+use Typist;
+use Typist::DSL;
+typeclass Show3 => (show3 => '(T) -> Str');
+instance Show3 => Int, (show3 => sub ($x) { "$x" });
+struct 'ShowBox3[T: Show3]' => (val => T);
+sub test :sig(() -> Void) () {
+    my $sb = ShowBox3(val => 42);
+}
+PERL
+    is scalar @$errs, 0, 'no errors when typeclass constraint satisfied';
+};
+
 done_testing;

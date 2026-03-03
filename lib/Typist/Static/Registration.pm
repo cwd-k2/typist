@@ -29,11 +29,11 @@ use Typist::Type::Struct;
 sub register_all ($class, $extracted, $registry, %opts) {
     $class->register_aliases($extracted, $registry, %opts);
     $class->register_newtypes($extracted, $registry, %opts);
+    $class->register_typeclasses($extracted, $registry, %opts);
+    $class->register_instances($extracted, $registry, %opts);
     $class->register_structs($extracted, $registry, %opts);
     $class->register_datatypes($extracted, $registry, %opts);
     $class->register_effects($extracted, $registry, %opts);
-    $class->register_typeclasses($extracted, $registry, %opts);
-    $class->register_instances($extracted, $registry, %opts);
     $class->register_declares($extracted, $registry, %opts);
     $class->register_functions($extracted, $registry, %opts);
 }
@@ -137,11 +137,29 @@ sub register_structs ($class, $extracted, $registry, %opts) {
             optional => \%optional,
         );
         my $struct_pkg = "Typist::Struct::${name}";
+        # Parse generics with bound/typeclass support
+        my @tp_specs = ($info->{type_param_specs} // [])->@*;
+        my @generics;
+        if (@tp_specs) {
+            my $spec_str = join(', ', @tp_specs);
+            @generics = Typist::Attribute->parse_generic_decl($spec_str, registry => $registry);
+        } else {
+            @generics = map { +{ name => $_, bound_expr => undef } } @tp;
+        }
+
+        my %type_bounds;
+        for my $g (@generics) {
+            next unless $g->{bound_expr} || $g->{tc_constraints};
+            $type_bounds{$g->{name}} = $g->{bound_expr}
+                // join(' + ', $g->{tc_constraints}->@*);
+        }
+
         my $struct_type = Typist::Type::Struct->new(
             name        => $name,
             record      => $record,
             package     => $struct_pkg,
             type_params => \@tp,
+            type_bounds => \%type_bounds,
         );
         $registry->register_type($name, $struct_type);
 
@@ -153,7 +171,6 @@ sub register_structs ($class, $extracted, $registry, %opts) {
         for my $fname (sort keys %optional) {
             push @ctor_params_expr, "$fname?: " . $optional{$fname}->to_string;
         }
-        my @generics = map { +{ name => $_, bound_expr => undef } } @tp;
         $registry->register_function($pkg, $name, +{
             params       => [],
             returns      => $struct_type,

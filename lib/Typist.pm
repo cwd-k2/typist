@@ -328,13 +328,30 @@ sub _struct ($name_spec, $caller, @field_pairs) {
     die "Typist: struct '$name_spec' — odd number of field arguments\n"
         if @field_pairs % 2;
 
-    # Parse name and type parameters: 'Pair[T, U]' or plain 'Point'
-    my ($name, @type_params);
+    # Parse name and type parameters: 'Pair[T, U]', 'NumBox[T: Num]', or plain 'Point'
+    my ($name, @type_params, @raw_specs);
     if ($name_spec =~ /\A(\w+)\[(.+)\]\z/) {
         $name = $1;
-        @type_params = map { s/\s//gr } split /,/, $2;
+        @raw_specs   = map { s/^\s+|\s+$//gr } split /,/, $2;
+        @type_params = map { /\A(\w+)/ ? $1 : $_ } @raw_specs;
     } else {
         $name = $name_spec;
+    }
+
+    # Parse bounds and typeclass constraints from raw specs
+    my (%bounds, %tc);
+    if (@raw_specs) {
+        my @generics = Typist::Attribute->parse_generic_decl(
+            join(', ', @raw_specs), registry => 'Typist::Registry',
+        );
+        for my $g (@generics) {
+            if ($g->{bound_expr}) {
+                $bounds{$g->{name}} = Typist::Parser->parse($g->{bound_expr});
+            }
+            if ($g->{tc_constraints}) {
+                $tc{$g->{name}} = $g->{tc_constraints};
+            }
+        }
     }
 
     my %var_names = map { $_ => 1 } @type_params;
@@ -357,11 +374,19 @@ sub _struct ($name_spec, $caller, @field_pairs) {
     );
 
     my $pkg = "Typist::Struct::${name}";
+    my %type_bounds;
+    for my $param (keys %bounds) {
+        $type_bounds{$param} = $bounds{$param}->to_string;
+    }
+    for my $param (keys %tc) {
+        $type_bounds{$param} //= join(' + ', $tc{$param}->@*);
+    }
     my $type = Typist::Type::Struct->new(
         name        => $name,
         record      => $record,
         package     => $pkg,
         type_params => \@type_params,
+        type_bounds => \%type_bounds,
     );
 
     # 1. Register in Registry
@@ -428,6 +453,23 @@ sub _struct ($name_spec, $caller, @field_pairs) {
                         $bindings{$formal->name} = $inferred;
                     }
                 }
+                # Bounded quantification check
+                for my $param (keys %bounds) {
+                    my $actual = $bindings{$param} // next;
+                    unless (Typist::Subtype->is_subtype($actual, $bounds{$param})) {
+                        die "Typist: ${name}() — type ${\$actual->to_string} does not satisfy bound ${\$bounds{$param}->to_string} for $param\n";
+                    }
+                }
+                # Typeclass constraint check
+                for my $param (keys %tc) {
+                    my $actual = $bindings{$param} // next;
+                    for my $tc_name ($tc{$param}->@*) {
+                        unless (Typist::Registry->resolve_instance($tc_name, $actual)) {
+                            die "Typist: ${name}() — no instance of $tc_name for ${\$actual->to_string}\n";
+                        }
+                    }
+                }
+
                 for my $k (keys %given) {
                     my $exp = %bindings
                         ? $all{$k}->substitute(\%bindings)
@@ -460,7 +502,9 @@ sub _struct ($name_spec, $caller, @field_pairs) {
 
     # 4. Register constructor function so CHECK-phase cross-file inference
     #    can resolve calls like OrderItem(...) from other packages.
-    my @generics = map { +{ name => $_, bound_expr => undef } } @type_params;
+    my @generics = @raw_specs
+        ? Typist::Attribute->parse_generic_decl(join(', ', @raw_specs), registry => 'Typist::Registry')
+        : map { +{ name => $_, bound_expr => undef } } @type_params;
     Typist::Registry->register_function($caller, $name, +{
         params             => [],
         returns            => $type,

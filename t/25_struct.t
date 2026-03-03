@@ -222,4 +222,65 @@ subtest 'generic struct: resolve_struct_params transform' => sub {
     ok $ta[1]->is_atom && $ta[1]->name eq 'Str', 'U = Str';
 };
 
+# ── Bounded generic struct ──────────────────────
+
+struct 'NumBox[T: Num]' => (val => T);
+
+subtest 'bounded struct: Int satisfies Num bound' => sub {
+    my $nb = NumBox(val => 42);
+    ok defined $nb, 'NumBox(val => 42) succeeds';
+    is $nb->val, 42, 'val accessor';
+};
+
+subtest 'bounded struct: Double satisfies Num bound' => sub {
+    my $nb = NumBox(val => 3.14);
+    ok defined $nb, 'NumBox(val => 3.14) succeeds';
+};
+
+subtest 'bounded struct: Str violates Num bound' => sub {
+    my $died = !eval { NumBox(val => "hello"); 1 };
+    ok $died, 'dies when bound violated';
+    like $@, qr/does not satisfy bound Num for T/, 'error message';
+};
+
+subtest 'bounded struct: to_string shows bounds' => sub {
+    my $type = Typist::Registry->lookup_type('NumBox');
+    like $type->to_string, qr/NumBox\[T: Num\]/, 'to_string shows T: Num';
+};
+
+# ── Typeclass-constrained generic struct ────────
+
+typeclass Show => T, +{ show => '(T) -> Str' };
+instance Show => Int, +{ show => sub ($x) { "$x" } };
+
+struct 'ShowBox[T: Show]' => (val => T);
+
+subtest 'typeclass struct: Int has Show instance' => sub {
+    my $sb = ShowBox(val => 42);
+    ok defined $sb, 'ShowBox(val => 42) succeeds';
+};
+
+subtest 'typeclass struct: Str has no Show instance' => sub {
+    my $died = !eval { ShowBox(val => "hello"); 1 };
+    ok $died, 'dies when typeclass constraint violated';
+    like $@, qr/no instance of Show for Str/, 'error message';
+};
+
+# ── Mixed: bounded + unbounded ──────────────────
+
+struct 'Mixed[T: Num, U]' => (val => T, extra => U);
+
+subtest 'mixed params: bounded satisfied' => sub {
+    my $m = Mixed(val => 42, extra => "anything");
+    ok defined $m, 'Mixed(val => 42, extra => "anything") succeeds';
+    is $m->val, 42, 'val accessor';
+    is $m->extra, "anything", 'extra accessor';
+};
+
+subtest 'mixed params: bounded violated' => sub {
+    my $died = !eval { Mixed(val => "hello", extra => 1); 1 };
+    ok $died, 'dies when bounded param violated';
+    like $@, qr/does not satisfy bound Num for T/, 'error message';
+};
+
 done_testing;
