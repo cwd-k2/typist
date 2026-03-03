@@ -1591,4 +1591,97 @@ subtest 'hover keeps ArrayRef for $scalar variable' => sub {
     like $hover->{contents}{value}, qr/\$ref: ArrayRef\[Int\]/, '$ref keeps ArrayRef[Int]';
 };
 
+# ── Struct constructor hover shows fields ────────
+
+subtest 'hover shows struct constructor with field info' => sub {
+    require Typist::LSP::Hover;
+
+    my $sym = +{
+        kind         => 'function',
+        name         => 'Person',
+        params_expr  => ['age: Int', 'name: Str'],
+        returns_expr => 'Person',
+        constructor  => 1,
+    };
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'got hover response';
+    like $hover->{contents}{value}, qr/age: Int/, 'shows age field';
+    like $hover->{contents}{value}, qr/name: Str/, 'shows name field';
+    like $hover->{contents}{value}, qr/-> Person/, 'shows return type';
+    like $hover->{contents}{value}, qr/\*constructor of `Person`\*/, 'shows constructor note';
+};
+
+subtest 'hover shows struct constructor with optional fields' => sub {
+    require Typist::LSP::Hover;
+
+    my $sym = +{
+        kind         => 'function',
+        name         => 'Customer',
+        params_expr  => ['name: Str', 'phone?: Str'],
+        returns_expr => 'Customer',
+        constructor  => 1,
+    };
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'got hover response';
+    like $hover->{contents}{value}, qr/name: Str/, 'shows required field';
+    like $hover->{contents}{value}, qr/phone\?: Str/, 'shows optional field with ?';
+    like $hover->{contents}{value}, qr/\*constructor of `Customer`\*/, 'shows constructor note';
+};
+
+# ── Cross-file struct constructor hover ──────────
+
+subtest 'cross-file struct constructor hover shows fields' => sub {
+    require File::Temp;
+    require File::Path;
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib");
+
+    open my $fh, '>', "$dir/lib/Point.pm" or die;
+    print $fh <<'PERL';
+package Point;
+use v5.40;
+use Typist;
+struct Point => (x => Int, y => Int);
+1;
+PERL
+    close $fh;
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source = <<'PERL';
+package App;
+use v5.40;
+use Typist;
+use Point;
+my $p = Point(x => 1, y => 2);
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///app.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Line 4 (0-indexed): "my $p = Point(x => 1, y => 2);"
+    #                       01234567890
+    my $sym = $doc->symbol_at(4, 9);
+    ok $sym, 'found symbol for cross-file struct constructor';
+    is $sym->{kind}, 'function', 'kind is function';
+    is $sym->{constructor}, 1, 'constructor flag is set';
+    like $sym->{returns_expr}, qr/Point/, 'returns Point';
+    ok scalar(grep { /x: Int/ } @{$sym->{params_expr}}), 'params_expr contains x: Int';
+    ok scalar(grep { /y: Int/ } @{$sym->{params_expr}}), 'params_expr contains y: Int';
+
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'got hover response';
+    like $hover->{contents}{value}, qr/x: Int/, 'hover shows x field';
+    like $hover->{contents}{value}, qr/y: Int/, 'hover shows y field';
+    like $hover->{contents}{value}, qr/\*constructor of `Point`\*/, 'hover shows constructor note';
+};
+
 done_testing;

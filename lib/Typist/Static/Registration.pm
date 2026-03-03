@@ -140,13 +140,21 @@ sub register_structs ($class, $extracted, $registry, %opts) {
         $registry->register_type($name, $struct_type);
 
         # Constructor: variadic to accept named args, returns struct type
+        my @ctor_params_expr;
+        for my $fname (sort keys %required) {
+            push @ctor_params_expr, "$fname: " . $required{$fname}->to_string;
+        }
+        for my $fname (sort keys %optional) {
+            push @ctor_params_expr, "$fname?: " . $optional{$fname}->to_string;
+        }
         $registry->register_function($pkg, $name, +{
             params       => [],
             returns      => $struct_type,
             generics     => [],
             variadic     => 1,
-            params_expr  => [],
+            params_expr  => \@ctor_params_expr,
             returns_expr => $name,
+            constructor  => 1,
         });
 
         # Accessor methods on the struct package
@@ -222,6 +230,7 @@ sub register_datatypes ($class, $extracted, $registry, %opts) {
                 generics     => \@generics,
                 params_expr  => [map { $_->to_string } @$param_types],
                 returns_expr => $return_type->to_string,
+                constructor  => 1,
             });
         }
     }
