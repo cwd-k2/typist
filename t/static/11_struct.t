@@ -593,4 +593,47 @@ PERL
         'Box[Bool] <: Box[Int] (covariance)';
 };
 
+# ── Generic struct: Param ↔ Struct in static analysis ──
+
+subtest 'generic struct: return type annotation matches constructor' => sub {
+    my $errs = _struct_type_errors(<<'PERL');
+package main;
+use Typist;
+use Typist::DSL;
+struct 'Box[T]' => (val => T);
+sub make_box :sig(() -> Box[Int]) () {
+    Box(val => 42);
+}
+PERL
+    is scalar @$errs, 0,
+        'no TypeMismatch for generic struct return type (Param ↔ Struct)';
+};
+
+subtest 'generic struct: return type mismatch detected' => sub {
+    my $errs = _struct_type_errors(<<'PERL');
+package main;
+use Typist;
+use Typist::DSL;
+struct 'Box[T]' => (val => T);
+sub make_box :sig(() -> Box[Str]) () {
+    Box(val => 42);
+}
+PERL
+    ok scalar @$errs >= 1, 'detects type mismatch: Box[Str] vs Box[Int]';
+};
+
+subtest 'generic struct: param type annotation matches argument' => sub {
+    my $errs = _struct_type_errors(<<'PERL');
+package main;
+use Typist;
+use Typist::DSL;
+struct 'Box[T]' => (val => T);
+sub unbox :sig((Box[Int]) -> Int) ($b) {
+    $b->val;
+}
+PERL
+    is scalar @$errs, 0,
+        'no TypeMismatch for generic struct param type';
+};
+
 done_testing;

@@ -9,6 +9,23 @@ use Typist::Type::Fold;
 # Replace Alias nodes whose names match declared type variable names
 # with Var nodes.  Returns a new tree (no mutation).
 
+# Replace Param nodes whose base is a registered generic struct
+# with instantiated Struct types.  Returns a new tree (no mutation).
+
+sub resolve_struct_params ($class, $type, $registry) {
+    Typist::Type::Fold->map_type($type, sub ($node) {
+        return $node unless $node->is_param;
+        my $base = $node->base;
+        my $name = ref $base && $base->isa('Typist::Type')
+            ? ($base->is_alias ? $base->alias_name : $base->name)
+            : "$base";
+        my $struct_type = $registry->lookup_type($name);
+        return $node unless $struct_type && $struct_type->is_struct
+            && $struct_type->type_params;
+        $struct_type->instantiate($node->params);
+    });
+}
+
 sub aliases_to_vars ($class, $type, $var_names) {
     Typist::Type::Fold->map_type($type, sub ($node) {
         return Typist::Type::Var->new($node->alias_name)

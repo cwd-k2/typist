@@ -234,6 +234,27 @@ sub _check ($sub, $super, $registry = undef) {
         return 0 if @sa != @oa;
         return all { _check($sa[$_], $oa[$_], $registry) } 0 .. $#sa;
     }
+    # Struct[Args] <: Param(base, params) — generic struct vs parsed reference
+    if ($sub->is_struct && $super->is_param) {
+        my $base_name = _param_base_name($super);
+        return 0 unless defined $base_name && $base_name eq $sub->name;
+        my @sa = $sub->type_args;
+        my @pp = $super->params;
+        return 1 if !@sa && !@pp;
+        return 0 if @sa != @pp;
+        return all { _check($sa[$_], $pp[$_], $registry) } 0 .. $#sa;
+    }
+    # Param(base, params) <: Struct[Args] — reverse direction
+    if ($sub->is_param && $super->is_struct) {
+        my $base_name = _param_base_name($sub);
+        return 0 unless defined $base_name && $base_name eq $super->name;
+        my @sp = $sub->params;
+        my @oa = $super->type_args;
+        return 1 if !@sp && !@oa;
+        return 0 if @sp != @oa;
+        return all { _check($sp[$_], $oa[$_], $registry) } 0 .. $#sp;
+    }
+
     # Struct <: Record (structural compatibility via inner record)
     if ($sub->is_struct && $super->is_record) {
         return _check($sub->record, $super, $registry);
@@ -362,6 +383,14 @@ sub _instantiate_check ($quant, $target, $registry) {
     }
 
     undef;
+}
+
+# Extract the string name from a Param's base (may be string, Alias, or Var).
+sub _param_base_name ($param) {
+    my $base = $param->base;
+    return "$base" unless ref $base && $base->isa('Typist::Type');
+    return $base->alias_name if $base->is_alias;
+    return $base->name;
 }
 
 sub _atom_subtype ($sub_name, $super_name) {

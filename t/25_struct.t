@@ -174,4 +174,52 @@ subtest 'generic struct: to_string with type_params' => sub {
     like $type->to_string, qr/Pair\[T, U\]/, 'to_string shows type params';
 };
 
+# ── Generic struct + :sig() integration ────────────
+
+subtest 'generic struct: Param ↔ Struct subtype via Subtype bridge' => sub {
+    require Typist::Type::Param;
+    require Typist::Type::Alias;
+    require Typist::Type::Atom;
+
+    my $pair_type = Typist::Registry->lookup_type('Pair');
+    my $concrete = $pair_type->instantiate(
+        Typist::Type::Atom->new('Int'), Typist::Type::Atom->new('Str'),
+    );
+
+    # Simulate what Parser produces for Pair[Int, Str] in :sig()
+    my $param = Typist::Type::Param->new(
+        Typist::Type::Alias->new('Pair'),
+        Typist::Type::Atom->new('Int'),
+        Typist::Type::Atom->new('Str'),
+    );
+
+    ok Typist::Subtype->is_subtype($concrete, $param),
+        'Struct Pair[Int, Str] <: Param Pair[Int, Str]';
+    ok Typist::Subtype->is_subtype($param, $concrete),
+        'Param Pair[Int, Str] <: Struct Pair[Int, Str]';
+};
+
+subtest 'generic struct: resolve_struct_params transform' => sub {
+    require Typist::Transform;
+    require Typist::Type::Param;
+    require Typist::Type::Alias;
+    require Typist::Type::Atom;
+
+    # Param(Alias('Pair'), [Int, Str]) should resolve to Struct
+    my $param = Typist::Type::Param->new(
+        Typist::Type::Alias->new('Pair'),
+        Typist::Type::Atom->new('Int'),
+        Typist::Type::Atom->new('Str'),
+    );
+    my $resolved = Typist::Transform->resolve_struct_params(
+        $param, 'Typist::Registry'
+    );
+    ok $resolved->is_struct, 'Param resolved to Struct';
+    is $resolved->name, 'Pair', 'resolved struct name';
+    my @ta = $resolved->type_args;
+    is scalar @ta, 2, 'two type args';
+    ok $ta[0]->is_atom && $ta[0]->name eq 'Int', 'T = Int';
+    ok $ta[1]->is_atom && $ta[1]->name eq 'Str', 'U = Str';
+};
+
 done_testing;

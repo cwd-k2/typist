@@ -54,9 +54,11 @@ sub map_type ($class, $type, $cb) {
     if ($type->is_struct) {
         my $new_record = $class->map_type($type->record, $cb);
         return $cb->(Typist::Type::Struct->new(
-            name    => $type->name,
-            record  => $new_record,
-            package => $type->package,
+            name        => $type->name,
+            record      => $new_record,
+            package     => $type->package,
+            type_params => [$type->type_params],
+            type_args   => [map { $class->map_type($_, $cb) } $type->type_args],
         ));
     }
     if ($type->is_eff) {

@@ -168,4 +168,59 @@ subtest 'alias subtype' => sub {
     ok is_sub(parse('Bool'),   parse('UserId')), 'Bool <: UserId (=Int)';
 };
 
+# ── Struct ↔ Param bridge ───────────────────────
+
+subtest 'struct vs param subtyping' => sub {
+    Typist::Registry->reset;
+
+    # Set up a generic struct type
+    require Typist::Type::Struct;
+    require Typist::Type::Record;
+    require Typist::Type::Atom;
+    require Typist::Type::Param;
+    require Typist::Type::Alias;
+
+    my $int = Typist::Type::Atom->new('Int');
+    my $str = Typist::Type::Atom->new('Str');
+
+    my $record = Typist::Type::Record->new(val => $int);
+    my $struct = Typist::Type::Struct->new(
+        name        => 'Box',
+        record      => $record,
+        package     => 'Typist::Struct::Box',
+        type_params => ['T'],
+        type_args   => [$int],
+    );
+
+    # Param with Alias base (as produced by Parser for :sig())
+    my $param = Typist::Type::Param->new(
+        Typist::Type::Alias->new('Box'), $int,
+    );
+
+    # Param with string base
+    my $param_str = Typist::Type::Param->new('Box', $int);
+
+    ok is_sub($struct, $param),     'Struct[Int] <: Param(Box, [Int])';
+    ok is_sub($param, $struct),     'Param(Box, [Int]) <: Struct[Int]';
+    ok is_sub($param_str, $struct), 'Param(str "Box", [Int]) <: Struct[Int]';
+
+    # Mismatched type args
+    my $param_str2 = Typist::Type::Param->new(
+        Typist::Type::Alias->new('Box'), $str,
+    );
+    ok !is_sub($struct, $param_str2), 'Struct Box[Int] </: Param Box[Str]';
+    ok !is_sub($param_str2, $struct), 'Param Box[Str] </: Struct Box[Int]';
+
+    # Covariant: Box[Bool] <: Box[Int] via Param
+    my $bool = Typist::Type::Atom->new('Bool');
+    my $struct_bool = Typist::Type::Struct->new(
+        name        => 'Box',
+        record      => $record,
+        package     => 'Typist::Struct::Box',
+        type_params => ['T'],
+        type_args   => [$bool],
+    );
+    ok is_sub($struct_bool, $param), 'Struct Box[Bool] <: Param Box[Int] (covariance)';
+};
+
 done_testing;

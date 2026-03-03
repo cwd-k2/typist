@@ -156,6 +156,15 @@ sub _handle_code_attrs ($pkg, $coderef, @attrs) {
                     if $effects;
             }
 
+            # Resolve Param nodes whose base is a registered generic struct
+            # into instantiated Struct types (e.g. Param(ReportNode, [Int]) → Struct)
+            @param_types = map {
+                Typist::Transform->resolve_struct_params($_, 'Typist::Registry')
+            } @param_types;
+            $return_type = Typist::Transform->resolve_struct_params(
+                $return_type, 'Typist::Registry'
+            );
+
             my $sig = +{
                 params   => \@param_types,
                 returns  => $return_type,
