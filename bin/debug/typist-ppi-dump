@@ -1,0 +1,320 @@
+#!/usr/bin/env perl
+use v5.40;
+
+use FindBin;
+use lib "$FindBin::Bin/../../lib";
+
+use Getopt::Long ();
+use Cwd          ();
+use PPI;
+
+# ── Argument Parsing ────────────────────────────
+
+my %opts;
+Getopt::Long::Configure('no_auto_abbrev', 'bundling');
+Getopt::Long::GetOptions(
+    \%opts,
+    'line=i',      # focus on a specific line number
+    'range=s',     # line range e.g. 10-20
+    'depth=i',     # max tree depth (default: unlimited)
+    'tokens',      # flat token list mode (no tree structure)
+    'siblings',    # show sibling chain for --line target
+    'no-color',
+    'help|h',
+);
+
+if ($opts{help}) {
+    print <<~'HELP';
+    Usage: typist-ppi-dump [OPTIONS] FILE [LINE]
+
+    Dump PPI abstract syntax tree for a Perl source file.
+    Essential for understanding how PPI tokenizes expressions.
+
+    Options:
+      --line N          Focus on the statement containing line N
+      --range M-N       Show only lines M through N
+      --depth D         Limit tree display depth
+      --tokens          Flat token list mode (type + content per token)
+      --siblings        Show sibling chain for the --line target node
+      --no-color        Disable colored output
+      -h, --help        Show this help message
+
+    Examples:
+      typist-ppi-dump script/app.pl --line 336
+      typist-ppi-dump script/app.pl --range 330-340 --tokens
+      typist-ppi-dump script/app.pl --line 336 --siblings
+    HELP
+    exit 0;
+}
+
+my $file = $ARGV[0] // die "Usage: typist-ppi-dump FILE [LINE]\n";
+$opts{line} //= $ARGV[1] if defined $ARGV[1];
+
+my $use_color = _should_color(\%opts);
+
+# ── Parse ─────────────────────────────────────
+
+my $path = Cwd::abs_path($file) // $file;
+die "File not found: $file\n" unless -f $path;
+
+my $doc = PPI::Document->new($path);
+die "PPI parse failed for $file\n" unless $doc;
+
+# ── Line range filter ──────────────────────────
+
+my ($line_from, $line_to);
+if (my $r = $opts{range}) {
+    ($line_from, $line_to) = split /-/, $r, 2;
+    $line_to //= $line_from;
+}
+
+# ── Mode: focused on a line ────────────────────
+
+if (my $target_line = $opts{line}) {
+    my $target = _find_statement_at_line($doc, $target_line);
+    unless ($target) {
+        die "No statement found at line $target_line\n";
+    }
+
+    say _c('1', "Statement at line $target_line", $use_color);
+    say _c('2', "  " . ref($target), $use_color);
+    say '';
+
+    if ($opts{tokens}) {
+        _dump_tokens_flat($target, $use_color);
+    } elsif ($opts{siblings}) {
+        _dump_siblings($target, $use_color);
+    } else {
+        _dump_tree($target, 0, $opts{depth}, $use_color);
+    }
+    exit 0;
+}
+
+# ── Mode: full file or range ──────────────────
+
+if ($opts{tokens}) {
+    _dump_tokens_range($doc, $line_from, $line_to, $use_color);
+} else {
+    for my $child ($doc->schildren) {
+        if ($line_from) {
+            my $loc = $child->location;
+            next unless $loc;
+            my $line = $loc->[0];
+            next if $line < $line_from;
+            last if $line > $line_to;
+        }
+        _dump_tree($child, 0, $opts{depth}, $use_color);
+    }
+}
+
+# ── Tree dump ──────────────────────────────────
+
+sub _dump_tree ($node, $indent, $max_depth, $use_color) {
+    return if defined $max_depth && $indent > $max_depth;
+
+    my $prefix = '  ' x $indent;
+    my $class  = ref $node;
+    my $loc    = $node->location;
+    my $line   = $loc ? "L$loc->[0]" : '';
+
+    if ($node->isa('PPI::Token')) {
+        my $content = $node->content;
+        $content =~ s/\n/\\n/g;
+        $content = substr($content, 0, 60) . '...' if length($content) > 60;
+        my $type_str = _c('36', $class, $use_color);
+        my $content_str = _c('33', qq{"$content"}, $use_color);
+        my $line_str = $line ? _c('2', " ($line)", $use_color) : '';
+        say "$prefix$type_str  $content_str$line_str";
+    } else {
+        my $type_str = _c('1;36', $class, $use_color);
+        my $line_str = $line ? _c('2', " ($line)", $use_color) : '';
+        say "$prefix$type_str$line_str";
+        for my $child ($node->schildren) {
+            _dump_tree($child, $indent + 1, $max_depth, $use_color);
+        }
+    }
+}
+
+# ── Flat token list ────────────────────────────
+
+sub _dump_tokens_flat ($node, $use_color) {
+    my @tokens = $node->isa('PPI::Token') ? ($node) : $node->tokens;
+    my $idx = 0;
+    for my $tok (@tokens) {
+        my $loc     = $tok->location;
+        my $line    = $loc ? sprintf('L%-4d', $loc->[0]) : '     ';
+        my $class   = ref $tok;
+        my $short   = $class =~ s/\APPI::Token:://r;
+        my $content = $tok->content;
+        $content =~ s/\n/\\n/g;
+        $content = substr($content, 0, 50) . '...' if length($content) > 50;
+
+        printf "  %s [%2d] %-25s %s\n",
+            _c('2', $line, $use_color),
+            $idx++,
+            _c('36', $short, $use_color),
+            _c('33', qq{"$content"}, $use_color);
+    }
+}
+
+sub _dump_tokens_range ($doc, $from, $to, $use_color) {
+    my @tokens = $doc->tokens;
+    my $idx = 0;
+    for my $tok (@tokens) {
+        my $loc = $tok->location;
+        if ($from && $loc) {
+            next if $loc->[0] < $from;
+            last if $loc->[0] > $to;
+        }
+        my $line    = $loc ? sprintf('L%-4d', $loc->[0]) : '     ';
+        my $class   = ref $tok;
+        my $short   = $class =~ s/\APPI::Token:://r;
+        my $content = $tok->content;
+        $content =~ s/\n/\\n/g;
+        $content = substr($content, 0, 50) . '...' if length($content) > 50;
+
+        printf "  %s [%2d] %-25s %s\n",
+            _c('2', $line, $use_color),
+            $idx++,
+            _c('36', $short, $use_color),
+            _c('33', qq{"$content"}, $use_color);
+    }
+}
+
+# ── Sibling chain ──────────────────────────────
+
+sub _dump_siblings ($node, $use_color) {
+    # Show schildren of the statement with their relationships
+    my @children = $node->schildren;
+    say _c('1', sprintf("  %d significant children:", scalar @children), $use_color);
+    say '';
+
+    for my $i (0 .. $#children) {
+        my $child = $children[$i];
+        my $class = ref $child;
+        my $loc   = $child->location;
+        my $line  = $loc ? "L$loc->[0]" : '';
+
+        if ($child->isa('PPI::Token')) {
+            my $content = $child->content;
+            $content =~ s/\n/\\n/g;
+            $content = substr($content, 0, 50) . '...' if length($content) > 50;
+            printf "  [%2d] %-40s %s  %s\n",
+                $i,
+                _c('36', $class, $use_color),
+                _c('33', qq{"$content"}, $use_color),
+                _c('2', $line, $use_color);
+        } else {
+            my $n_children = scalar $child->schildren;
+            my $preview = '';
+            if ($child->isa('PPI::Structure')) {
+                my $content = $child->content;
+                $content =~ s/\n/ /g;
+                $preview = substr($content, 0, 60);
+                $preview .= '...' if length($child->content) > 60;
+            }
+            printf "  [%2d] %-40s %s  %s  %s\n",
+                $i,
+                _c('1;36', $class, $use_color),
+                _c('33', $preview ? qq{"$preview"} : "($n_children children)", $use_color),
+                _c('2', $line, $use_color),
+                '';
+        }
+    }
+}
+
+# ── Helpers ─────────────────────────────────────
+
+sub _find_statement_at_line ($doc, $target_line) {
+    my $found;
+    # Find the best statement containing the target line.
+    # Priority: innermost non-trivial statement (Variable, Compound, Sub,
+    # or plain Statement with multiple children). Skip tiny Expression
+    # fragments inside prototypes/lists.
+    $doc->find(sub {
+        my (undef, $elem) = @_;
+        return 0 unless $elem->isa('PPI::Statement');
+        my $loc = $elem->location or return 0;
+        return 0 if $loc->[0] > $target_line;
+        my $last_tok = $elem->last_token;
+        my $end_loc  = $last_tok ? $last_tok->location : $loc;
+        return 0 if $end_loc->[0] < $target_line;
+
+        my $score = _stmt_score($elem);
+        my $found_score = $found ? _stmt_score($found) : -1;
+
+        if ($score > $found_score
+            || ($score == $found_score && _depth($elem) > _depth($found))) {
+            $found = $elem;
+        }
+        return 0;
+    });
+    $found;
+}
+
+sub _stmt_score ($stmt) {
+    # Prefer meaningful statement types over bare expressions
+    return 4 if $stmt->isa('PPI::Statement::Variable');
+    return 3 if $stmt->isa('PPI::Statement::Compound');
+    return 3 if $stmt->isa('PPI::Statement::Sub');
+    return 2 if ref($stmt) eq 'PPI::Statement' && $stmt->schildren >= 2;
+    return 1 if $stmt->isa('PPI::Statement::Expression') && $stmt->schildren >= 3;
+    0;
+}
+
+sub _depth ($node) {
+    my $d = 0;
+    my $p = $node->parent;
+    while ($p) { $d++; $p = $p->parent }
+    $d;
+}
+
+sub _should_color ($opts) {
+    return 0 if $opts->{'no-color'};
+    return 0 if defined $ENV{NO_COLOR};
+    return 0 unless -t STDOUT;
+    1;
+}
+
+sub _c ($code, $text, $use_color) {
+    $use_color ? "\e[${code}m${text}\e[0m" : $text;
+}
+
+__END__
+
+=head1 NAME
+
+typist-ppi-dump - Dump PPI abstract syntax tree for Perl source files
+
+=head1 SYNOPSIS
+
+    typist-ppi-dump script/app.pl
+    typist-ppi-dump script/app.pl --line 336
+    typist-ppi-dump script/app.pl --line 336 --siblings
+    typist-ppi-dump script/app.pl --range 330-340 --tokens
+
+=head1 DESCRIPTION
+
+Diagnostic tool for inspecting how PPI tokenizes and structures Perl source
+code. Essential for debugging the static inference engine, which relies
+heavily on PPI's AST structure.
+
+Key use cases:
+
+=over 4
+
+=item Token splitting — How does PPI split C<Some("yes")>? (Word + List)
+
+=item Anonymous subs — C<sub ($x) { body }> = 3 tokens (Word + Prototype + Block)
+
+=item Expression structure — Is it Statement or Statement::Expression?
+
+=item Sibling chains — What does C<snext_sibling> see from a given token?
+
+=back
+
+=head1 SEE ALSO
+
+L<typist-infer-dump>, L<typist-registry-dump>
+
+=cut

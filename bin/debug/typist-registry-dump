@@ -1,0 +1,321 @@
+#!/usr/bin/env perl
+use v5.40;
+
+use FindBin;
+use lib "$FindBin::Bin/../../lib";
+
+use Getopt::Long ();
+use Cwd          ();
+use File::Find   ();
+
+use Typist::LSP::Workspace;
+
+# ── Argument Parsing ────────────────────────────
+
+my %opts;
+Getopt::Long::Configure('no_auto_abbrev', 'bundling');
+Getopt::Long::GetOptions(
+    \%opts,
+    'root=s',
+    'package=s',   # filter by package name
+    'name=s',      # filter by function/type name (substring)
+    'section=s',   # functions, types, datatypes, typeclasses, effects, structs, instances
+    'no-color',
+    'help|h',
+);
+
+if ($opts{help}) {
+    print <<~'HELP';
+    Usage: typist-registry-dump [OPTIONS] [FILES...]
+
+    Dump the workspace registry built from Perl source files.
+    Shows all registered functions, types, datatypes, typeclasses,
+    effects, structs, and instances with their signatures.
+
+    Options:
+      --root DIR        Workspace root for cross-file resolution
+      --package PKG     Show only entries from package PKG (substring)
+      --name NAME       Show only entries matching NAME (substring)
+      --section SEC     Show only a section: functions, types, datatypes,
+                        typeclasses, effects, structs, instances
+      --no-color        Disable colored output
+      -h, --help        Show this help message
+
+    Examples:
+      typist-registry-dump --root lib/
+      typist-registry-dump --root lib/ --section functions --name bind
+      typist-registry-dump --root lib/ --package Shop::Func::State
+    HELP
+    exit 0;
+}
+
+my $use_color = _should_color(\%opts);
+
+# ── Resolve workspace root ──────────────────────
+
+my $root;
+if ($opts{root}) {
+    $root = Cwd::abs_path($opts{root});
+    die "Root directory not found: $opts{root}\n" unless $root && -d $root;
+} else {
+    my $cwd = Cwd::getcwd();
+    my $lib = "$cwd/lib";
+    $root = -d $lib ? $lib : $cwd;
+}
+
+# ── Build registry ──────────────────────────────
+
+my $ws = Typist::LSP::Workspace->new(root => $root);
+my $registry = $ws->registry;
+
+# ── Dump sections ───────────────────────────────
+
+my $section = $opts{section} // '';
+my $pkg_filter  = $opts{package};
+my $name_filter = $opts{name};
+
+_dump_functions($registry)   if !$section || $section eq 'functions';
+_dump_types($registry)       if !$section || $section eq 'types';
+_dump_datatypes($registry)   if !$section || $section eq 'datatypes';
+_dump_typeclasses($registry) if !$section || $section eq 'typeclasses';
+_dump_effects($registry)     if !$section || $section eq 'effects';
+_dump_structs($registry)     if !$section || $section eq 'structs';
+_dump_instances($registry)   if !$section || $section eq 'instances';
+
+# ── Section Dumpers ─────────────────────────────
+
+sub _dump_functions ($reg) {
+    my %fns = $reg->all_functions;
+    return unless %fns;
+
+    my @keys = sort grep { _match_filters($_) } keys %fns;
+    return unless @keys;
+
+    say _c('1', '═══ Functions ═══', $use_color);
+    say '';
+
+    for my $fqn (@keys) {
+        my $sig = $fns{$fqn};
+        my $returns  = $sig->{returns} ? $sig->{returns}->to_string : '(none)';
+        my $params   = $sig->{params}
+            ? join(', ', map { $_->to_string } @{$sig->{params}})
+            : '(none)';
+        my $generics = $sig->{generics} && @{$sig->{generics}}
+            ? '<' . join(', ', map { _format_generic($_) } @{$sig->{generics}}) . '>'
+            : '';
+
+        say '  ' . _c('36', $fqn, $use_color) . _c('2', $generics, $use_color);
+        say '    params:  ' . _c('33', "($params)", $use_color);
+        say '    returns: ' . _c('32', $returns, $use_color);
+        say '';
+    }
+}
+
+sub _dump_types ($reg) {
+    my $aliases = $reg->{aliases} // {};
+    return unless %$aliases;
+
+    my @keys = sort grep { _match_filters($_) } keys %$aliases;
+    return unless @keys;
+
+    say _c('1', '═══ Type Aliases ═══', $use_color);
+    say '';
+    for my $name (@keys) {
+        say '  ' . _c('36', $name, $use_color) . ' = ' . _c('33', $aliases->{$name}, $use_color);
+    }
+    say '';
+}
+
+sub _dump_datatypes ($reg) {
+    my $dts = $reg->{datatypes} // {};
+    return unless %$dts;
+
+    my @keys = sort grep { _match_filters($_) } keys %$dts;
+    return unless @keys;
+
+    say _c('1', '═══ Datatypes ═══', $use_color);
+    say '';
+    for my $name (@keys) {
+        my $dt = $dts->{$name};
+        say '  ' . _c('36', $dt->to_string, $use_color);
+
+        # Show constructors from the Data object's variant map
+        if ($dt->can('variants') && $dt->variants) {
+            my %fns = $reg->all_functions;
+            for my $tag (sort keys %{$dt->variants}) {
+                my $params_list = $dt->variants->{$tag};
+                my $params = ref $params_list eq 'ARRAY' && @$params_list
+                    ? '(' . join(', ', map { ref $_ ? $_->to_string : $_ } @$params_list) . ')'
+                    : '()';
+                say '    ' . _c('33', "$tag$params", $use_color);
+            }
+        }
+        say '';
+    }
+}
+
+sub _dump_typeclasses ($reg) {
+    my $tcs = $reg->{typeclasses} // {};
+    return unless %$tcs;
+
+    my @keys = sort grep { _match_filters($_) } keys %$tcs;
+    return unless @keys;
+
+    say _c('1', '═══ Typeclasses ═══', $use_color);
+    say '';
+    for my $name (@keys) {
+        my $tc = $tcs->{$name};
+        say '  ' . _c('36', $name, $use_color);
+        if ($tc->can('methods')) {
+            for my $method (sort keys %{$tc->methods}) {
+                say '    ' . _c('33', $method, $use_color);
+            }
+        }
+        say '';
+    }
+}
+
+sub _dump_effects ($reg) {
+    my $effs = $reg->{effects} // {};
+    return unless %$effs;
+
+    my @keys = sort grep { _match_filters($_) } keys %$effs;
+    return unless @keys;
+
+    say _c('1', '═══ Effects ═══', $use_color);
+    say '';
+    for my $name (@keys) {
+        my $eff = $effs->{$name};
+        say '  ' . _c('36', $name, $use_color);
+        if (ref $eff eq 'HASH' && $eff->{ops}) {
+            for my $op (sort keys %{$eff->{ops}}) {
+                say '    ' . _c('33', "$op: $eff->{ops}{$op}", $use_color);
+            }
+        }
+        say '';
+    }
+}
+
+sub _dump_structs ($reg) {
+    my $structs = $reg->{structs} // {};
+    return unless %$structs;
+
+    my @keys = sort grep { _match_filters($_) } keys %$structs;
+    return unless @keys;
+
+    say _c('1', '═══ Structs ═══', $use_color);
+    say '';
+    for my $name (@keys) {
+        my $st = $structs->{$name};
+        my @params;
+        if (ref $st && $st->can('type_params')) {
+            @params = $st->type_params;
+        }
+        my $param_str = @params ? '[' . join(', ', @params) . ']' : '';
+        say '  ' . _c('36', "$name$param_str", $use_color);
+
+        if (ref $st && $st->can('record') && $st->record) {
+            my $rec = $st->record;
+            my $req = $rec->required_ref // {};
+            my $opt = $rec->optional_ref // {};
+            for my $field (sort keys %$req) {
+                say '    ' . _c('33', "$field: " . $req->{$field}->to_string, $use_color);
+            }
+            for my $field (sort keys %$opt) {
+                say '    ' . _c('33', "$field?: " . $opt->{$field}->to_string, $use_color);
+            }
+        }
+        say '';
+    }
+}
+
+sub _dump_instances ($reg) {
+    my $instances = $reg->{instances} // {};
+    return unless %$instances;
+
+    my @keys = sort grep { _match_filters($_) } keys %$instances;
+    return unless @keys;
+
+    say _c('1', '═══ Instances ═══', $use_color);
+    say '';
+    for my $key (@keys) {
+        say '  ' . _c('36', $key, $use_color);
+    }
+    say '';
+}
+
+# ── Filter helpers ──────────────────────────────
+
+sub _match_filters ($key) {
+    if ($pkg_filter) {
+        return 0 unless index($key, $pkg_filter) >= 0;
+    }
+    if ($name_filter) {
+        return 0 unless index($key, $name_filter) >= 0;
+    }
+    1;
+}
+
+sub _format_generic ($g) {
+    return $g unless ref $g eq 'HASH';
+    my $name = $g->{name} // '?';
+    if ($g->{bound_expr}) {
+        return "$name: $g->{bound_expr}";
+    }
+    if ($g->{tc_constraint}) {
+        return "$name: $g->{tc_constraint}";
+    }
+    $name;
+}
+
+# ── Helpers ─────────────────────────────────────
+
+sub _should_color ($opts) {
+    return 0 if $opts->{'no-color'};
+    return 0 if defined $ENV{NO_COLOR};
+    return 0 unless -t STDOUT;
+    1;
+}
+
+sub _c ($code, $text, $use_color) {
+    $use_color ? "\e[${code}m${text}\e[0m" : $text;
+}
+
+__END__
+
+=head1 NAME
+
+typist-registry-dump - Dump workspace type registry
+
+=head1 SYNOPSIS
+
+    typist-registry-dump --root lib/
+    typist-registry-dump --root lib/ --section functions --name bind
+    typist-registry-dump --root lib/ --package Shop::Func::State
+
+=head1 DESCRIPTION
+
+Diagnostic tool that builds a workspace registry (same as typist-check and
+the LSP) and dumps its contents. Shows registered functions with their
+params/returns/generics, type aliases, datatypes, typeclasses, effects,
+structs, and instances.
+
+Key use cases:
+
+=over 4
+
+=item Verify that a function signature was registered with correct params
+
+=item Check that generics/bounds are properly recorded
+
+=item Inspect cross-file type resolution (datatype constructors, typeclasses)
+
+=item Debug missing return types (registered but no returns → partially annotated)
+
+=back
+
+=head1 SEE ALSO
+
+L<typist-infer-dump>, L<typist-ppi-dump>
+
+=cut
