@@ -799,7 +799,7 @@ sub _collect_match_callback_params ($self) {
     my $ppi_doc = $self->{ppi_doc} // return;
     my $words = $ppi_doc->find('PPI::Token::Word') || [];
 
-    my %mgs = (match => 1, map => 1, grep => 1, sort => 1);
+    my %mgs = (match => 1, map => 1, grep => 1, sort => 1, handle => 1);
     for my $word (@$words) {
         next unless $mgs{$word->content};
         my $env = $self->_env_for_node($word);

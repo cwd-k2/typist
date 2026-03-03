@@ -151,4 +151,36 @@ PERL
     ok @underscore_hints, 'found $_ hint with Int type in map block';
 };
 
+# ── Inlay hints for handle handler params ────────
+
+subtest 'inlayHint shows handler param types from effect operation' => sub {
+    my $source = <<'PERL';
+use v5.40;
+effect Console => +{ writeLine => '(Str) -> Void' };
+sub run :sig(() -> Void ! [Console]) () {
+    handle { Console::writeLine("hello") }
+        Console => +{ writeLine => sub ($msg) { say $msg } };
+}
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/inlayHint', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            range => +{
+                start => +{ line => 0, character => 0 },
+                end   => +{ line => 7, character => 0 },
+            },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got inlayHint response';
+    my $hints = $resp->{result};
+    my ($msg_hint) = grep { ($_->{label} // '') =~ /Str/ && ($_->{position}{line} // -1) == 4 } @$hints;
+    ok $msg_hint, 'found $msg hint with Str type on handler line';
+};
+
 done_testing;

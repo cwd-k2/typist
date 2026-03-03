@@ -90,6 +90,7 @@ sub infer_expr ($class, $element, $env = undef, $expected = undef) {
     if ($element->isa('PPI::Token::Word') && $element->content eq 'handle') {
         my $next = $element->snext_sibling;
         if ($next && $next->isa('PPI::Structure::Block')) {
+            _infer_handle_handlers($next, $env);
             return _infer_block_return($next, $env, $expected);
         }
     }
@@ -261,6 +262,64 @@ sub _maybe_instantiate_return ($sig, $env, $list_element) {
 
     # Substitute bindings into return type
     $ret->substitute(\%bindings);
+}
+
+# ── Handle Handler Type Propagation ─────────────
+#
+# Walks siblings after the handle BODY block to find effect handler
+# maps (Effect => +{ op => sub (...) { ... } }) and propagates
+# operation types into anonymous sub parameters via _infer_anon_sub.
+
+sub _infer_handle_handlers ($body_block, $env) {
+    my $registry = ($env // +{})->{registry} // return;
+    my $sib = $body_block->snext_sibling;
+    my $current_effect;
+
+    while ($sib) {
+        last if $sib->isa('PPI::Token::Structure') && $sib->content eq ';';
+
+        # Effect name: Word followed by =>
+        if ($sib->isa('PPI::Token::Word')) {
+            my $after = $sib->snext_sibling;
+            if ($after && $after->isa('PPI::Token::Operator') && $after->content eq '=>') {
+                $current_effect = $sib->content;
+            }
+        }
+
+        # Handler map: Constructor +{...}
+        if ($sib->isa('PPI::Structure::Constructor') && $current_effect) {
+            _infer_handler_map($sib, $current_effect, $env);
+        }
+
+        $sib = $sib->snext_sibling;
+    }
+}
+
+sub _infer_handler_map ($constructor, $effect_name, $env) {
+    my $registry = $env->{registry} // return;
+    my $expr = $constructor->find_first('PPI::Statement::Expression') // return;
+    my $current_op;
+
+    for my $child ($expr->schildren) {
+        # Track op name: Word (not 'sub') followed by =>
+        if ($child->isa('PPI::Token::Word') && $child->content ne 'sub') {
+            my $after = $child->snext_sibling;
+            if ($after && $after->isa('PPI::Token::Operator') && $after->content eq '=>') {
+                $current_op = $child->content;
+            }
+        }
+
+        # Found anonymous sub for the current op
+        if ($child->isa('PPI::Token::Word') && $child->content eq 'sub' && $current_op) {
+            my $sig = $registry->lookup_function($effect_name, $current_op);
+            if ($sig && $sig->{params}) {
+                my $expected = Typist::Type::Func->new(
+                    $sig->{params}, $sig->{returns} // Typist::Type::Atom->new('Any'),
+                );
+                _infer_anon_sub($child, $env, $expected);
+            }
+        }
+    }
 }
 
 # ── Block Return Type Inference ─────────────────

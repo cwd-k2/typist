@@ -92,6 +92,57 @@ PERL
     is scalar @$errs, 0, '$uid->base infers Int — no type error';
 };
 
+# ── handle handler callback param propagation ───
+
+subtest 'handle: handler params get effect operation types' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+effect Console => +{ writeLine => '(Str) -> Void' };
+sub run :sig(() -> Void ! [Console]) () {
+    handle { Console::writeLine("hello") }
+        Console => +{ writeLine => sub ($msg) { say $msg } };
+}
+PERL
+
+    my @cb = grep { $_->{kind} eq 'variable' && $_->{inferred} && $_->{name} eq '$msg' }
+             $result->{symbols}->@*;
+    ok @cb, 'found $msg callback param';
+    is $cb[0]{type}, 'Str', '$msg gets Str from Console::writeLine signature';
+};
+
+subtest 'handle: multi-param handler propagation' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+effect PaymentGateway => +{ charge => '(Int, Str) -> Bool' };
+sub run :sig(() -> Void ! [PaymentGateway]) () {
+    handle { PaymentGateway::charge(100, "card") }
+        PaymentGateway => +{ charge => sub ($amount, $method) { 1 } };
+}
+PERL
+
+    my @cb = grep { $_->{kind} eq 'variable' && $_->{inferred} }
+             $result->{symbols}->@*;
+    my ($amount) = grep { $_->{name} eq '$amount' } @cb;
+    my ($method) = grep { $_->{name} eq '$method' } @cb;
+    ok $amount, 'found $amount callback param';
+    is $amount->{type}, 'Int', '$amount gets Int from charge signature';
+    ok $method, 'found $method callback param';
+    is $method->{type}, 'Str', '$method gets Str from charge signature';
+};
+
+subtest 'handle: handler param type enables type checking in body' => sub {
+    my $errs = diags_of(<<'PERL', 'TypeMismatch');
+use v5.40;
+effect Console => +{ writeLine => '(Str) -> Void' };
+sub run :sig(() -> Void ! [Console]) () {
+    my $x :sig(Int) = handle { 42 }
+        Console => +{ writeLine => sub ($msg) { $msg } };
+}
+PERL
+
+    is scalar @$errs, 0, 'handler body type checked with propagated param types — no error';
+};
+
 # ── declaration functions return Void ────────────
 
 subtest 'typedef: registered as CORE builtin' => sub {
