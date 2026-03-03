@@ -227,7 +227,12 @@ sub _check ($sub, $super, $registry = undef) {
     # ── Nominal struct subtyping ─────────────────
     # Struct(A) <: Struct(B) only if same name (nominal identity)
     if ($sub->is_struct && $super->is_struct) {
-        return $sub->name eq $super->name;
+        return 0 unless $sub->name eq $super->name;
+        my @sa = $sub->type_args;
+        my @oa = $super->type_args;
+        return 1 if !@sa && !@oa;
+        return 0 if @sa != @oa;
+        return all { _check($sa[$_], $oa[$_], $registry) } 0 .. $#sa;
     }
     # Struct <: Record (structural compatibility via inner record)
     if ($sub->is_struct && $super->is_record) {

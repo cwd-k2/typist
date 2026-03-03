@@ -5,7 +5,7 @@ use lib 'lib';
 BEGIN { $ENV{TYPIST_CHECK_QUIET} = 1 }
 
 use Typist;
-use Typist::DSL;
+use Typist::DSL qw(:all);
 use Typist::Subtype;
 use Typist::Registry;
 
@@ -121,6 +121,57 @@ subtest 'boundary type validation (always-on)' => sub {
     my $died = !eval { Person(name => "Alice", age => "not_a_number"); 1 };
     ok $died, 'constructor rejects invalid type without -runtime';
     like $@, qr/field 'age' expected Int/, 'error names the field and expected type';
+};
+
+# ── Generic struct ──────────────────────────────
+
+struct 'Pair[T, U]' => (fst => T, snd => U);
+
+subtest 'generic struct: construction' => sub {
+    my $p = Pair(fst => 42, snd => "hi");
+    ok defined $p, 'constructor returns value';
+    isa_ok $p, 'Typist::Struct::Pair';
+    isa_ok $p, 'Typist::Struct::Base';
+    is $p->fst, 42,   'fst accessor';
+    is $p->snd, "hi", 'snd accessor';
+};
+
+subtest 'generic struct: type_args inferred' => sub {
+    my $p = Pair(fst => 42, snd => "hi");
+    ok $p->{_type_args}, 'type_args recorded';
+    is scalar @{$p->{_type_args}}, 2, 'two type args';
+    is $p->{_type_args}[0]->name, 'Int', 'T = Int';
+    is $p->{_type_args}[1]->name, 'Str', 'U = Str';
+};
+
+subtest 'generic struct: with() preserves type_args' => sub {
+    my $p1 = Pair(fst => 42, snd => "hello");
+    my $p2 = $p1->with(snd => "world");
+    is $p2->fst, 42,      'fst preserved';
+    is $p2->snd, "world", 'snd updated';
+    ok $p2->{_type_args}, 'type_args preserved after with()';
+    is $p2->{_type_args}[0]->name, 'Int', 'T preserved';
+};
+
+subtest 'generic struct: type registered with type_params' => sub {
+    my $type = Typist::Registry->lookup_type('Pair');
+    ok $type, 'Pair type registered';
+    ok $type->is_struct, 'is_struct predicate';
+    my @tp = $type->type_params;
+    is scalar @tp, 2, 'two type params';
+    is $tp[0], 'T', 'first param is T';
+    is $tp[1], 'U', 'second param is U';
+};
+
+subtest 'generic struct: boundary validation' => sub {
+    # All field values must be consistent — T binds to the first occurrence
+    my $died = !eval { Pair(fst => 1, snd => 2); 1 };
+    ok !$died, 'Pair(fst => 1, snd => 2) succeeds (T=Int, U=Int)';
+};
+
+subtest 'generic struct: to_string with type_params' => sub {
+    my $type = Typist::Registry->lookup_type('Pair');
+    like $type->to_string, qr/Pair\[T, U\]/, 'to_string shows type params';
 };
 
 done_testing;

@@ -324,10 +324,20 @@ sub _enum ($name, @tags) {
 
 # ── Struct Support (nominal blessed immutable structs) ──
 
-sub _struct ($name, $caller, @field_pairs) {
-    die "Typist: struct '$name' — odd number of field arguments\n"
+sub _struct ($name_spec, $caller, @field_pairs) {
+    die "Typist: struct '$name_spec' — odd number of field arguments\n"
         if @field_pairs % 2;
 
+    # Parse name and type parameters: 'Pair[T, U]' or plain 'Point'
+    my ($name, @type_params);
+    if ($name_spec =~ /\A(\w+)\[(.+)\]\z/) {
+        $name = $1;
+        @type_params = map { s/\s//gr } split /,/, $2;
+    } else {
+        $name = $name_spec;
+    }
+
+    my %var_names = map { $_ => 1 } @type_params;
     my %field_spec = @field_pairs;
     my (%required_types, %optional_types);
 
@@ -348,9 +358,10 @@ sub _struct ($name, $caller, @field_pairs) {
 
     my $pkg = "Typist::Struct::${name}";
     my $type = Typist::Type::Struct->new(
-        name    => $name,
-        record  => $record,
-        package => $pkg,
+        name        => $name,
+        record      => $record,
+        package     => $pkg,
+        type_params => \@type_params,
     );
 
     # 1. Register in Registry
@@ -383,6 +394,7 @@ sub _struct ($name, $caller, @field_pairs) {
         my %req = %required_types;
         my %opt = %optional_types;
         my %all = (%req, %opt);
+        my @tp  = @type_params;
         no strict 'refs';
         *{"${caller}::${name}"} = sub (@args) {
             die "Typist: ${name}() — odd number of arguments\n"
@@ -401,24 +413,58 @@ sub _struct ($name, $caller, @field_pairs) {
                     unless exists $given{$k};
             }
 
-            # Boundary type validation (always-on, like newtype/datatype)
-            for my $k (keys %given) {
-                my $expected = $all{$k};
-                unless ($expected->contains($given{$k})) {
-                    die "Typist: ${name}() — field '$k' expected "
-                        . $expected->to_string . ", got $given{$k}\n";
+            if (@tp) {
+                # Parameterized: infer type args from field values, then validate
+                my %bindings;
+                for my $k (keys %given) {
+                    my $formal = $all{$k};
+                    next unless $formal->is_var && $var_names{$formal->name};
+                    my $inferred = Typist::Inference->infer_value($given{$k});
+                    if (exists $bindings{$formal->name}) {
+                        $bindings{$formal->name} = Typist::Subtype->common_super(
+                            $bindings{$formal->name}, $inferred,
+                        );
+                    } else {
+                        $bindings{$formal->name} = $inferred;
+                    }
                 }
-            }
+                for my $k (keys %given) {
+                    my $exp = %bindings
+                        ? $all{$k}->substitute(\%bindings)
+                        : $all{$k};
+                    unless ($exp->contains($given{$k})) {
+                        die "Typist: ${name}() — field '$k' expected "
+                            . $exp->to_string . ", got $given{$k}\n";
+                    }
+                }
 
-            bless +{%given}, $pkg;
+                my @type_args = map {
+                    $bindings{$_} // Typist::Type::Atom->new('Any')
+                } @tp;
+
+                bless +{%given, _type_args => \@type_args}, $pkg;
+            } else {
+                # Non-parameterized: validate directly
+                for my $k (keys %given) {
+                    my $expected = $all{$k};
+                    unless ($expected->contains($given{$k})) {
+                        die "Typist: ${name}() — field '$k' expected "
+                            . $expected->to_string . ", got $given{$k}\n";
+                    }
+                }
+
+                bless +{%given}, $pkg;
+            }
         };
     }
 
     # 4. Register constructor function so CHECK-phase cross-file inference
     #    can resolve calls like OrderItem(...) from other packages.
+    my @generics = map { +{ name => $_, bound_expr => undef } } @type_params;
     Typist::Registry->register_function($caller, $name, +{
         params             => [],
         returns            => $type,
+        generics           => \@generics,
         struct_constructor => 1,
     });
 }

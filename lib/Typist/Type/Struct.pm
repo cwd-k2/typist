@@ -12,15 +12,19 @@ use List::Util   'all';
 
 sub new ($class, %args) {
     bless +{
-        name    => $args{name},
-        record  => $args{record},   # Typist::Type::Record
-        package => $args{package},  # blessed package name
+        name        => $args{name},
+        record      => $args{record},   # Typist::Type::Record
+        package     => $args{package},  # blessed package name
+        type_params => $args{type_params} // [],
+        type_args   => $args{type_args}   // [],
     }, $class;
 }
 
-sub name    ($self) { $self->{name} }
-sub record  ($self) { $self->{record} }
-sub package ($self) { $self->{package} }
+sub name        ($self) { $self->{name} }
+sub record      ($self) { $self->{record} }
+sub package     ($self) { $self->{package} }
+sub type_params ($self) { $self->{type_params}->@* }
+sub type_args   ($self) { $self->{type_args}->@* }
 
 # Delegate field accessors to the inner Record
 sub required_fields ($self) { $self->{record}->required_fields }
@@ -32,29 +36,77 @@ sub field_ref       ($self) { $self->{record}->field_ref }
 # Type predicates
 sub is_struct ($self) { 1 }
 
-sub to_string ($self) { $self->{name} }
+sub to_string ($self) {
+    my $base = $self->{name};
+    if ($self->{type_args}->@*) {
+        $base .= '[' . join(', ', map { $_->to_string } $self->{type_args}->@*) . ']';
+    } elsif ($self->{type_params}->@*) {
+        $base .= '[' . join(', ', $self->{type_params}->@*) . ']';
+    }
+    $base;
+}
 
 sub equals ($self, $other) {
     return 0 unless $other->is_struct;
-    $self->{name} eq $other->name;
+    return 0 unless $self->{name} eq $other->name;
+
+    my @sa = $self->{type_args}->@*;
+    my @oa = $other->type_args;
+    return 0 if @sa != @oa;
+    for my $i (0 .. $#sa) {
+        return 0 unless $sa[$i]->equals($oa[$i]);
+    }
+    1;
 }
 
 sub contains ($self, $value) {
     return 0 unless blessed($value) && $value->isa($self->{package});
-    # Field validation delegated to the record
-    $self->{record}->contains(+{ %$value });
+
+    # If we have concrete type_args, substitute into record for validation
+    my $record = $self->{record};
+    if ($self->{type_args}->@* && $self->{type_params}->@*) {
+        my %bindings;
+        for my $i (0 .. $#{$self->{type_params}}) {
+            $bindings{$self->{type_params}[$i]} = $self->{type_args}[$i]
+                if $i < scalar $self->{type_args}->@*;
+        }
+        $record = $record->substitute(\%bindings) if %bindings;
+    }
+
+    $record->contains(+{ %$value });
 }
 
 sub free_vars ($self) {
-    $self->{record}->free_vars;
+    my %seen;
+    $seen{$_} = 1 for $self->{record}->free_vars;
+    for my $arg ($self->{type_args}->@*) {
+        $seen{$_} = 1 for $arg->free_vars;
+    }
+    # Type params are bound by this declaration, not free
+    delete $seen{$_} for $self->{type_params}->@*;
+    keys %seen;
 }
 
 sub substitute ($self, $bindings) {
     my $new_record = $self->{record}->substitute($bindings);
+    my @new_args = map { $_->substitute($bindings) } $self->{type_args}->@*;
     __PACKAGE__->new(
-        name    => $self->{name},
-        record  => $new_record,
-        package => $self->{package},
+        name        => $self->{name},
+        record      => $new_record,
+        package     => $self->{package},
+        type_params => [$self->{type_params}->@*],
+        type_args   => \@new_args,
+    );
+}
+
+# Create an instantiated copy with concrete type arguments
+sub instantiate ($self, @args) {
+    __PACKAGE__->new(
+        name        => $self->{name},
+        record      => $self->{record},
+        package     => $self->{package},
+        type_params => [$self->{type_params}->@*],
+        type_args   => \@args,
     );
 }
 

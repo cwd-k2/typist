@@ -5,6 +5,7 @@ our $VERSION = '0.01';
 
 use List::Util 'any';
 use Scalar::Util 'refaddr';
+use Typist::Attribute;
 use Typist::Static::Extractor;
 use Typist::Static::Infer;
 use Typist::Static::Unify;
@@ -332,6 +333,7 @@ sub _check_struct_constructor_call ($self, $name, $fn, $list, $env, $word) {
     my $req = $struct_type->required_ref // +{};
     my $opt = $struct_type->optional_ref // +{};
     my %all = (%$req, %$opt);
+    my @tp = $struct_type->type_params;
 
     # Extract key => value pairs from the PPI List
     my $expr = $list->find_first('PPI::Statement::Expression')
@@ -351,7 +353,10 @@ sub _check_struct_constructor_call ($self, $name, $fn, $list, $env, $word) {
     }
     push @groups, [@current] if @current;
 
+    # Pass 1: collect field names, infer value types, collect bindings (generic)
     my %seen;
+    my %bindings;
+    my @field_checks;   # [{field_name, inferred, expected_type}]
     for my $group (@groups) {
         # Find => in this group
         my $arrow_idx;
@@ -397,16 +402,34 @@ sub _check_struct_constructor_call ($self, $name, $fn, $list, $env, $word) {
         next unless defined $inferred;
         next if _contains_any($inferred);
 
-        unless (Typist::Subtype->is_subtype($inferred, $expected_type, registry => $self->{registry})) {
+        # Generic: collect bindings from field types
+        if (@tp) {
+            Typist::Static::Unify->collect_bindings($expected_type, $inferred, \%bindings);
+        }
+
+        push @field_checks, +{
+            field_name    => $field_name,
+            inferred      => $inferred,
+            expected_type => $expected_type,
+        };
+    }
+
+    # Pass 2: type check fields (with substituted types for generics)
+    for my $check (@field_checks) {
+        my $expected = $check->{expected_type};
+        $expected = Typist::Static::Unify->substitute($expected, \%bindings) if @tp && %bindings;
+        # Skip if still contains unresolved type vars
+        next if @tp && $self->_has_type_var($expected);
+        unless (Typist::Subtype->is_subtype($check->{inferred}, $expected, registry => $self->{registry})) {
             $self->{errors}->collect(
                 kind          => 'TypeMismatch',
-                message       => "${name}(): field '$field_name' expected ${\$expected_type->to_string}, got ${\$inferred->to_string}",
+                message       => "${name}(): field '$check->{field_name}' expected ${\$expected->to_string}, got ${\$check->{inferred}->to_string}",
                 file          => $self->{file},
                 line          => $word->line_number,
                 col           => $word->column_number,
                 end_col       => $word->column_number + length($word->content),
-                expected_type => $expected_type->to_string,
-                actual_type   => $inferred->to_string,
+                expected_type => $expected->to_string,
+                actual_type   => $check->{inferred}->to_string,
             );
         }
     }
@@ -921,6 +944,27 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
         }
     }
 
+    # 5.5 Typeclass constraint check (static)
+    for my $g (@generics) {
+        next unless $g->{tc_constraints};
+        my $actual = $bindings->{$g->{name}} // next;
+        for my $tc_name ($g->{tc_constraints}->@*) {
+            my $inst = $self->{registry}->resolve_instance($tc_name, $actual);
+            unless ($inst) {
+                $self->{errors}->collect(
+                    kind          => 'TypeMismatch',
+                    message       => "Argument of $name(): no instance of $tc_name for ${\$actual->to_string}",
+                    file          => $self->{file},
+                    line          => $word->line_number,
+                    col           => $word->column_number,
+                    end_col       => $word->column_number + length($word->content),
+                    expected_type => $tc_name,
+                    actual_type   => $actual->to_string,
+                );
+            }
+        }
+    }
+
     # 6. Concrete subtype check: substitute bindings and verify each arg
     for my $i (0 .. $n - 1) {
         my $concrete = Typist::Static::Unify->substitute($param_types[$i], $bindings);
@@ -942,23 +986,26 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
 }
 
 # Parse generics_raw strings into structured declarations.
-# Each entry is like "T", "T: Num", "r: Row".
+# Each entry is like "T", "T: Num", "r: Row", or already-structured hashrefs.
+# Delegates to Attribute->parse_generic_decl when registry is available,
+# so that typeclass constraints (T: Show) are properly distinguished from
+# bounded quantification (T: Num).
 sub _parse_generics ($self, $generics_raw) {
     my @result;
+    my @raw_strings;
     for my $g ($generics_raw->@*) {
         # Already structured (from registry): { name => ..., bound_expr => ... }
         if (ref $g eq 'HASH' && exists $g->{name}) {
             push @result, $g;
-            next;
-        }
-        my $trimmed = $g;
-        $trimmed =~ s/\A\s+//;
-        $trimmed =~ s/\s+\z//;
-        if ($trimmed =~ /\A(\w+)\s*:\s*(.+)\z/) {
-            push @result, +{ name => $1, bound_expr => $2 };
         } else {
-            push @result, +{ name => $trimmed, bound_expr => undef };
+            push @raw_strings, $g;
         }
+    }
+    if (@raw_strings) {
+        my $spec = join(', ', @raw_strings);
+        push @result, Typist::Attribute->parse_generic_decl(
+            $spec, registry => $self->{registry},
+        );
     }
     @result;
 }

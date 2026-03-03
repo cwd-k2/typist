@@ -364,4 +364,233 @@ PERL
     is scalar @$errs, 0, 'no errors when expression infers correct type';
 };
 
+# ── Generic struct: extraction ──────────────────
+
+subtest 'extractor recognizes generic struct' => sub {
+    my $source = <<'PERL';
+use Typist;
+use Typist::DSL;
+struct 'Pair[T, U]' => (fst => T, snd => U);
+PERL
+    my $extracted = Typist::Static::Extractor->extract($source);
+    ok exists $extracted->{structs}{Pair}, 'Pair struct extracted';
+
+    my $info = $extracted->{structs}{Pair};
+    is_deeply $info->{type_params}, ['T', 'U'], 'type params extracted';
+    is $info->{fields}{fst}, 'T', 'fst field type';
+    is $info->{fields}{snd}, 'U', 'snd field type';
+};
+
+# ── Generic struct: registration ────────────────
+
+subtest 'registration creates generic struct type' => sub {
+    my $source = <<'PERL';
+use Typist;
+use Typist::DSL;
+struct 'Pair[T, U]' => (fst => T, snd => U);
+PERL
+    my $extracted = Typist::Static::Extractor->extract($source);
+    my $registry  = Typist::Registry->new;
+    Typist::Static::Registration->register_structs($extracted, $registry);
+
+    my $type = $registry->lookup_type('Pair');
+    ok $type, 'Pair type registered';
+    ok $type->is_struct, 'is struct';
+    my @tp = $type->type_params;
+    is scalar @tp, 2, 'two type params';
+    is $tp[0], 'T', 'first param';
+    is $tp[1], 'U', 'second param';
+
+    # Constructor registered with generics
+    my $pkg = $extracted->{package};
+    my $fn = $registry->lookup_function($pkg, 'Pair');
+    ok $fn, 'constructor registered';
+    ok $fn->{generics} && @{$fn->{generics}} == 2, 'two generics';
+};
+
+# ── Generic struct: inference ───────────────────
+
+subtest 'infer generic struct constructor return type' => sub {
+    my $source = <<'PERL';
+package main;
+use Typist;
+use Typist::DSL;
+struct 'Pair[T, U]' => (fst => T, snd => U);
+PERL
+    my $extracted = Typist::Static::Extractor->extract($source);
+    my $registry  = Typist::Registry->new;
+    Typist::Static::Registration->register_all($extracted, $registry);
+
+    my $env = +{
+        variables => +{},
+        functions => +{},
+        registry  => $registry,
+    };
+
+    my $ppi = PPI::Document->new(\q{ Pair(fst => 42, snd => "hi") });
+    my $expr = $ppi->find_first('PPI::Token::Word');
+    my $result = Typist::Static::Infer->infer_expr($expr, $env);
+    ok $result, 'constructor infers a type';
+    ok $result->is_struct, 'infers struct type';
+    is $result->name, 'Pair', 'struct name is Pair';
+
+    my @ta = $result->type_args;
+    is scalar @ta, 2, 'two type args';
+    ok $ta[0]->is_atom && $ta[0]->name eq 'Int', 'T = Int';
+    ok $ta[1]->is_atom && $ta[1]->name eq 'Str', 'U = Str';
+};
+
+subtest 'infer generic struct accessor: Pair(fst => 42, snd => "hi")->fst' => sub {
+    my $source = <<'PERL';
+package main;
+use Typist;
+use Typist::DSL;
+struct 'Pair[T, U]' => (fst => T, snd => U);
+PERL
+    my $extracted = Typist::Static::Extractor->extract($source);
+    my $registry  = Typist::Registry->new;
+    Typist::Static::Registration->register_all($extracted, $registry);
+
+    my $env = +{
+        variables => +{},
+        functions => +{},
+        registry  => $registry,
+    };
+
+    my $ppi = PPI::Document->new(\q{ Pair(fst => 42, snd => "hi")->fst });
+    my $word = $ppi->find_first('PPI::Token::Word');
+    my $result = Typist::Static::Infer->infer_expr($word, $env);
+    ok $result, 'chained accessor infers a type';
+    ok $result->is_atom && $result->name eq 'Int',
+        'Pair(...)->fst infers as Int';
+};
+
+subtest 'infer generic struct accessor on variable' => sub {
+    my $source = <<'PERL';
+package main;
+use Typist;
+use Typist::DSL;
+struct 'Pair[T, U]' => (fst => T, snd => U);
+PERL
+    my $extracted = Typist::Static::Extractor->extract($source);
+    my $registry  = Typist::Registry->new;
+    Typist::Static::Registration->register_all($extracted, $registry);
+
+    # Simulate: $p has type Pair[Int, Str]
+    my $pair_type = $registry->lookup_type('Pair');
+    my $concrete = $pair_type->instantiate(
+        Typist::Type::Atom->new('Int'), Typist::Type::Atom->new('Str'),
+    );
+    my $env = +{
+        variables => +{ '$p' => $concrete },
+        functions => +{},
+        registry  => $registry,
+    };
+
+    my $ppi = PPI::Document->new(\q{ $p->snd });
+    my $sym = $ppi->find_first('PPI::Token::Symbol');
+    my $result = Typist::Static::Infer->infer_expr($sym, $env);
+    ok $result, 'accessor on typed variable infers';
+    ok $result->is_atom && $result->name eq 'Str',
+        '$p->snd infers as Str';
+};
+
+# ── Generic struct: type checking ───────────────
+
+subtest 'generic struct constructor: no errors for correct usage' => sub {
+    my $errs = _struct_type_errors(<<'PERL');
+package main;
+use Typist;
+use Typist::DSL;
+struct 'Pair[T, U]' => (fst => T, snd => U);
+sub test :sig(() -> Void) () {
+    my $p = Pair(fst => 42, snd => "hello");
+}
+PERL
+    is scalar @$errs, 0, 'no type errors for correct generic struct construction';
+};
+
+subtest 'generic struct constructor: missing required field' => sub {
+    my $errs = _struct_type_errors(<<'PERL');
+package main;
+use Typist;
+use Typist::DSL;
+struct 'Pair[T, U]' => (fst => T, snd => U);
+sub test :sig(() -> Void) () {
+    my $p = Pair(fst => 42);
+}
+PERL
+    ok scalar @$errs >= 1, 'detects missing required field';
+    like $errs->[0]{message}, qr/missing required field 'snd'/, 'error identifies missing field';
+};
+
+subtest 'generic struct constructor: unknown field' => sub {
+    my $errs = _struct_type_errors(<<'PERL');
+package main;
+use Typist;
+use Typist::DSL;
+struct 'Pair[T, U]' => (fst => T, snd => U);
+sub test :sig(() -> Void) () {
+    my $p = Pair(fst => 42, snd => "hi", extra => 1);
+}
+PERL
+    ok scalar @$errs >= 1, 'detects unknown field';
+    like $errs->[0]{message}, qr/unknown field 'extra'/, 'error identifies unknown field';
+};
+
+# ── Generic struct: subtyping ───────────────────
+
+subtest 'generic struct subtype: Pair[Int, Str] <: Pair[Int, Str]' => sub {
+    my $source = <<'PERL';
+use Typist;
+use Typist::DSL;
+struct 'Pair[T, U]' => (fst => T, snd => U);
+PERL
+    my $extracted = Typist::Static::Extractor->extract($source);
+    my $registry  = Typist::Registry->new;
+    Typist::Static::Registration->register_structs($extracted, $registry);
+
+    my $pair = $registry->lookup_type('Pair');
+    my $a = $pair->instantiate(Typist::Type::Atom->new('Int'), Typist::Type::Atom->new('Str'));
+    my $b = $pair->instantiate(Typist::Type::Atom->new('Int'), Typist::Type::Atom->new('Str'));
+    ok Typist::Subtype->is_subtype($a, $b, registry => $registry),
+        'Pair[Int, Str] <: Pair[Int, Str]';
+};
+
+subtest 'generic struct subtype: Pair[Int, Str] </: Pair[Int, Int]' => sub {
+    my $source = <<'PERL';
+use Typist;
+use Typist::DSL;
+struct 'Pair[T, U]' => (fst => T, snd => U);
+PERL
+    my $extracted = Typist::Static::Extractor->extract($source);
+    my $registry  = Typist::Registry->new;
+    Typist::Static::Registration->register_structs($extracted, $registry);
+
+    my $pair = $registry->lookup_type('Pair');
+    my $a = $pair->instantiate(Typist::Type::Atom->new('Int'), Typist::Type::Atom->new('Str'));
+    my $b = $pair->instantiate(Typist::Type::Atom->new('Int'), Typist::Type::Atom->new('Int'));
+    ok !Typist::Subtype->is_subtype($a, $b, registry => $registry),
+        'Pair[Int, Str] </: Pair[Int, Int]';
+};
+
+use Typist::Type::Atom;
+
+subtest 'generic struct subtype: covariance (Bool <: Int)' => sub {
+    my $source = <<'PERL';
+use Typist;
+use Typist::DSL;
+struct 'Box[T]' => (val => T);
+PERL
+    my $extracted = Typist::Static::Extractor->extract($source);
+    my $registry  = Typist::Registry->new;
+    Typist::Static::Registration->register_structs($extracted, $registry);
+
+    my $box = $registry->lookup_type('Box');
+    my $box_bool = $box->instantiate(Typist::Type::Atom->new('Bool'));
+    my $box_int  = $box->instantiate(Typist::Type::Atom->new('Int'));
+    ok Typist::Subtype->is_subtype($box_bool, $box_int, registry => $registry),
+        'Box[Bool] <: Box[Int] (covariance)';
+};
+
 done_testing;

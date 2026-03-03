@@ -17,11 +17,11 @@ sub with ($self, %updates) {
             unless exists $all_fields{$key};
     }
 
-    # Merge: existing values + updates
+    # Merge: existing values + updates, preserving _type_args
     my %new = %$self;
     @new{keys %updates} = values %updates;
 
-    bless \%new, ref $self;
+    bless \%new, ref $self;  # _type_args carried over from %$self
 }
 
 # Override in generated subclasses

@@ -277,6 +277,12 @@ sub _maybe_instantiate_return ($sig, $env, $list_element, $expected = undef) {
 
     # No generics or no argument list → return as-is
     return $ret unless $generics && @$generics && $list_element;
+
+    # Generic struct constructor: named-arg binding
+    if ($sig->{struct_constructor} && $ret->is_struct && $ret->type_params) {
+        return _instantiate_generic_struct($ret, $env, $list_element, $expected);
+    }
+
     return $ret unless $sig->{params} && @{$sig->{params}};
 
     # Extract PPI argument nodes
@@ -345,6 +351,97 @@ sub _maybe_instantiate_return ($sig, $env, $list_element, $expected = undef) {
     }
 
     $result;
+}
+
+# Instantiate a generic struct constructor from named arguments.
+# Extracts key => value pairs from PPI, infers value types, and
+# collects bindings from formal field types.
+sub _instantiate_generic_struct ($struct_type, $env, $list_element, $expected = undef) {
+    my $record = $struct_type->record;
+    my $req = $record->required_ref;
+    my $opt = $record->optional_ref;
+    my %all = (%$req, %$opt);
+
+    # Extract key => value pairs from the PPI List
+    my $expr = $list_element->schild(0);
+    $expr = $expr->schild(0) if $expr && $expr->isa('PPI::Statement::Expression')
+                              && $expr->schildren == 1
+                              && $expr->schild(0)->isa('PPI::Structure::List');
+    return $struct_type unless $expr;
+
+    # Get the expression node (may be inside Statement::Expression)
+    my $target = $expr;
+    if ($target->isa('PPI::Statement::Expression')) {
+        # Use it directly — children are the tokens
+    } elsif ($target->isa('PPI::Structure::List')) {
+        $target = $target->schild(0) // return $struct_type;
+    }
+
+    # Split into comma-separated groups and collect bindings
+    my %bindings;
+    my @children = $target->schildren;
+    my @current;
+    for my $child (@children) {
+        if ($child->isa('PPI::Token::Operator') && $child->content eq ',') {
+            _bind_struct_field(\@current, \%all, \%bindings, $env) if @current;
+            @current = ();
+        } else {
+            push @current, $child;
+        }
+    }
+    _bind_struct_field(\@current, \%all, \%bindings, $env) if @current;
+
+    # Widen literal bindings: Literal(42, Int) → Atom(Int)
+    for my $k (keys %bindings) {
+        my $v = $bindings{$k};
+        if ($v->is_literal) {
+            my $base = $v->base_type;
+            $base = 'Int' if $base eq 'Bool';
+            $bindings{$k} = Typist::Type::Atom->new($base);
+        }
+    }
+
+    # Substitute bindings into the struct type
+    if (%bindings) {
+        my @tp = $struct_type->type_params;
+        my @type_args = map {
+            $bindings{$_} // Typist::Type::Atom->new('_')
+        } @tp;
+        return $struct_type->substitute(\%bindings)->instantiate(@type_args)
+            if @tp;
+    }
+
+    $struct_type;
+}
+
+# Helper: extract field name and value from a key => value group,
+# infer the value type, and collect bindings.
+sub _bind_struct_field ($group, $all_fields, $bindings, $env) {
+    # Find => in this group
+    my $arrow_idx;
+    for my $j (0 .. $#$group) {
+        if ($group->[$j]->isa('PPI::Token::Operator') && $group->[$j]->content eq '=>') {
+            $arrow_idx = $j;
+            last;
+        }
+    }
+    return unless defined $arrow_idx && $arrow_idx > 0;
+
+    my $key_tok = $group->[0];
+    my $field_name;
+    if ($key_tok->isa('PPI::Token::Word')) {
+        $field_name = $key_tok->content;
+    } elsif ($key_tok->isa('PPI::Token::Quote')) {
+        $field_name = $key_tok->string;
+    }
+    return unless defined $field_name && exists $all_fields->{$field_name};
+
+    my $val_token = $group->[$arrow_idx + 1] // return;
+    my $formal = $all_fields->{$field_name};
+    my $inferred = __PACKAGE__->infer_expr($val_token, $env, $formal);
+    return unless $inferred;
+
+    Typist::Static::Unify->collect_bindings($formal, $inferred, $bindings);
 }
 
 # ── Handle Handler Type Propagation ─────────────
@@ -1235,13 +1332,26 @@ sub _infer_method_access ($receiver_type, $method_word, $env = undef) {
         my $req = $record->required_ref;
         my $opt = $record->optional_ref;
 
+        my $field_type;
         if (exists $req->{$method_name}) {
-            return $req->{$method_name};
-        }
-        if (exists $opt->{$method_name}) {
-            return Typist::Type::Union->new(
+            $field_type = $req->{$method_name};
+        } elsif (exists $opt->{$method_name}) {
+            $field_type = Typist::Type::Union->new(
                 $opt->{$method_name}, Typist::Type::Atom->new('Undef'),
             );
+        }
+        if ($field_type) {
+            # Generic struct: substitute type_params → type_args
+            if ($resolved->type_params && $resolved->type_args) {
+                my @tp = $resolved->type_params;
+                my @ta = $resolved->type_args;
+                if (@tp == @ta) {
+                    my %bindings;
+                    $bindings{$tp[$_]} = $ta[$_] for 0 .. $#tp;
+                    $field_type = $field_type->substitute(\%bindings);
+                }
+            }
+            return $field_type;
         }
 
         # with() returns the same struct type

@@ -1696,4 +1696,77 @@ PERL
     is $vars[0]{type}, 'Str', '$name widened from Literal("hello", Str) to Str';
 };
 
+# ── Typeclass constraint (static) ──────────────
+
+subtest 'typeclass constraint: satisfied' => sub {
+    my $errs = type_errors(<<'PERL');
+package main;
+use v5.40;
+use Typist;
+use Typist::DSL;
+typeclass Show => (T => +{ show => '(T) -> Str' });
+instance Show => 'Int', +{ show => sub ($x) { "$x" } };
+sub show_it :sig(<T: Show>(T) -> Str) ($x) { show($x) }
+sub test :sig(() -> Void) () {
+    my $r = show_it(42);
+}
+PERL
+    is scalar @$errs, 0, 'no error when typeclass constraint satisfied (Show for Int)';
+};
+
+subtest 'typeclass constraint: violation' => sub {
+    my $errs = type_errors(<<'PERL');
+package main;
+use v5.40;
+use Typist;
+use Typist::DSL;
+typeclass Show => (T => +{ show => '(T) -> Str' });
+instance Show => 'Int', +{ show => sub ($x) { "$x" } };
+sub show_it :sig(<T: Show>(T) -> Str) ($x) { show($x) }
+sub test :sig(() -> Void) () {
+    my $r = show_it("hello");
+}
+PERL
+    ok scalar @$errs >= 1, 'detects typeclass constraint violation';
+    like $errs->[0]{message}, qr/no instance of Show for/,
+        'error message mentions missing instance';
+};
+
+subtest 'typeclass constraint: multiple constraints' => sub {
+    my $errs = type_errors(<<'PERL');
+package main;
+use v5.40;
+use Typist;
+use Typist::DSL;
+typeclass Show => (T => +{ show => '(T) -> Str' });
+typeclass Eq   => (T => +{ eq   => '(T, T) -> Bool' });
+instance Show => 'Int', +{ show => sub ($x) { "$x" } };
+instance Eq   => 'Int', +{ eq   => sub ($a, $b) { $a == $b } };
+sub display_eq :sig(<T: Show + Eq>(T, T) -> Str) ($a, $b) { show($a) }
+sub test :sig(() -> Void) () {
+    my $r = display_eq(1, 2);
+}
+PERL
+    is scalar @$errs, 0, 'no error when multiple typeclass constraints satisfied';
+};
+
+subtest 'typeclass constraint: one of multiple missing' => sub {
+    my $errs = type_errors(<<'PERL');
+package main;
+use v5.40;
+use Typist;
+use Typist::DSL;
+typeclass Show => (T => +{ show => '(T) -> Str' });
+typeclass Eq   => (T => +{ eq   => '(T, T) -> Bool' });
+instance Eq   => 'Int', +{ eq   => sub ($a, $b) { $a == $b } };
+sub display_eq :sig(<T: Show + Eq>(T, T) -> Str) ($a, $b) { "x" }
+sub test :sig(() -> Void) () {
+    my $r = display_eq(1, 2);
+}
+PERL
+    ok scalar @$errs >= 1, 'detects partial constraint violation';
+    like $errs->[0]{message}, qr/no instance of Show for Int/,
+        'error message mentions specific missing instance';
+};
+
 done_testing;

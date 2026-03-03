@@ -382,7 +382,7 @@ T already bound to Int, now unifying with Num → T := Num  (LUB)
 ```
 _check_generic_call(name, fn, args, env, word):
   1. Infer argument types (skip if any arg is Any or non-inferable)
-  2. Parse generic declarations to extract var names and bounds
+  2. Parse generic declarations to extract var names, bounds, and tc_constraints
   3. Resolve formal parameter types, converting aliases to type variables
   4. Unify: pair formal params with actual args to bind type variables
      If unification fails → TypeMismatch at failing parameter
@@ -391,9 +391,33 @@ _check_generic_call(name, fn, args, env, word):
        actual = bindings{name}
        if !Subtype->is_subtype(actual, bound):
          → TypeMismatch: "T does not satisfy bound Num"
+  5.5. Typeclass constraint check:
+       For each generic with tc_constraints:
+         actual = bindings{name}
+         for each tc_name in tc_constraints:
+           if !Registry->resolve_instance(tc_name, actual):
+             → TypeMismatch: "no instance of Show for Str"
   6. Concrete subtype check:
      Substitute bindings into formal types, verify each arg
 ```
+
+### Generic Struct Constructor Check
+
+Struct constructors with type parameters use a two-pass approach in `_check_struct_constructor_call`:
+
+```
+Pass 1: Collect bindings
+  For each field => value pair:
+    - Infer value type
+    - collect_bindings(formal_field_type, inferred) into %bindings
+
+Pass 2: Verify with substituted types
+  For each field:
+    - Substitute bindings into formal field type
+    - Check is_subtype(inferred, substituted_expected)
+```
+
+The inference side (`_instantiate_generic_struct` in `Static::Infer`) follows the same two-pass binding pattern but also widens literal types (`Literal(42, Int)` → `Atom(Int)`) before producing type_args.
 
 ### Alias-to-Var Conversion
 

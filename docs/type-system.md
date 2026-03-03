@@ -17,6 +17,7 @@ This document provides a comprehensive reference for all type constructs, subtyp
 - [Type Aliases](#type-aliases)
 - [Nominal Types (Newtype)](#nominal-types-newtype)
 - [Algebraic Data Types](#algebraic-data-types)
+- [Nominal Structs](#nominal-structs)
 - [Recursive Types](#recursive-types)
 - [Type Variables and Generics](#type-variables-and-generics)
 - [Bounded Quantification](#bounded-quantification)
@@ -429,6 +430,104 @@ Registry->lookup_type($name);    # Also resolves datatypes
 
 ---
 
+## Nominal Structs
+
+`struct Name => (field => Type, ...)` creates a **nominal**, immutable, blessed record type. Unlike structural records, structs impose a name-based identity barrier and support generic parameterization.
+
+### Basic Definition
+
+```perl
+BEGIN {
+    struct Point => (x => Int, y => Int);
+    struct Config => (host => Str, port => Int, debug => optional(Bool));
+}
+
+my $p = Point(x => 1, y => 2);
+say $p->x;                      # 1
+my $q = $p->with(x => 10);      # Point(x => 10, y => 2) — immutable update
+```
+
+### Generic Structs
+
+Structs can be parameterized over type variables, following the same pattern as `datatype`:
+
+```perl
+BEGIN {
+    struct 'Pair[T, U]' => (fst => T, snd => U);
+    struct 'Box[T]'     => (val => T);
+}
+
+my $p = Pair(fst => 42, snd => "hi");   # Pair[Int, Str]
+say $p->fst;                             # 42 (inferred as Int)
+
+my $b = Box(val => 3.14);               # Box[Double]
+```
+
+**Syntax note**: generic names must be quoted (`'Pair[T, U]'`) because `[` would break bareword parsing in Perl.
+
+**Type parameter binding**: at construction time, field values are type-inferred and bound to type variables. The `_type_args` are recorded on the instance and preserved through `with()`.
+
+### Subtyping
+
+```
+Point <: Point                       # Nominal identity
+Point </: { x => Int, y => Int }     # Nominal barrier (but reversed holds)
+{ x => Int, y => Int } </: Point     # Record is never a subtype of Struct
+
+Pair[Int, Str] <: Pair[Int, Str]     # type_args match
+Pair[Int, Str] </: Pair[Int, Int]    # type_args differ
+Pair[Bool, Str] <: Pair[Int, Str]    # Covariant (Bool <: Int)
+```
+
+Generic struct subtyping is covariant: `Box[Bool] <: Box[Int]` because `Bool <: Int`.
+
+### Static Inference
+
+The static inferrer handles generic struct constructors via named-argument binding:
+
+1. Extract `key => value` pairs from the PPI call node
+2. Infer each value type and collect bindings against the formal Var-typed fields
+3. Widen literal bindings (`Literal(42, Int)` → `Int`)
+4. Substitute bindings and produce a concrete `Struct[T1, T2]` type
+
+Accessor inference on generic structs substitutes `type_params → type_args`:
+
+```
+$p : Pair[Int, Str]
+$p->fst : Int       # Var(T) substituted with Int
+$p->snd : Str       # Var(U) substituted with Str
+```
+
+### Type Interface
+
+| Method | Behavior |
+|--------|----------|
+| `type_params` | Returns bound parameter names (`('T', 'U')`) |
+| `type_args` | Returns concrete type arguments (`(Int, Str)`) |
+| `instantiate(@args)` | Creates a copy with concrete type_args |
+| `substitute($bindings)` | Substitutes in both record and type_args |
+| `contains($val)` | Checks blessed class, substitutes type_args for field validation |
+
+### Future: Bounded Generic Structs
+
+Generic struct parameters could carry bounded quantification constraints:
+
+```perl
+# Not yet implemented — proposed syntax
+struct 'SortedPair[T: Ord]' => (lo => T, hi => T);
+struct 'Cache[K: Hashable, V]' => (store => HashRef[K, V]);
+```
+
+This would require extending `_struct` to parse bound expressions from the type parameter specification (e.g., `T: Ord`) and register them as `generics` with `bound_expr`. The static checker already supports bounded quantification in `_check_generic_call`, so the validation machinery is in place — only the declaration-side parsing needs extension.
+
+Implementation sketch:
+1. Parse `'SortedPair[T: Ord]'` → type_params `['T']`, bounds `{T => 'Ord'}`
+2. In Registration, emit `generics => [{name => 'T', bound_expr => 'Ord'}]`
+3. TypeChecker's existing step 5 (bounded quantification check) handles the rest
+4. Runtime constructor validates `Subtype->is_subtype($inferred, $bound)` per field
+
+---
+
 ## Recursive Types
 
 Self-referential type definitions through productive recursion:
@@ -517,15 +616,28 @@ sub max_of :sig(<T: Num>(T, T) -> T) ($a, $b) {
 - **Static (TypeChecker)**: after unification, checks `is_subtype(bindings{T}, bound)` for each bounded variable
 - **Static (Checker)**: validates that bound expressions are well-formed and parseable
 
+### Typeclass Constraints vs. Type Bounds
+
+The `T: X` syntax is overloaded — the parser (`Attribute->parse_generic_decl`) disambiguates by consulting the Registry:
+
+| Syntax | Resolution | Check |
+|--------|-----------|-------|
+| `T: Num` | `Num` is not a registered typeclass → **type bound** | `is_subtype(actual, Num)` |
+| `T: Show` | `Show` is a registered typeclass → **typeclass constraint** | `resolve_instance("Show", actual)` |
+| `T: Show + Eq` | All parts are typeclasses → **multiple tc constraints** | Each checked independently |
+| `T: Num + Show` | `Num` is not a typeclass → falls back to **type bound** on `"Num + Show"` | (bound parse) |
+
+**Pipeline step**: bounded quantification is step 5 in `_check_generic_call`; typeclass constraints are step 5.5, evaluated immediately after.
+
 ### Multiple Bounds
 
-Multiple bounds can be combined with `+`:
+Multiple typeclass constraints can be combined with `+`:
 
 ```perl
 sub sorted_show :sig(<T: Ord + Show>(ArrayRef[T]) -> Str) ($arr) { ... }
 ```
 
-This checks both typeclass constraints at instantiation time.
+This checks both typeclass constraints at instantiation time. See [Static Typeclass Constraint Checking](#static-typeclass-constraint-checking) for details.
 
 ---
 
@@ -673,6 +785,31 @@ BEGIN {
     instance Ord => Int, +{ compare => sub ($a, $b) { $a <=> $b } };
 }
 ```
+
+### Static Typeclass Constraint Checking
+
+When a generic function is annotated with typeclass constraints (e.g., `<T: Show>`), the static TypeChecker verifies that the inferred type argument has a registered instance:
+
+```perl
+typeclass Show => (T => +{ show => '(T) -> Str' });
+instance Show => 'Int', +{ show => sub ($x) { "$x" } };
+
+sub show_it :sig(<T: Show>(T) -> Str) ($x) { show($x) }
+
+show_it(42);       # OK — Show instance exists for Int
+show_it("hello");  # TypeMismatch: no instance of Show for "hello"
+```
+
+Multiple constraints are checked independently:
+
+```perl
+sub display_eq :sig(<T: Show + Eq>(T, T) -> Str) ($a, $b) { ... }
+# Checks both Show and Eq instances for the inferred type
+```
+
+**Pipeline**: after unification binds `T` to a concrete type (step 4), the checker iterates over `tc_constraints` and calls `Registry->resolve_instance($tc_name, $actual)`. Missing instances produce a `TypeMismatch` diagnostic.
+
+**Distinction from bounded quantification**: `T: Num` (bound) checks `is_subtype(actual, Num)`. `T: Show` (typeclass) checks `resolve_instance("Show", actual)`. The parser distinguishes these by consulting the Registry for known typeclass names.
 
 ### Current Limitations
 

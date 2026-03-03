@@ -13,6 +13,7 @@ use Typist::Type::Param;
 use Typist::Effect;
 use Typist::TypeClass;
 use Typist::Attribute;
+use Typist::Transform;
 use Typist::Type::Record;
 use Typist::Type::Struct;
 
@@ -104,8 +105,10 @@ sub register_structs ($class, $extracted, $registry, %opts) {
         my $fields = $info->{fields} // +{};
         my @opt_names = ($info->{optional_fields} // [])->@*;
         my %opt_set = map { $_ => 1 } @opt_names;
+        my @tp = ($info->{type_params} // [])->@*;
+        my %vn = map { $_ => 1 } @tp;
 
-        # Parse field types
+        # Parse field types (with Alias→Var conversion for type params)
         my (%required, %optional);
         for my $fname (keys %$fields) {
             my $type_str = $fields->{$fname};
@@ -120,6 +123,7 @@ sub register_structs ($class, $extracted, $registry, %opts) {
                 next;
             }
             next unless $parsed;
+            $parsed = Typist::Transform->aliases_to_vars($parsed, \%vn) if @tp;
 
             if ($opt_set{$fname}) {
                 $optional{$fname} = $parsed;
@@ -134,9 +138,10 @@ sub register_structs ($class, $extracted, $registry, %opts) {
         );
         my $struct_pkg = "Typist::Struct::${name}";
         my $struct_type = Typist::Type::Struct->new(
-            name    => $name,
-            record  => $record,
-            package => $struct_pkg,
+            name        => $name,
+            record      => $record,
+            package     => $struct_pkg,
+            type_params => \@tp,
         );
         $registry->register_type($name, $struct_type);
 
@@ -148,10 +153,11 @@ sub register_structs ($class, $extracted, $registry, %opts) {
         for my $fname (sort keys %optional) {
             push @ctor_params_expr, "$fname?: " . $optional{$fname}->to_string;
         }
+        my @generics = map { +{ name => $_, bound_expr => undef } } @tp;
         $registry->register_function($pkg, $name, +{
             params       => [],
             returns      => $struct_type,
-            generics     => [],
+            generics     => \@generics,
             variadic     => 1,
             params_expr        => \@ctor_params_expr,
             returns_expr       => $name,
