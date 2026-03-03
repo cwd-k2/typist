@@ -220,9 +220,16 @@ sub _infer_call ($name, $env, $list_element = undef) {
         if (my $sig = $registry->search_function_by_name($name)) {
             if ($sig->{returns}) {
                 my $ret = _maybe_instantiate_return($sig, $env, $list_element);
-                # Only use cross-package result if generics are fully instantiated;
-                # unresolved type vars (e.g., Err<T>(Str)->Result[T]) fall through to Any
-                return $ret unless $ret->free_vars;
+                # Replace unresolved type vars with '_' placeholder.
+                # Handles: None() -> Option[T], Err("msg") -> Result[T]
+                # where T can't be bound from arguments.
+                if ($ret->free_vars) {
+                    require Typist::Type::Fold;
+                    $ret = Typist::Type::Fold->map_type($ret, sub ($t) {
+                        $t->is_var ? Typist::Type::Atom->new('_') : $t;
+                    });
+                }
+                return $ret;
             }
         }
     }
@@ -239,16 +246,7 @@ sub _maybe_instantiate_return ($sig, $env, $list_element) {
 
     # No generics or no argument list → return as-is
     return $ret unless $generics && @$generics && $list_element;
-
-    # Zero-param generic constructor (e.g., None() -> Option[T]):
-    # no args to bind type vars, so replace free vars with Any
-    unless ($sig->{params} && @{$sig->{params}}) {
-        return $ret unless $ret->free_vars;
-        require Typist::Type::Fold;
-        return Typist::Type::Fold->map_type($ret, sub ($t) {
-            $t->is_var ? Typist::Type::Atom->new('Any') : $t;
-        });
-    }
+    return $ret unless $sig->{params} && @{$sig->{params}};
 
     # Extract PPI argument nodes
     my @arg_nodes;
@@ -379,8 +377,9 @@ sub _infer_block_return ($block, $env, $expected = undef) {
         return __PACKAGE__->infer_expr($val, $env, $expected);
     }
 
-    # Implicit return: infer from the last statement's first child
-    __PACKAGE__->infer_expr($first, $env, $expected) // __PACKAGE__->infer_expr($last, $env, $expected);
+    # Implicit return: try statement-level first (catches ternary/binary),
+    # then fall back to first-child (catches match/handle/function calls).
+    __PACKAGE__->infer_expr($last, $env, $expected) // __PACKAGE__->infer_expr($first, $env, $expected);
 }
 
 # ── Data Type Resolution ─────────────────────────

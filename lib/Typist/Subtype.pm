@@ -49,6 +49,17 @@ sub common_super ($class, $a, $b) {
         }
     }
 
+    # Param LUB: same base → LUB each type arg (covariant)
+    if ($a_eff->is_param && $b_eff->is_param && $a_eff->base eq $b_eff->base) {
+        my @a_args = $a_eff->params;
+        my @b_args = $b_eff->params;
+        if (@a_args && @a_args == @b_args) {
+            require Typist::Type::Param;
+            my @lub_args = map { $class->common_super($a_args[$_], $b_args[$_]) } 0 .. $#a_args;
+            return Typist::Type::Param->new($a_eff->base, @lub_args);
+        }
+    }
+
     # Struct LUB: intersect field names, LUB each field's type
     if ($a_eff->is_record && $b_eff->is_record) {
         require Typist::Type::Record;

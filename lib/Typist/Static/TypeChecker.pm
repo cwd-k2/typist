@@ -728,7 +728,9 @@ sub _collect_fn_return_types ($self) {
             my $last = $stmts[-1];
             my $first = $last->schild(0);
             if ($first && !($first->isa('PPI::Token::Word') && $first->content eq 'return')) {
-                my $t = Typist::Static::Infer->infer_expr($first, $env);
+                # Try statement-level first (ternary/binary), then first-child (match/handle/call)
+                my $t = Typist::Static::Infer->infer_expr($last, $env)
+                     // Typist::Static::Infer->infer_expr($first, $env);
                 push @types, $t if $t;
             }
         }
@@ -1052,10 +1054,23 @@ sub _build_env ($self) {
 # Perl's `my` is always mutable, so Literal(v, B) → Atom(B).
 # Special case: Bool → Int because 0/1 are numbers in Perl.
 sub _widen_literal ($type) {
-    return $type unless $type->is_literal;
-    my $base = $type->base_type;
-    $base = 'Int' if $base eq 'Bool';
-    Typist::Type::Atom->new($base);
+    if ($type->is_literal) {
+        my $base = $type->base_type;
+        $base = 'Int' if $base eq 'Bool';
+        return Typist::Type::Atom->new($base);
+    }
+    # Recurse into Param types: Option[42] → Option[Int]
+    if ($type->is_param && $type->params) {
+        my @args = $type->params;
+        my $changed;
+        my @widened = map {
+            my $w = _widen_literal($_);
+            $changed = 1 if !$w->equals($_);
+            $w;
+        } @args;
+        return Typist::Type::Param->new($type->base, @widened) if $changed;
+    }
+    $type;
 }
 
 sub _resolve_type ($self, $expr) {
