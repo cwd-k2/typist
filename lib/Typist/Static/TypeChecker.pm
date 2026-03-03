@@ -3,6 +3,7 @@ use v5.40;
 
 our $VERSION = '0.01';
 
+use List::Util 'any';
 use Scalar::Util 'refaddr';
 use Typist::Static::Extractor;
 use Typist::Static::Infer;
@@ -67,7 +68,7 @@ sub _check_variable_initializers ($self) {
         my $env = $self->_env_for_node($init_node);
         my $inferred = Typist::Static::Infer->infer_expr($init_node, $env, $declared);
         next unless defined $inferred;
-        next if $inferred->is_atom && $inferred->name eq 'Any';
+        next if _contains_any($inferred);
 
         unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
             $self->{errors}->collect(
@@ -119,7 +120,7 @@ sub _check_assignments ($self) {
         my $rhs = $op->snext_sibling // next;
         my $inferred = Typist::Static::Infer->infer_expr($rhs, $env, $declared_type);
         next unless defined $inferred;
-        next if $inferred->is_atom && $inferred->name eq 'Any';
+        next if _contains_any($inferred);
 
         unless (Typist::Subtype->is_subtype($inferred, $declared_type, registry => $self->{registry})) {
             $self->{errors}->collect(
@@ -288,7 +289,7 @@ sub _check_call_sites ($self) {
 
             my $inferred = Typist::Static::Infer->infer_expr($args[$i], $env, $declared);
             next unless defined $inferred;
-            next if $inferred->is_atom && $inferred->name eq 'Any';
+            next if _contains_any($inferred);
 
             unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
                 $self->{errors}->collect(
@@ -364,7 +365,7 @@ sub _check_method_call ($self, $word, $arrow) {
 
         my $inferred = Typist::Static::Infer->infer_expr($args[$i], $env, $declared);
         next unless defined $inferred;
-        next if $inferred->is_atom && $inferred->name eq 'Any';
+        next if _contains_any($inferred);
 
         unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
             $self->{errors}->collect(
@@ -409,7 +410,7 @@ sub _check_return_types ($self) {
             my $ret_env = $self->_env_for_node($ret);
             my $inferred = Typist::Static::Infer->infer_expr($val, $ret_env, $declared);
             next unless defined $inferred;
-            next if $inferred->is_atom && $inferred->name eq 'Any';
+            next if _contains_any($inferred);
 
             unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
                 $self->{errors}->collect(
@@ -465,7 +466,7 @@ sub _check_implicit_return_of_stmt ($self, $stmt, $env, $declared, $name) {
 
     my $inferred = Typist::Static::Infer->infer_expr($first, $env, $declared);
     return unless defined $inferred;
-    return if $inferred->is_atom && $inferred->name eq 'Any';
+    return if _contains_any($inferred);
 
     unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
         $self->{errors}->collect(
@@ -489,7 +490,7 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
     for my $arg (@$args) {
         my $inferred = Typist::Static::Infer->infer_expr($arg, $env);
         return unless defined $inferred;
-        return if $inferred->is_atom && $inferred->name eq 'Any';
+        return if _contains_any($inferred);
         push @arg_types, $inferred;
     }
 
@@ -555,7 +556,7 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
     for my $i (0 .. $n - 1) {
         my $concrete = Typist::Static::Unify->substitute($param_types[$i], $bindings);
         next if $self->_has_type_var($concrete);
-        next if $arg_types[$i]->is_atom && $arg_types[$i]->name eq 'Any';
+        next if _contains_any($arg_types[$i]);
         unless (Typist::Subtype->is_subtype($arg_types[$i], $concrete, registry => $self->{registry})) {
             $self->{errors}->collect(
                 kind          => 'TypeMismatch',
@@ -1431,6 +1432,22 @@ sub _extract_args ($self, $list) {
     }
 
     @args;
+}
+
+# Check whether a type transitively contains Any (gradual typing marker).
+# Used to skip type checks when inferred types are incomplete.
+# Only checks Atom, Func, and Union — NOT Param, because Any inside
+# Param (e.g. ArrayRef[Any] from LUB) is a legitimate computed result.
+sub _contains_any ($type) {
+    return 1 if $type->is_atom && $type->name eq 'Any';
+    if ($type->is_func) {
+        return 1 if any { _contains_any($_) } $type->params;
+        return 1 if _contains_any($type->returns);
+    }
+    if ($type->is_union) {
+        return 1 if any { _contains_any($_) } $type->members;
+    }
+    0;
 }
 
 1;

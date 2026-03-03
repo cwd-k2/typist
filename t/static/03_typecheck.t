@@ -1620,4 +1620,30 @@ PERL
     is scalar @$errs, 0, 'unless else block narrows to Int (defined guard direct)';
 };
 
+# ── Gradual Typing: Func containing Any ─────────
+
+subtest 'gradual: no error when inferred Func contains Any (variable init)' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub unknown_fn ($x) { $x }
+sub test :sig((forall A. (A) -> A) -> Int) ($f) {
+    my $g :sig(forall A. (A) -> A) = \&unknown_fn;
+    42
+}
+PERL
+    is scalar @$errs, 0, 'Func containing Any skipped (variable init)';
+};
+
+subtest 'gradual: no error when Func-containing-Any passed as arg' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub accept :sig(((Int) -> Int) -> Void) ($f) { }
+sub unknown ($x) { $x }
+sub test :sig(() -> Void) () {
+    accept(\&unknown);
+}
+PERL
+    is scalar @$errs, 0, 'Func-containing-Any arg skipped at call site';
+};
+
 done_testing;
