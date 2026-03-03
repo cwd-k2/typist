@@ -353,10 +353,9 @@ sub symbol_at ($self, $line, $col) {
             my @method_names;
             my %methods;
             if ($tc) {
-                @method_names = sort keys %{$tc->methods // +{}};
-                for my $m (@method_names) {
-                    $methods{$m} = $tc->methods->{$m};
-                }
+                my %m = $tc->methods;
+                @method_names = sort keys %m;
+                %methods = %m;
             }
             return $with_range->(+{
                 name         => $lookup_name,
