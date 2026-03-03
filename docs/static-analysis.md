@@ -832,22 +832,20 @@ Setting `TYPIST_CHECK_QUIET=1` skips the entire `_check_analyze()` pass in the C
 
 ### Expression Inference
 
-| Not Supported | Example | Reason |
-|---------------|---------|--------|
-| Dereference | `@{$arr}`, `%{$hash}` | No deref type propagation |
-| Complex dereference chains | `$a->{k}[0]{j}` | Only single-level subscript |
+| Limitation | Impact |
+|------------|--------|
+| Operator precedence | Does not influence inferred types |
+| Block dereference | `@{$expr}`, `%{$expr}` — block-form deref not propagated (cast `@$ref` and postfix `->@*` are supported) |
 
 ### Structural
 
 | Limitation | Impact |
 |------------|--------|
-| No scope shadowing | Inner closures share parent's flat name env |
-| PPI attribute parsing fragile | Unusual spacing in `:sig(...)` may fail |
 | Method calls limited to $self | No cross-package or arbitrary receiver method checking |
 
 ### Effects
 
 | Limitation | Impact |
 |------------|--------|
-| Open rows skipped | Row polymorphic effects not verified statically |
 | No effect inference | Effects must be manually annotated |
+| Protocol branching | Linear operation sequences only; if/else paths not tracked |

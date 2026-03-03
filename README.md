@@ -499,12 +499,10 @@ carton exec -- prove -l t/critic/       # Perl::Critic policy
 
 ## Known Limitations
 
-- **Expression inference** — Complex dereference chains (`$a->{k}[0]{j}`) may widen to `Any`. Operator precedence does not influence inferred types.
+- **Expression inference** — Operator precedence does not influence inferred types.
 - **Method checking** — Only `$self->method()` within the same package is checked. Cross-package and chained method calls are skipped under gradual typing.
 - **Type narrowing** — Supports `defined($x)`, truthiness, `isa`, and early return. Does not support `ref()` checks or user-defined predicates.
-- **Effect system** — Effects require explicit annotations; there is no effect inference. Row-polymorphic verification is limited. Protocol checking traces linear operation sequences; branching control flow within effectful functions is not yet tracked.
-- **Cross-file CHECK** — The CHECK phase is single-file. Use `TYPIST_CHECK_QUIET=1` with the LSP or CLI for cross-file diagnostics.
-- **Hover** — Builtin and special-form hovers show static Prelude signatures, not call-site-specific inferred types.
+- **Effect system** — Effects require explicit annotations; there is no effect inference. Protocol checking traces linear operation sequences; branching control flow within effectful functions is not yet tracked.
 - **PPI dependency** — Diagnostic quality depends on PPI's parse accuracy.
 
 ## License
