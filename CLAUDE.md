@@ -35,16 +35,61 @@ DSL (Type constructors: Int, Str, Double, Num, Array(...), Hash(...), Record(...
 ### Error Detection Phases
 
 ```
-Phase           | Catches                    | Surface       | Tool Integration
-────────────────|────────────────────────────|───────────────|─────────────────
-Static (LSP)    | TypeMismatch, EffectMis.   | Diagnostics   | typist-lsp, editors
-                | ArityMismatch, CycleError  |               |
-                | UnknownType, ProtocolMis.  |               |
-CHECK (compile) | All of above (expanded)    | warn → STDERR | perlnavigator, prove
-Runtime (opt-in)| Generic instantiation      | die           | -runtime flag
-                | TypeClass constraints      |               |
-                | Effect::op/handle (effects)|               |
-                | Boundary (newtype) [always] |              |
+Phase              | Catches                    | Surface       | Tool Integration
+───────────────────|────────────────────────────|───────────────|─────────────────
+Static (LSP)       | TypeMismatch, EffectMis.   | Diagnostics   | typist-lsp, editors
+                   | ArityMismatch, CycleError  |               |
+                   | UnknownType, ProtocolMis.  |               |
+CHECK (compile)    | All of above (expanded)    | warn → STDERR | perlnavigator, prove
+Boundary [always]  | Constructor type violation | die           | newtype/datatype/struct
+                   | Effect handler dispatch    |               | Effect::op/handle
+Runtime (-runtime) | Scalar assignment mismatch | die           | Tie::Scalar
+```
+
+### Validation Architecture
+
+Typist の検証は3層に分かれる。設計原則は「静的解析を既定とし、型の境界は常に守り、ランタイム監視は選択的に」。
+
+**Layer 1 — Static Analysis (compile time, always)**
+
+PPI ベースのソースコード解析。実行せずに型・エフェクトの整合性を検証する。
+
+- `Typist::Static::Analyzer` がパイプラインを統括: Extractor → Registration → Checker → TypeChecker → EffectChecker → ProtocolChecker
+- CHECK ブロック (`Typist.pm`) がロード済みパッケージごとに Analyzer を実行、診断を `warn` で出力
+- LSP サーバは `Document->analyze` で同じパイプラインをファイル単位・差分実行
+- `TYPIST_CHECK_QUIET=1`: CHECK の解析をスキップ（typist-lsp 使用時の重複回避）
+
+検出対象: TypeMismatch（変数初期化、代入、関数引数、戻り値、struct コンストラクタフィールド）、ArityMismatch、EffectMismatch、ProtocolMismatch、CycleError、UnknownType。Gradual typing ガード（`Any` を含む型はスキップ）により、アノテーションのない部分は寛容に扱う。
+
+**Layer 2 — Boundary Enforcement (runtime, always-on)**
+
+型コンストラクタは型の「境界」であり、値がその型に入る唯一の門。この門での検証は `-runtime` に依存せず常に実行される。
+
+- **newtype**: `$inner->contains($value)` で内部型を検証。`$val->base` で内部値を取り出す。
+- **datatype**: 引数の個数 + `$type->contains($arg)` を各引数に適用。パラメトリック型は型引数を推論して検証。
+- **struct**: 不明フィールド・必須フィールド欠落チェック + `$expected->contains($given{$k})` を各フィールドに適用。
+- **Effect::op**: ハンドラスタック (LIFO) を走査し、最近のハンドラにディスパッチ。ハンドラ不在なら `die`。
+
+設計根拠: コンストラクタは型の不変条件 (invariant) を確立する場であり、ここを通過した値は型が保証される。この保証が `-runtime` フラグという外的条件に依存すると、フラグの有無で型安全性が変わってしまう。
+
+**Layer 3 — Runtime Monitoring (opt-in: `-runtime` / `TYPIST_RUNTIME=1`)**
+
+`:sig()` アノテーション付き変数への代入を `Tie::Scalar` で監視する。
+
+- `Typist::Attribute` が変数登録時に `tie` を設置（`$RUNTIME` 時のみ）
+- `STORE` で `$type->contains($value)` を検証、違反なら `die`
+- 変数の再代入ごとに型を検証するため、実行コストがある
+
+これが唯一 `-runtime` でゲートされる機構。コンストラクタ境界検証・静的解析・CHECK ブロックは `-runtime` に依存しない。
+
+```
+機構              | use Typist (default) | use Typist -runtime
+──────────────────|──────────────────────|─────────────────────
+Static Analysis   | ON                   | ON
+CHECK diagnostics | ON                   | ON
+Constructor 境界  | ON                   | ON
+Effect dispatch   | ON                   | ON
+Tie::Scalar 監視  | OFF                  | ON
 ```
 
 ### Key Modules
@@ -84,7 +129,7 @@ Runtime (opt-in)| Generic instantiation      | die           | -runtime flag
 - Two-tier composite types: **Record** (structural, plain hashrefs via `typedef Name => Record(...)`) and **struct** (nominal, blessed immutable objects via `struct Name => (fields...)`). Struct values have constructors (`Name(field => val)`), accessors (`$obj->field`), and immutable updates (`$obj->with(field => val)`). `optional(Type)` marks fields that can be omitted. Struct <: Record (structural compatibility), Record </: Struct (nominal barrier).
 - Two-tier collection types: **Array[T]/Hash[K,V]** are list types (what `grep`/`map`/`sort`/`@deref` produce — Perl's list context), **ArrayRef[T]/HashRef[K,V]** are scalar reference types (what `[LIST]`/`+{LIST}` produce). `[Array[T]]` flattens to `ArrayRef[T]`. Array and Hash are NOT subtypes of ArrayRef/HashRef — they are fundamentally different (list vs reference). TypeClass dispatch installs into the caller's namespace (`${caller}::${ClassName}::${method}`), not into `Typist::TC::*`.
 - No source filters or external preprocessors.
-- Static-first: `use Typist;` = static-only (default). Runtime enforcement via `use Typist -runtime;` or `TYPIST_RUNTIME=1`. Newtype constructors always validate (boundary enforcement). `$val->base` extracts inner value (via `Typist::Newtype::Base`).
+- Static-first: `use Typist;` = static-only (default). `-runtime` / `TYPIST_RUNTIME=1` enables `Tie::Scalar` variable monitoring. Constructor boundary validation (newtype, datatype, struct) is always-on regardless of `-runtime`. `$val->base` extracts newtype inner value (via `Typist::Newtype::Base`).
 - CHECK phase runs both structural checks (Checker) and full static analysis (Analyzer with TypeChecker + EffectChecker) per loaded package. Diagnostics surface as `warn` → perlnavigator picks these up. Suppress with `TYPIST_CHECK_QUIET=1` when using typist-lsp.
 - Gradual typing: fully annotated → all checks enforced; partially annotated (some attrs, no `:Eff`) → pure, return type unknown if no `:Returns`; completely unannotated → `(Any...) -> Any ! [*]`, type checks skip, effect checks flag.
 - `datatype Shape => Circle => '(Int)', Rectangle => '(Int, Int)'` defines ADTs (tagged unions). Constructors are installed into the caller's namespace. Parameterized ADTs via `datatype 'Option[T]' => Some => '(T)', None => '()'` — type params are promoted from aliases to Var objects, constructors infer type arguments via `Inference->infer_value`, subtyping is covariant in type arguments.
@@ -170,7 +215,7 @@ Tests are numbered and ordered by dependency:
 - `t/static/08_prelude.t` — Builtin prelude (type checking, effect detection, user override)
 - `t/static/09_builtins_infer.t` — Typist builtin inference (handle/match return types, newtype ->base inference)
 - `t/static/10_rank2.t` — Rank-2 polymorphism static analysis
-- `t/static/11_struct.t` — Struct static analysis (extraction, registration, inference)
+- `t/static/11_struct.t` — Struct static analysis (extraction, registration, inference, constructor type checking)
 - `t/static/12_loop_inference.t` — Loop variable inference (for-loop extraction, iterable element types)
 - `t/static/13_hof_inference.t` — Higher-order function inference (callback return types, generic instantiation)
 - `t/static/14_protocol.t` — Protocol static analysis (sequence verification, state mismatch, composition, hints)
