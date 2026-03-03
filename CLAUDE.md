@@ -151,6 +151,7 @@ Tie::Scalar 監視  | OFF                  | ON
 - Variable reassignment: `:sig` annotated variables are checked on reassignment (`$x = expr`); unannotated variables are not checked.
 - Method calls: `$self->method()` (same-package), `$p->name()` (cross-package struct), `Person->new()` (class method), `$p->with(...)->greet()` (chained via return type resolution), generic methods (delegated to `_check_generic_call`), and Record accessor calls are all type-checked. Union receivers and untyped receivers are gradual-skipped.
 - Cross-file typeclass instances: `instance` declarations are extracted by `Extractor._extract_instances`, registered by `Registration.register_instances` (with empty methods hash — existence only), and tracked per-file by `Workspace`. `Registry.unregister_instance` enables differential updates. Static registration does not validate method completeness (cross-file ordering is non-deterministic); completeness checking is deferred to runtime.
+- **LSP coverage rule**: When adding or modifying static analysis features, update `docs/lsp-coverage.md`. New analysis outputs must have corresponding LSP entries (or an explicit "N/A" with rationale). See the coverage matrix for current gaps.
 
 ## Commands
 
