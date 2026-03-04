@@ -69,6 +69,37 @@ sub unify ($class, $formal, $actual, $bindings = +{}, %opts) {
         return $bindings;
     }
 
+    # ── Param vs Struct (or vice versa) ───────
+    # Attribute::resolve_struct_params converts Param → Struct in the registry,
+    # while CallChecker re-parses from strings back to Param.  Bridge the gap
+    # by treating a Struct with type_args as equivalent to a Param for unification.
+    if ($formal->is_param && $actual->is_struct) {
+        my @ta = $actual->type_args;
+        if (@ta) {
+            return undef unless "${\$formal->base}" eq $actual->name;
+            my @fp = $formal->params;
+            return undef unless @fp == @ta;
+            for my $i (0 .. $#fp) {
+                $bindings = $class->unify($fp[$i], $ta[$i], $bindings, registry => $registry);
+                return undef unless $bindings;
+            }
+            return $bindings;
+        }
+    }
+    if ($formal->is_struct && $actual->is_param) {
+        my @ta = $formal->type_args;
+        if (@ta) {
+            return undef unless $formal->name eq "${\$actual->base}";
+            my @ap = $actual->params;
+            return undef unless @ta == @ap;
+            for my $i (0 .. $#ta) {
+                $bindings = $class->unify($ta[$i], $ap[$i], $bindings, registry => $registry);
+                return undef unless $bindings;
+            }
+            return $bindings;
+        }
+    }
+
     # ── Both Func → params + return ───────────
     if ($formal->is_func && $actual->is_func) {
         my @fp = $formal->params;
@@ -175,6 +206,31 @@ sub collect_bindings ($class, $formal, $actual, $bindings) {
             $class->collect_bindings($fp[$i], $ap[$i], $bindings) or return 0;
         }
         return 1;
+    }
+    # ── Param vs Struct (or vice versa) ───────
+    if ($formal->is_param && $actual->is_struct) {
+        my @ta = $actual->type_args;
+        if (@ta) {
+            return 0 unless "${\$formal->base}" eq $actual->name;
+            my @fp = $formal->params;
+            return 0 unless @fp == @ta;
+            for my $i (0 .. $#fp) {
+                $class->collect_bindings($fp[$i], $ta[$i], $bindings) or return 0;
+            }
+            return 1;
+        }
+    }
+    if ($formal->is_struct && $actual->is_param) {
+        my @ta = $formal->type_args;
+        if (@ta) {
+            return 0 unless $formal->name eq "${\$actual->base}";
+            my @ap = $actual->params;
+            return 0 unless @ta == @ap;
+            for my $i (0 .. $#ta) {
+                $class->collect_bindings($ta[$i], $ap[$i], $bindings) or return 0;
+            }
+            return 1;
+        }
     }
     # ── Quantified types ──────────────────────
     # Both Quantified: match vars count, rename, recurse on bodies
