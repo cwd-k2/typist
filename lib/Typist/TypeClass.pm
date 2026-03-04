@@ -144,17 +144,28 @@ sub check_instance_completeness ($self, $type_expr, %methods) {
 
 # Resolve instance for given type(s) from instance list.
 # $type_or_types: a single Type object, or an arrayref of Type objects (multi-param).
-sub resolve ($class_or_self, $class_name, $type_or_types, $instances) {
+# $instance_index: optional { class => { type_expr => Inst } } for O(1) exact match.
+sub resolve ($class_or_self, $class_name, $type_or_types, $instances, $instance_index = undef) {
     require Typist::Subtype;
     require Typist::Parser;
 
     my $insts = $instances->{$class_name} // return undef;
+    my $idx   = $instance_index ? $instance_index->{$class_name} : undef;
 
     # Multi-parameter resolution: match each type against comma-split type_exprs
     # Supports prefix matching when fewer types than instance params
     # (e.g., convert(T)->U infers only T; U is determined by unique match)
     if (ref $type_or_types eq 'ARRAY') {
         my @types = @$type_or_types;
+
+        # O(1) fast path: exact match by joined key
+        if ($idx) {
+            my $key = join(', ', map { $_->to_string } @types);
+            if (my $hit = $idx->{$key}) {
+                return $hit;
+            }
+        }
+
         my @candidates;
         for my $inst (@$insts) {
             my @inst_exprs = Typist::Parser->split_type_list($inst->type_expr);
@@ -176,8 +187,19 @@ sub resolve ($class_or_self, $class_name, $type_or_types, $instances) {
         return undef;
     }
 
-    # Single-parameter resolution (existing behavior)
+    # Single-parameter resolution
     my $type = $type_or_types;
+
+    # O(1) fast path: exact match by type name
+    if ($idx) {
+        my $key = $type->is_atom ? $type->name
+                : $type->is_param ? $type->base
+                : undef;
+        if ($key && (my $hit = $idx->{$key})) {
+            return $hit;
+        }
+    }
+
     for my $inst (@$insts) {
         my $type_expr = $inst->type_expr;
 
@@ -277,10 +299,12 @@ Dies if any required method is missing from the provided methods hash.
 
 =head2 resolve
 
-    my $inst = Typist::TypeClass::Def->resolve($class_name, $type, $instances);
+    my $inst = Typist::TypeClass::Def->resolve($class_name, $type, $instances, $instance_index);
 
 Resolves an instance for the given type(s) from the instance list.
 C<$type> may be a single Type object or an arrayref (multi-parameter).
+Optional C<$instance_index> enables O(1) exact-match fast path before
+falling back to linear subtype scan.
 
 =head1 Typist::TypeClass::Inst
 

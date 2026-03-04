@@ -17,29 +17,28 @@ our $VERSION = '0.01';
 # wins when `find_handler` is called. This enables nested scoping:
 # inner handlers shadow outer ones for the same effect.
 
-my @HANDLER_STACK;
+my %EFFECT_STACKS;   # effect_name => [handlers, ...]
+my @POP_ORDER;       # effect_names in push order (for zero-arg pop)
 
 sub push_handler ($class, $effect_name, $handlers) {
-    push @HANDLER_STACK, +{
-        effect   => $effect_name,
-        handlers => $handlers,
-    };
+    push @{$EFFECT_STACKS{$effect_name} //= []}, $handlers;
+    push @POP_ORDER, $effect_name;
 }
 
 sub pop_handler ($class) {
-    pop @HANDLER_STACK;
+    my $name = pop @POP_ORDER // return;
+    pop @{$EFFECT_STACKS{$name}};
 }
 
 sub find_handler ($class, $effect_name) {
-    for my $entry (reverse @HANDLER_STACK) {
-        return $entry->{handlers} if $entry->{effect} eq $effect_name;
-    }
-    undef;
+    my $stack = $EFFECT_STACKS{$effect_name} // return undef;
+    @$stack ? $stack->[-1] : undef;
 }
 
 # Reset the handler stack (for testing).
 sub reset ($class) {
-    @HANDLER_STACK = ();
+    %EFFECT_STACKS = ();
+    @POP_ORDER     = ();
 }
 
 1;
@@ -63,11 +62,11 @@ Typist::Handler - Runtime effect handler stack (LIFO)
 
 =head1 DESCRIPTION
 
-Maintains a LIFO stack of algebraic effect handlers. Each entry binds
-an effect name to a hashref of operation implementations. The nearest
+Maintains per-effect LIFO stacks of algebraic effect handlers. Each
+effect name maps to its own stack of handler hashrefs. The nearest
 (most recently pushed) handler for a given effect wins when
-C<find_handler> is called, enabling nested scoping where inner handlers
-shadow outer ones.
+C<find_handler> is called (O(1) lookup), enabling nested scoping
+where inner handlers shadow outer ones.
 
 Typically used via the C<handle { ... } Effect =E<gt> { ... }> syntax
 exported by L<Typist>, not called directly.

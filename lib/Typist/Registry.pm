@@ -27,8 +27,9 @@ sub new ($class, %args) {
         instances   => +{},
         datatypes   => +{},
         structs     => +{},
-        effects     => +{},
-        name_index  => +{},
+        effects        => +{},
+        name_index     => +{},
+        instance_index => +{},
     }, $class;
 }
 
@@ -300,12 +301,13 @@ sub register_instance ($invocant, $class_name, $type_expr, $inst) {
     my $self = _self($invocant);
     $self->{instances}{$class_name} //= [];
     push $self->{instances}{$class_name}->@*, $inst;
+    $self->{instance_index}{$class_name}{$type_expr} //= $inst;
 }
 
 sub resolve_instance ($invocant, $class_name, $type_or_types) {
     my $self = _self($invocant);
     require Typist::TypeClass;
-    Typist::TypeClass::Def->resolve($class_name, $type_or_types, $self->{instances});
+    Typist::TypeClass::Def->resolve($class_name, $type_or_types, $self->{instances}, $self->{instance_index});
 }
 
 sub unregister_instance ($invocant, $class_name, $type_expr) {
@@ -313,6 +315,7 @@ sub unregister_instance ($invocant, $class_name, $type_expr) {
     my $list = $self->{instances}{$class_name} // return;
     @$list = grep { $_->type_expr ne $type_expr } @$list;
     delete $self->{instances}{$class_name} unless @$list;
+    delete $self->{instance_index}{$class_name}{$type_expr};
 }
 
 # ── Effect Management ────────────────────────────
@@ -382,6 +385,11 @@ sub merge ($self, $other) {
     for my $class_name (keys $other->{instances}->%*) {
         $self->{instances}{$class_name} //= [];
         push $self->{instances}{$class_name}->@*, $other->{instances}{$class_name}->@*;
+        if (my $idx = $other->{instance_index}{$class_name}) {
+            for my $te (keys %$idx) {
+                $self->{instance_index}{$class_name}{$te} //= $idx->{$te};
+            }
+        }
     }
     # Clear resolved cache since new aliases may change resolution
     $self->{resolved} = +{};
@@ -402,9 +410,10 @@ sub reset ($invocant) {
         $invocant->{newtypes}   = +{};
         $invocant->{datatypes}  = +{};
         $invocant->{typeclasses} = +{};
-        $invocant->{instances}   = +{};
-        $invocant->{effects}     = +{};
-        $invocant->{name_index}  = +{};
+        $invocant->{instances}      = +{};
+        $invocant->{effects}        = +{};
+        $invocant->{name_index}     = +{};
+        $invocant->{instance_index} = +{};
     } else {
         $DEFAULT = undef;
     }

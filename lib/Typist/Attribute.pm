@@ -161,7 +161,11 @@ sub _handle_code_attrs ($pkg, $coderef, @attrs) {
             my $sub_name = _recover_name($coderef) // '(anonymous)';
             Typist::Registry->register_function($pkg, $sub_name, $sig);
             if ($Typist::RUNTIME) {
-                _wrap_sub($coderef, $sig, $pkg, $sub_name);
+                if ($sig->{generics} && @{$sig->{generics}}) {
+                    _wrap_sub_generic($coderef, $sig, $pkg, $sub_name);
+                } else {
+                    _wrap_sub_simple($coderef, $sig, $pkg, $sub_name);
+                }
             }
         } else {
             push @unhandled, $attr;
@@ -173,83 +177,31 @@ sub _handle_code_attrs ($pkg, $coderef, @attrs) {
 
 # ── Sub Wrapping ─────────────────────────────────
 
-sub _wrap_sub ($coderef, $sig, $pkg, $name) {
-    my $original = $coderef;
-
-    # Pre-parse bound expressions so the wrapper closure reuses cached types
-    my %cached_bounds;
-    for my $g ($sig->{generics}->@*) {
-        if ($g->{bound_expr}) {
-            $cached_bounds{$g->{name}} = Typist::Parser->parse($g->{bound_expr});
-        }
-    }
+sub _wrap_sub_simple ($coderef, $sig, $pkg, $name) {
+    my $original    = $coderef;
+    my @ptypes      = $sig->{params} ? $sig->{params}->@* : ();
+    my $return_type = $sig->{returns};
+    my $is_variadic = $sig->{variadic};
 
     my $wrapper = sub {
         my @args = @_;
-        my %bindings;
 
-        # Check parameter types
-        if ($sig->{params}) {
-            my @ptypes = $sig->{params}->@*;
-
-            # If generic, attempt instantiation + bound checking
-            if ($sig->{generics} && @{$sig->{generics}}) {
-                my @arg_types = map { Typist::Inference->infer_value($_) } @args;
-                my $b = Typist::Inference->instantiate($sig, \@arg_types);
-                %bindings = %$b;
-
-                # Verify bounds and type class constraints
-                for my $g ($sig->{generics}->@*) {
-                    my $var_name = $g->{name};
-                    next unless exists $bindings{$var_name};
-                    my $actual = $bindings{$var_name};
-
-                    # Structural bound check (using cached parse result)
-                    if (my $bound = $cached_bounds{$var_name}) {
-                        unless (Typist::Subtype->is_subtype($actual, $bound)) {
-                            die sprintf(
-                                "Typist: %s::%s — type variable '%s' bound to %s, but requires <: %s\n",
-                                $pkg, $name, $var_name, $actual->to_string, $bound->to_string,
-                            );
-                        }
-                    }
-
-                    # Type class constraint check
-                    if ($g->{tc_constraints}) {
-                        for my $tc_name ($g->{tc_constraints}->@*) {
-                            my $inst = Typist::Registry->resolve_instance($tc_name, $actual);
-                            unless ($inst) {
-                                die sprintf(
-                                    "Typist: %s::%s — no instance of %s for %s\n",
-                                    $pkg, $name, $tc_name, $actual->to_string,
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-
-            my $is_variadic = $sig->{variadic};
-            my $fixed_count = $is_variadic ? $#ptypes : @ptypes;
+        if (@ptypes) {
+            my $fixed_count = $is_variadic ? $#ptypes : scalar @ptypes;
             for my $i (0 .. $fixed_count - 1) {
-                my $ptype = $ptypes[$i];
-                $ptype = $ptype->substitute(\%bindings) if %bindings;
-
                 if ($i < @args) {
-                    unless ($ptype->contains($args[$i])) {
+                    unless ($ptypes[$i]->contains($args[$i])) {
                         my $got = defined $args[$i] ? "'$args[$i]'" : 'undef';
                         die sprintf(
                             "Typist: %s::%s — param %d expected %s, got %s\n",
-                            $pkg, $name, $i + 1, $ptype->to_string, $got,
+                            $pkg, $name, $i + 1, $ptypes[$i]->to_string, $got,
                         );
                     }
                 }
             }
 
-            # Variadic: check remaining args against the last param type
             if ($is_variadic && @ptypes) {
                 my $rest_type = $ptypes[-1];
-                $rest_type = $rest_type->substitute(\%bindings) if %bindings;
                 for my $i ($fixed_count .. $#args) {
                     unless ($rest_type->contains($args[$i])) {
                         my $got = defined $args[$i] ? "'$args[$i]'" : 'undef';
@@ -262,7 +214,6 @@ sub _wrap_sub ($coderef, $sig, $pkg, $name) {
             }
         }
 
-        # Call original — propagate the caller's context
         my @result;
         if (wantarray) {
             @result = $original->(@args);
@@ -273,14 +224,114 @@ sub _wrap_sub ($coderef, $sig, $pkg, $name) {
             return;
         }
 
-        # Check return type
-        if ($sig->{returns}) {
-            my $rtype = $sig->{returns};
+        if ($return_type) {
+            my $retval = $result[0];
+            unless ($return_type->contains($retval)) {
+                my $got = defined $retval ? "'$retval'" : 'undef';
+                die sprintf(
+                    "Typist: %s::%s — return expected %s, got %s\n",
+                    $pkg, $name, $return_type->to_string, $got,
+                );
+            }
+        }
 
-            if (%bindings) {
-                $rtype = $rtype->substitute(\%bindings);
+        wantarray ? @result : $result[0];
+    };
+
+    no strict 'refs';
+    no warnings 'redefine';
+    *{"${pkg}::${name}"} = $wrapper;
+}
+
+sub _wrap_sub_generic ($coderef, $sig, $pkg, $name) {
+    my $original = $coderef;
+
+    # Pre-parse bound expressions so the wrapper closure reuses cached types
+    my %cached_bounds;
+    for my $g ($sig->{generics}->@*) {
+        if ($g->{bound_expr}) {
+            $cached_bounds{$g->{name}} = Typist::Parser->parse($g->{bound_expr});
+        }
+    }
+
+    my $wrapper = sub {
+        my @args = @_;
+
+        # Check parameter types with generic instantiation
+        my @ptypes = $sig->{params} ? $sig->{params}->@* : ();
+        my @arg_types = map { Typist::Inference->infer_value($_) } @args;
+        my $b = Typist::Inference->instantiate($sig, \@arg_types);
+        my %bindings = %$b;
+
+        # Verify bounds and type class constraints
+        for my $g ($sig->{generics}->@*) {
+            my $var_name = $g->{name};
+            next unless exists $bindings{$var_name};
+            my $actual = $bindings{$var_name};
+
+            if (my $bound = $cached_bounds{$var_name}) {
+                unless (Typist::Subtype->is_subtype($actual, $bound)) {
+                    die sprintf(
+                        "Typist: %s::%s — type variable '%s' bound to %s, but requires <: %s\n",
+                        $pkg, $name, $var_name, $actual->to_string, $bound->to_string,
+                    );
+                }
             }
 
+            if ($g->{tc_constraints}) {
+                for my $tc_name ($g->{tc_constraints}->@*) {
+                    my $inst = Typist::Registry->resolve_instance($tc_name, $actual);
+                    unless ($inst) {
+                        die sprintf(
+                            "Typist: %s::%s — no instance of %s for %s\n",
+                            $pkg, $name, $tc_name, $actual->to_string,
+                        );
+                    }
+                }
+            }
+        }
+
+        my $is_variadic = $sig->{variadic};
+        my $fixed_count = $is_variadic ? $#ptypes : scalar @ptypes;
+        for my $i (0 .. $fixed_count - 1) {
+            my $ptype = $ptypes[$i]->substitute(\%bindings);
+
+            if ($i < @args) {
+                unless ($ptype->contains($args[$i])) {
+                    my $got = defined $args[$i] ? "'$args[$i]'" : 'undef';
+                    die sprintf(
+                        "Typist: %s::%s — param %d expected %s, got %s\n",
+                        $pkg, $name, $i + 1, $ptype->to_string, $got,
+                    );
+                }
+            }
+        }
+
+        if ($is_variadic && @ptypes) {
+            my $rest_type = $ptypes[-1]->substitute(\%bindings);
+            for my $i ($fixed_count .. $#args) {
+                unless ($rest_type->contains($args[$i])) {
+                    my $got = defined $args[$i] ? "'$args[$i]'" : 'undef';
+                    die sprintf(
+                        "Typist: %s::%s — variadic param %d expected %s, got %s\n",
+                        $pkg, $name, $i + 1, $rest_type->to_string, $got,
+                    );
+                }
+            }
+        }
+
+        my @result;
+        if (wantarray) {
+            @result = $original->(@args);
+        } elsif (defined wantarray) {
+            $result[0] = $original->(@args);
+        } else {
+            $original->(@args);
+            return;
+        }
+
+        if ($sig->{returns}) {
+            my $rtype = $sig->{returns}->substitute(\%bindings);
             my $retval = $result[0];
             unless ($rtype->contains($retval)) {
                 my $got = defined $retval ? "'$retval'" : 'undef';
@@ -294,7 +345,6 @@ sub _wrap_sub ($coderef, $sig, $pkg, $name) {
         wantarray ? @result : $result[0];
     };
 
-    # Install wrapper into the symbol table, replacing the original
     no strict 'refs';
     no warnings 'redefine';
     *{"${pkg}::${name}"} = $wrapper;

@@ -203,11 +203,11 @@ sub _effect ($name, @rest) {
         my ($eff_name, $op) = ($name, $op_name);
         no strict 'refs';
         *{"${eff_name}::${op}"} = sub (@args) {
-            my $handler = Typist::Handler->find_handler($eff_name);
-            if ($handler && exists $handler->{$op}) {
-                return $handler->{$op}->(@args);
-            }
-            die "No handler for effect ${eff_name}::${op}\n";
+            my $handler = Typist::Handler->find_handler($eff_name)
+                // die "No handler for effect ${eff_name}::${op}\n";
+            my $impl = $handler->{$op}
+                // die "No handler for effect ${eff_name}::${op}\n";
+            $impl->(@args);
         };
     }
 }
