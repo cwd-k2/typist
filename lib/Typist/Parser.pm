@@ -691,6 +691,40 @@ sub split_type_list ($class, $str) {
     @result;
 }
 
+# Parse type parameter declarations into structured hashrefs.
+# Pure syntax: no Registry lookup, no typeclass/bound classification.
+#   'T: Num, U: Show + Ord, r: Row, F: * -> *'
+#   => ({ name => 'T', constraint_expr => 'Num' },
+#       { name => 'U', constraint_expr => 'Show + Ord' },
+#       { name => 'r', is_row_var => 1, var_kind => Kind->Row },
+#       { name => 'F', var_kind => Kind->parse('* -> *') })
+sub parse_param_decls ($class, $spec) {
+    require Typist::Kind;
+    my @result;
+    for my $decl ($class->split_type_list($spec)) {
+        if ($decl =~ /\A(\w+)\s*:\s*(.+)\z/) {
+            my ($name, $constraint) = ($1, $2);
+            if ($constraint eq 'Row') {
+                push @result, +{
+                    name       => $name,
+                    is_row_var => 1,
+                    var_kind   => Typist::Kind->Row,
+                };
+            } elsif ($constraint =~ /\A[\s\*\-\>]+\z/) {
+                push @result, +{
+                    name     => $name,
+                    var_kind => Typist::Kind->parse($constraint),
+                };
+            } else {
+                push @result, +{ name => $name, constraint_expr => $constraint };
+            }
+        } else {
+            push @result, +{ name => $decl };
+        }
+    }
+    @result;
+}
+
 # Decompose a parameterized name: 'Pair[T: Num, U]' → ('Pair', 'T: Num', 'U')
 # Returns (name) for plain names, (name, @params) for parameterized.
 sub parse_parameterized_name ($class, $spec) {
@@ -799,6 +833,14 @@ Examples:
 
 Split a comma-separated type list, respecting C<< <> >>, C<()>, and C<[]>
 nesting. Strips whitespace from each element.
+
+=head2 parse_param_decls
+
+    my @decls = Typist::Parser->parse_param_decls($spec);
+
+Parse type parameter declarations into structured hashrefs. Pure syntax
+layer: no Registry lookup or typeclass classification. Each element has
+C<name>, and optionally C<constraint_expr>, C<is_row_var>, C<var_kind>.
 
 =head2 parse_parameterized_name
 

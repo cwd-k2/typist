@@ -66,48 +66,37 @@ sub _handle_scalar_attrs ($pkg, $ref, @attrs) {
 #   %opts: registry => $registry (defaults to Typist::Registry singleton)
 # Returns: list of hashrefs with keys: name, bound_expr, is_row_var, var_kind, tc_constraints
 sub parse_generic_decl ($class, $spec, %opts) {
+    my @decls = Typist::Parser->parse_param_decls($spec);
+    $class->classify_constraints(\@decls, %opts);
+    @decls;
+}
+
+# Classify constraint_expr fields into bound_expr / tc_constraints.
+# Mutates entries in-place: replaces constraint_expr with bound_expr and/or tc_constraints.
+# Entries without constraint_expr get bound_expr => undef for backward compatibility.
+sub classify_constraints ($class, $decls, %opts) {
     my $registry = $opts{registry} // 'Typist::Registry';
-    my @generics;
-
-    for my $decl (Typist::Parser->split_type_list($spec)) {
-        if ($decl =~ /\A(\w+)\s*:\s*(.+)\z/) {
-            my ($vname, $constraint) = ($1, $2);
-            if ($constraint eq 'Row') {
-                push @generics, +{
-                    name       => $vname,
-                    bound_expr => undef,
-                    is_row_var => 1,
-                    var_kind   => Typist::Kind->Row,
-                };
-            } elsif ($constraint =~ /\A[\s\*\-\>]+\z/) {
-                my $kind = Typist::Kind->parse($constraint);
-                push @generics, +{
-                    name       => $vname,
-                    bound_expr => undef,
-                    var_kind   => $kind,
-                };
-            } else {
-                my @parts = split /\s*\+\s*/, $constraint;
-                my (@tc_parts, @bound_parts);
-                for my $part (@parts) {
-                    if ($registry->lookup_typeclass($part)) {
-                        push @tc_parts, $part;
-                    } else {
-                        push @bound_parts, $part;
-                    }
-                }
-                my %entry = (name => $vname);
-                $entry{tc_constraints} = \@tc_parts if @tc_parts;
-                $entry{bound_expr} = join(' + ', @bound_parts) if @bound_parts;
-                $entry{bound_expr} //= undef;
-                push @generics, \%entry;
-            }
-        } else {
-            push @generics, +{ name => $decl, bound_expr => undef };
+    for my $entry (@$decls) {
+        my $expr = delete $entry->{constraint_expr};
+        unless (defined $expr) {
+            # Row/Kind entries already resolved; plain names need bound_expr => undef
+            $entry->{bound_expr} //= undef unless $entry->{is_row_var} || $entry->{var_kind};
+            next;
         }
+        my @parts = split /\s*\+\s*/, $expr;
+        my (@tc_parts, @bound_parts);
+        for my $part (@parts) {
+            if ($registry->lookup_typeclass($part)) {
+                push @tc_parts, $part;
+            } else {
+                push @bound_parts, $part;
+            }
+        }
+        $entry->{tc_constraints} = \@tc_parts if @tc_parts;
+        $entry->{bound_expr} = join(' + ', @bound_parts) if @bound_parts;
+        $entry->{bound_expr} //= undef;
     }
-
-    @generics;
+    @$decls;
 }
 
 # ── Code Attributes ──────────────────────────────
@@ -367,6 +356,18 @@ Parses a generic declaration string (e.g., C<"T: Num, U">) into a list
 of hashrefs with keys: C<name>, C<bound_expr>, C<is_row_var>,
 C<var_kind>, C<tc_constraints>. Accepts optional C<registry> for
 type class lookup.
+
+Delegates syntax to C<Typist::Parser-E<gt>parse_param_decls>, then
+classifies constraints via C<classify_constraints>.
+
+=head2 classify_constraints
+
+    Typist::Attribute->classify_constraints(\@decls, registry => $registry);
+
+Classifies C<constraint_expr> fields in the given declaration hashrefs
+(as returned by C<Typist::Parser-E<gt>parse_param_decls>) into
+C<bound_expr> and/or C<tc_constraints> using Registry lookup. Mutates
+entries in-place.
 
 =head1 SEE ALSO
 

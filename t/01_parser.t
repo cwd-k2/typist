@@ -404,4 +404,56 @@ subtest 'parse_parameterized_name' => sub {
         ['Map', 'K', 'Pair[A, B]'], 'nested brackets';
 };
 
+# ── parse_param_decls ────────────────────────────
+
+subtest 'parse_param_decls plain names' => sub {
+    my @decls = Typist::Parser->parse_param_decls('T, U');
+    is scalar @decls, 2, 'two declarations';
+    is $decls[0]{name}, 'T', 'first name';
+    is $decls[1]{name}, 'U', 'second name';
+    ok !exists $decls[0]{constraint_expr}, 'no constraint on T';
+};
+
+subtest 'parse_param_decls with constraint' => sub {
+    my @decls = Typist::Parser->parse_param_decls('T: Num');
+    is scalar @decls, 1, 'one declaration';
+    is $decls[0]{name}, 'T', 'name is T';
+    is $decls[0]{constraint_expr}, 'Num', 'constraint_expr is Num';
+};
+
+subtest 'parse_param_decls compound constraint' => sub {
+    my @decls = Typist::Parser->parse_param_decls('T: Show + Ord');
+    is $decls[0]{name}, 'T', 'name is T';
+    is $decls[0]{constraint_expr}, 'Show + Ord', 'compound constraint preserved';
+};
+
+subtest 'parse_param_decls Row variable' => sub {
+    my @decls = Typist::Parser->parse_param_decls('r: Row');
+    is $decls[0]{name}, 'r', 'name is r';
+    ok $decls[0]{is_row_var}, 'is_row_var set';
+    is $decls[0]{var_kind}->to_string, 'Row', 'var_kind is Row';
+};
+
+subtest 'parse_param_decls HKT kind' => sub {
+    my @decls = Typist::Parser->parse_param_decls('F: * -> *');
+    is $decls[0]{name}, 'F', 'name is F';
+    is $decls[0]{var_kind}->to_string, '* -> *', 'var_kind parsed';
+    ok !exists $decls[0]{constraint_expr}, 'no constraint_expr for kind';
+};
+
+subtest 'parse_param_decls mixed' => sub {
+    my @decls = Typist::Parser->parse_param_decls('T: Num, U: Show + Ord, r: Row, F: * -> *');
+    is scalar @decls, 4, 'four declarations';
+    is $decls[0]{constraint_expr}, 'Num', 'T: Num';
+    is $decls[1]{constraint_expr}, 'Show + Ord', 'U: Show + Ord';
+    ok $decls[2]{is_row_var}, 'r: Row';
+    is $decls[3]{var_kind}->to_string, '* -> *', 'F: * -> *';
+};
+
+subtest 'parse_param_decls single plain name' => sub {
+    my @decls = Typist::Parser->parse_param_decls('T');
+    is scalar @decls, 1, 'one declaration';
+    is $decls[0]{name}, 'T', 'name is T';
+};
+
 done_testing;

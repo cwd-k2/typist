@@ -15,30 +15,20 @@ our $VERSION = '0.01';
 
 sub new_class ($class, %args) {
     require Typist::Kind;
+    require Typist::Parser;
 
     my $var_spec = $args{var} // 'T';
-    my (@var_names, @var_kinds, @supers);
+    my @decls = Typist::Parser->parse_param_decls($var_spec);
 
-    # Multi-parameter: "T, U" — comma-separated plain variables
-    if ($var_spec =~ /,/) {
-        require Typist::Parser;
-        @var_names = Typist::Parser->split_type_list($var_spec);
-        @var_kinds = map { Typist::Kind->Star() } @var_names;
-    }
-    # Single parameter: "T", "T: Eq", "F: * -> *"
-    elsif ($var_spec =~ /\A(\w+)\s*:\s*(.+)\z/) {
-        my ($vn, $constraint) = ($1, $2);
-        if ($constraint =~ /\A[\s\*\-\>]+\z/) {
-            # HKT kind syntax: "F: * -> *"
-            @var_names = ($vn);
-            @var_kinds = (Typist::Kind->parse($constraint));
-        } else {
-            # Superclass constraint: "T: Eq" or "T: Show + Eq"
-            @var_names = ($vn);
-            @supers    = split /\s*\+\s*/, $constraint;
-        }
-    } else {
-        @var_names = ($var_spec);
+    my @var_names = map { $_->{name} } @decls;
+    my @supers    = map { split /\s*\+\s*/, $_->{constraint_expr} }
+                    grep { $_->{constraint_expr} } @decls;
+
+    # var_kinds: set only for multi-param or explicit kind annotation
+    my @var_kinds;
+    my $has_explicit_kind = grep { $_->{var_kind} } @decls;
+    if ($has_explicit_kind || @decls > 1) {
+        @var_kinds = map { $_->{var_kind} // Typist::Kind->Star() } @decls;
     }
 
     bless +{

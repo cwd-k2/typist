@@ -149,4 +149,47 @@ subtest 'wrapper context with wantarray-dependent return' => sub {
     is $single, "a", 'scalar context returns single value';
 };
 
+# ── classify_constraints ─────────────────────────
+
+subtest 'classify_constraints with bound only' => sub {
+    my @decls = Typist::Parser->parse_param_decls('T: Num');
+    Typist::Attribute->classify_constraints(\@decls);
+    is $decls[0]{name}, 'T', 'name preserved';
+    is $decls[0]{bound_expr}, 'Num', 'bound_expr classified';
+    ok !exists $decls[0]{constraint_expr}, 'constraint_expr removed';
+    ok !exists $decls[0]{tc_constraints}, 'no tc_constraints';
+};
+
+subtest 'classify_constraints with typeclass' => sub {
+    # Register a typeclass so it can be found
+    typeclass Show => 'T', +{ show => '(T) -> Str' };
+    my @decls = Typist::Parser->parse_param_decls('T: Show');
+    Typist::Attribute->classify_constraints(\@decls);
+    is_deeply $decls[0]{tc_constraints}, ['Show'], 'Show classified as tc';
+    is $decls[0]{bound_expr}, undef, 'bound_expr is undef';
+};
+
+subtest 'classify_constraints compound tc + bound' => sub {
+    my @decls = Typist::Parser->parse_param_decls('T: Show + Num');
+    Typist::Attribute->classify_constraints(\@decls);
+    is_deeply $decls[0]{tc_constraints}, ['Show'], 'Show is tc';
+    is $decls[0]{bound_expr}, 'Num', 'Num is bound';
+};
+
+subtest 'classify_constraints plain name' => sub {
+    my @decls = Typist::Parser->parse_param_decls('T');
+    Typist::Attribute->classify_constraints(\@decls);
+    is $decls[0]{name}, 'T', 'name preserved';
+    is $decls[0]{bound_expr}, undef, 'bound_expr is undef';
+};
+
+subtest 'classify_constraints Row/Kind passthrough' => sub {
+    my @decls = Typist::Parser->parse_param_decls('r: Row, F: * -> *');
+    Typist::Attribute->classify_constraints(\@decls);
+    ok $decls[0]{is_row_var}, 'Row var passed through';
+    ok !exists $decls[0]{bound_expr}, 'no bound_expr on row var';
+    ok defined $decls[1]{var_kind}, 'Kind passed through';
+    ok !exists $decls[1]{bound_expr}, 'no bound_expr on kind var';
+};
+
 done_testing;
