@@ -266,7 +266,6 @@ say "── Superposition (A | B) ───────────────�
 handle {
     db_quick("localhost", 1);  # with auth
     db_quick("localhost", 0);  # without auth
-    ();
 } Database => +{
     connect    => sub ($host) { say "  [db] connecting to $host" },
     auth       => sub ($u, $p) { say "  [db] authenticating $u" },

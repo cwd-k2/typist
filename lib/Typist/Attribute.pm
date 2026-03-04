@@ -214,6 +214,12 @@ sub _wrap_sub_simple ($coderef, $sig, $pkg, $name) {
             }
         }
 
+        # Void return — caller context is irrelevant, no value to check
+        if ($return_type && $return_type->is_atom && $return_type->name eq 'Void') {
+            $original->(@args);
+            return;
+        }
+
         my @result;
         if (wantarray) {
             @result = $original->(@args);
@@ -318,6 +324,12 @@ sub _wrap_sub_generic ($coderef, $sig, $pkg, $name) {
                     );
                 }
             }
+        }
+
+        # Void return — caller context is irrelevant, no value to check
+        if ($sig->{returns} && $sig->{returns}->is_atom && $sig->{returns}->name eq 'Void') {
+            $original->(@args);
+            return;
         }
 
         my @result;
