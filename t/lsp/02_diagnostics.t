@@ -59,9 +59,9 @@ PERL
     like $first->{message}, qr/cycle/i, 'message mentions cycle';
 };
 
-# ── didChange triggers re-analysis ───────────────
+# ── didSave triggers re-analysis ───────────────
 
-subtest 'didChange updates diagnostics' => sub {
+subtest 'didSave updates diagnostics' => sub {
     my $bad_source = <<'PERL';
 use v5.40;
 sub bad :sig((T) -> T) ($x) { $x }
@@ -76,21 +76,26 @@ PERL
         lsp_notification('textDocument/didOpen', +{
             textDocument => +{ uri => 'file:///test/edit.pm', text => $bad_source, version => 1 },
         }),
+        # didChange defers diagnostics; didSave triggers re-analysis
         lsp_notification('textDocument/didChange', +{
             textDocument   => +{ uri => 'file:///test/edit.pm', version => 2 },
             contentChanges => [+{ text => $good_source }],
         }),
+        lsp_notification('textDocument/didSave', +{
+            textDocument => +{ uri => 'file:///test/edit.pm' },
+            text         => $good_source,
+        }),
     ));
 
-    # Should have two publishDiagnostics: one with errors, one clean
+    # Should have two publishDiagnostics: didOpen (errors) + didSave (clean)
     my @diags = grep { ($_->{method} // '') eq 'textDocument/publishDiagnostics' } @results;
-    is scalar @diags, 2, 'two diagnostic publications';
+    is scalar @diags, 2, 'two diagnostic publications (didOpen + didSave)';
 
-    # First should have errors
+    # First should have errors (from didOpen)
     ok scalar @{$diags[0]->{params}{diagnostics}} > 0, 'first has errors';
 
-    # Second should be clean
-    is scalar @{$diags[1]->{params}{diagnostics}}, 0, 'second is clean after fix';
+    # Second should be clean (from didSave)
+    is scalar @{$diags[1]->{params}{diagnostics}}, 0, 'second is clean after save';
 };
 
 # ── Effect mismatch diagnostics via LSP ────────

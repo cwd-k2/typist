@@ -261,26 +261,20 @@ PERL
     is scalar @greet_hints, 0, 'no return type hint for annotated greet()';
 };
 
-# ── Inlay hint refresh notification ────────────
+# ── Refresh notifications on didSave ───────────
 
-subtest 'server sends workspace/inlayHint/refresh after didChange' => sub {
+subtest 'server sends refresh notifications after didSave' => sub {
     my $source = <<'PERL';
 use v5.40;
 my $x = 42;
 PERL
 
-    my $source_v2 = <<'PERL';
-use v5.40;
-sub double :sig((Int) -> Int) ($n) { $n * 2 }
-my $x = double(21);
-PERL
-
     my @results = run_session(
-        # initialize with refreshSupport
         lsp_request(1, 'initialize', +{
             capabilities => +{
                 workspace => +{
-                    inlayHint => +{ refreshSupport => \1 },
+                    inlayHint      => +{ refreshSupport => \1 },
+                    semanticTokens => +{ refreshSupport => \1 },
                 },
             },
         }),
@@ -288,19 +282,23 @@ PERL
         lsp_notification('textDocument/didOpen', +{
             textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
         }),
-        lsp_notification('textDocument/didChange', +{
-            textDocument   => +{ uri => 'file:///test.pm', version => 2 },
-            contentChanges => [+{ text => $source_v2 }],
+        lsp_notification('textDocument/didSave', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            text         => $source,
         }),
         lsp_request(99, 'shutdown'),
         lsp_notification('exit'),
     );
 
-    my @refresh = grep {
+    my @inlay_refresh = grep {
         ($_->{method} // '') eq 'workspace/inlayHint/refresh'
     } @results;
+    ok @inlay_refresh >= 1, 'server sent workspace/inlayHint/refresh on save';
 
-    ok @refresh >= 1, 'server sent workspace/inlayHint/refresh notification';
+    my @semtok_refresh = grep {
+        ($_->{method} // '') eq 'workspace/semanticTokens/refresh'
+    } @results;
+    ok @semtok_refresh >= 1, 'server sent workspace/semanticTokens/refresh on save';
 };
 
 subtest 'no refresh when client lacks refreshSupport' => sub {
@@ -313,17 +311,53 @@ PERL
         lsp_notification('textDocument/didOpen', +{
             textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
         }),
-        lsp_notification('textDocument/didChange', +{
-            textDocument   => +{ uri => 'file:///test.pm', version => 2 },
-            contentChanges => [+{ text => "use v5.40;\nmy \$y = 99;\n" }],
+        lsp_notification('textDocument/didSave', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            text         => $source,
         }),
     ));
 
     my @refresh = grep {
-        ($_->{method} // '') eq 'workspace/inlayHint/refresh'
+        ($_->{method} // '') =~ /refresh/
     } @results;
 
     is scalar @refresh, 0, 'no refresh sent without refreshSupport';
+};
+
+subtest 'didChange does not publish diagnostics or refresh' => sub {
+    my $source = <<'PERL';
+use v5.40;
+my $x = 42;
+PERL
+
+    my @results = run_session(
+        lsp_request(1, 'initialize', +{
+            capabilities => +{
+                workspace => +{
+                    inlayHint      => +{ refreshSupport => \1 },
+                    semanticTokens => +{ refreshSupport => \1 },
+                },
+            },
+        }),
+        lsp_notification('initialized'),
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_notification('textDocument/didChange', +{
+            textDocument   => +{ uri => 'file:///test.pm', version => 2 },
+            contentChanges => [+{ text => "use v5.40;\nmy \$y = 99;\n" }],
+        }),
+        lsp_request(99, 'shutdown'),
+        lsp_notification('exit'),
+    );
+
+    # Only 1 diagnostics publication from didOpen (not 2)
+    my @diags = grep { ($_->{method} // '') eq 'textDocument/publishDiagnostics' } @results;
+    is scalar @diags, 1, 'only didOpen publishes diagnostics, not didChange';
+
+    # No refresh from didChange
+    my @refresh = grep { ($_->{method} // '') =~ /refresh/ } @results;
+    is scalar @refresh, 0, 'no refresh notifications from didChange';
 };
 
 done_testing;

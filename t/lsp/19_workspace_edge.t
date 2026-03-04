@@ -198,4 +198,30 @@ PERL
     like $def->{uri}, qr/Defs\.pm/, 'uri points to Defs.pm';
 };
 
+# ── update_file on open (simulates didOpen workspace registration) ──
+
+subtest 'update_file registers types before first save' => sub {
+    my $dir = tempdir(CLEANUP => 1);
+    make_path("$dir/lib");
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    # No file on disk — simulate didOpen with in-memory content
+    my $source = <<'PERL';
+package InMemory;
+use v5.40;
+typedef Token => 'Str';
+1;
+PERL
+
+    $ws->update_file("$dir/lib/InMemory.pm", $source);
+
+    my @names = $ws->all_typedef_names;
+    ok((grep { $_ eq 'Token' } @names), 'Token registered from update_file without prior save');
+
+    # Registry resolves the type
+    my $type = $ws->registry->lookup_type('Token');
+    ok $type, 'Token type found in registry';
+};
+
 done_testing;

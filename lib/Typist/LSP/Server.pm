@@ -116,7 +116,8 @@ sub _handle_initialize ($self, $params) {
     # Track client capabilities for refresh support
     my $caps = $params->{capabilities} // +{};
     $self->{_client_caps} = $caps;
-    $self->{_inlay_refresh} = $caps->{workspace}{inlayHint}{refreshSupport} ? 1 : 0;
+    $self->{_inlay_refresh}    = $caps->{workspace}{inlayHint}{refreshSupport}      ? 1 : 0;
+    $self->{_semtok_refresh}   = $caps->{workspace}{semanticTokens}{refreshSupport} ? 1 : 0;
 
     +{
         capabilities => +{
@@ -181,6 +182,14 @@ sub _handle_did_open ($self, $params) {
 
     $self->{documents}{$uri} = $doc;
     $self->{log}->debug("didOpen $uri (v$td->{version})");
+
+    # Register types in workspace so cross-file resolution works
+    # even before the first save.
+    if ($self->{workspace}) {
+        my $path = _uri_to_path($uri);
+        $self->{workspace}->update_file($path, $td->{text});
+    }
+
     $self->_publish_diagnostics($doc);
 
     undef;
@@ -191,15 +200,16 @@ sub _handle_did_change ($self, $params) {
     my $doc     = $self->{documents}{$uri} // return undef;
     my $changes = $params->{contentChanges} // [];
 
-    # Full sync — take the last change
+    # Full sync — take the last change.
+    # update() clears the cached analysis result; subsequent on-demand
+    # requests (hover, completion, inlayHint, etc.) will trigger a fresh
+    # analyze() call.  Diagnostics and refresh notifications are deferred
+    # to didSave to avoid re-analyzing on every keystroke.
     if (@$changes) {
         my $ver = $params->{textDocument}{version};
         $doc->update($changes->[-1]{text}, $ver);
         $self->{log}->debug("didChange $uri (v$ver)");
     }
-
-    $self->_publish_diagnostics($doc);
-    $self->_refresh_inlay_hints;
 
     undef;
 }
@@ -232,6 +242,7 @@ sub _handle_did_save ($self, $params) {
     }
 
     $self->_refresh_inlay_hints;
+    $self->_refresh_semantic_tokens;
 
     undef;
 }
@@ -643,6 +654,11 @@ sub _publish_diagnostics ($self, $doc) {
 sub _refresh_inlay_hints ($self) {
     return unless $self->{_inlay_refresh};
     $self->{transport}->send_notification('workspace/inlayHint/refresh', undef);
+}
+
+sub _refresh_semantic_tokens ($self) {
+    return unless $self->{_semtok_refresh};
+    $self->{transport}->send_notification('workspace/semanticTokens/refresh', undef);
 }
 
 sub _emit_diagnostics ($self, $doc, $result) {

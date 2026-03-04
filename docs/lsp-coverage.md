@@ -189,6 +189,15 @@ All error kinds produced by static analysis and their LSP surface.
 
 ---
 
+## 11. Known Limitations
+
+| Area | Limitation | Rationale |
+|------|-----------|-----------|
+| Typeclass instance completeness | Static analysis registers instances but does not verify method completeness. Missing methods are only detected at runtime. | Cross-file instance ordering is non-deterministic; static registration stores existence only (empty methods hash). Completeness check requires all source files to be loaded, which is a runtime guarantee. |
+| Diagnostics timing | Diagnostics are published on `didOpen` and `didSave`, not on every keystroke (`didChange`). Hover, completion, and inlay hints use lazy analysis and are always fresh. | Full PPI parse + type checking on every keystroke is prohibitively expensive for large files. Save-time diagnostics is a standard LSP pattern that balances responsiveness with performance. |
+
+---
+
 ## Legend
 
 - **Done** — Fully implemented and tested
