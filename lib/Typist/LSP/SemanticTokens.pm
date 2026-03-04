@@ -94,6 +94,33 @@ sub compute ($class, $doc) {
         _tokenize_sig_strings(\@tokens, \@lines, $line0, $info->{methods} // +{}, \%generics);
     }
 
+    # ── instance declarations ────────────────
+    for my $inst (($extracted->{instances} // [])->@*) {
+        my $line0 = ($inst->{line} // 1) - 1;
+        next unless $line0 < @lines;
+        my $text = $lines[$line0];
+
+        # Typeclass names: may be comma-separated in a quoted string
+        my $class_name = $inst->{class_name} // next;
+        for my $tc_name (split /\s*,\s*/, $class_name) {
+            next unless length $tc_name;
+            # Find position inside the quote (or as bareword)
+            my $pos = _word_pos($text, $tc_name);
+            if (defined $pos) {
+                push @tokens, [$line0, $pos, length($tc_name), 'class', 0];
+            }
+        }
+
+        # Type expression
+        my $type_expr = $inst->{type_expr} // '';
+        if (length $type_expr) {
+            my $pos = _word_pos($text, $type_expr);
+            if (defined $pos) {
+                push @tokens, [$line0, $pos, length($type_expr), 'type', 0];
+            }
+        }
+    }
+
     # ── datatype declarations ─────────────────
     for my $name (keys(($extracted->{datatypes} // +{})->%*)) {
         my $info = $extracted->{datatypes}{$name};

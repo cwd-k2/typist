@@ -1108,6 +1108,73 @@ PERL
     ok scalar @op_name >= 1, 'writeLine usage token as function on line 2';
 };
 
+# ── Instance declaration typeclass/type tokens ──
+
+subtest 'instance declaration: typeclass and type tokens' => sub {
+    my $source = <<'PERL';
+use v5.40;
+typeclass Show => T, +{ show => '(T) -> Str' };
+instance Show => Int, +{ show => sub :sig((Int) -> Str) ($x) { "$x" } };
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # 'Show' on line 2 (instance decl) should be class (index 5)
+    # Source: "instance Show => Int, +{ show => sub :sig((Int) -> Str) ($x) { "$x" } };"
+    #          01234567890
+    #          instance Show => ...
+    #                   ^-- col 9
+    my @show_class = grep { $_->{type} == 5 && $_->{line} == 2 && $_->{len} == 4 } @tokens;
+    ok scalar @show_class >= 1, 'Show as class token on instance line';
+
+    # 'Int' on line 2 should be type (index 0) from instance type_expr
+    # "instance Show => Int, ..."
+    #                   ^-- col 17
+    my @int_type = grep { $_->{type} == 0 && $_->{line} == 2 && $_->{len} == 3 } @tokens;
+    ok scalar @int_type >= 1, 'Int as type token on instance line';
+};
+
+subtest 'instance declaration: multi-typeclass tokens' => sub {
+    my $source = <<'PERL';
+use v5.40;
+typeclass Show => T, +{ show => '(T) -> Str' };
+typeclass Eq   => T, +{ eq   => '(T, T) -> Bool' };
+instance 'Show, Eq' => Int, +{ show => sub ($x) { "$x" }, eq => sub ($a, $b) { $a == $b } };
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # Both Show and Eq on line 3 should be class (index 5)
+    my @class_toks = grep { $_->{type} == 5 && $_->{line} == 3 } @tokens;
+    ok scalar @class_toks >= 2, 'both Show and Eq as class tokens on instance line';
+
+    # Int on line 3 should be type (index 0)
+    my @int_type = grep { $_->{type} == 0 && $_->{line} == 3 && $_->{len} == 3 } @tokens;
+    ok scalar @int_type >= 1, 'Int as type token on multi-typeclass instance line';
+};
+
 done_testing;
 
 # ── Test Helpers ─────────────────────────────────
