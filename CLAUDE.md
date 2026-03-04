@@ -19,8 +19,9 @@ Typist.pm (entry+CHECK)      Tie::Scalar                   LSP::Server       Che
  └ External.pm                                              LSP::Transport
 Static::Checker                                             LSP::CodeAction
 Static::Analyzer (CHECK)                                    LSP::SemanticTokens
-Static::TypeChecker                                         LSP::Logger
-Static::CallChecker                                         Document::Resolver
+Static::TypeEnv (env construction)                          LSP::Logger
+Static::TypeChecker (type checks)                           Document::Resolver
+Static::CallChecker
 Static::NarrowingEngine
 Static::EffectChecker
 Static::ProtocolChecker
@@ -43,7 +44,7 @@ DSL (Type constructors: Int, Str, Double, Num, Array, Hash, Record, optional, et
 
 Typist の検証は3層に分かれる。設計原則は「静的解析を既定とし、型の境界は常に守り、ランタイム監視は選択的に」。
 
-- **Layer 1 — Static Analysis** (compile time, always): PPI ベース。`Analyzer` が Extractor → Registration → Checker → TypeChecker → EffectChecker → ProtocolChecker を統括。CHECK ブロックがパッケージごとに実行。LSP は `Document->analyze` で差分実行。`TYPIST_CHECK_QUIET=1` で CHECK スキップ。
+- **Layer 1 — Static Analysis** (compile time, always): PPI ベース。`Analyzer` が 7フェーズで統括: Extractor → Registration → Checker → TypeEnv(環境構築) → TypeChecker/CallChecker(ファイルレベル検査) → 統一関数ループ(TypeChecker+EffectChecker+ProtocolChecker) → 収集。CHECK ブロックがパッケージごとに実行。LSP は `Document->analyze` で差分実行。`TYPIST_CHECK_QUIET=1` で CHECK スキップ。
 - **Layer 2 — Boundary Enforcement** (runtime, always-on): newtype/datatype/struct コンストラクタ + Effect::op ディスパッチの検証。`-runtime` に依存しない。コンストラクタは型の不変条件を確立する場。
 - **Layer 3 — Runtime Monitoring** (opt-in: `-runtime` / `TYPIST_RUNTIME=1`): `Tie::Scalar` による `:sig()` 変数の代入監視。唯一 `-runtime` でゲートされる機構。
 

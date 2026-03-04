@@ -25,58 +25,65 @@ sub new ($class, %args) {
     }, $class;
 }
 
-sub analyze ($self) {
-    my $pkg = $self->{extracted}{package};
+sub _setup ($self) {
+    $self->{_pkg} = $self->{extracted}{package};
+}
 
-    for my $name (sort keys $self->{extracted}{functions}->%*) {
-        my $fn    = $self->{extracted}{functions}{$name};
-        my $block = $fn->{block} // next;
+sub check_function ($self, $name) {
+    my $fn    = $self->{extracted}{functions}{$name};
+    my $block = $fn->{block} // return;
 
-        # Skip unannotated callers — gradual typing: no annotation = no constraint
-        next if $fn->{unannotated};
+    # Skip unannotated callers — gradual typing: no annotation = no constraint
+    return if $fn->{unannotated};
 
-        # Lookup the caller's registered sig
-        my $caller_sig = $self->{registry}->lookup_function($pkg, $name);
-        next unless $caller_sig;
+    # Lookup the caller's registered sig
+    my $caller_sig = $self->{registry}->lookup_function($self->{_pkg}, $name);
+    return unless $caller_sig;
 
-        my $caller_eff = $caller_sig->{effects};
+    my $caller_eff = $caller_sig->{effects};
 
-        # Collect called functions and their effects
-        my @called = $self->_collect_called_effects($block, $pkg);
+    # Collect called functions and their effects
+    my @called = $self->_collect_called_effects($block, $self->{_pkg});
 
-        for my $call (@called) {
-            my $callee_eff = $call->{effects};
-            next unless $callee_eff;
+    for my $call (@called) {
+        my $callee_eff = $call->{effects};
+        next unless $callee_eff;
 
-            # Caller has no effects declared but callee does
-            unless ($caller_eff) {
-                # Skip if all callee labels are ambient (IO/Exn/Decl — no handler needed)
-                my $callee_row = $callee_eff->is_eff ? $callee_eff->row : $callee_eff;
-                if ($callee_row->is_row) {
-                    my @labels = $callee_row->labels;
-                    my $all_ambient = @labels && !grep { !$self->{registry}->is_ambient_effect($_) } @labels;
-                    next if $all_ambient;
-                }
-
-                $self->{errors}->collect(
-                    kind    => 'EffectMismatch',
-                    message => "Function $name() calls $call->{name}() which requires "
-                             . $callee_eff->to_string
-                             . ", but $name() has no effect annotation",
-                    file    => $self->{file},
-                    line    => $call->{line},
-                    col     => $call->{col} // 0,
-                    end_col => ($call->{col} // 0) + length($call->{name}),
-                );
-                next;
+        # Caller has no effects declared but callee does
+        unless ($caller_eff) {
+            # Skip if all callee labels are ambient (IO/Exn/Decl — no handler needed)
+            my $callee_row = $callee_eff->is_eff ? $callee_eff->row : $callee_eff;
+            if ($callee_row->is_row) {
+                my @labels = $callee_row->labels;
+                my $all_ambient = @labels && !grep { !$self->{registry}->is_ambient_effect($_) } @labels;
+                next if $all_ambient;
             }
 
-            # Check effect inclusion: callee's labels ⊆ caller's labels
-            $self->_check_effect_inclusion(
-                $caller_eff, $callee_eff,
-                $name, $call->{name}, $call->{line}, $call->{col} // 0,
+            $self->{errors}->collect(
+                kind    => 'EffectMismatch',
+                message => "Function $name() calls $call->{name}() which requires "
+                         . $callee_eff->to_string
+                         . ", but $name() has no effect annotation",
+                file    => $self->{file},
+                line    => $call->{line},
+                col     => $call->{col} // 0,
+                end_col => ($call->{col} // 0) + length($call->{name}),
             );
+            next;
         }
+
+        # Check effect inclusion: callee's labels ⊆ caller's labels
+        $self->_check_effect_inclusion(
+            $caller_eff, $callee_eff,
+            $name, $call->{name}, $call->{line}, $call->{col} // 0,
+        );
+    }
+}
+
+sub analyze ($self) {
+    $self->_setup;
+    for my $name (sort keys $self->{extracted}{functions}->%*) {
+        $self->check_function($name);
     }
 }
 

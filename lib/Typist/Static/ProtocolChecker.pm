@@ -29,48 +29,57 @@ sub new ($class, %args) {
 
 sub hints ($self) { $self->{hints} }
 
-sub analyze ($self) {
-    my $pkg = $self->{extracted}{package};
+sub _setup ($self) {
+    $self->{_pkg} = $self->{extracted}{package};
     $self->{_checked_handles} = {};
+}
 
-    for my $name (sort keys $self->{extracted}{functions}->%*) {
-        my $fn = $self->{extracted}{functions}{$name};
-        next if $fn->{unannotated};
-        my $block = $fn->{block} // next;
+sub check_function ($self, $name) {
+    my $fn = $self->{extracted}{functions}{$name};
+    return if $fn->{unannotated};
+    my $block = $fn->{block} // return;
 
-        my $caller_sig = $self->{registry}->lookup_function($pkg, $name);
-        next unless $caller_sig;
-        next unless $caller_sig->{effects};
+    my $caller_sig = $self->{registry}->lookup_function($self->{_pkg}, $name);
+    return unless $caller_sig;
+    return unless $caller_sig->{effects};
 
-        my $caller_eff = $caller_sig->{effects};
-        my $row = $caller_eff->is_eff ? $caller_eff->row : $caller_eff;
-        next unless $row->is_row;
+    my $caller_eff = $caller_sig->{effects};
+    my $row = $caller_eff->is_eff ? $caller_eff->row : $caller_eff;
+    return unless $row->is_row;
 
-        # For each label with protocol state annotation, trace the body
-        for my $label ($row->labels) {
-            my $state_range = $row->label_state($label);
-            unless ($state_range) {
-                my $effect = $self->{registry}->lookup_effect($label);
-                next unless $effect && $effect->has_protocol;
-                # ![DB] without state annotation defaults to * -> *
-                $state_range = { from => ['*'], to => ['*'] };
-            }
+    # For each label with protocol state annotation, trace the body
+    for my $label ($row->labels) {
+        my $state_range = $row->label_state($label);
+        unless ($state_range) {
             my $effect = $self->{registry}->lookup_effect($label);
             next unless $effect && $effect->has_protocol;
-
-            my $protocol = $effect->protocol;
-            $self->{_checked_handles}{"$name\0$label"} = 1;
-            $self->_trace_body(
-                $block, $name, $label, $protocol,
-                $state_range->{from}, $state_range->{to}, $pkg,
-            );
+            # ![DB] without state annotation defaults to * -> *
+            $state_range = { from => ['*'], to => ['*'] };
         }
-    }
+        my $effect = $self->{registry}->lookup_effect($label);
+        next unless $effect && $effect->has_protocol;
 
-    # Handle-driven pass: check unannotated functions that contain handle blocks
+        my $protocol = $effect->protocol;
+        $self->{_checked_handles}{"$name\0$label"} = 1;
+        $self->_trace_body(
+            $block, $name, $label, $protocol,
+            $state_range->{from}, $state_range->{to}, $self->{_pkg},
+        );
+    }
+}
+
+sub check_handle_blocks ($self) {
     $self->{_relaxed_handle} = 1;
-    $self->_check_handle_blocks($pkg);
+    $self->_check_handle_blocks($self->{_pkg});
     delete $self->{_relaxed_handle};
+}
+
+sub analyze ($self) {
+    $self->_setup;
+    for my $name (sort keys $self->{extracted}{functions}->%*) {
+        $self->check_function($name);
+    }
+    $self->check_handle_blocks;
 }
 
 sub _check_handle_blocks ($self, $pkg) {

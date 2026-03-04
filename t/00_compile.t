@@ -36,6 +36,7 @@ my @modules = qw(
     Typist::Tie::Scalar
     Typist::Static::Infer
     Typist::Static::Extractor
+    Typist::Static::TypeEnv
     Typist::Static::TypeChecker
     Typist::Static::Analyzer
     Typist::LSP

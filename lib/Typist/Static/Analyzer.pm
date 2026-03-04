@@ -4,9 +4,11 @@ use v5.40;
 our $VERSION = '0.01';
 
 use Typist::Static::Extractor;
+use Typist::Static::TypeEnv;
 use Typist::Static::TypeChecker;
 use Typist::Static::EffectChecker;
 use Typist::Static::ProtocolChecker;
+use Typist::Static::Infer;
 use Typist::Static::Registration;
 use Typist::Registry;
 use Typist::Parser;
@@ -51,41 +53,46 @@ sub analyze ($class, $source, %opts) {
     my $errors    = Typist::Error->collector;
     my $file      = $opts{file} // '(buffer)';
 
-    # 1. Import workspace-level aliases
+    # Phase 1: Import + Registration
     if ($opts{workspace_registry}) {
         $registry->merge($opts{workspace_registry});
     }
-
-    # 1b. Install builtin type prelude (CORE:: defaults)
     Typist::Prelude->install($registry);
-
-    # 2. Register all type definitions from this file
     Typist::Static::Registration->register_all(
         $extracted, $registry,
         errors => $errors,
         file   => $file,
     );
 
-    # 3. Run Checker
-    my $checker = Typist::Static::Checker->new(
+    # Phase 2: Structural verification
+    Typist::Static::Checker->new(
         registry  => $registry,
         errors    => $errors,
         extracted => $extracted,
         file      => $file,
-    );
-    $checker->analyze;
+    )->analyze;
 
-    # 3b. Run TypeChecker (static type mismatch detection)
-    my $type_checker = Typist::Static::TypeChecker->new(
+    # Phase 3: Type environment construction
+    my $type_env = Typist::Static::TypeEnv->new(
         registry  => $registry,
-        errors    => $errors,
         extracted => $extracted,
         ppi_doc   => $extracted->{ppi_doc},
+    );
+    $type_env->build;
+
+    # Phase 4: File-level checks
+    Typist::Static::Infer->clear_callback_params;
+    my $type_checker = Typist::Static::TypeChecker->new(
+        type_env  => $type_env,
+        errors    => $errors,
+        extracted => $extracted,
         file      => $file,
     );
-    $type_checker->analyze;
+    $type_checker->check_variables;
+    $type_checker->check_assignments;
+    $type_checker->check_call_sites;
 
-    # 3c. Run Effect Checker (static effect mismatch detection)
+    # Phase 5: Function-level checks (unified loop)
     my $effect_checker = Typist::Static::EffectChecker->new(
         registry  => $registry,
         errors    => $errors,
@@ -93,9 +100,6 @@ sub analyze ($class, $source, %opts) {
         ppi_doc   => $extracted->{ppi_doc},
         file      => $file,
     );
-    $effect_checker->analyze;
-
-    # 3d. Run Protocol Checker (static protocol state-machine verification)
     my $protocol_checker = Typist::Static::ProtocolChecker->new(
         registry  => $registry,
         errors    => $errors,
@@ -103,12 +107,22 @@ sub analyze ($class, $source, %opts) {
         ppi_doc   => $extracted->{ppi_doc},
         file      => $file,
     );
-    $protocol_checker->analyze;
+    $effect_checker->_setup;
+    $protocol_checker->_setup;
 
-    # 3e. Infer effects for unannotated functions (LSP hints)
+    for my $name (sort keys $extracted->{functions}->%*) {
+        $type_checker->check_function_returns($name);
+        $effect_checker->check_function($name);
+        $protocol_checker->check_function($name);
+    }
+    $protocol_checker->check_handle_blocks;
+
+    # Phase 6: Collection (LSP hints)
+    $type_checker->collect_fn_return_types;
+    $type_checker->collect_callback_params;
     my $inferred_effects = Typist::Static::EffectChecker->infer_effects($extracted, $registry);
 
-    # 4. Build results
+    # Phase 7: Results
     return +{
         diagnostics         => _to_diagnostics($errors, $file, $extracted),
         symbols             => _build_symbol_index($extracted, $type_checker->env, $type_checker),
