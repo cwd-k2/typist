@@ -100,4 +100,18 @@ subtest 'reads multiple sequential messages' => sub {
     is $r2->{method}, 'b', 'second message';
 };
 
+# ── Content-Length limit ────────────────────────
+
+subtest 'oversized Content-Length returns undef' => sub {
+    # Craft a header claiming 20MB — exceeds 10MB limit
+    my $input = "Content-Length: 20971520\r\n\r\n";
+    open my $in, '<', \$input or die;
+    my $out = '';
+    open my $out_fh, '>', \$out or die;
+
+    my $transport = Typist::LSP::Transport->new(in => $in, out => $out_fh);
+    my $result = $transport->read_message;
+    ok !defined $result, 'oversized Content-Length returns undef';
+};
+
 done_testing;

@@ -124,8 +124,12 @@ sub substitute ($self, $bindings) {
         );
     }
 
-    # Non-row binding — just drop the row_var
-    $self;
+    # Non-row binding — close the row by dropping the row_var
+    __PACKAGE__->new(
+        labels       => [$self->{labels}->@*],
+        row_var      => undef,
+        label_states => +{ $self->{label_states}->%* },
+    );
 }
 
 1;

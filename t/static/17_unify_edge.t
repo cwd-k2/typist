@@ -215,4 +215,38 @@ subtest 'substitute replaces vars' => sub {
     is $result->returns->to_string, 'Str', 'U replaced';
 };
 
+# ── Occurs check ──────────────────────────────
+
+subtest 'occurs check: T vs ArrayRef[T] → undef' => sub {
+    my $formal = var('T');
+    my $actual = Typist::Type::Param->new('ArrayRef', var('T'));
+    my $result = Typist::Static::Unify->unify($formal, $actual);
+    ok !defined $result, 'infinite type T = ArrayRef[T] rejected';
+};
+
+subtest 'occurs check: T vs (T) -> Int → undef' => sub {
+    my $formal = var('T');
+    my $actual = Typist::Type::Func->new([var('T')], atom('Int'));
+    my $result = Typist::Static::Unify->unify($formal, $actual);
+    ok !defined $result, 'infinite type T = (T) -> Int rejected';
+};
+
+subtest 'occurs check: T vs ArrayRef[U] → succeeds' => sub {
+    my $formal = var('T');
+    my $actual = Typist::Type::Param->new('ArrayRef', var('U'));
+    my $result = Typist::Static::Unify->unify($formal, $actual);
+    ok $result, 'T vs ArrayRef[U] succeeds (different variables)';
+    is $result->{T}->to_string, 'ArrayRef[U]', 'T = ArrayRef[U]';
+};
+
+subtest 'occurs check in collect_bindings' => sub {
+    my %bindings;
+    my $ok = Typist::Static::Unify->collect_bindings(
+        var('T'),
+        Typist::Type::Param->new('ArrayRef', var('T')),
+        \%bindings,
+    );
+    ok !$ok, 'collect_bindings rejects infinite type';
+};
+
 done_testing;

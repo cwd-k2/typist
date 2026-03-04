@@ -182,7 +182,7 @@ PERL
     is $ctx->{var}, '$point', 'var is $point';
 
     # Verify type resolution
-    my $type_str = $doc->_resolve_var_type('$point');
+    my $type_str = $doc->resolve_var_type('$point');
     ok $type_str, 'resolved variable type';
     like $type_str, qr/x/, 'type contains field x';
 

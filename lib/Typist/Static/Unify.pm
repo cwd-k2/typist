@@ -33,6 +33,9 @@ sub unify ($class, $formal, $actual, $bindings = +{}, %opts) {
         }
         # Skip binding to Any — carries no information (gradual typing)
         return $bindings if $actual->is_atom && $actual->name eq 'Any';
+        # Occurs check: reject infinite types (e.g. T = ArrayRef[T])
+        # Only applies to compound types — Var-to-Var binding (T = T) is harmless.
+        return undef if !$actual->is_var && grep { $_ eq $name } $actual->free_vars;
         return +{ %$bindings, $name => $actual };
     }
 
@@ -181,6 +184,9 @@ sub collect_bindings ($class, $formal, $actual, $bindings) {
         # Skip binding to Any — it carries no information (gradual typing)
         # and would prevent Pass 2 from discovering a concrete type.
         return 1 if $actual->is_atom && $actual->name eq 'Any';
+        # Occurs check: reject infinite types (e.g. T = ArrayRef[T])
+        # Only applies to compound types — Var-to-Var binding (T = T) is harmless.
+        return 0 if !$actual->is_var && grep { $_ eq $name } $actual->free_vars;
         $bindings->{$name} = $actual;
         return 1;
     }

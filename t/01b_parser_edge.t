@@ -215,4 +215,39 @@ subtest 'Tuple type' => sub {
     is scalar($t->params), 3, 'three type args';
 };
 
+# ── Safety limits ─────────────────────────────
+
+subtest 'deep nesting exceeding limit dies' => sub {
+    # depth 70 should exceed limit (64)
+    my $deep = 'Int';
+    $deep = "ArrayRef[$deep]" for 1 .. 70;
+    eval { parse($deep) };
+    ok $@, 'depth 70 nesting dies';
+    like $@, qr/nesting too deep/, 'error mentions nesting depth';
+};
+
+subtest 'moderately deep nesting succeeds' => sub {
+    # depth 10 should be fine
+    my $deep = 'Int';
+    $deep = "ArrayRef[$deep]" for 1 .. 10;
+    my $t = eval { parse($deep) };
+    ok !$@, 'depth 10 nesting succeeds' or diag $@;
+    ok $t->is_param, 'result is parameterized';
+};
+
+subtest 'input too long dies' => sub {
+    my $long = 'Int | ' x 2500;  # > 10_000 chars
+    $long .= 'Str';
+    eval { parse($long) };
+    ok $@, 'overly long input dies';
+    like $@, qr/input too long/, 'error mentions input length';
+};
+
+subtest 'annotation input too long dies' => sub {
+    my $long = 'A' x 10_001;
+    eval { Typist::Parser->parse_annotation($long) };
+    ok $@, 'long annotation input dies';
+    like $@, qr/input too long/, 'error mentions input length';
+};
+
 done_testing;

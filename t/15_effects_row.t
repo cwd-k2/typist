@@ -141,4 +141,17 @@ subtest 'unify: matching rows yield empty bindings' => sub {
     is scalar(keys %bindings), 0, 'no bindings needed';
 };
 
+# ── Row::substitute with non-Row binding ────────
+
+subtest 'substitute: non-Row binding closes the row' => sub {
+    my $row = Typist::Type::Row->new(
+        labels  => ['Console'],
+        row_var => 'r',
+    );
+    my $result = $row->substitute({ r => Typist::Type::Atom->new('Int') });
+    ok $result->is_row, 'result is row';
+    ok $result->is_closed, 'row_var removed (closed)';
+    is_deeply [$result->labels], ['Console'], 'labels preserved';
+};
+
 done_testing;

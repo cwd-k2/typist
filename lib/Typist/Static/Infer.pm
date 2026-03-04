@@ -31,6 +31,11 @@ my %NUMERIC_ATOM = map { $_ => 1 } qw(Bool Int Double Num);
 #
 # During inference, _enrich_env_with_params records callback parameter
 # bindings here.  TypeChecker drains this after analysis for symbol index.
+#
+# NOTE: These are global (class-level) state, cleared at the start of each
+# analysis pass via clear_callback_params(). This is safe because:
+#   - Perl LSP server is single-threaded (sequential message dispatch)
+#   - Analyzer->analyze() calls clear_callback_params() before analysis
 
 my @_CALLBACK_PARAMS;
 my %_CALLBACK_PARAMS_SEEN;

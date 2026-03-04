@@ -9,6 +9,7 @@ use Typist::LSP::Document;
 use Typist::Static::Extractor;
 use Typist::Static::Registration;
 use Typist::Prelude;
+use Typist::Subtype;
 
 # ── Constructor ──────────────────────────────────
 
@@ -216,6 +217,9 @@ sub _unregister_file_types ($self, $old_info) {
 
     # Clear resolved cache since aliases/types may have changed
     $reg->{resolved} = +{};
+
+    # Clear subtype cache — type definitions may have changed
+    Typist::Subtype->clear_cache;
 }
 
 sub _register_file_types ($self, $extracted) {

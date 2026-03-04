@@ -7,6 +7,7 @@ use JSON::PP;
 use Time::HiRes ();
 
 my $JSON = JSON::PP->new->utf8->canonical;
+my $MAX_CONTENT_LENGTH = 10 * 1024 * 1024;  # 10MB
 
 # ── URI Utilities ───────────────────────────────
 
@@ -59,6 +60,7 @@ sub read_message ($self) {
     }
 
     return undef unless defined $content_length;
+    return undef if $content_length > $MAX_CONTENT_LENGTH;
 
     # Read exactly content_length bytes (may require multiple reads on pipes)
     my $body = '';

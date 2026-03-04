@@ -337,4 +337,18 @@ subtest 'Record LUB' => sub {
     ok exists $cd_opt{y}, 'y promoted to optional';
 };
 
+# ── Subtype cache eviction ────────────────────
+
+subtest 'cache clear does not break correctness' => sub {
+    Typist::Subtype->clear_cache;
+    ok Typist::Subtype->is_subtype(
+        Typist::Type::Atom->new('Int'),
+        Typist::Type::Atom->new('Num'),
+    ), 'Int <: Num after cache clear';
+    ok !Typist::Subtype->is_subtype(
+        Typist::Type::Atom->new('Str'),
+        Typist::Type::Atom->new('Int'),
+    ), 'Str ≮: Int after cache clear';
+};
+
 done_testing;

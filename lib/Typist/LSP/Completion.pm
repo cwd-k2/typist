@@ -102,7 +102,7 @@ sub _complete_record_fields ($class, $context, $doc, $registry) {
     my $var_name = $context->{var};
     my $prefix   = $context->{prefix} // '';
 
-    my $type_str = $doc->_resolve_var_type($var_name) // return [];
+    my $type_str = $doc->resolve_var_type($var_name) // return [];
 
     # Parse the type string into a type object
     require Typist::Parser;
@@ -196,13 +196,13 @@ sub _complete_cross_package_methods ($class, $context, $doc, $registry) {
     my $var    = $context->{var};
     my $prefix = $context->{prefix} // '';
 
-    my $type_str = $doc->_resolve_var_type($var) // return [];
+    my $type_str = $doc->resolve_var_type($var) // return [];
 
     require Typist::Parser;
     my $type = eval { Typist::Parser->parse($type_str) };
     return [] if $@ || !$type;
 
-    my $resolved = $doc->_resolve_type_deep($type, $registry);
+    my $resolved = $doc->resolve_type_deep($type, $registry);
 
     # Must resolve to a struct for field/method completion
     my $struct = ($resolved && $resolved->is_struct) ? $resolved
@@ -243,7 +243,7 @@ sub _complete_match_arms ($class, $context, $doc, $registry) {
     my $var  = $context->{var};
     my %used = map { $_ => 1 } ($context->{used} // [])->@*;
 
-    my $type_str = $doc->_resolve_var_type($var) // return [];
+    my $type_str = $doc->resolve_var_type($var) // return [];
     require Typist::Parser;
     my $type = eval { Typist::Parser->parse($type_str) };
     return [] if $@ || !$type;

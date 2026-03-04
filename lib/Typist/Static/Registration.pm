@@ -241,6 +241,17 @@ sub register_datatypes ($class, $extracted, $registry, %opts) {
             }
         }
 
+        # Validate GADT return types: base name must match the datatype name
+        for my $tag (keys %return_types) {
+            my $ret = $return_types{$tag};
+            my $base = $ret->is_param ? "${\$ret->base}" : $ret->name // '';
+            if ($base ne $name) {
+                warn "Typist: GADT constructor '$tag' return type base '$base'"
+                    . " does not match datatype '$name', falling back to ADT\n";
+                delete $return_types{$tag};
+            }
+        }
+
         my $dt = Typist::Type::Data->new($name, \%parsed_variants,
             type_params  => \@tp,
             return_types => (%return_types ? \%return_types : +{}),

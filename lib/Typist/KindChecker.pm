@@ -49,8 +49,10 @@ sub register_kind ($class, $name, $kind) {
 sub check_application ($class, $constructor_name, @arg_kinds) {
     _init_kinds();
 
+    # Gradual kinding: unknown constructors assumed * (consistent with gradual typing).
+    # Registered constructors are checked strictly.
     my $kind = $CONSTRUCTOR_KINDS{$constructor_name}
-        // return Typist::Kind->Star;  # Unknown constructors assumed *
+        // return Typist::Kind->Star;
 
     for my $i (0 .. $#arg_kinds) {
         unless (ref $kind eq 'Typist::Kind::Arrow') {

@@ -616,21 +616,21 @@ subtest 'match dispatches on tag' => sub {
     my $rect   = bless +{ _tag => 'Rectangle', _values => [3, 4] }, 'Typist::Data::Shape';
     my $point  = bless +{ _tag => 'Point', _values => [] }, 'Typist::Data::Shape';
 
-    my $r1 = Typist::_match($circle,
+    my $r1 = Typist::Algebra::_match($circle,
         Circle    => sub ($r)     { 3.14 * $r ** 2 },
         Rectangle => sub ($w, $h) { $w * $h },
         Point     => sub          { 0 },
     );
     is $r1, 3.14 * 25, 'match Circle dispatches correctly';
 
-    my $r2 = Typist::_match($rect,
+    my $r2 = Typist::Algebra::_match($rect,
         Circle    => sub ($r)     { 3.14 * $r ** 2 },
         Rectangle => sub ($w, $h) { $w * $h },
         Point     => sub          { 0 },
     );
     is $r2, 12, 'match Rectangle dispatches correctly';
 
-    my $r3 = Typist::_match($point,
+    my $r3 = Typist::Algebra::_match($point,
         Circle    => sub ($r)     { 3.14 * $r ** 2 },
         Rectangle => sub ($w, $h) { $w * $h },
         Point     => sub          { 0 },
@@ -643,7 +643,7 @@ subtest 'match fallback arm' => sub {
 
     my $circle = bless +{ _tag => 'Circle', _values => [5] }, 'Typist::Data::Shape';
 
-    my $r = Typist::_match($circle,
+    my $r = Typist::Algebra::_match($circle,
         Rectangle => sub ($w, $h) { 'rect' },
         _         => sub          { 'other' },
     );
@@ -656,7 +656,7 @@ subtest 'match dies on missing arm' => sub {
     my $circle = bless +{ _tag => 'Circle', _values => [5] }, 'Typist::Data::Shape';
 
     eval {
-        Typist::_match($circle,
+        Typist::Algebra::_match($circle,
             Rectangle => sub { 'rect' },
         );
     };
@@ -681,7 +681,7 @@ subtest 'match exhaustiveness warning' => sub {
     # Non-exhaustive match should warn
     my @warnings;
     local $SIG{__WARN__} = sub { push @warnings, $_[0] };
-    Typist::_match($circle,
+    Typist::Algebra::_match($circle,
         Circle => sub ($r) { $r },
     );
     ok @warnings == 1, 'one warning for non-exhaustive match';
@@ -690,7 +690,7 @@ subtest 'match exhaustiveness warning' => sub {
 
     # Exhaustive match should not warn
     @warnings = ();
-    Typist::_match($circle,
+    Typist::Algebra::_match($circle,
         Circle    => sub ($r)     { $r },
         Rectangle => sub ($w, $h) { $w * $h },
         Point     => sub          { 0 },
@@ -699,7 +699,7 @@ subtest 'match exhaustiveness warning' => sub {
 
     # Match with fallback _ should not warn even if not exhaustive
     @warnings = ();
-    Typist::_match($circle,
+    Typist::Algebra::_match($circle,
         Circle => sub ($r) { $r },
         _      => sub      { 0 },
     );
@@ -709,7 +709,7 @@ subtest 'match exhaustiveness warning' => sub {
 subtest 'match dies on non-tagged value' => sub {
     require Typist;
 
-    eval { Typist::_match(+{}, Point => sub { 0 }) };
+    eval { Typist::Algebra::_match(+{}, Point => sub { 0 }) };
     like $@, qr/no _tag/, 'dies when value has no _tag';
 };
 
@@ -719,7 +719,7 @@ subtest 'enum creates nullary-only ADT' => sub {
     require Typist;
     Typist::Registry->reset;
 
-    Typist::_enum('Direction', 'North', 'South', 'East', 'West');
+    Typist::Algebra::_enum('main', 'Direction', 'North', 'South', 'East', 'West');
 
     my $dt = Typist::Registry->lookup_datatype('Direction');
     ok $dt && $dt->is_data, 'Direction registered as data type';
@@ -738,7 +738,6 @@ subtest 'enum constructors work' => sub {
     # Install into main:: for testing
     {
         no strict 'refs';
-        local $Typist::_enum_caller = 'main';
         my $data_class = 'Typist::Data::TrafficLight';
         my %parsed;
         for my $tag (qw(RedLight YellowLight GreenLight)) {
@@ -778,7 +777,7 @@ subtest 'enum match with exhaustiveness' => sub {
     # Non-exhaustive — should warn
     my @w;
     local $SIG{__WARN__} = sub { push @w, $_[0] };
-    Typist::_match($hearts,
+    Typist::Algebra::_match($hearts,
         Hearts   => sub { 'red' },
         Diamonds => sub { 'red' },
     );

@@ -30,6 +30,7 @@ my %ATOM_ORDER = (Bool => 0, Int => 1, Double => 2, Num => 3, Str => 4, Any => 5
 
 my %_SUBTYPE_CACHE;
 my %_CACHE_ANCHORS;
+my $_CACHE_SIZE_LIMIT = 5000;
 
 sub clear_cache ($class) {
     %_SUBTYPE_CACHE  = ();
@@ -151,6 +152,11 @@ sub _check ($sub, $super, $registry = undef) {
     }
 
     my $result = _check_impl($sub, $super, $registry);
+    # Evict cache if it exceeds the size limit to prevent unbounded growth
+    if (keys %_SUBTYPE_CACHE > $_CACHE_SIZE_LIMIT) {
+        %_SUBTYPE_CACHE = ();
+        %_CACHE_ANCHORS = ();
+    }
     $_CACHE_ANCHORS{$sa} = $sub;
     $_CACHE_ANCHORS{$pa} = $super;
     $_SUBTYPE_CACHE{$cache_key} = $result;

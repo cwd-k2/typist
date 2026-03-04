@@ -51,11 +51,11 @@ sub _resolver ($self) {
 }
 
 # Delegate methods for external callers (Completion, Server)
-sub _resolve_var_type ($self, $var_name, $line = undef) {
+sub resolve_var_type ($self, $var_name, $line = undef) {
     $self->_resolver->resolve_var_type($var_name, $line);
 }
 
-sub _resolve_type_deep ($self, $type, $registry) {
+sub resolve_type_deep ($self, $type, $registry) {
     $self->_resolver->resolve_type_deep($type, $registry);
 }
 

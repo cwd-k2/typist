@@ -19,6 +19,10 @@ use Typist::Type::Eff;
 
 my %PRIMITIVES = map { $_ => 1 } qw(Any Void Never Undef Bool Int Double Num Str);
 
+# ── Safety Limits ────────────────────────────────
+my $_MAX_PARSE_DEPTH  = 64;
+my $_MAX_INPUT_LENGTH = 10_000;
+
 # DSL constructor names that use (...) syntax
 my %DSL_CONSTRUCTORS = (
     Record  => \&_parse_dsl_record,
@@ -40,6 +44,13 @@ my $_CACHE_LIMIT = 1000;
 my $_CACHE_EPOCH = 0;
 
 sub _cache_evict ($cache) {
+    # Epoch overflow protection: reset when approaching IEEE 754 double integer limit
+    if ($_CACHE_EPOCH > 2**53) {
+        $_CACHE_EPOCH = 0;
+        %_PARSE_CACHE = ();
+        %_ANNOTATION_CACHE = ();
+        return;
+    }
     my $keep = int($_CACHE_LIMIT * 3 / 4);
     my @sorted = sort { $cache->{$a}[1] <=> $cache->{$b}[1] } keys %$cache;
     delete $cache->{$sorted[$_]} for 0 .. @sorted - $keep - 1;
@@ -48,6 +59,9 @@ sub _cache_evict ($cache) {
 # ── Public API ────────────────────────────────────
 
 sub parse ($class, $expr) {
+    die "Typist::Parser: input too long (" . length($expr) . " > $_MAX_INPUT_LENGTH)"
+        if length($expr) > $_MAX_INPUT_LENGTH;
+
     if (my $entry = $_PARSE_CACHE{$expr}) {
         $entry->[1] = ++$_CACHE_EPOCH;
         return $entry->[0];
@@ -55,7 +69,7 @@ sub parse ($class, $expr) {
 
     my @tokens = _tokenize($expr);
     my $pos    = 0;
-    my $result = _parse_union(\@tokens, \$pos);
+    my $result = _parse_union(\@tokens, \$pos, 0);
     die "Typist::Parser: unexpected token '$tokens[$pos]' at position $pos in '$expr'"
         if $pos < @tokens;
 
@@ -93,50 +107,53 @@ sub _tokenize ($input) {
 # ── Recursive Descent ─────────────────────────────
 
 # union_type ::= inter_type ('|' inter_type)*
-sub _parse_union ($tokens, $pos) {
-    my @members = (_parse_intersection($tokens, $pos));
+sub _parse_union ($tokens, $pos, $depth = 0) {
+    die "Typist::Parser: nesting too deep (> $_MAX_PARSE_DEPTH)"
+        if $depth > $_MAX_PARSE_DEPTH;
+
+    my @members = (_parse_intersection($tokens, $pos, $depth));
 
     while ($$pos < @$tokens && $tokens->[$$pos] eq '|') {
         $$pos++;
-        push @members, _parse_intersection($tokens, $pos);
+        push @members, _parse_intersection($tokens, $pos, $depth);
     }
 
     @members == 1 ? $members[0] : Typist::Type::Union->new(@members);
 }
 
 # inter_type ::= primary (('&' | '+') primary)*
-sub _parse_intersection ($tokens, $pos) {
-    my @members = (_parse_primary($tokens, $pos));
+sub _parse_intersection ($tokens, $pos, $depth = 0) {
+    my @members = (_parse_primary($tokens, $pos, $depth));
 
     while ($$pos < @$tokens && ($tokens->[$$pos] eq '&' || $tokens->[$$pos] eq '+')) {
         $$pos++;
-        push @members, _parse_primary($tokens, $pos);
+        push @members, _parse_primary($tokens, $pos, $depth);
     }
 
     @members == 1 ? $members[0] : Typist::Type::Intersection->new(@members);
 }
 
 # primary ::= named | struct | '(' type_expr ')'
-sub _parse_primary ($tokens, $pos) {
+sub _parse_primary ($tokens, $pos, $depth = 0) {
     die "Typist::Parser: unexpected end of input" if $$pos >= @$tokens;
 
     my $tok = $tokens->[$$pos];
 
-    return _parse_record($tokens, $pos)     if $tok eq '{';
-    return _parse_grouped($tokens, $pos)    if $tok eq '(';
+    return _parse_record($tokens, $pos, $depth)     if $tok eq '{';
+    return _parse_grouped($tokens, $pos, $depth)    if $tok eq '(';
     return _parse_literal($tokens, $pos)    if $tok =~ /\A["'\d]/ || $tok =~ /\A-\d/;
-    return _parse_quantified($tokens, $pos) if $tok eq 'forall';
-    return _parse_named($tokens, $pos);
+    return _parse_quantified($tokens, $pos, $depth) if $tok eq 'forall';
+    return _parse_named($tokens, $pos, $depth);
 }
 
 # named ::= IDENT ('[' param_list ']')? | DSL_NAME '(' ... ')'
 # param_list ::= type_expr (',' type_expr)* ('->' type_expr)?
-sub _parse_named ($tokens, $pos) {
+sub _parse_named ($tokens, $pos, $depth = 0) {
     my $name = $tokens->[$$pos++];
 
     # DSL constructor dispatch: Name(...)
     if ($$pos < @$tokens && $tokens->[$$pos] eq '(' && $DSL_CONSTRUCTORS{$name}) {
-        return $DSL_CONSTRUCTORS{$name}->($name, $tokens, $pos);
+        return $DSL_CONSTRUCTORS{$name}->($name, $tokens, $pos, $depth);
     }
 
     # Without parameters — resolve as Atom, Var, or Alias
@@ -146,7 +163,7 @@ sub _parse_named ($tokens, $pos) {
 
     # Consume '['
     $$pos++;
-    my ($params, $return_type, $effect_row) = _parse_param_list($tokens, $pos, ']');
+    my ($params, $return_type, $effect_row) = _parse_param_list($tokens, $pos, ']', $depth);
     die "Typist::Parser: expected ']' after parameter list"
         unless $$pos < @$tokens && $tokens->[$$pos] eq ']';
     $$pos++;
@@ -163,9 +180,9 @@ sub _parse_named ($tokens, $pos) {
 }
 
 # struct ::= '{' struct_fields '}'
-sub _parse_record ($tokens, $pos) {
+sub _parse_record ($tokens, $pos, $depth = 0) {
     $$pos++; # consume '{'
-    my %fields = _parse_record_fields($tokens, $pos, '}');
+    my %fields = _parse_record_fields($tokens, $pos, '}', $depth);
     die "Typist::Parser: expected '}'"
         unless $$pos < @$tokens && $tokens->[$$pos] eq '}';
     $$pos++;
@@ -173,7 +190,7 @@ sub _parse_record ($tokens, $pos) {
 }
 
 # Common struct field parser: IDENT '?'? '=>' type_expr (',' ...)*
-sub _parse_record_fields ($tokens, $pos, $close) {
+sub _parse_record_fields ($tokens, $pos, $close, $depth = 0) {
     my %fields;
     return %fields if $$pos < @$tokens && $tokens->[$$pos] eq $close;
 
@@ -185,7 +202,7 @@ sub _parse_record_fields ($tokens, $pos, $close) {
     die "Typist::Parser: expected '=>' after struct key"
         unless $$pos < @$tokens && $tokens->[$$pos] eq '=>';
     $$pos++;
-    $fields{$key} = _parse_union($tokens, $pos);
+    $fields{$key} = _parse_union($tokens, $pos, $depth + 1);
 
     while ($$pos < @$tokens && $tokens->[$$pos] eq ',') {
         $$pos++;
@@ -198,7 +215,7 @@ sub _parse_record_fields ($tokens, $pos, $close) {
         die "Typist::Parser: expected '=>' after struct key"
             unless $$pos < @$tokens && $tokens->[$$pos] eq '=>';
         $$pos++;
-        $fields{$key} = _parse_union($tokens, $pos);
+        $fields{$key} = _parse_union($tokens, $pos, $depth + 1);
     }
 
     %fields;
@@ -212,24 +229,24 @@ sub _unquote_struct_key ($tok) {
 
 # grouped ::= '(' type_expr ')' | func_type
 # func_type ::= '(' param_list? ')' '->' return_type ('!' effect_row)?
-sub _parse_grouped ($tokens, $pos) {
+sub _parse_grouped ($tokens, $pos, $parse_depth = 0) {
     # Look ahead: if matching ')' is followed by '->', it's a function type
-    my $depth = 0;
+    my $paren_depth = 0;
     my $close_pos;
     for my $i ($$pos .. $#$tokens) {
-        $depth++ if $tokens->[$i] eq '(';
+        $paren_depth++ if $tokens->[$i] eq '(';
         if ($tokens->[$i] eq ')') {
-            $depth--;
-            if ($depth == 0) { $close_pos = $i; last; }
+            $paren_depth--;
+            if ($paren_depth == 0) { $close_pos = $i; last; }
         }
     }
 
     if (defined $close_pos && $close_pos + 1 < @$tokens && $tokens->[$close_pos + 1] eq '->') {
-        return _parse_func_type($tokens, $pos);
+        return _parse_func_type($tokens, $pos, $parse_depth);
     }
 
     $$pos++; # consume '('
-    my $inner = _parse_union($tokens, $pos);
+    my $inner = _parse_union($tokens, $pos, $parse_depth + 1);
 
     die "Typist::Parser: expected ')'"
         unless $$pos < @$tokens && $tokens->[$$pos] eq ')';
@@ -240,7 +257,7 @@ sub _parse_grouped ($tokens, $pos) {
 
 # func_type ::= '(' param_list? ')' '->' return_type ('!' effect_row)?
 # Variadic: '...' before the last param type: (Int, ...Str) -> Void
-sub _parse_func_type ($tokens, $pos) {
+sub _parse_func_type ($tokens, $pos, $depth = 0) {
     $$pos++; # consume '('
 
     my @params;
@@ -250,14 +267,14 @@ sub _parse_func_type ($tokens, $pos) {
             $$pos++;
             $variadic = 1;
         }
-        push @params, _parse_func_param($tokens, $pos);
+        push @params, _parse_func_param($tokens, $pos, $depth);
         while ($$pos < @$tokens && $tokens->[$$pos] eq ',') {
             $$pos++;
             if ($$pos < @$tokens && $tokens->[$$pos] eq '...') {
                 $$pos++;
                 $variadic = 1;
             }
-            push @params, _parse_func_param($tokens, $pos);
+            push @params, _parse_func_param($tokens, $pos, $depth);
         }
     }
 
@@ -269,7 +286,7 @@ sub _parse_func_type ($tokens, $pos) {
         unless $$pos < @$tokens && $tokens->[$$pos] eq '->';
     $$pos++;
 
-    my $return_type = _parse_union($tokens, $pos);
+    my $return_type = _parse_union($tokens, $pos, $depth + 1);
 
     my $effects;
     if ($$pos < @$tokens && $tokens->[$$pos] eq '!') {
@@ -282,12 +299,12 @@ sub _parse_func_type ($tokens, $pos) {
 
 # Parse a function parameter that may contain a bare arrow function type.
 # Inside a param list, A -> B is itself a function type (right-associative).
-sub _parse_func_param ($tokens, $pos) {
-    my $type = _parse_union($tokens, $pos);
+sub _parse_func_param ($tokens, $pos, $depth = 0) {
+    my $type = _parse_union($tokens, $pos, $depth + 1);
 
     if ($$pos < @$tokens && $tokens->[$$pos] eq '->') {
         $$pos++;
-        my $ret = _parse_func_param($tokens, $pos);
+        my $ret = _parse_func_param($tokens, $pos, $depth);
         my $effects;
         if ($$pos < @$tokens && $tokens->[$$pos] eq '!') {
             $$pos++;
@@ -302,9 +319,9 @@ sub _parse_func_param ($tokens, $pos) {
 # ── DSL Constructors ─────────────────────────────
 
 # Record(k => V, ...) → Type::Record
-sub _parse_dsl_record ($name, $tokens, $pos) {
+sub _parse_dsl_record ($name, $tokens, $pos, $depth = 0) {
     $$pos++; # consume '('
-    my %fields = _parse_record_fields($tokens, $pos, ')');
+    my %fields = _parse_record_fields($tokens, $pos, ')', $depth);
     die "Typist::Parser: expected ')' after Record(...)"
         unless $$pos < @$tokens && $tokens->[$$pos] eq ')';
     $$pos++;
@@ -312,7 +329,7 @@ sub _parse_dsl_record ($name, $tokens, $pos) {
 }
 
 # Func(A, B, returns => R) or Func(Int, ...Str, returns => R) → Type::Func
-sub _parse_dsl_func ($name, $tokens, $pos) {
+sub _parse_dsl_func ($name, $tokens, $pos, $depth = 0) {
     $$pos++; # consume '('
 
     my @params;
@@ -326,7 +343,7 @@ sub _parse_dsl_func ($name, $tokens, $pos) {
             if ($tokens->[$$pos] eq 'returns'
                 && $$pos + 1 < @$tokens && $tokens->[$$pos + 1] eq '=>') {
                 $$pos += 2; # consume 'returns' and '=>'
-                $return_type = _parse_union($tokens, $pos);
+                $return_type = _parse_union($tokens, $pos, $depth + 1);
                 last;
             }
 
@@ -335,7 +352,7 @@ sub _parse_dsl_func ($name, $tokens, $pos) {
                 $variadic = 1;
             }
 
-            push @params, _parse_union($tokens, $pos);
+            push @params, _parse_union($tokens, $pos, $depth + 1);
 
             if ($$pos < @$tokens && $tokens->[$$pos] eq ',') {
                 $$pos++;
@@ -363,7 +380,7 @@ sub _parse_dsl_func ($name, $tokens, $pos) {
 }
 
 # Alias('Name') → resolve as _resolve_name
-sub _parse_dsl_alias ($name, $tokens, $pos) {
+sub _parse_dsl_alias ($name, $tokens, $pos, $depth = 0) {
     $$pos++; # consume '('
 
     die "Typist::Parser: expected name inside Alias()"
@@ -385,9 +402,9 @@ sub _parse_dsl_alias ($name, $tokens, $pos) {
 }
 
 # ArrayRef(T), HashRef(K,V), Maybe(T), etc. → same as bracket form
-sub _parse_dsl_param ($name, $tokens, $pos) {
+sub _parse_dsl_param ($name, $tokens, $pos, $depth = 0) {
     $$pos++; # consume '('
-    my ($params, $return_type, $effect_row) = _parse_param_list($tokens, $pos, ')');
+    my ($params, $return_type, $effect_row) = _parse_param_list($tokens, $pos, ')', $depth);
     die "Typist::Parser: expected ')' after $name(...)"
         unless $$pos < @$tokens && $tokens->[$$pos] eq ')';
     $$pos++;
@@ -398,19 +415,19 @@ sub _parse_dsl_param ($name, $tokens, $pos) {
 
 # Parse a parametric argument list: type_expr (',' type_expr)* ('->' return)? ('!' effects)?
 # Returns ($params_aref, $return_type_or_undef, $effect_row_or_undef).
-sub _parse_param_list ($tokens, $pos, $close) {
+sub _parse_param_list ($tokens, $pos, $close, $depth = 0) {
     my @params;
     my $return_type;
 
     unless ($$pos < @$tokens && $tokens->[$$pos] eq $close) {
-        push @params, _parse_union($tokens, $pos);
+        push @params, _parse_union($tokens, $pos, $depth + 1);
         while ($$pos < @$tokens && $tokens->[$$pos] eq ',') {
             $$pos++;
-            push @params, _parse_union($tokens, $pos);
+            push @params, _parse_union($tokens, $pos, $depth + 1);
         }
         if ($$pos < @$tokens && $tokens->[$$pos] eq '->') {
             $$pos++;
-            $return_type = _parse_union($tokens, $pos);
+            $return_type = _parse_union($tokens, $pos, $depth + 1);
         }
     }
 
@@ -446,7 +463,7 @@ sub _resolve_param_constructor ($name, $params, $return_type, $effect_row) {
 # ── Quantified Types (forall) ────────────────────
 
 # forall A B. body | forall A: Num. body
-sub _parse_quantified ($tokens, $pos) {
+sub _parse_quantified ($tokens, $pos, $depth = 0) {
     $$pos++;  # consume 'forall'
 
     my @vars;
@@ -479,11 +496,11 @@ sub _parse_quantified ($tokens, $pos) {
 
     # Body may be a bare function type: forall A. A -> A
     # Parse first type, then check for '->' to build Func.
-    my $body = _parse_union($tokens, $pos);
+    my $body = _parse_union($tokens, $pos, $depth + 1);
 
     if ($$pos < @$tokens && $tokens->[$$pos] eq '->') {
         $$pos++;  # consume '->'
-        my $ret = _parse_union($tokens, $pos);
+        my $ret = _parse_union($tokens, $pos, $depth + 1);
         my $effects;
         if ($$pos < @$tokens && $tokens->[$$pos] eq '!') {
             $$pos++;
@@ -638,6 +655,9 @@ sub parse_row ($class, $expr) {
 #   "<T: Num>(T, T) -> T"              → { generics_raw => ["T: Num"], type => Func }
 #   "<T, r: Row>(T) -> Str ![Console, r]"
 sub parse_annotation ($class, $input) {
+    die "Typist::Parser: input too long (" . length($input) . " > $_MAX_INPUT_LENGTH)"
+        if length($input) > $_MAX_INPUT_LENGTH;
+
     if (my $entry = $_ANNOTATION_CACHE{$input}) {
         $entry->[1] = ++$_CACHE_EPOCH;
         return $entry->[0];
@@ -676,7 +696,7 @@ sub parse_annotation ($class, $input) {
     # Tokenize and parse — function type detection handled by _parse_grouped
     my @tokens = _tokenize($trimmed);
     my $pos = 0;
-    my $type = _parse_union(\@tokens, \$pos);
+    my $type = _parse_union(\@tokens, \$pos, 0);
 
     die "Typist::Parser: unexpected token '$tokens[$pos]' in annotation '$input'"
         if $pos < @tokens;

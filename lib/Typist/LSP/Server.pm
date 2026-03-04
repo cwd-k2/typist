@@ -362,12 +362,12 @@ sub _handle_signature_help ($self, $params) {
 
     # Method call: $var->method( → resolve variable type for signature
     if ($ctx->{is_method}) {
-        my $type_str = $doc->_resolve_var_type($ctx->{var}, $line);
+        my $type_str = $doc->resolve_var_type($ctx->{var}, $line);
         if ($type_str) {
             my $type = eval { Typist::Parser->parse($type_str) };
             if ($type && !$@) {
                 my $reg = $self->_ws_registry;
-                my $resolved = $doc->_resolve_type_deep($type, $reg);
+                my $resolved = $doc->resolve_type_deep($type, $reg);
                 if ($resolved && $resolved->is_struct) {
                     my $struct_pkg = "Typist::Struct::" . $resolved->name;
                     my $method_sig = $reg->lookup_function($struct_pkg, $ctx->{name});
@@ -482,7 +482,7 @@ sub _handle_definition ($self, $params) {
             if ($bare !~ /::/) {
                 my $text = ($doc->lines)->[$line] // '';
                 if ($text =~ /(\$\w+)\s*->\s*\Q$bare\E/) {
-                    my $type_str = $doc->_resolve_var_type($1, $line);
+                    my $type_str = $doc->resolve_var_type($1, $line);
                     if ($type_str) {
                         (my $type_name = $type_str) =~ s/\[.*\]//;
                         if (my $def = $self->{workspace}->find_definition($type_name)) {

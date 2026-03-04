@@ -12,15 +12,20 @@ Typist is a pure Perl type system for Perl 5.40+. Static-first architecture: err
 Static-First (default)       Runtime (opt-in: -runtime)    LSP Layer         CLI
 ──────────────────────       ─────────────────────────     ──────────────    ──────────
 Typist.pm (entry+CHECK)      Tie::Scalar                   LSP::Server       Check.pm
-Static::Checker              Attribute._wrap_sub            LSP::Document
-Static::Analyzer (CHECK)     Inference.pm                   LSP::Workspace
-Static::TypeChecker          Handler (Effect::op/handle)    LSP::Hover
-Static::CallChecker                                         LSP::Completion
-Static::NarrowingEngine                                     LSP::Transport
-Static::EffectChecker                                       LSP::CodeAction
-Static::ProtocolChecker                                     LSP::SemanticTokens
-Static::Extractor                                           LSP::Logger
-Static::Infer                                               Document::Resolver
+ ├ Definition.pm             Attribute._wrap_sub            LSP::Document
+ ├ Algebra.pm                Inference.pm                   LSP::Workspace
+ ├ StructDef.pm              Handler (Effect::op/handle)    LSP::Hover
+ ├ EffectDef.pm                                             LSP::Completion
+ └ External.pm                                              LSP::Transport
+Static::Checker                                             LSP::CodeAction
+Static::Analyzer (CHECK)                                    LSP::SemanticTokens
+Static::TypeChecker                                         LSP::Logger
+Static::CallChecker                                         Document::Resolver
+Static::NarrowingEngine
+Static::EffectChecker
+Static::ProtocolChecker
+Static::Extractor
+Static::Infer
 Static::Unify
 Static::SymbolInfo
 
