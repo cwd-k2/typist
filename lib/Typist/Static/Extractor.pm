@@ -4,6 +4,7 @@ use v5.40;
 our $VERSION = '0.01';
 
 use PPI;
+use Typist::Parser;
 
 # ── Public API ───────────────────────────────────
 
@@ -131,13 +132,9 @@ sub _extract_datatypes ($class, $doc, $result) {
                  && $children[2]->content eq '=>';
 
         # Parse name and type parameters
-        my ($base_name, @type_params);
-        if ($name_raw =~ /\A(\w+)\[(.+)\]\z/) {
-            $base_name = $1;
-            @type_params = map { s/\s//gr } split /,/, $2;
-        } else {
-            $base_name = $name_raw;
-        }
+        my ($base_name, @raw);
+        ($base_name, @raw) = Typist::Parser->parse_parameterized_name($name_raw);
+        my @type_params = map { s/\s//gr } @raw;
 
         # Parse variant pairs from remaining children.
         # Parenthesised form: datatype Name => (Tag => '()', ...)
@@ -257,13 +254,8 @@ sub _extract_structs ($class, $doc, $result) {
 
         # Parse name and type parameters (e.g., 'Rect[T]', 'NumBox[T: Num]')
         my ($base_name, @type_params, @raw_specs);
-        if ($name_raw =~ /\A(\w+)\[(.+)\]\z/) {
-            $base_name = $1;
-            @raw_specs  = map { s/^\s+|\s+$//gr } split /,/, $2;
-            @type_params = map { /\A(\w+)/ ? $1 : $_ } @raw_specs;
-        } else {
-            $base_name = $name_raw;
-        }
+        ($base_name, @raw_specs) = Typist::Parser->parse_parameterized_name($name_raw);
+        @type_params = map { /\A(\w+)/ ? $1 : $_ } @raw_specs;
 
         # Extract field definitions from the List structure
         my (%fields, @optional_fields);

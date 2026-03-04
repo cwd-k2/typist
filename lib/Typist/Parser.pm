@@ -570,7 +570,7 @@ sub _parse_effect_row ($tokens, $pos, $close = undef) {
 # Parse a row expression: "Console, State, r"
 # Labels are uppercase-initial identifiers; a trailing lowercase identifier is a row variable.
 sub parse_row ($class, $expr) {
-    my @tokens = grep { $_ ne '' } split /\s*,\s*/, $expr;
+    my @tokens = __PACKAGE__->split_type_list($expr);
     my (@labels, $row_var, %label_states);
 
     for my $i (0 .. $#tokens) {
@@ -638,7 +638,7 @@ sub parse_annotation ($class, $input) {
         }
         die "Typist::Parser: unbalanced '<' in annotation '$input'" unless defined $end;
         my $gen_str = substr($trimmed, 1, $end - 1);
-        @generics_raw = _split_generics_str($gen_str);
+        @generics_raw = __PACKAGE__->split_type_list($gen_str);
         $trimmed = substr($trimmed, $end + 1);
         $trimmed =~ s/\A\s+//;
     }
@@ -657,9 +657,9 @@ sub parse_annotation ($class, $input) {
     $result;
 }
 
-# Split generic declaration string on commas, respecting <> and () nesting.
+# Split a type list on commas, respecting <>, (), and [] nesting.
 # Skips '>' that appears as part of '->' (arrow in kind annotations).
-sub _split_generics_str ($str) {
+sub split_type_list ($class, $str) {
     my @result;
     my $current = '';
     my $depth = 0;
@@ -667,8 +667,8 @@ sub _split_generics_str ($str) {
 
     for my $i (0 .. $#chars) {
         my $ch = $chars[$i];
-        if ($ch eq '<' || $ch eq '(') { $depth++ }
-        elsif ($ch eq '>' || $ch eq ')') {
+        if ($ch eq '<' || $ch eq '(' || $ch eq '[') { $depth++ }
+        elsif ($ch eq '>' || $ch eq ')' || $ch eq ']') {
             # Skip '>' that is part of '->'
             unless ($ch eq '>' && $i > 0 && $chars[$i - 1] eq '-') {
                 $depth--;
@@ -689,6 +689,16 @@ sub _split_generics_str ($str) {
     $current =~ s/\s+\z//;
     push @result, $current if length $current;
     @result;
+}
+
+# Decompose a parameterized name: 'Pair[T: Num, U]' → ('Pair', 'T: Num', 'U')
+# Returns (name) for plain names, (name, @params) for parameterized.
+sub parse_parameterized_name ($class, $spec) {
+    if ($spec =~ /\A(\w+)\[(.+)\]\z/) {
+        my ($name, $inner) = ($1, $2);
+        return ($name, $class->split_type_list($inner));
+    }
+    return ($spec);
 }
 
 1;
@@ -782,6 +792,20 @@ Examples:
     "(Int, Str) -> Bool"           # function type
     "<T: Num>(T, T) -> T"         # generics + function
     "<T, r: Row>(T) -> Str ![Console, r]"
+
+=head2 split_type_list
+
+    my @parts = Typist::Parser->split_type_list($str);
+
+Split a comma-separated type list, respecting C<< <> >>, C<()>, and C<[]>
+nesting. Strips whitespace from each element.
+
+=head2 parse_parameterized_name
+
+    my ($name, @params) = Typist::Parser->parse_parameterized_name($spec);
+
+Decompose a parameterized name such as C<'Pair[T: Num, U]'> into its base
+name and type parameter strings. Returns C<($name)> for plain names.
 
 =head2 parse_row
 

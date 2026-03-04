@@ -366,4 +366,42 @@ subtest 'tokenizer accepts + in type expressions' => sub {
     is_deeply \@tokens, [qw(A + B)], 'tokenized A + B';
 };
 
+# ── split_type_list ──────────────────────────────
+
+subtest 'split_type_list basic' => sub {
+    is_deeply [Typist::Parser->split_type_list('Int, Str')],
+        [qw(Int Str)], 'simple comma split';
+    is_deeply [Typist::Parser->split_type_list('  A , B , C  ')],
+        [qw(A B C)], 'strips whitespace';
+};
+
+subtest 'split_type_list bracket nesting' => sub {
+    is_deeply [Typist::Parser->split_type_list('Map[K, V], U')],
+        ['Map[K, V]', 'U'], '[] nesting preserved';
+    is_deeply [Typist::Parser->split_type_list('(Int, Str) -> Bool')],
+        ['(Int, Str) -> Bool'], '() nesting preserved';
+    is_deeply [Typist::Parser->split_type_list('T: Num, U: Show + Ord')],
+        ['T: Num', 'U: Show + Ord'], 'constraint decls';
+};
+
+subtest 'split_type_list deep nesting' => sub {
+    is_deeply [Typist::Parser->split_type_list('Map[K, Pair[A, B]], V')],
+        ['Map[K, Pair[A, B]]', 'V'], 'nested [] preserved';
+    is_deeply [Typist::Parser->split_type_list('F: * -> *, T')],
+        ['F: * -> *', 'T'], '-> in kind annotation';
+};
+
+# ── parse_parameterized_name ────────────────────
+
+subtest 'parse_parameterized_name' => sub {
+    is_deeply [Typist::Parser->parse_parameterized_name('Point')],
+        ['Point'], 'plain name';
+    is_deeply [Typist::Parser->parse_parameterized_name('Option[T]')],
+        ['Option', 'T'], 'single param';
+    is_deeply [Typist::Parser->parse_parameterized_name('Pair[T: Num, U]')],
+        ['Pair', 'T: Num', 'U'], 'constrained params';
+    is_deeply [Typist::Parser->parse_parameterized_name('Map[K, Pair[A, B]]')],
+        ['Map', 'K', 'Pair[A, B]'], 'nested brackets';
+};
+
 done_testing;

@@ -198,7 +198,7 @@ sub parse_constructor_spec ($class, $spec, %opts) {
     require Typist::Parser;
     my @types;
     if ($params_str =~ /\S/) {
-        @types = map { Typist::Parser->parse($_) } split /\s*,\s*/, $params_str;
+        @types = map { Typist::Parser->parse($_) } Typist::Parser->split_type_list($params_str);
     }
 
     # Alias→Var promotion for type parameter names

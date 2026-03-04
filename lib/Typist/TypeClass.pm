@@ -21,7 +21,8 @@ sub new_class ($class, %args) {
 
     # Multi-parameter: "T, U" — comma-separated plain variables
     if ($var_spec =~ /,/) {
-        @var_names = map { s/\A\s+//r =~ s/\s+\z//r } split /,/, $var_spec;
+        require Typist::Parser;
+        @var_names = Typist::Parser->split_type_list($var_spec);
         @var_kinds = map { Typist::Kind->Star() } @var_names;
     }
     # Single parameter: "T", "T: Eq", "F: * -> *"
@@ -166,8 +167,7 @@ sub resolve ($class_or_self, $class_name, $type_or_types, $instances) {
         my @types = @$type_or_types;
         my @candidates;
         for my $inst (@$insts) {
-            my @inst_exprs = map { s/\A\s+//r =~ s/\s+\z//r }
-                             split /,/, $inst->type_expr;
+            my @inst_exprs = Typist::Parser->split_type_list($inst->type_expr);
             next unless @inst_exprs >= @types;
             my $match = 1;
             for my $i (0 .. $#types) {
@@ -182,7 +182,7 @@ sub resolve ($class_or_self, $class_name, $type_or_types, $instances) {
         }
         return $candidates[0] if @candidates == 1;
         return $candidates[0] if @candidates > 1
-            && @types == (split /,/, $candidates[0]->type_expr);
+            && @types == (Typist::Parser->split_type_list($candidates[0]->type_expr));
         return undef;
     }
 
@@ -216,7 +216,7 @@ sub methods   ($self) { $self->{methods}->%* }
 
 # Returns list of individual type expressions (for multi-parameter instances).
 sub type_exprs ($self) {
-    map { s/\A\s+//r =~ s/\s+\z//r } split /,/, $self->{type_expr};
+    Typist::Parser->split_type_list($self->{type_expr});
 }
 
 sub get_method ($self, $name) { $self->{methods}{$name} }

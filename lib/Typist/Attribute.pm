@@ -69,7 +69,7 @@ sub parse_generic_decl ($class, $spec, %opts) {
     my $registry = $opts{registry} // 'Typist::Registry';
     my @generics;
 
-    for my $decl (split /\s*,\s*/, $spec) {
+    for my $decl (Typist::Parser->split_type_list($spec)) {
         if ($decl =~ /\A(\w+)\s*:\s*(.+)\z/) {
             my ($vname, $constraint) = ($1, $2);
             if ($constraint eq 'Row') {

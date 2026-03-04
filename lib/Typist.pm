@@ -330,13 +330,8 @@ sub _struct ($name_spec, $caller, @field_pairs) {
 
     # Parse name and type parameters: 'Pair[T, U]', 'NumBox[T: Num]', or plain 'Point'
     my ($name, @type_params, @raw_specs);
-    if ($name_spec =~ /\A(\w+)\[(.+)\]\z/) {
-        $name = $1;
-        @raw_specs   = map { s/^\s+|\s+$//gr } split /,/, $2;
-        @type_params = map { /\A(\w+)/ ? $1 : $_ } @raw_specs;
-    } else {
-        $name = $name_spec;
-    }
+    ($name, @raw_specs) = Typist::Parser->parse_parameterized_name($name_spec);
+    @type_params = map { /\A(\w+)/ ? $1 : $_ } @raw_specs;
 
     # Parse bounds and typeclass constraints from raw specs
     my (%bounds, %tc);
@@ -561,13 +556,9 @@ sub _datatype ($name_spec, %variants) {
     my $caller = caller;
 
     # Parse name and type parameters: 'Name[T, U]' or plain 'Name'
-    my ($name, @type_params);
-    if ($name_spec =~ /\A(\w+)\[(.+)\]\z/) {
-        $name = $1;
-        @type_params = map { s/\s//gr } split /,/, $2;
-    } else {
-        $name = $name_spec;
-    }
+    my ($name, @raw);
+    ($name, @raw) = Typist::Parser->parse_parameterized_name($name_spec);
+    my @type_params = map { s/\s//gr } @raw;
 
     my %var_names = map { $_ => 1 } @type_params;
     my (%parsed_variants, %return_types);
