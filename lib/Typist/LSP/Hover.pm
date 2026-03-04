@@ -124,7 +124,9 @@ sub _format_function ($class, $sym) {
     if ($sym->{protocol_transitions}) {
         my @lines;
         for my $t ($sym->{protocol_transitions}->@*) {
-            push @lines, "$t->{from} \x{2192} $t->{to}";
+            my $from = ref $t->{from} ? join(' | ', $t->{from}->@*) : $t->{from};
+            my $to   = ref $t->{to}   ? join(' | ', $t->{to}->@*)   : $t->{to};
+            push @lines, "$from \x{2192} $to";
         }
         $md .= "\n\n**Protocol:** " . join(', ', @lines) if @lines;
     }

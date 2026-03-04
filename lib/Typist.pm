@@ -146,10 +146,12 @@ sub _coerce_method_sigs ($methods_ref) {
 
 sub _make_protocol (@args) {
     if (@args == 1 && !ref $args[0]) {
-        # protocol('From -> To') — single transition marker
-        my ($from, $to) = $args[0] =~ /^\s*(\w+)\s*->\s*(\w+)\s*$/;
-        die "Invalid protocol transition: '$args[0]'\n" unless defined $from;
-        return +{ __protocol_transition__ => 1, from => $from, to => $to };
+        # protocol('From | A -> To | B') — transition marker with sets
+        my ($lhs, $rhs) = $args[0] =~ /^\s*(.+?)\s*->\s*(.+?)\s*$/;
+        die "Invalid protocol transition: '$args[0]'\n" unless defined $lhs;
+        my @from = sort map { s/\s+//gr } split(/\s*\|\s*/, $lhs);
+        my @to   = sort map { s/\s+//gr } split(/\s*\|\s*/, $rhs);
+        return +{ __protocol_transition__ => 1, from => \@from, to => \@to };
     }
     die "Invalid protocol() call\n";
 }
@@ -167,15 +169,19 @@ sub _effect ($name, @rest) {
         $operations_ref = shift @rest;
     }
 
-    # Process operation values: string or [sig, protocol('From -> To')]
-    my (%ops, %transitions);
+    # Process operation values: string or [sig, protocol('From | A -> To | B')]
+    my (%ops, %transitions, %op_map);
     for my $op_name (keys %$operations_ref) {
         my $val = $operations_ref->{$op_name};
         if (ref $val eq 'ARRAY') {
             $ops{$op_name} = $val->[0];
             if (ref $val->[1] eq 'HASH' && $val->[1]{__protocol_transition__}) {
                 my $t = $val->[1];
-                $transitions{$t->{from}}{$op_name} = $t->{to};
+                # from/to are arrayrefs
+                $op_map{$op_name} = { from => $t->{from}, to => $t->{to} };
+                for my $f ($t->{from}->@*) {
+                    $transitions{$f}{$op_name} = $t->{to}[0];
+                }
             }
         } else {
             $ops{$op_name} = $val;
@@ -187,6 +193,7 @@ sub _effect ($name, @rest) {
         require Typist::Protocol;
         $protocol = Typist::Protocol->new(
             transitions => +{%transitions},
+            op_map      => +{%op_map},
             ($states ? (states => $states) : ()),
         );
     }

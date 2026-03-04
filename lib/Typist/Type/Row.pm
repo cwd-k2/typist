@@ -19,10 +19,18 @@ sub new ($class, %args) {
     my @labels = sort(uniq(($args{labels} // [])->@*));
     my $rv = $args{row_var};
     $rv = Typist::Type::Var->new($rv) if defined $rv && !ref $rv;
+
+    # Normalize label_states: from/to always arrayrefs
+    my $ls = $args{label_states} // +{};
+    for my $entry (values %$ls) {
+        $entry->{from} = [$entry->{from}] unless ref $entry->{from};
+        $entry->{to}   = [$entry->{to}]   unless ref $entry->{to};
+    }
+
     bless +{
         labels       => \@labels,
         row_var      => $rv,
-        label_states => ($args{label_states} // +{}),
+        label_states => $ls,
     }, $class;
 }
 
@@ -49,10 +57,12 @@ sub to_string ($self) {
     my @parts;
     for my $label ($self->{labels}->@*) {
         if (my $st = $self->{label_states}{$label}) {
-            if ($st->{from} eq $st->{to}) {
-                push @parts, "${label}<$st->{from}>";
+            my $from_str = join(' | ', $st->{from}->@*);
+            my $to_str   = join(' | ', $st->{to}->@*);
+            if ($from_str eq $to_str) {
+                push @parts, "${label}<${from_str}>";
             } else {
-                push @parts, "${label}<$st->{from} -> $st->{to}>";
+                push @parts, "${label}<${from_str} -> ${to_str}>";
             }
         } else {
             push @parts, $label;
@@ -74,7 +84,7 @@ sub equals ($self, $other) {
     my $ov = $other->row_var_name // '';
     return 0 unless $sv eq $ov;
 
-    # Compare protocol label_states
+    # Compare protocol label_states (from/to are sorted arrayrefs)
     my $ss = $self->{label_states};
     my $os = $other->label_states;
     my @ssk = sort keys %$ss;
@@ -82,8 +92,8 @@ sub equals ($self, $other) {
     return 0 unless @ssk == @osk;
     return 0 unless all { $ssk[$_] eq $osk[$_] } 0 .. $#ssk;
     for my $k (@ssk) {
-        return 0 unless $ss->{$k}{from} eq $os->{$k}{from}
-                      && $ss->{$k}{to}   eq $os->{$k}{to};
+        return 0 unless "@{[sort $ss->{$k}{from}->@*]}" eq "@{[sort $os->{$k}{from}->@*]}"
+                      && "@{[sort $ss->{$k}{to}->@*]}"   eq "@{[sort $os->{$k}{to}->@*]}";
     }
     1;
 }

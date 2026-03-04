@@ -282,8 +282,8 @@ subtest '![DB<None -> Authed>] — state transition' => sub {
     is_deeply [$row->labels], ['DB'], 'single label DB';
     my $st = $row->label_state('DB');
     ok $st, 'DB has state';
-    is $st->{from}, 'None', 'from is None';
-    is $st->{to}, 'Authed', 'to is Authed';
+    is_deeply $st->{from}, ['None'], 'from is [None]';
+    is_deeply $st->{to}, ['Authed'], 'to is [Authed]';
     like $row->to_string, qr/DB<None -> Authed>/, 'to_string includes state';
 };
 
@@ -292,8 +292,8 @@ subtest '![DB<Authed>] — invariant state' => sub {
     my $row = $func->effects;
     my $st = $row->label_state('DB');
     ok $st, 'DB has state';
-    is $st->{from}, 'Authed', 'from is Authed';
-    is $st->{to}, 'Authed', 'to equals from (invariant)';
+    is_deeply $st->{from}, ['Authed'], 'from is [Authed]';
+    is_deeply $st->{to}, ['Authed'], 'to equals from (invariant)';
     like $row->to_string, qr/DB<Authed>/, 'to_string shows invariant state';
 };
 
@@ -310,8 +310,8 @@ subtest 'parse_row with state' => sub {
     is_deeply [sort $row->labels], [qw(DB IO)], 'labels';
     ok defined $row->row_var, 'has row var';
     my $st = $row->label_state('DB');
-    is $st->{from}, 'None', 'from';
-    is $st->{to}, 'Connected', 'to';
+    is_deeply $st->{from}, ['None'], 'from';
+    is_deeply $st->{to}, ['Connected'], 'to';
 };
 
 # ── HKT / multi-char type variable parsing ──────

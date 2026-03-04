@@ -390,7 +390,7 @@ sub _extract_effects ($class, $stmts, $result) {
         }
 
         # Find the operations block (Constructor/Block)
-        my (@op_names, %op_sigs, %transitions);
+        my (@op_names, %op_sigs, %transitions, %op_map);
         for my $ci ($scan_start .. $#children) {
             my $child = $children[$ci];
             next unless $child->isa('PPI::Structure::Constructor')
@@ -431,7 +431,12 @@ sub _extract_effects ($class, $stmts, $result) {
                             push @op_names, $op_name;
                             $op_sigs{$op_name} = $sig;
                             if (defined $from && defined $to) {
-                                $transitions{$from}{$op_name} = $to;
+                                # $from/$to are arrayrefs now
+                                $op_map{$op_name} = { from => $from, to => $to };
+                                # Back-compat transitions: expand from-set
+                                for my $f (@$from) {
+                                    $transitions{$f}{$op_name} = $to->[0];
+                                }
                             }
                         }
                         $i++;
@@ -447,6 +452,7 @@ sub _extract_effects ($class, $stmts, $result) {
             op_names   => \@op_names,
             operations => \%op_sigs,
             protocol   => (%transitions ? \%transitions : undef),
+            op_map     => (%op_map ? \%op_map : undef),
             states     => (@states ? \@states : undef),
             line       => $stmt->line_number,
             col        => $stmt->column_number,
@@ -479,8 +485,9 @@ sub _extract_op_entry ($class, $constructor) {
                     for my $tok (@lc) {
                         next unless $tok->isa('PPI::Token::Quote');
                         my $spec = $tok->string;
-                        if ($spec =~ /^\s*(\w+)\s*->\s*(\w+)\s*$/) {
-                            ($from, $to) = ($1, $2);
+                        if ($spec =~ /^\s*(.+?)\s*->\s*(.+?)\s*$/) {
+                            $from = [sort map { s/\s+//gr } split(/\s*\|\s*/, $1)];
+                            $to   = [sort map { s/\s+//gr } split(/\s*\|\s*/, $2)];
                         }
                     }
                 }

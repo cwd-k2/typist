@@ -256,8 +256,8 @@ PERL
     my $hints = $result->{protocol_hints} // [];
     ok @$hints >= 2, 'at least 2 protocol hints generated';
     is $hints->[0]{label}, 'DB', 'first hint label is DB';
-    is $hints->[0]{from}, 'None', 'first hint from state';
-    is $hints->[0]{to}, 'Connected', 'first hint to state';
+    is_deeply $hints->[0]{from}, ['None'], 'first hint from state';
+    is_deeply $hints->[0]{to}, ['Connected'], 'first hint to state';
 };
 
 # ── Branching: convergent if/else ─────────────
@@ -313,7 +313,7 @@ PERL
 
     my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
     ok @errors > 0, 'divergent if/else produces ProtocolMismatch';
-    like $errors[0]{message}, qr/branches diverge/, 'message mentions branches diverge';
+    like $errors[0]{message}, qr/ends in state/, 'message mentions end state mismatch (union)';
 };
 
 # ── Branching: one branch returns ─────────────
@@ -397,7 +397,7 @@ PERL
 
     my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
     ok @errors > 0, 'if without else with state change produces error';
-    like $errors[0]{message}, qr/branches diverge/, 'message mentions diverge';
+    like $errors[0]{message}, qr/ends in state/, 'message mentions end state mismatch (union)';
 };
 
 # ── Branching: if without else (no state change) ─
@@ -643,7 +643,324 @@ PERL
 
     my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
     ok @errors > 0, 'divergent match arms produce ProtocolMismatch';
-    like $errors[0]{message}, qr/match arms diverge/, 'error mentions match arms';
+    like $errors[0]{message}, qr/ends in state/, 'error mentions end state mismatch (union)';
+};
+
+# ══ Superposition / * state ═══════════════════════
+
+# Helper: workspace registry with a protocol that includes * transitions
+sub _ws_registry_with_resettable_db {
+    my $ws = Typist::Registry->new;
+    my $protocol = Typist::Protocol->new(
+        transitions => +{
+            None      => +{ connect => 'Connected' },
+            Connected => +{ auth => 'Authed', disconnect => 'None' },
+            Authed    => +{ query => 'Authed', disconnect => 'None' },
+        },
+        op_map => +{
+            connect    => { from => ['None'],               to => ['Connected'] },
+            auth       => { from => ['Connected'],          to => ['Authed'] },
+            query      => { from => ['Authed'],             to => ['Authed'] },
+            disconnect => { from => ['Authed', 'Connected'], to => ['None'] },
+        },
+    );
+    $ws->register_effect('DB', Typist::Effect->new(
+        name       => 'DB',
+        operations => +{
+            connect    => '(Str) -> Void',
+            auth       => '(Str, Str) -> Void',
+            query      => '(Str) -> Str',
+            disconnect => '() -> Void',
+        },
+        protocol => $protocol,
+    ));
+    $ws;
+}
+
+subtest 'superposition — branch union converges with subsequent op' => sub {
+    my $ws = _ws_registry_with_resettable_db();
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws);
+package ProtoSuperposition1;
+use v5.40;
+
+effect DB, [qw(None Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
+    disconnect => ['() -> Void',         protocol('Authed | Connected -> None')],
+};
+
+sub diverge_then_disconnect :sig((Bool) -> Void ![DB<None -> None>]) ($flag) {
+    DB::connect("localhost");
+    if ($flag) {
+        DB::auth("user", "pass");
+    }
+    DB::disconnect();
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    is scalar @errors, 0, 'branch union {Authed|Connected} matches disconnect from-set';
+};
+
+subtest 'ground — * -> * with * in transitions (full cycle)' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package ProtoGround1;
+use v5.40;
+
+effect DB, [qw(Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('* -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
+    disconnect => ['() -> Void',         protocol('Connected | Authed -> *')],
+};
+
+sub full_cycle :sig(() -> Void ![DB<* -> *>]) () {
+    DB::connect("localhost");
+    DB::auth("user", "pass");
+    DB::query("SELECT 1");
+    DB::disconnect();
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    is scalar @errors, 0, '* -> * full cycle with * in transitions';
+};
+
+subtest 'ground — * -> * incomplete cycle errors' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package ProtoGround2;
+use v5.40;
+
+effect DB, [qw(Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('* -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    disconnect => ['() -> Void',         protocol('Connected | Authed -> *')],
+};
+
+sub incomplete :sig(() -> Void ![DB<* -> *>]) () {
+    DB::connect("localhost");
+    DB::auth("user", "pass");
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    ok @errors > 0, 'incomplete cycle: ends at Authed, not *';
+    like $errors[0]{message}, qr/ends in state 'Authed'/, 'error mentions actual end state';
+};
+
+subtest 'handle — auto * -> * with * in transitions' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package ProtoHandleAuto;
+use v5.40;
+
+effect DB, [qw(Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('* -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
+    disconnect => ['() -> Void',         protocol('Connected | Authed -> *')],
+};
+
+sub with_handle :sig(() -> Void ![DB<* -> *>]) () {
+    handle {
+        DB::connect("localhost");
+        DB::auth("user", "pass");
+        DB::query("SELECT 1");
+        DB::disconnect();
+    } DB => +{
+        connect    => sub ($host) { },
+        auth       => sub ($u, $p) { },
+        query      => sub ($sql) { "mock" },
+        disconnect => sub () { },
+    };
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    is scalar @errors, 0, 'handle body: * -> Connected -> Authed -> * (complete cycle)';
+};
+
+subtest 'handle — auto * -> * incomplete cycle errors' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package ProtoHandleAutoErr;
+use v5.40;
+
+effect DB, [qw(Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('* -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    disconnect => ['() -> Void',         protocol('Connected | Authed -> *')],
+};
+
+sub incomplete_handle :sig(() -> Void ![DB<* -> *>]) () {
+    handle {
+        DB::connect("localhost");
+        DB::auth("user", "pass");
+    } DB => +{
+        connect    => sub ($host) { },
+        auth       => sub ($u, $p) { },
+        disconnect => sub () { },
+    };
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    ok @errors > 0, 'handle body incomplete: ends at Authed, not *';
+    like $errors[0]{message}, qr/handle body must end at '\*'/, 'error mentions * end state';
+};
+
+subtest 'handle — transparent when capturing different effect' => sub {
+    my $ws = _ws_registry_with_db();
+    $ws->register_effect('Logger', Typist::Effect->new(name => 'Logger', operations => +{
+        log => '(Str) -> Void',
+    }));
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws);
+package ProtoHandleTransparent;
+use v5.40;
+
+effect DB, [qw(None Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
+    disconnect => ['() -> Void',         protocol('Connected -> None')],
+};
+
+effect Logger => +{ log => '(Str) -> Void' };
+
+sub transparent_handle :sig(() -> Void ![DB<None -> Authed>, Logger]) () {
+    handle {
+        DB::connect("localhost");
+        DB::auth("user", "pass");
+    } Logger => +{ log => sub ($msg) { } };
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    is scalar @errors, 0, 'handle of different effect is transparent to protocol';
+};
+
+# ══ Default * -> * for ![DB] without state annotation ═══
+
+subtest 'default — ![DB] without state annotation defaults to * -> *' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package ProtoDefault1;
+use v5.40;
+
+effect DB, [qw(Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('* -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
+    disconnect => ['() -> Void',         protocol('Connected | Authed -> *')],
+};
+
+sub full_cycle :sig(() -> Void ![DB]) () {
+    DB::connect("localhost");
+    DB::auth("user", "pass");
+    DB::query("SELECT 1");
+    DB::disconnect();
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    is scalar @errors, 0, '![DB] defaults to * -> * — full cycle passes';
+};
+
+subtest 'default — ![DB] incomplete cycle errors' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package ProtoDefault2;
+use v5.40;
+
+effect DB, [qw(Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('* -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    disconnect => ['() -> Void',         protocol('Connected | Authed -> *')],
+};
+
+sub incomplete :sig(() -> Void ![DB]) () {
+    DB::connect("localhost");
+    DB::auth("user", "pass");
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    ok @errors > 0, '![DB] incomplete cycle: ends at Authed, not *';
+    like $errors[0]{message}, qr/ends in state 'Authed'/, 'error mentions actual end state';
+};
+
+# ══ Handle-driven verification ═══════════════════
+
+subtest 'handle-driven — unannotated function with handle block verified' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package ProtoHandleDriven1;
+use v5.40;
+
+effect DB, [qw(Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('* -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
+    disconnect => ['() -> Void',         protocol('Connected | Authed -> *')],
+};
+
+sub run () {
+    handle {
+        DB::connect("localhost");
+        DB::auth("user", "pass");
+        DB::query("SELECT 1");
+        DB::disconnect();
+    } DB => +{
+        connect    => sub ($host) { },
+        auth       => sub ($u, $p) { },
+        query      => sub ($sql) { "mock" },
+        disconnect => sub () { },
+    };
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    is scalar @errors, 0, 'handle-driven: complete cycle passes without annotation';
+};
+
+subtest 'handle-driven — unannotated function with incomplete handle errors' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package ProtoHandleDriven2;
+use v5.40;
+
+effect DB, [qw(Connected Authed)] => +{
+    connect    => ['(Str) -> Void',      protocol('* -> Connected')],
+    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+    disconnect => ['() -> Void',         protocol('Connected | Authed -> *')],
+};
+
+sub run () {
+    handle {
+        DB::connect("localhost");
+        DB::auth("user", "pass");
+    } DB => +{
+        connect    => sub ($host) { },
+        auth       => sub ($u, $p) { },
+        disconnect => sub () { },
+    };
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    ok @errors > 0, 'handle-driven: incomplete cycle detected without annotation';
+};
+
+subtest 'extraction — protocol(\'A | B -> C\') syntax' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package ProtoExtractSet;
+use v5.40;
+
+effect MultiDB, [qw(None Connected Authed)] => +{
+    connect    => ['(Str) -> Void',       protocol('None -> Connected')],
+    disconnect => ['() -> Void',          protocol('Authed | Connected -> None')],
+};
+PERL
+
+    # Should extract cleanly without errors
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    is scalar @errors, 0, 'set syntax in protocol() extracted cleanly';
 };
 
 done_testing;

@@ -286,6 +286,7 @@ sub register_effects ($class, $extracted, $registry, %opts) {
             require Typist::Protocol;
             $protocol = Typist::Protocol->new(
                 transitions => $pd,
+                ($eff_info->{op_map} ? (op_map => $eff_info->{op_map}) : ()),
                 ($eff_info->{states} ? (states => $eff_info->{states}) : ()),
             );
         }
@@ -322,8 +323,8 @@ sub register_effects ($class, $extracted, $registry, %opts) {
             }
 
             my %label_states;
-            if (my $trans = $op_transitions{$op_name}) {
-                $label_states{$name} = $trans->[0] if @$trans == 1;
+            if ($protocol && $protocol->op_map->{$op_name}) {
+                $label_states{$name} = $protocol->op_map->{$op_name};
             }
             my $eff_row = Typist::Type::Row->new(
                 labels       => [$name],

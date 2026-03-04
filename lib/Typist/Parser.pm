@@ -80,7 +80,7 @@ sub _tokenize ($input) {
         elsif ($input =~ /\G('(?:[^'\\]|\\.)*')/gc) { push @tokens, $1 }
         elsif ($input =~ /\G(-?\d+(?:\.\d+)?)/gc)   { push @tokens, $1 }
         elsif ($input =~ /\G([A-Za-z_]\w*)/gc)    { push @tokens, $1 }
-        elsif ($input =~ /\G([\[\]{}(),.|&?!:<>+])/gc)  { push @tokens, $1 }
+        elsif ($input =~ /\G([\[\]{}(),.|&?!:<>+*])/gc)  { push @tokens, $1 }
         else {
             my $ch = substr($input, pos($input), 1);
             die "Typist::Parser: unexpected character '$ch' in '$input'";
@@ -524,6 +524,21 @@ sub _resolve_name ($name) {
 
 # ── Effect Row (inline) ─────────────────────────
 
+# Parse a state set: token ('|' token)* where token is an identifier or '*'.
+# Returns a sorted arrayref of state names.
+sub _parse_state_set ($tokens, $pos) {
+    die "Typist::Parser: expected state name in effect label"
+        unless $$pos < @$tokens;
+    my @states = ($tokens->[$$pos++]);
+    while ($$pos < @$tokens && $tokens->[$$pos] eq '|') {
+        $$pos++;  # consume '|'
+        die "Typist::Parser: expected state name after '|' in effect label"
+            unless $$pos < @$tokens;
+        push @states, $tokens->[$$pos++];
+    }
+    [sort @states];
+}
+
 # Parse an effect row within a function type: [Label, Label, var]
 # Requires the [...] wrapper after '!'.
 sub _parse_effect_row ($tokens, $pos, $close = undef) {
@@ -542,20 +557,16 @@ sub _parse_effect_row ($tokens, $pos, $close = undef) {
             $row_var = $tok;
         } else {
             push @labels, $tok;
-            # Optional protocol state: Label<From -> To> or Label<State>
+            # Optional protocol state: Label<From | A -> To | B> or Label<State>
             if ($$pos < @$tokens && $tokens->[$$pos] eq '<') {
                 $$pos++;  # consume '<'
-                die "Typist::Parser: expected state name after '<' in effect label"
-                    unless $$pos < @$tokens;
-                my $from = $tokens->[$$pos++];
+                my $from = _parse_state_set($tokens, $pos);
                 my $to;
                 if ($$pos < @$tokens && $tokens->[$$pos] eq '->') {
                     $$pos++;  # consume '->'
-                    die "Typist::Parser: expected target state after '->' in effect label"
-                        unless $$pos < @$tokens;
-                    $to = $tokens->[$$pos++];
+                    $to = _parse_state_set($tokens, $pos);
                 } else {
-                    $to = $from;
+                    $to = [@$from];  # copy: same set
                 }
                 die "Typist::Parser: expected '>' after state in effect label"
                     unless $$pos < @$tokens && $tokens->[$$pos] eq '>';
@@ -598,10 +609,13 @@ sub parse_row ($class, $expr) {
         } elsif ($tok =~ /\A(\w+)<(.+)>\z/) {
             my ($label, $state_str) = ($1, $2);
             push @labels, $label;
-            if ($state_str =~ /\A(\w+)\s*->\s*(\w+)\z/) {
-                $label_states{$label} = +{ from => $1, to => $2 };
+            if ($state_str =~ /\A(.+?)\s*->\s*(.+)\z/) {
+                my @from = sort map { s/\s+//gr } split(/\s*\|\s*/, $1);
+                my @to   = sort map { s/\s+//gr } split(/\s*\|\s*/, $2);
+                $label_states{$label} = +{ from => \@from, to => \@to };
             } else {
-                $label_states{$label} = +{ from => $state_str, to => $state_str };
+                my @states = sort map { s/\s+//gr } split(/\s*\|\s*/, $state_str);
+                $label_states{$label} = +{ from => \@states, to => [@states] };
             }
         } else {
             push @labels, $tok;

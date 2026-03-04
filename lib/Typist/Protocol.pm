@@ -11,24 +11,70 @@ our $VERSION = '0.01';
 sub new ($class, %args) {
     my $transitions = $args{transitions}
         // die("Protocol requires transitions\n");
+
+    # Build op_map from transitions (back-compat) or accept directly.
+    # op_map: { op_name => { from => [states], to => [states] } }
+    my $op_map = $args{op_map};
+    unless ($op_map) {
+        my %om;
+        for my $from (keys %$transitions) {
+            for my $op (keys $transitions->{$from}->%*) {
+                my $to = $transitions->{$from}{$op};
+                $om{$op} //= { from => [], to => undef };
+                push $om{$op}{from}->@*, $from;
+                $om{$op}{to} = [$to];  # scalar targets in legacy format
+            }
+        }
+        # Deduplicate and sort from-sets
+        for my $entry (values %om) {
+            my %seen;
+            $entry->{from} = [sort grep { !$seen{$_}++ } $entry->{from}->@*];
+        }
+        $op_map = \%om;
+    }
+
     bless +{
         transitions => $transitions,
+        op_map      => $op_map,
         _states     => $args{states},   # explicit states list (arrayref or undef)
     }, $class;
 }
 
 sub transitions ($self) { $self->{transitions} }
+sub op_map      ($self) { $self->{op_map} }
 
 # Successor state for (state, op), or undef if disallowed.
+# Back-compat: delegates to next_states for single-state input.
 sub next_state ($self, $state, $op) {
-    my $state_map = $self->{transitions}{$state} // return undef;
-    $state_map->{$op};
+    my $result = $self->next_states([$state], $op);
+    return undef unless $result;
+    # Return first element for scalar back-compat
+    $result->[0];
+}
+
+# Set-based successor: given a current state set (arrayref), returns the
+# to-set (arrayref) if current_set is valid for the op, or undef.
+# '*' in current_set is a wildcard that matches any from-state.
+sub next_states ($self, $current_set, $op) {
+    my $entry = $self->{op_map}{$op} // return undef;
+    my $from = $entry->{from};
+
+    # Check: current_set ⊆ from
+    # '*' is a literal ground state — only matches if explicitly in from-set.
+    my %from_set = map { $_ => 1 } @$from;
+    for my $s (@$current_set) {
+        next if $from_set{$s};
+        return undef;                # current state not in from-set
+    }
+
+    $entry->{to};
 }
 
 # All declared states.
 # Uses explicit states list if provided at construction (preserving declaration
 # order -- the first element is the initial state by convention); otherwise
 # infers from transitions (sorted for determinism).
+# '*' (ground state) is implicit and excluded unless explicitly declared.
 sub states ($self) {
     if ($self->{_states}) {
         return $self->{_states}->@*;
@@ -38,6 +84,7 @@ sub states ($self) {
         $seen{$from} = 1;
         $seen{$_} = 1 for values $self->{transitions}{$from}->%*;
     }
+    delete $seen{'*'};
     sort keys %seen;
 }
 
@@ -50,9 +97,15 @@ sub initial_state ($self) {
 }
 
 # Operations valid in a given state.
+# '*' (ground state) returns only ops whose from-set contains '*'.
 sub ops_in ($self, $state) {
-    my $state_map = $self->{transitions}{$state} // return ();
-    sort keys %$state_map;
+    my %ops;
+    for my $op (keys $self->{op_map}->%*) {
+        my $from = $self->{op_map}{$op}{from};
+        my %from_set = map { $_ => 1 } @$from;
+        $ops{$op} = 1 if $from_set{$state};
+    }
+    sort keys %ops;
 }
 
 # Operations that are unreachable from any state.

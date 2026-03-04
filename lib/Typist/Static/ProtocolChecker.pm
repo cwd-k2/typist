@@ -6,7 +6,15 @@ our $VERSION = '0.01';
 # Static protocol state-machine checker.
 # Verifies that effect operations are called in the correct order
 # according to the protocol's finite state machine.
-# Supports branching: if/else blocks must converge to the same state.
+# State is tracked as a set (arrayref of state names).
+# Supports branching (union), loop idempotency, handle auto * -> *, match arms.
+
+# ── Set utilities ────────────────────────────────
+
+sub _state_eq ($a, $b)       { "@{[sort @$a]}" eq "@{[sort @$b]}" }
+sub _state_union (@sets)     { my %s; $s{$_}=1 for map { @$_ } @sets; [sort keys %s] }
+sub _state_subset ($sub,$sup){ my %s = map {$_=>1} @$sup; !grep {!$s{$_}} @$sub }
+sub _state_fmt ($set)        { join(' | ', @$set) }
 
 sub new ($class, %args) {
     bless +{
@@ -23,6 +31,7 @@ sub hints ($self) { $self->{hints} }
 
 sub analyze ($self) {
     my $pkg = $self->{extracted}{package};
+    $self->{_checked_handles} = {};
 
     for my $name (sort keys $self->{extracted}{functions}->%*) {
         my $fn = $self->{extracted}{functions}{$name};
@@ -39,14 +48,64 @@ sub analyze ($self) {
 
         # For each label with protocol state annotation, trace the body
         for my $label ($row->labels) {
-            my $state_range = $row->label_state($label) // next;
+            my $state_range = $row->label_state($label);
+            unless ($state_range) {
+                my $effect = $self->{registry}->lookup_effect($label);
+                next unless $effect && $effect->has_protocol;
+                # ![DB] without state annotation defaults to * -> *
+                $state_range = { from => ['*'], to => ['*'] };
+            }
             my $effect = $self->{registry}->lookup_effect($label);
             next unless $effect && $effect->has_protocol;
 
             my $protocol = $effect->protocol;
+            $self->{_checked_handles}{"$name\0$label"} = 1;
             $self->_trace_body(
                 $block, $name, $label, $protocol,
                 $state_range->{from}, $state_range->{to}, $pkg,
+            );
+        }
+    }
+
+    # Handle-driven pass: check unannotated functions that contain handle blocks
+    $self->_check_handle_blocks($pkg);
+}
+
+sub _check_handle_blocks ($self, $pkg) {
+    for my $name (sort keys $self->{extracted}{functions}->%*) {
+        my $fn = $self->{extracted}{functions}{$name};
+        my $block = $fn->{block} // next;
+        $self->_scan_handles($block, $name, $pkg);
+    }
+}
+
+sub _scan_handles ($self, $block, $fn_name, $pkg) {
+    for my $child ($block->schildren) {
+        if ($child->isa('PPI::Statement::Compound')) {
+            my @blocks = grep { $_->isa('PPI::Structure::Block') } $child->schildren;
+            $self->_scan_handles($_, $fn_name, $pkg) for @blocks;
+            next;
+        }
+        next unless $child->isa('PPI::Statement');
+
+        my @words = grep { $_->isa('PPI::Token::Word') } $child->schildren;
+        for my $word (@words) {
+            next unless $word->content eq 'handle';
+            my $body = $word->snext_sibling;
+            next unless $body && ref $body && $body->isa('PPI::Structure::Block');
+
+            my $label = _detect_handle_effect($body);
+            next unless defined $label;
+            next if $self->{_checked_handles}{"$fn_name\0$label"};
+
+            my $effect = $self->{registry}->lookup_effect($label);
+            next unless $effect && $effect->has_protocol;
+
+            my $protocol = $effect->protocol;
+            $self->{_checked_handles}{"$fn_name\0$label"} = 1;
+            $self->_trace_body(
+                $block, $fn_name, $label, $protocol,
+                ['*'], ['*'], $pkg,
             );
         }
     }
@@ -60,11 +119,12 @@ sub _trace_body ($self, $block, $fn_name, $label, $protocol, $from, $to, $pkg) {
     return if $result->{returns};
 
     my $current = $result->{state};
-    if ($current ne $to) {
+    if (!_state_eq($current, $to)) {
         $self->{errors}->collect(
             kind    => 'ProtocolMismatch',
-            message => "Protocol $label: function $fn_name() ends in state '$current' "
-                     . "but declared end state is '$to'",
+            message => "Protocol $label: function $fn_name() ends in state '"
+                     . _state_fmt($current) . "' "
+                     . "but declared end state is '" . _state_fmt($to) . "'",
             file    => $self->{file},
             line    => $self->{extracted}{functions}{$fn_name}{line},
             col     => $self->{extracted}{functions}{$fn_name}{col},
@@ -73,6 +133,7 @@ sub _trace_body ($self, $block, $fn_name, $label, $protocol, $from, $to, $pkg) {
 }
 
 # Trace a block, walking its direct children (statements).
+# $current is an arrayref of state names.
 # Returns { state => $final } or { returns => 1 } or { error => 1 }.
 sub _trace_block ($self, $block, $fn_name, $label, $protocol, $current, $pkg) {
     for my $child ($block->schildren) {
@@ -104,7 +165,7 @@ sub _trace_block ($self, $block, $fn_name, $label, $protocol, $current, $pkg) {
 }
 
 # Trace a compound statement (if/elsif/else, while, for).
-# Each branch is traced independently; non-return branches must converge.
+# Branches produce a union of end states.
 sub _trace_compound ($self, $compound, $fn_name, $label, $protocol, $current, $pkg) {
     my @blocks = grep { $_->isa('PPI::Structure::Block') } $compound->schildren;
     return +{ state => $current } unless @blocks;
@@ -120,11 +181,13 @@ sub _trace_compound ($self, $compound, $fn_name, $label, $protocol, $current, $p
         my $result = $self->_trace_block($blocks[0], $fn_name, $label, $protocol, $current, $pkg);
         return $result if $result->{error};
 
-        if (!$result->{returns} && $result->{state} ne $current) {
+        if (!$result->{returns} && !_state_eq($result->{state}, $current)) {
             $self->{errors}->collect(
                 kind    => 'ProtocolMismatch',
-                message => "Protocol $label: loop body changes state from '$current' "
-                         . "to '$result->{state}' — must be idempotent (in $fn_name())",
+                message => "Protocol $label: loop body changes state from '"
+                         . _state_fmt($current) . "' "
+                         . "to '" . _state_fmt($result->{state})
+                         . "' — must be idempotent (in $fn_name())",
                 file    => $self->{file},
                 line    => $compound->line_number,
                 col     => $compound->column_number,
@@ -147,7 +210,7 @@ sub _trace_compound ($self, $compound, $fn_name, $label, $protocol, $current, $p
         return $result if $result->{error};
 
         if ($result->{returns}) {
-            # This branch returns early — excluded from convergence
+            # This branch returns early — excluded from union
         } else {
             $all_return = 0;
             push @branch_states, $result->{state};
@@ -168,27 +231,30 @@ sub _trace_compound ($self, $compound, $fn_name, $label, $protocol, $current, $p
     # No non-returning branches: all returned but no else → only fallthrough
     return +{ state => $current } unless @branch_states;
 
-    # Convergence check: all non-returning branches must end in the same state
-    my $first = $branch_states[0];
-    for my $i (1 .. $#branch_states) {
-        if ($branch_states[$i] ne $first) {
-            $self->{errors}->collect(
-                kind    => 'ProtocolMismatch',
-                message => "Protocol $label: branches diverge — "
-                         . "states '$first' and '$branch_states[$i]' "
-                         . "at end of if/else (in $fn_name())",
-                file    => $self->{file},
-                line    => $compound->line_number,
-                col     => $compound->column_number,
-            );
-            return +{ error => 1 };
-        }
-    }
+    # Union of all branch end states
+    +{ state => _state_union(@branch_states) };
+}
 
-    +{ state => $first };
+# Detect which effect a handle block captures.
+# Scans siblings after the block for 'Word => +{...}' pattern.
+sub _detect_handle_effect ($body) {
+    my $sib = $body->snext_sibling;
+    while ($sib) {
+        if (ref $sib && $sib->isa('PPI::Token::Word')) {
+            my $next = $sib->snext_sibling;
+            if ($next && ref $next && $next->isa('PPI::Token::Operator')
+                && $next->content eq '=>')
+            {
+                return $sib->content;
+            }
+        }
+        $sib = $sib->snext_sibling;
+    }
+    undef;
 }
 
 # Trace a single statement for protocol operations.
+# $current is an arrayref of state names.
 sub _trace_statement ($self, $stmt, $fn_name, $label, $protocol, $current, $pkg) {
     my @words = grep { $_->isa('PPI::Token::Word') } $stmt->schildren;
 
@@ -201,12 +267,12 @@ sub _trace_statement ($self, $stmt, $fn_name, $label, $protocol, $current, $pkg)
             my $next = $word->snext_sibling;
             next unless $next && ref $next && $next->isa('PPI::Structure::List');
 
-            my $next_state = $protocol->next_state($current, $op);
+            my $next_state = $protocol->next_states($current, $op);
             if (!defined $next_state) {
                 $self->{errors}->collect(
                     kind    => 'ProtocolMismatch',
                     message => "Protocol $label: operation '$op' is not allowed "
-                             . "in state '$current' (in $fn_name())",
+                             . "in state '" . _state_fmt($current) . "' (in $fn_name())",
                     file    => $self->{file},
                     line    => $word->line_number,
                     col     => $word->column_number,
@@ -226,18 +292,37 @@ sub _trace_statement ($self, $stmt, $fn_name, $label, $protocol, $current, $pkg)
             next;
         }
 
-        # handle { BODY } Effect => +{...}: trace the body block
+        # handle { BODY } Effect => +{...}
         if ($content eq 'handle') {
             my $body = $word->snext_sibling;
             if ($body && ref $body && $body->isa('PPI::Structure::Block')) {
-                my $result = $self->_trace_block($body, $fn_name, $label, $protocol, $current, $pkg);
-                return $result if $result->{error};
-                $current = $result->{state} unless $result->{returns};
+                my $handled = _detect_handle_effect($body);
+                if (defined $handled && $handled eq $label) {
+                    # Same effect: handle captures it → body traced at * -> *
+                    my $r = $self->_trace_block($body, $fn_name, $label, $protocol, ['*'], $pkg);
+                    if (!$r->{error} && !$r->{returns} && !_state_eq($r->{state}, ['*'])) {
+                        $self->{errors}->collect(
+                            kind    => 'ProtocolMismatch',
+                            message => "Protocol $label: handle body must end at '*' "
+                                     . "but ends at '" . _state_fmt($r->{state})
+                                     . "' (in $fn_name())",
+                            file    => $self->{file},
+                            line    => $word->line_number,
+                            col     => $word->column_number,
+                        );
+                    }
+                    $current = ['*'];
+                } else {
+                    # Different effect → transparent pass-through
+                    my $result = $self->_trace_block($body, $fn_name, $label, $protocol, $current, $pkg);
+                    return $result if $result->{error};
+                    $current = $result->{state} unless $result->{returns};
+                }
             }
             next;
         }
 
-        # match $val, Tag => sub { ... }: trace each arm with convergence
+        # match $val, Tag => sub { ... }: trace each arm, union the results
         if ($content eq 'match') {
             my @blocks;
             my $sib = $word->snext_sibling;
@@ -255,7 +340,7 @@ sub _trace_statement ($self, $stmt, $fn_name, $label, $protocol, $current, $pkg)
                     my $result = $self->_trace_block($b, $fn_name, $label, $protocol, $current, $pkg);
                     return $result if $result->{error};
                     if ($result->{returns}) {
-                        # branch returns — excluded from convergence
+                        # branch returns — excluded from union
                     } else {
                         $all_return = 0;
                         push @branch_states, $result->{state};
@@ -266,24 +351,9 @@ sub _trace_statement ($self, $stmt, $fn_name, $label, $protocol, $current, $pkg)
                     return +{ returns => 1 };
                 }
 
-                # Convergence check
+                # Union of all branch end states
                 if (@branch_states) {
-                    my $first = $branch_states[0];
-                    for my $i (1 .. $#branch_states) {
-                        if ($branch_states[$i] ne $first) {
-                            $self->{errors}->collect(
-                                kind    => 'ProtocolMismatch',
-                                message => "Protocol $label: match arms diverge — "
-                                         . "states '$first' and '$branch_states[$i]' "
-                                         . "(in $fn_name())",
-                                file    => $self->{file},
-                                line    => $word->line_number,
-                                col     => $word->column_number,
-                            );
-                            return +{ error => 1 };
-                        }
-                    }
-                    $current = $branch_states[0];
+                    $current = _state_union(@branch_states);
                 }
             }
             next;
@@ -310,12 +380,15 @@ sub _trace_statement ($self, $stmt, $fn_name, $label, $protocol, $current, $pkg)
         next unless $callee_row->is_row;
 
         my $callee_state = $callee_row->label_state($label) // next;
+        # callee_state->{from} and {to} are arrayrefs
 
-        if ($callee_state->{from} ne $current) {
+        if (!_state_subset($current, $callee_state->{from})) {
             $self->{errors}->collect(
                 kind    => 'ProtocolMismatch',
-                message => "Protocol $label: $content() expects state '$callee_state->{from}' "
-                         . "but current state is '$current' (in $fn_name())",
+                message => "Protocol $label: $content() expects state '"
+                         . _state_fmt($callee_state->{from}) . "' "
+                         . "but current state is '" . _state_fmt($current)
+                         . "' (in $fn_name())",
                 file    => $self->{file},
                 line    => $word->line_number,
                 col     => $word->column_number,

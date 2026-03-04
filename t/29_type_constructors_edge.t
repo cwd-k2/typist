@@ -224,8 +224,8 @@ subtest 'Row: substitute merge with label states' => sub {
     my $result = $r1->substitute({ r => $r2 });
     is_deeply [$result->labels], [qw(DB IO)], 'labels merged';
     my $st = $result->label_state('DB');
-    is $st->{from}, 'None', 'DB state preserved from';
-    is $st->{to}, 'Connected', 'DB state preserved to';
+    is_deeply $st->{from}, ['None'], 'DB state preserved from';
+    is_deeply $st->{to}, ['Connected'], 'DB state preserved to';
 };
 
 subtest 'Row: free_vars' => sub {

@@ -604,11 +604,14 @@ sub inlay_hints ($self, $start_line, $end_line) {
                 line      => $line,
                 character => ($ph->{col} // 1) - 1,
             },
-            label   => "[$ph->{to}]",
+            label   => "[" . (ref $ph->{to} ? join(' | ', $ph->{to}->@*) : $ph->{to}) . "]",
             kind    => 1,
             tooltip => +{
                 kind  => 'markdown',
-                value => "Protocol $ph->{label}: $ph->{from} \x{2192} $ph->{to}",
+                value => "Protocol $ph->{label}: "
+                       . (ref $ph->{from} ? join(' | ', $ph->{from}->@*) : $ph->{from})
+                       . " \x{2192} "
+                       . (ref $ph->{to} ? join(' | ', $ph->{to}->@*) : $ph->{to}),
             },
             paddingLeft => 1,
         };

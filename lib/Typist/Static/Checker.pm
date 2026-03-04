@@ -313,10 +313,11 @@ sub _check_protocols ($self) {
         my %known_states = map { $_ => 1 } $protocol->states;
         my $has_explicit_states = $protocol->has_explicit_states;
 
-        # Check all transition targets are known states
+        # Check all transition targets are known states (* and _ are implicit)
         for my $from (keys $protocol->transitions->%*) {
             for my $op (keys $protocol->transitions->{$from}->%*) {
                 my $to = $protocol->transitions->{$from}{$op};
+                next if $to eq '*';
                 unless ($known_states{$to}) {
                     my $msg = $has_explicit_states
                         ? "Protocol $name: state '$to' appears in transitions "
@@ -334,9 +335,10 @@ sub _check_protocols ($self) {
             }
         }
 
-        # Also check source states against the explicit list
+        # Also check source states against the explicit list (* is implicit)
         if ($has_explicit_states) {
             for my $from (keys $protocol->transitions->%*) {
+                next if $from eq '*';
                 unless ($known_states{$from}) {
                     $self->{errors}->collect(
                         kind    => 'ProtocolMismatch',
