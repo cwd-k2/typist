@@ -54,6 +54,7 @@ Tie::Scalar 監視  | OFF                  | ON
 
 ## Documentation
 
+- **[docs/getting-started.md](docs/getting-started.md)** — First program, `:sig()` cheatsheet, common patterns
 - **[docs/type-system.md](docs/type-system.md)** — Type constructs, subtyping, gradual typing, narrowing, prelude
 - **[docs/architecture.md](docs/architecture.md)** — System design, module graph, data flow, error system
 - **[docs/static-analysis.md](docs/static-analysis.md)** — Analyzer pipeline, inference, type checking, effect checking
@@ -80,7 +81,9 @@ mise run example           # Run all examples
 Tests are numbered and ordered by dependency:
 - `t/00_compile.t` — Module loading
 - `t/01_parser.t` — Type expression parsing
+- `t/01b_parser_edge.t` — Parser boundary conditions (empty input, deep nesting, literals)
 - `t/02_subtype.t` — Subtype relation
+- `t/02b_subtype_edge.t` — Subtype edge cases (Void, Never, Func contravariance, Row, Quantified, LUB)
 - `t/03_attribute.t` — Attribute-based type annotations
 - `t/04_inference.t` — Type inference and unification
 - `t/05_integration.t` — End-to-end scenarios
@@ -93,6 +96,7 @@ Tests are numbered and ordered by dependency:
 - `t/11_bounded.t` — Bounded quantification
 - `t/12_typeclass.t` — Type classes
 - `t/13_hkt.t` — Higher-kinded types and Kind system
+- `t/13b_kind_edge.t` — KindChecker edge cases (Row kind, HKT application, nested arrows)
 - `t/14_effects_foundation.t` — Effect/Row/Eff types
 - `t/15_effects_row.t` — Row parsing, subtyping, unification
 - `t/16_effects_attribute.t` — :Eff attribute, effect keyword
@@ -107,7 +111,9 @@ Tests are numbered and ordered by dependency:
 - `t/25_struct.t` — Nominal struct types
 - `t/26_check_cli.t` — CLI typist-check (subprocess)
 - `t/27_protocol.t` — Protocol FSM
+- `t/27b_protocol_edge.t` — Protocol edge cases (self-loop, dead-end, branch convergence)
 - `t/28_selective_import.t` — Selective DSL export
+- `t/29_type_constructors_edge.t` — Type constructor edge cases (Union/Intersection flatten, Record, Row, Quantified)
 - `t/static/00_extractor.t` — PPI-based type extraction
 - `t/static/01_analyzer.t` — Static analysis pipeline
 - `t/static/02_infer.t` — Static type inference
@@ -124,6 +130,8 @@ Tests are numbered and ordered by dependency:
 - `t/static/13_hof_inference.t` — Higher-order function inference
 - `t/static/14_protocol.t` — Protocol static analysis
 - `t/static/15_ref_narrowing.t` — ref() type narrowing
+- `t/static/16_narrowing_edge.t` — NarrowingEngine edge cases (nested defined, unless, early return)
+- `t/static/17_unify_edge.t` — Unification edge cases (widening, HKT, conflict rejection)
 - `t/lsp/00_transport.t` — JSON-RPC transport
 - `t/lsp/01_server.t` — LSP server lifecycle
 - `t/lsp/02_diagnostics.t` — Diagnostics publishing
@@ -142,6 +150,7 @@ Tests are numbered and ordered by dependency:
 - `t/lsp/16_semantic_tokens.t` — Semantic Tokens
 - `t/lsp/17_protocol.t` — Protocol hover and inlay hints
 - `t/lsp/18_symbol_info.t` — SymbolInfo factory functions
+- `t/lsp/19_workspace_edge.t` — Workspace edge cases (empty, syntax error, differential update)
 - `t/critic/00_policy.t` — Perl::Critic policy bridge
 - `t/critic/01_annotation_style.t` — Annotation style policy
 - `t/critic/02_effect_completeness.t` — Effect completeness policy

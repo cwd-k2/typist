@@ -6,8 +6,9 @@ Navigation hub for all Typist documentation.
 
 **For users** (writing Typist-annotated Perl code):
 1. [README](../README.md) — Installation, synopsis, quick start
-2. [Type System Reference](type-system.md) — All type constructs, subtyping rules, DSL
-3. Module POD — `perldoc Typist`, `perldoc Typist::DSL`, etc.
+2. [Getting Started](getting-started.md) — First program, `:sig()` cheatsheet, common patterns
+3. [Type System Reference](type-system.md) — All type constructs, subtyping rules, DSL
+4. Module POD — `perldoc Typist`, `perldoc Typist::DSL`, etc.
 
 **For contributors** (working on Typist internals):
 1. [Architecture](architecture.md) — System design, module graph, data flow
@@ -20,6 +21,7 @@ Navigation hub for all Typist documentation.
 | Document | Content | Audience |
 |----------|---------|----------|
 | [README](../README.md) | Installation, synopsis, examples, editor integration | Users |
+| [getting-started.md](getting-started.md) | First program, annotation cheatsheet, common patterns and pitfalls | Users |
 | [type-system.md](type-system.md) | Type constructs, subtyping, gradual typing, narrowing, prelude | Users, Contributors |
 | [architecture.md](architecture.md) | System lifecycle, module dependency graph, error system, LSP | Contributors |
 | [static-analysis.md](static-analysis.md) | Extractor, inference, type checking, effect checking, protocols | Contributors |

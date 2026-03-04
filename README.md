@@ -19,6 +19,7 @@ Typist brings static type annotations to Perl through standard attribute syntax.
 
 | Document | Audience | Content |
 |----------|----------|---------|
+| [Getting Started](docs/getting-started.md) | Users | First program, `:sig()` cheatsheet, common patterns |
 | [Type System Reference](docs/type-system.md) | Users, Contributors | Complete type constructs, subtyping rules, DSL |
 | [Architecture](docs/architecture.md) | Contributors | System design, module graph, data flow |
 | [Static Analysis](docs/static-analysis.md) | Contributors | Analyzer pipeline, inference, checking |
