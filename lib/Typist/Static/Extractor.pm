@@ -806,12 +806,16 @@ sub _extract_functions ($class, $subs, $result) {
             ($is_method, $method_kind) = (1, 'class');
         }
 
-        my $attrs = $sub_stmt->find('PPI::Token::Attribute') || [];
+        my @attrs;
+        for my $child ($sub_stmt->schildren) {
+            last if $child->isa('PPI::Structure::Block');
+            push @attrs, $child if $child->isa('PPI::Token::Attribute');
+        }
 
-        if (@$attrs) {
+        if (@attrs) {
             # Look for :sig(...) annotation
             my $type_ann;
-            for my $attr (@$attrs) {
+            for my $attr (@attrs) {
                 my $content = $attr->content;
                 if ($content =~ /\Asig\((.+)\)\z/s) {
                     $type_ann = $1;

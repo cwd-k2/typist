@@ -1130,6 +1130,8 @@ For the effect checker, the same principle applies:
 
 This design ensures that adding annotations to one function never causes errors in unrelated unannotated code.
 
+For the protocol checker, the same gradual principle applies: the handle-driven pass (Pass 2) traces unannotated functions at `* -> *`, but relaxes the handle body end-state check. This allows partial protocol use (e.g. peek/invariant operations) in unannotated handler functions without false `ProtocolMismatch` diagnostics. Annotated functions with explicit `![Effect<* -> *>]` retain the strict check.
+
 ### Usage
 
 ```perl

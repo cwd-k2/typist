@@ -920,7 +920,7 @@ PERL
     is scalar @errors, 0, 'handle-driven: complete cycle passes without annotation';
 };
 
-subtest 'handle-driven — unannotated function with incomplete handle errors' => sub {
+subtest 'handle-driven — unannotated function with incomplete handle: relaxed' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
 package ProtoHandleDriven2;
 use v5.40;
@@ -944,7 +944,7 @@ sub run () {
 PERL
 
     my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
-    ok @errors > 0, 'handle-driven: incomplete cycle detected without annotation';
+    is scalar @errors, 0, 'handle-driven: incomplete handle relaxed for unannotated function';
 };
 
 subtest 'extraction — protocol(\'A | B -> C\') syntax' => sub {
@@ -961,6 +961,32 @@ PERL
     # Should extract cleanly without errors
     my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
     is scalar @errors, 0, 'set syntax in protocol() extracted cleanly';
+};
+
+subtest 'handle — unannotated function partial protocol no false positive' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package ProtoRelaxedHandle;
+use v5.40;
+
+effect DB => qw/Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', '* -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected | Authed -> *'),
+};
+
+sub peek_connection () {
+    handle {
+        DB::connect("localhost");
+    } DB => +{
+        connect    => sub ($host) { },
+        auth       => sub ($u, $p) { },
+        disconnect => sub () { },
+    };
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    is scalar @errors, 0, 'unannotated function with partial handle use: no error';
 };
 
 done_testing;

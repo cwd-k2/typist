@@ -330,4 +330,24 @@ PERL
     is_deeply $proto->{A}, { step => 'B' }, 'step transition from A';
 };
 
+# ── Nested sub sig misattribution ──────────────
+
+subtest 'nested sub sig not misattributed to outer function' => sub {
+    my $result = Typist::Static::Extractor->extract(<<'PERL');
+package NestedSig;
+use v5.40;
+
+sub outer ($x) {
+    my $inner = sub :sig((Int) -> Str) ($n) {
+        return "$n";
+    };
+    $inner->($x);
+}
+PERL
+
+    my $fns = $result->{functions};
+    ok defined $fns->{outer}, 'outer function extracted';
+    is $fns->{outer}{type}, undef, 'outer function has no sig (unannotated)';
+};
+
 done_testing;

@@ -68,7 +68,9 @@ sub analyze ($self) {
     }
 
     # Handle-driven pass: check unannotated functions that contain handle blocks
+    $self->{_relaxed_handle} = 1;
     $self->_check_handle_blocks($pkg);
+    delete $self->{_relaxed_handle};
 }
 
 sub _check_handle_blocks ($self, $pkg) {
@@ -300,7 +302,7 @@ sub _trace_statement ($self, $stmt, $fn_name, $label, $protocol, $current, $pkg)
                 if (defined $handled && $handled eq $label) {
                     # Same effect: handle captures it → body traced at * -> *
                     my $r = $self->_trace_block($body, $fn_name, $label, $protocol, ['*'], $pkg);
-                    if (!$r->{error} && !$r->{returns} && !_state_eq($r->{state}, ['*'])) {
+                    if (!$self->{_relaxed_handle} && !$r->{error} && !$r->{returns} && !_state_eq($r->{state}, ['*'])) {
                         $self->{errors}->collect(
                             kind    => 'ProtocolMismatch',
                             message => "Protocol $label: handle body must end at '*' "

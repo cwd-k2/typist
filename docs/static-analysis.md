@@ -120,6 +120,9 @@ Variable:   Statement::Variable[ Symbol($x), Operator(:), Word(Type), List(...) 
 
 Function:   Statement::Sub[ Word(name), Token::Attribute("Type(...)"), Block ]
             Regex match: /\AType\((.+)\)\z/s on attribute content
+            Attributes are found by iterating schildren up to Block, not by
+            recursive find, so nested sub :sig() is never misattributed
+            to the enclosing function.
 
 Method:     Function where first param_name is $self (instance) or $class (class)
             Registered via register_method instead of register_function
