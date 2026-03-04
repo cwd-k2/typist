@@ -204,7 +204,7 @@ BEGIN {
         connect    => ['(Str) -> Void',      protocol('* -> Connected')],
         auth       => ['(Str, Str) -> Void', protocol('Connected -> Authenticated')],
         query      => ['(Str) -> Str',       protocol('Authenticated -> Authenticated')],
-        disconnect => ['() -> Void',         protocol('Authenticated -> *')],
+        disconnect => ['() -> Void',         protocol('Connected | Authenticated -> *')],
     };
 }
 
@@ -237,6 +237,55 @@ my $db_result = handle {
 };
 
 say "  result: $db_result";
+
+# ── Superposition (A | B) ───────────────────────────────
+#
+# When only one branch changes state, the merge point holds
+# BOTH possible states simultaneously — a superposition.
+#
+# Example:  connect always fires (* → Connected), but auth
+# fires only when $do_auth is true (Connected → Authenticated).
+# At the merge point the state is Connected | Authenticated.
+#
+# disconnect accepts Connected | Authenticated → *, so
+# it can drain either leg of the superposition.
+
+sub db_quick :sig((Str, Bool) -> Void ![Database]) ($host, $do_auth) {
+    Database::connect($host);            # * → Connected
+    if ($do_auth) {
+        Database::auth("admin", "s3c");  # Connected → Authenticated
+    }
+    # state = Connected | Authenticated
+    Database::disconnect();              # Connected | Authenticated → *
+    return;
+}
+
+say "";
+say "── Superposition (A | B) ──────────────────────";
+
+handle {
+    db_quick("localhost", 1);  # with auth
+    db_quick("localhost", 0);  # without auth
+    ();
+} Database => +{
+    connect    => sub ($host) { say "  [db] connecting to $host" },
+    auth       => sub ($u, $p) { say "  [db] authenticating $u" },
+    query      => sub ($sql) { say "  [db] query: $sql"; "?" },
+    disconnect => sub { say "  [db] disconnected" },
+};
+
+# ── Protocol Violation (not closed) ─────────────────────
+#
+# ![Database] defaults to * -> *.  If a function connects
+# but never disconnects, CHECK reports:
+#
+#   Protocol Database: function db_leak() ends in state
+#   'Connected' but declared end state is '*'
+
+sub db_leak :sig(() -> Void ![Database]) () {
+    Database::connect("localhost");
+    # forgot to disconnect — ends in Connected, not *
+}
 
 # ── Effect Inclusion (Static Checking) ────────────────────
 #
