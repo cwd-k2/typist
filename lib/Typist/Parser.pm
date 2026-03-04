@@ -91,11 +91,11 @@ sub _parse_union ($tokens, $pos) {
     @members == 1 ? $members[0] : Typist::Type::Union->new(@members);
 }
 
-# inter_type ::= primary ('&' primary)*
+# inter_type ::= primary (('&' | '+') primary)*
 sub _parse_intersection ($tokens, $pos) {
     my @members = (_parse_primary($tokens, $pos));
 
-    while ($$pos < @$tokens && $tokens->[$$pos] eq '&') {
+    while ($$pos < @$tokens && ($tokens->[$$pos] eq '&' || $tokens->[$$pos] eq '+')) {
         $$pos++;
         push @members, _parse_primary($tokens, $pos);
     }
