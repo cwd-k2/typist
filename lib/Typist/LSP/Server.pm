@@ -113,6 +113,11 @@ sub _handle_initialize ($self, $params) {
         $self->{log}->info('workspace: no root');
     }
 
+    # Track client capabilities for refresh support
+    my $caps = $params->{capabilities} // +{};
+    $self->{_client_caps} = $caps;
+    $self->{_inlay_refresh} = $caps->{workspace}{inlayHint}{refreshSupport} ? 1 : 0;
+
     +{
         capabilities => +{
             textDocumentSync => +{
@@ -194,6 +199,7 @@ sub _handle_did_change ($self, $params) {
     }
 
     $self->_publish_diagnostics($doc);
+    $self->_refresh_inlay_hints;
 
     undef;
 }
@@ -224,6 +230,8 @@ sub _handle_did_save ($self, $params) {
             $self->_publish_diagnostics($other_doc);
         }
     }
+
+    $self->_refresh_inlay_hints;
 
     undef;
 }
@@ -630,6 +638,11 @@ sub _publish_diagnostics ($self, $doc) {
         return;
     }
     $self->_emit_diagnostics($doc, $result);
+}
+
+sub _refresh_inlay_hints ($self) {
+    return unless $self->{_inlay_refresh};
+    $self->{transport}->send_notification('workspace/inlayHint/refresh', undef);
 }
 
 sub _emit_diagnostics ($self, $doc, $result) {
