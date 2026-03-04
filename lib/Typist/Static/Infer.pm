@@ -11,6 +11,22 @@ use Typist::Type::Union;
 use Typist::Subtype;
 use Typist::Static::Unify;
 
+# ── Operator Tables ─────────────────────────────
+
+my %OP_PRECEDENCE = (
+    'or' => 1, 'xor' => 1,  'and' => 2,
+    '||' => 3, '//'  => 3,  '&&'  => 4,
+    '=~' => 5, '!~'  => 5,
+    '==' => 6, '!='  => 6, '<=>' => 6,
+    '<'  => 6, '>'   => 6, '<='  => 6, '>=' => 6,
+    'eq' => 6, 'ne'  => 6, 'cmp' => 6,
+    'lt' => 6, 'gt'  => 6, 'le'  => 6, 'ge' => 6,
+    '+'  => 7, '-'   => 7, '.'   => 7,
+    '*'  => 8, '/'   => 8, '%'   => 8, 'x'  => 8,
+    '**' => 9,
+);
+my %NUMERIC_ATOM = map { $_ => 1 } qw(Bool Int Double Num);
+
 # ── Callback Param Collector ─────────────────────
 #
 # During inference, _enrich_env_with_params records callback parameter
@@ -142,7 +158,11 @@ sub infer_expr ($class, $element, $env = undef, $expected = undef) {
         my $next = $element->snext_sibling;
         if ($next && $next->isa('PPI::Structure::List')) {
             my $result = _infer_call($element->content, $env, $next, $expected);
-            return _chase_subscript_chain($result, $next, $env) if defined $result;
+            if (defined $result) {
+                $result = _chase_subscript_chain($result, $next, $env);
+                # Check for ternary extension: func(...) ? then : else
+                return _check_ternary_extension($result, $next, $env, $expected);
+            }
             return undef;
         }
     }
@@ -1129,16 +1149,11 @@ sub _infer_operator_expr ($stmt, $env, $expected = undef) {
         return _infer_binop($children[1]->content, $children[0], $children[2], $env);
     }
 
-    # Chained binary: Expr Op Expr Op Expr ... (5+ children, same operator)
+    # Chained/mixed binary: Expr Op Expr Op Expr ... (5+ children)
+    # Handles both same-operator chains and mixed operators (e.g., >= && <=)
     if (@children >= 5) {
-        my @ops = grep { $_->isa('PPI::Token::Operator') } @children;
-        if (@ops >= 2) {
-            my $op = $ops[0]->content;
-            my $all_same = !grep { $_->content ne $op } @ops;
-            if ($all_same) {
-                return _infer_binop($op, $children[0], $children[-1], $env);
-            }
-        }
+        my $result = _infer_children_slice(\@children, $env);
+        return $result if defined $result;
     }
 
     undef;
@@ -1158,6 +1173,94 @@ sub _infer_branch_slice ($slice, $env, $expected) {
     }
     # Multi-token: infer from first element (PPI sibling chain handles Word+List etc.)
     return __PACKAGE__->infer_expr($slice->[0], $env, $expected);
+}
+
+# ── Mixed-Operator Helpers ──────────────────────
+# Split a flat expression at the lowest-precedence operator and recurse.
+
+# Find the index of the lowest-precedence operator in @children.
+sub _find_split_point ($children) {
+    my ($best_idx, $best_prec);
+    for my $i (0 .. $#$children) {
+        next unless $children->[$i]->isa('PPI::Token::Operator');
+        my $op = $children->[$i]->content;
+        my $prec = $OP_PRECEDENCE{$op} // next;
+        if (!defined $best_prec || $prec <= $best_prec) {
+            $best_prec = $prec;
+            $best_idx  = $i;
+        }
+    }
+    $best_idx;
+}
+
+# Determine result type from operator category and operand types.
+# Operand types may be undef (unknown); result is determined by operator category.
+sub _result_type_for_op ($op, $lt, $rt) {
+    # Comparison → Bool (regardless of operand types)
+    return Typist::Type::Atom->new('Bool')
+        if $op =~ /\A(?:==|!=|<|>|<=|>=|<=>|eq|ne|lt|gt|le|ge|cmp|=~|!~)\z/;
+    # Logical → left operand type (undef if left is unknown)
+    return $lt if $op =~ /\A(?:&&|\|\||\/\/|and|or|xor)\z/;
+    # Arithmetic → LUB of numeric atoms, fallback Num
+    if ($op =~ /\A(?:\+|-|\*|\/|%|\*\*)\z/) {
+        my $lw = $lt && $lt->is_literal ? Typist::Type::Atom->new($lt->base_type) : $lt;
+        my $rw = $rt && $rt->is_literal ? Typist::Type::Atom->new($rt->base_type) : $rt;
+        if ($lw && $rw && $lw->is_atom && $rw->is_atom
+            && $NUMERIC_ATOM{$lw->name} && $NUMERIC_ATOM{$rw->name})
+        {
+            return Typist::Subtype->common_super($lw, $rw);
+        }
+        return Typist::Type::Atom->new('Num');
+    }
+    # String → Str
+    return Typist::Type::Atom->new('Str') if $op eq '.' || $op eq 'x';
+    undef;
+}
+
+# Recursively infer a flat children slice by splitting at lowest-precedence op.
+sub _infer_children_slice ($children, $env) {
+    return undef unless $children && @$children;
+    # Single element → infer directly
+    return __PACKAGE__->infer_expr($children->[0], $env) if @$children == 1;
+    # 3 elements (simple binary) → _infer_binop
+    if (@$children == 3 && $children->[1]->isa('PPI::Token::Operator')) {
+        return _infer_binop($children->[1]->content, $children->[0], $children->[2], $env);
+    }
+    # 5+ elements → split at lowest-precedence operator
+    my $split = _find_split_point($children);
+    return undef unless defined $split && $split > 0 && $split < $#$children;
+    my @left  = @$children[0 .. $split - 1];
+    my @right = @$children[$split + 1 .. $#$children];
+    my $lt = _infer_children_slice(\@left,  $env);
+    my $rt = _infer_children_slice(\@right, $env);
+    _result_type_for_op($children->[$split]->content, $lt, $rt);
+}
+
+# Check for ternary extension after a function call or subscript chain.
+# Walks past any -> chains from $after_node, then checks for ? then : else.
+# Returns the ternary type if found, otherwise returns $result unchanged.
+sub _check_ternary_extension ($result, $after_node, $env, $expected) {
+    # Walk past -> chains to find what comes after
+    my $node = $after_node->snext_sibling;
+    while ($node && $node->isa('PPI::Token::Operator') && $node->content eq '->') {
+        my $next = $node->snext_sibling // last;
+        # Skip -> Subscript, -> Word, -> List
+        if ($next->isa('PPI::Structure::List')) {
+            $node = $next->snext_sibling;
+            next;
+        }
+        $node = $next->snext_sibling;
+    }
+    # Check for ? then : else
+    if ($node && $node->isa('PPI::Token::Operator') && $node->content eq '?') {
+        my $then_expr = $node->snext_sibling;
+        my $colon = $then_expr ? $then_expr->snext_sibling : undef;
+        if ($colon && $colon->isa('PPI::Token::Operator') && $colon->content eq ':') {
+            my $else_expr = $colon->snext_sibling;
+            return _infer_ternary($then_expr, $else_expr, $env, $expected) if $else_expr;
+        }
+    }
+    $result;
 }
 
 # Handle nested ternary from a flat PPI children list.
@@ -1234,16 +1337,33 @@ sub _infer_ternary_types ($then_type, $else_type, $env, $expected = undef) {
     Typist::Type::Union->new($then_w, $else_w);
 }
 
+# Infer arithmetic result type from operand types.
+# If both sides are numeric atoms, LUB preserves precision (Int+Int→Int).
+# Falls back to Num when either side is unknown.
+sub _infer_arithmetic ($lhs, $rhs, $env) {
+    my $lt = __PACKAGE__->infer_expr($lhs, $env);
+    my $rt = __PACKAGE__->infer_expr($rhs, $env);
+    # Widen literals to base atom
+    $lt = Typist::Type::Atom->new($lt->base_type) if $lt && $lt->is_literal;
+    $rt = Typist::Type::Atom->new($rt->base_type) if $rt && $rt->is_literal;
+    if ($lt && $rt && $lt->is_atom && $rt->is_atom
+        && $NUMERIC_ATOM{$lt->name} && $NUMERIC_ATOM{$rt->name})
+    {
+        return Typist::Subtype->common_super($lt, $rt);
+    }
+    Typist::Type::Atom->new('Num');
+}
+
 sub _infer_binop ($op, $lhs, $rhs, $env) {
-    # Arithmetic → Num
-    return Typist::Type::Atom->new('Num')
+    # Arithmetic → LUB of operand types (Int+Int→Int, Int+Double→Double, etc.)
+    return _infer_arithmetic($lhs, $rhs, $env)
         if $op =~ /\A(?:\+|-|\*|\/|%|\*\*)\z/;
 
     # String concatenation / repetition → Str
     return Typist::Type::Atom->new('Str') if $op eq '.' || $op eq '.=' || $op eq 'x';
 
-    # Compound assignment: +=, -=, *=, /= → Num
-    return Typist::Type::Atom->new('Num')
+    # Compound assignment: +=, -=, *=, /= → LUB
+    return _infer_arithmetic($lhs, $rhs, $env)
         if $op =~ /\A(?:\+=|-=|\*=|\/=|%=|\*\*=)\z/;
 
     # Numeric comparison → Bool

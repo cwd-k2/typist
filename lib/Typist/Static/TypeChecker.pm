@@ -286,7 +286,9 @@ sub _check_implicit_return_of_stmt ($self, $stmt, $env, $declared, $name) {
     # Skip if starts with 'return' — already checked in explicit path
     return if $first->isa('PPI::Token::Word') && $first->content eq 'return';
 
-    my $inferred = Typist::Static::Infer->infer_expr($first, $env, $declared);
+    # Try statement-level first (handles mixed-op/ternary), then first-child fallback
+    my $inferred = Typist::Static::Infer->infer_expr($stmt, $env, $declared)
+                // Typist::Static::Infer->infer_expr($first, $env, $declared);
     return unless defined $inferred;
     return if _contains_any($inferred);
 

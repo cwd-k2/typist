@@ -539,9 +539,39 @@ subtest 'chained array then struct: $arr->[0]->{name}' => sub {
 
 # ── Complex expressions → undef (gradual) ───────
 
-subtest 'chained operators → undef' => sub {
+subtest 'chained mixed operators' => sub {
     my $t = infer_stmt('$a + $b * $c;');
-    is $t, undef, '$a + $b * $c → undef (not 3-element pattern)';
+    ok $t, 'inferred mixed arithmetic';
+    ok $t->is_atom, 'is atom';
+    is $t->name, 'Num', '$a + $b * $c → Num (unknown vars)';
+};
+
+subtest 'mixed comparison+logical → Bool' => sub {
+    my $t = infer_stmt('$a >= $b && $a <= $c;');
+    ok $t, 'inferred';
+    ok $t->is_atom, 'is atom';
+    is $t->name, 'Bool', '$a >= $b && $a <= $c → Bool';
+};
+
+subtest 'arithmetic precision: Int + Int → Int' => sub {
+    my $t = infer_stmt('42 + 3;');
+    ok $t, 'inferred';
+    ok $t->is_atom, 'is atom';
+    is $t->name, 'Int', '42 + 3 → Int';
+};
+
+subtest 'arithmetic precision: Int + Double → Double' => sub {
+    my $t = infer_stmt('42 + 3.14;');
+    ok $t, 'inferred';
+    ok $t->is_atom, 'is atom';
+    is $t->name, 'Double', '42 + 3.14 → Double';
+};
+
+subtest 'arithmetic precision: Int - Int → Int' => sub {
+    my $t = infer_stmt('100 - 50;');
+    ok $t, 'inferred';
+    ok $t->is_atom, 'is atom';
+    is $t->name, 'Int', '100 - 50 → Int';
 };
 
 # ── Bidirectional (expected-guided) inference ────
@@ -768,11 +798,11 @@ subtest 'sibling: string concatenation → Str' => sub {
     is $t->name, 'Str', '$a . "suffix" → Str';
 };
 
-subtest 'sibling: arithmetic → Num' => sub {
+subtest 'sibling: arithmetic → Int (literal LUB)' => sub {
     my $t = infer_with_siblings('my $n = 42 + 3;');
     ok $t, 'inferred type for 42 + 3';
     ok $t->is_atom, 'is atom';
-    is $t->name, 'Num', '42 + 3 → Num';
+    is $t->name, 'Int', '42 + 3 → Int (both Int literals)';
 };
 
 subtest 'sibling: no operator → falls through to infer_expr' => sub {
