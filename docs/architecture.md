@@ -193,12 +193,15 @@ CHECK block fires (Typist.pm)
                        |  TypeChecker->analyze()      |
                        |    _check_variable_init      |
                        |    _check_assignments        |
-                       |    _check_call_sites         |
+                       |    CallChecker (delegate)    |
                        |      (arity, generic unify,  |
-                       |       method calls, CORE)    |
+                       |       method/struct calls)   |
                        |    _check_return_types       |
                        |      (explicit + implicit    |
                        |       branch analysis)       |
+                       |    NarrowingEngine           |
+                       |      (defined/isa/ref guards,|
+                       |       early return, accessor)|
                        |  EffectChecker->analyze()    |
                        +-----------------------------+
                        |
@@ -212,19 +215,19 @@ CHECK block fires (Typist.pm)
 ### Core Type System
 
 ```
-                    Typist::Type  (abstract base, overloads)
-                         |
-     +-------+-------+---+---+-------+-------+-------+
-     |       |       |       |       |       |       |
-   Atom    Param  Union  Intersect  Func  Struct   Var
-     |                                 |
-   (pool)                          (effects)
-                                       |
-     +-------+-------+-------+-------+-------+-------+
-     |       |       |       |       |       |       |
-   Alias  Literal Newtype   Data    Row     Eff    Fold
-                              |       |       |
-                          (variants)(labels)(wraps Row)
+                       Typist::Type  (abstract base, overloads)
+                            |
+  +------+------+------+---+---+------+--------+--------+------+
+  |      |      |      |       |      |        |        |      |
+Atom   Param  Union  Intersect Func  Record  Struct    Var  Quantified
+  |                              |      |        |             |
+(pool)                       (effects)(structural)(nominal)  (forall)
+
+  +--------+--------+-------+-------+-------+-------+
+  |        |        |       |       |       |       |
+Alias   Literal  Newtype   Data    Row     Eff    Fold
+                             |       |       |       |
+                         (variants)(labels)(wraps Row)(traversal)
 ```
 
 ### Module Loading DAG
@@ -232,8 +235,9 @@ CHECK block fires (Typist.pm)
 ```
 Typist.pm (entry point)
   |
-  +-- Type::* (15 modules)          Always loaded
+  +-- Type::* (16 modules)          Always loaded
   |     +-- Type::Data              Tagged unions (ADT)
+  |     +-- Type::Quantified        Rank-2 polymorphism (forall)
   |     +-- Type::Fold              map_type / walk traversals
   +-- Effect, TypeClass             Always loaded
   +-- Kind, KindChecker             Always loaded
@@ -255,10 +259,13 @@ Typist.pm (entry point)
   |     +-- Prelude                 Builtin type annotations
   |     +-- Static::Extractor
   |     |     +-- PPI               <-- Heavy dependency, lazy
-  |     +-- Static::TypeChecker
+  |     +-- Static::TypeChecker     Env, var/return checks, coordination
+  |     |     +-- Static::CallChecker      Call-site type checking
+  |     |     +-- Static::NarrowingEngine  Control flow narrowing
   |     |     +-- Static::Infer
   |     |     +-- Static::Unify     Generic instantiation
   |     +-- Static::EffectChecker
+  |     +-- Static::ProtocolChecker
   |
   +-- Prelude                       LAZY (via Analyzer, Workspace)
 ```
@@ -271,10 +278,13 @@ Typist::LSP (entry point, bin/typist-lsp)
   +-- LSP::Server
   |     +-- LSP::Transport        JSON-RPC framing
   |     +-- LSP::Document         Per-file analysis cache
+  |     |     +-- Document::Resolver  Accessor chain type resolution
   |     +-- LSP::Workspace        Cross-file registry
   |     |     +-- Prelude         Builtin annotations for workspace
   |     +-- LSP::Hover            Type signature display
   |     +-- LSP::Completion       Type name suggestions
+  |     +-- LSP::CodeAction       Quickfix suggestions
+  |     +-- LSP::SemanticTokens   Syntax-aware token classification
   |     +-- LSP::Logger           Configurable logging
   |     +-- Static::Analyzer      Full analysis pipeline
   |           +-- (all Static::* modules)
@@ -324,14 +334,20 @@ substitute(\%)  Type            Apply binding map, return new type
     Union(T|U)         Int | Str
     Intersection(T&U)  Readable & Writable
     Func(P->R!E)       (Int, Int) -> Int ![Console]
-    Struct{k:T}        { name => Str, age? => Int }
+    Record{k:T}        { name => Str, age? => Int }  — structural composite
 
-  Named/Reference:
+  Nominal:
 
-    Alias(name)        typedef references — lazy resolution
-    Newtype(name,T)    Nominal wrappers — name-based identity
-    Data(name,vars)    Tagged unions — nominal ADT with constructors
-    Literal(val,base)  42:Int, "hi":Str — singleton types
+    Struct(name,fields)  struct 'Point' => (x => Int, y => Int)  — nominal composite
+    Newtype(name,T)      Nominal wrappers — name-based identity
+    Data(name,vars)      Tagged unions — nominal ADT with constructors
+    Alias(name)          typedef references — lazy resolution
+    Literal(val,base)    42:Int, "hi":Str — singleton types
+
+  Quantification:
+
+    Quantified(vars,body)  forall A. (A) -> A  — rank-2 polymorphism
+    Var(name,bound,kind)   T, U:Num, F:*->*
 
   Effect:
 
@@ -340,8 +356,7 @@ substitute(\%)  Type            Apply binding map, return new type
 
   Meta:
 
-    Var(name,bound,kind)  T, U:Num, F:*->*
-    Fold                  map_type (bottom-up), walk (top-down)
+    Fold               map_type (bottom-up), walk (top-down)  — traversal utility
 ```
 
 ### Subtyping Rules
@@ -367,7 +382,11 @@ Param                 P[A] <: P[B] iff A<:B       Covariant
 Func params           (A)->R <: (B)->R iff B<:A   Contravariant
 Func return           (A)->R <: (A)->S iff R<:S   Covariant
 Func effects          ..!E1 <: ..!E2 iff E1<:E2   Covariant
-Struct                {a,b,c} <: {a,b}            Width subtyping
+Record                {a,b,c} <: {a,b}            Width subtyping (structural)
+Struct                S <: S iff same name         Nominal identity (covariant args)
+Struct-Record         S <: {a,b} via inner record  Structural compatibility
+Record-Struct         {a,b} </: S                  Nominal barrier
+Quantified            (forall A. T) <: U           Instantiation
 Row                   Row(A,B) <: Row(A)           Label inclusion
 ```
 

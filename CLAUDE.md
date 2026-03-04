@@ -15,17 +15,20 @@ Typist.pm (entry+CHECK)      Tie::Scalar                   LSP::Server       Che
 Static::Checker              Attribute._wrap_sub            LSP::Document
 Static::Analyzer (CHECK)     Inference.pm                   LSP::Workspace
 Static::TypeChecker          Handler (Effect::op/handle)    LSP::Hover
-Static::EffectChecker                                       LSP::Completion
-Static::Extractor                                           LSP::Transport
-Static::Infer                                               LSP::CodeAction
-Static::Unify                                               LSP::SemanticTokens
-Static::SymbolInfo                                          LSP::Logger
+Static::CallChecker                                         LSP::Completion
+Static::NarrowingEngine                                     LSP::Transport
+Static::EffectChecker                                       LSP::CodeAction
+Static::ProtocolChecker                                     LSP::SemanticTokens
+Static::Extractor                                           LSP::Logger
+Static::Infer                                               Document::Resolver
+Static::Unify
+Static::SymbolInfo
 
 Shared Infrastructure
 ──────────────────────────
-Registry, Parser, Subtype, Transform, Attribute, Prelude
+Registry, Parser, Subtype, Transform, Attribute, Prelude, Protocol
 Error (value + Collector), Error::Global (singleton buffer)
-Type::{Atom,Param,Union,Intersection,Func,Record,Struct,Var,Alias,Literal,Newtype,Row,Eff,Data}
+Type::{Atom,Param,Union,Intersection,Func,Record,Struct,Var,Alias,Literal,Newtype,Quantified,Row,Eff,Data}
 Type::Fold (map_type, walk), Struct::Base, Newtype::Base
 Kind, KindChecker, TypeClass, Effect, Static::Registration
 DSL (Type constructors: Int, Str, Double, Num, Array, Hash, Record, optional, etc.)
