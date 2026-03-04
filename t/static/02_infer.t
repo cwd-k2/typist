@@ -49,16 +49,16 @@ subtest 'float literal' => sub {
     is $t->base_type, 'Double', '3.14 → Literal(Double)';
 };
 
-subtest 'bool literal 0' => sub {
+subtest 'int literal 0' => sub {
     my $t = infer_from_source('my $x = 0;');
     ok $t, 'inferred';
-    is $t->base_type, 'Bool', '0 → Literal(Bool)';
+    is $t->base_type, 'Int', '0 → Literal(Int)';
 };
 
-subtest 'bool literal 1' => sub {
+subtest 'int literal 1' => sub {
     my $t = infer_from_source('my $x = 1;');
     ok $t, 'inferred';
-    is $t->base_type, 'Bool', '1 → Literal(Bool)';
+    is $t->base_type, 'Int', '1 → Literal(Int)';
 };
 
 # ── String Literals ──────────────────────────────
@@ -111,11 +111,11 @@ subtest 'empty array' => sub {
     is $p[0]->name, 'Any', 'empty → Any element type';
 };
 
-subtest 'array of bools widened to Int' => sub {
+subtest 'array of mixed ints' => sub {
     my $t = infer_from_source('my $x = [0, 1, 5];');
     ok $t, 'inferred';
     my @p = $t->params;
-    is $p[0]->name, 'Int', 'Bool + Int → Int';
+    is $p[0]->name, 'Int', '0 + 1 + 5 → Int';
 };
 
 # ── Hash Constructor ─────────────────────────────

@@ -29,8 +29,7 @@ sub infer_value ($class, $value) {
     }
 
     # Scalar — narrow as far as possible
-    return Typist::Type::Atom->new('Bool')
-        if $value eq '1' || $value eq '0' || $value eq '';
+    return Typist::Type::Atom->new('Bool') if $value eq '';
 
     return Typist::Type::Atom->new('Int')
         if looks_like_number($value) && $value == int($value);

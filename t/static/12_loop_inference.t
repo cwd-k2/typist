@@ -222,7 +222,7 @@ subtest 'map infers ArrayRef of block return type' => sub {
     ok $map_word, 'found map word';
     my $t = Typist::Static::Infer->infer_expr($map_word, $env);
     ok $t, 'map type inferred';
-    is $t->to_string, 'Array[Bool]', 'map { 1 } @$items → Array[Bool]';
+    is $t->to_string, 'Array[Int]', 'map { 1 } @$items → Array[Int]';
 };
 
 subtest 'grep infers ArrayRef of element type' => sub {

@@ -11,8 +11,8 @@ sub parse { Typist::Parser->parse(@_) }
 
 subtest 'scalar inference' => sub {
     is infer(undef)->to_string,   'Undef', 'undef -> Undef';
-    is infer(1)->to_string,       'Bool',  '1 -> Bool';
-    is infer(0)->to_string,       'Bool',  '0 -> Bool';
+    is infer(1)->to_string,       'Int',   '1 -> Int';
+    is infer(0)->to_string,       'Int',   '0 -> Int';
     is infer(42)->to_string,      'Int',   '42 -> Int';
     is infer(-7)->to_string,      'Int',   '-7 -> Int';
     is infer(3.14)->to_string,    'Double', '3.14 -> Double';

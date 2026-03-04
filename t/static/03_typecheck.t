@@ -291,13 +291,13 @@ PERL
     is scalar @$errs, 0, 'no errors for matching literals';
 };
 
-subtest 'literal: Bool literal matches Int (subtype)' => sub {
+subtest 'literal: Int literal 1 matches Int' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
 my $x :sig(Int) = 1;
 PERL
 
-    is scalar @$errs, 0, 'Bool literal is subtype of Int';
+    is scalar @$errs, 0, 'Int literal 1 matches Int';
 };
 
 subtest 'literal: string literal matches Str' => sub {
@@ -1659,7 +1659,7 @@ PERL
     my @vars = grep { ($_->{kind} // '') eq 'variable' && $_->{name} eq '$total' }
                $result->{symbols}->@*;
     is scalar @vars, 1, 'found $total symbol';
-    is $vars[0]{type}, 'Int', '$total widened from Literal(0, Bool) to Int';
+    is $vars[0]{type}, 'Int', '$total widened from Literal(0, Int) to Int';
     ok $vars[0]{inferred}, '$total is inferred';
 };
 

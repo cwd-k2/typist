@@ -32,7 +32,7 @@ sub infer_expr ($class, $element, $env = undef, $expected = undef) {
 
     # ── Numeric literals ────────────────────────
     if ($element->isa('PPI::Token::Number')) {
-        return _infer_number($element);
+        return _infer_number($element, $expected);
     }
 
     # ── String literals ─────────────────────────
@@ -768,7 +768,7 @@ sub _infer_match_return ($match_word, $env, $expected = undef) {
 
 # ── Number Inference ─────────────────────────────
 
-sub _infer_number ($token) {
+sub _infer_number ($token, $expected = undef) {
     my $content = $token->content;
 
     # Float / Exp → Double literal
@@ -776,10 +776,12 @@ sub _infer_number ($token) {
         return Typist::Type::Literal->new($content + 0, 'Double');
     }
 
-    # 0 or 1 → Bool literal, otherwise → Int literal
+    # 0 or 1 → Int literal (default), Bool only when expected is Bool
     my $val = $content + 0;
     if ($content eq '0' || $content eq '1') {
-        return Typist::Type::Literal->new($val, 'Bool');
+        my $base = ($expected && $expected->is_atom && $expected->name eq 'Bool')
+            ? 'Bool' : 'Int';
+        return Typist::Type::Literal->new($val, $base);
     }
 
     Typist::Type::Literal->new($val, 'Int');
