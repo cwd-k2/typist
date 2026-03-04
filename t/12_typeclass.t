@@ -493,4 +493,70 @@ subtest 'three-param typeclass' => sub {
     is $resolved->get_method('combine')->(3, 7), '3+7', 'three-param method works';
 };
 
+# ── Compound typeclass constraints in parse_generic_decl ───
+
+subtest 'parse_generic_decl: multiple typeclass constraints' => sub {
+    Typist::Registry->reset;
+
+    # Register two typeclasses
+    for my $tc_name (qw(Printable Ord)) {
+        my $def = Typist::TypeClass->new_class(
+            name    => $tc_name,
+            var     => 'T',
+            methods => +{},
+        );
+        Typist::Registry->register_typeclass($tc_name, $def);
+    }
+
+    require Typist::Attribute;
+    my @gen = Typist::Attribute->parse_generic_decl('T: Printable + Ord');
+    is scalar @gen, 1, 'one generic';
+    is $gen[0]{name}, 'T', 'name is T';
+    is_deeply $gen[0]{tc_constraints}, [qw(Printable Ord)], 'both tc_constraints';
+    ok !$gen[0]{bound_expr}, 'no bound_expr';
+};
+
+subtest 'parse_generic_decl: mixed typeclass + bound' => sub {
+    Typist::Registry->reset;
+
+    my $def = Typist::TypeClass->new_class(
+        name    => 'Show',
+        var     => 'T',
+        methods => +{},
+    );
+    Typist::Registry->register_typeclass('Show', $def);
+
+    require Typist::Attribute;
+    my @gen = Typist::Attribute->parse_generic_decl('T: Show + Num');
+    is scalar @gen, 1, 'one generic';
+    is $gen[0]{name}, 'T', 'name is T';
+    is_deeply $gen[0]{tc_constraints}, ['Show'], 'tc_constraints has Show';
+    is $gen[0]{bound_expr}, 'Num', 'bound_expr has Num';
+};
+
+# ── Struct runtime inference ───────────────────
+
+subtest 'infer_value: blessed struct recognized' => sub {
+    Typist::Registry->reset;
+
+    # Simulate a struct type registered in the registry
+    my $struct_type = Typist::Parser->parse('{ name => Str }');
+    Typist::Registry->register_type('Point', $struct_type);
+
+    # Create a blessed struct instance
+    my $instance = bless {
+        name => 'test',
+    }, 'Typist::Struct::Point';
+
+    # Give it _typist_struct_meta
+    no strict 'refs';
+    *{'Typist::Struct::Point::_typist_struct_meta'} = sub {
+        +{ name => 'Point', required => +{ name => 'Str' }, optional => +{} };
+    };
+
+    my $inferred = Typist::Inference->infer_value($instance);
+    ok $inferred, 'inferred a type';
+    is $inferred->to_string, $struct_type->to_string, 'inferred struct type matches';
+};
+
 done_testing;

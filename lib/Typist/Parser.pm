@@ -67,7 +67,7 @@ sub _tokenize ($input) {
         elsif ($input =~ /\G('(?:[^'\\]|\\.)*')/gc) { push @tokens, $1 }
         elsif ($input =~ /\G(-?\d+(?:\.\d+)?)/gc)   { push @tokens, $1 }
         elsif ($input =~ /\G([A-Za-z_]\w*)/gc)    { push @tokens, $1 }
-        elsif ($input =~ /\G([\[\]{}(),.|&?!:<>])/gc)  { push @tokens, $1 }
+        elsif ($input =~ /\G([\[\]{}(),.|&?!:<>+])/gc)  { push @tokens, $1 }
         else {
             my $ch = substr($input, pos($input), 1);
             die "Typist::Parser: unexpected character '$ch' in '$input'";
@@ -440,13 +440,19 @@ sub _parse_quantified ($tokens, $pos) {
     while ($$pos < @$tokens && $tokens->[$$pos] ne '.') {
         my $var_name = $tokens->[$$pos++];
         my $bound;
-        # Optional bound: A: Num
+        # Optional bound: A: Num or A: Printable + Ord
         if ($$pos < @$tokens && $tokens->[$$pos] eq ':') {
             $$pos++;  # consume ':'
-            # Resolve the bound type name
             die "Typist::Parser: expected bound type after ':' in forall"
                 unless $$pos < @$tokens;
-            $bound = _resolve_name($tokens->[$$pos++]);
+            my @bounds = (_resolve_name($tokens->[$$pos++]));
+            while ($$pos < @$tokens && $tokens->[$$pos] eq '+') {
+                $$pos++;  # consume '+'
+                die "Typist::Parser: expected bound type after '+' in forall"
+                    unless $$pos < @$tokens;
+                push @bounds, _resolve_name($tokens->[$$pos++]);
+            }
+            $bound = @bounds == 1 ? $bounds[0] : Typist::Type::Intersection->new(@bounds);
         }
         push @vars, $bound ? +{ name => $var_name, bound => $bound } : +{ name => $var_name };
     }

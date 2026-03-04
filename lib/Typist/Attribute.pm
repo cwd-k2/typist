@@ -72,17 +72,6 @@ sub parse_generic_decl ($class, $spec, %opts) {
     for my $decl (split /\s*,\s*/, $spec) {
         if ($decl =~ /\A(\w+)\s*:\s*(.+)\z/) {
             my ($vname, $constraint) = ($1, $2);
-            my @parts = split /\s*\+\s*/, $constraint;
-            my @tc_constraints;
-            my $is_typeclass = 1;
-            for my $part (@parts) {
-                if ($registry->lookup_typeclass($part)) {
-                    push @tc_constraints, $part;
-                } else {
-                    $is_typeclass = 0;
-                    last;
-                }
-            }
             if ($constraint eq 'Row') {
                 push @generics, +{
                     name       => $vname,
@@ -97,14 +86,21 @@ sub parse_generic_decl ($class, $spec, %opts) {
                     bound_expr => undef,
                     var_kind   => $kind,
                 };
-            } elsif ($is_typeclass && @tc_constraints) {
-                push @generics, +{
-                    name           => $vname,
-                    bound_expr     => undef,
-                    tc_constraints => \@tc_constraints,
-                };
             } else {
-                push @generics, +{ name => $vname, bound_expr => $constraint };
+                my @parts = split /\s*\+\s*/, $constraint;
+                my (@tc_parts, @bound_parts);
+                for my $part (@parts) {
+                    if ($registry->lookup_typeclass($part)) {
+                        push @tc_parts, $part;
+                    } else {
+                        push @bound_parts, $part;
+                    }
+                }
+                my %entry = (name => $vname);
+                $entry{tc_constraints} = \@tc_parts if @tc_parts;
+                $entry{bound_expr} = join(' + ', @bound_parts) if @bound_parts;
+                $entry{bound_expr} //= undef;
+                push @generics, \%entry;
             }
         } else {
             push @generics, +{ name => $decl, bound_expr => undef };

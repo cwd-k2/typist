@@ -872,4 +872,47 @@ subtest 'tuple: arity mismatch [1, 2, 3] with Tuple[Int, Str] → ArrayRef fallb
     is $t->base, 'ArrayRef', 'arity mismatch → ArrayRef fallback';
 };
 
+# ── Recursive type alias: _infer_array with alias resolution ──
+
+subtest 'array: alias expected resolves before elem extraction' => sub {
+    my $registry = Typist::Registry->new;
+    # typedef IntList = Int | ArrayRef[IntList]
+    $registry->define_alias('IntList',
+        Typist::Type::Union->new(
+            Typist::Type::Atom->new('Int'),
+            Typist::Type::Param->new('ArrayRef', Typist::Type::Alias->new('IntList')),
+        ),
+    );
+
+    my $env = +{
+        registry  => $registry,
+        variables => +{},
+        functions => +{},
+        known     => +{},
+    };
+
+    my $expected = Typist::Type::Alias->new('IntList');
+    my $doc = PPI::Document->new(\'[1, 2, 3]');
+    my $arr = $doc->find_first('PPI::Structure::Constructor');
+    my $t = Typist::Static::Infer->infer_expr($arr, $env, $expected);
+    ok $t, 'inferred';
+    is $t->base, 'ArrayRef', 'is ArrayRef';
+    # The element type should be Int (from literal widening), not Any
+    my $elem = ($t->params)[0];
+    ok $elem->is_atom && $elem->name eq 'Int', 'element type is Int (not Any)';
+};
+
+subtest 'array: Union expected extracts ArrayRef elem type' => sub {
+    my $expected = Typist::Type::Union->new(
+        Typist::Type::Atom->new('Int'),
+        Typist::Type::Param->new('ArrayRef', Typist::Type::Atom->new('Str')),
+    );
+
+    my $doc = PPI::Document->new(\'["a", "b"]');
+    my $arr = $doc->find_first('PPI::Structure::Constructor');
+    my $t = Typist::Static::Infer->infer_expr($arr, undef, $expected);
+    ok $t, 'inferred';
+    is $t->base, 'ArrayRef', 'is ArrayRef';
+};
+
 done_testing;

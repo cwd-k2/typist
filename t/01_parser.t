@@ -348,4 +348,22 @@ subtest 'Maybe desugar preserved: Maybe[Int]' => sub {
     ok $t->is_union, 'Maybe[Int] desugars to union';
 };
 
+# ── Compound bounds with + ────────────────────────
+
+subtest 'forall T: A + B compound bound' => sub {
+    my $t = Typist::Parser->parse('forall T: Num + Str. T -> T');
+    ok $t->is_quantified, 'parsed as Quantified';
+    my @vars = $t->vars;
+    is scalar @vars, 1, 'one type variable';
+    is $vars[0]{name}, 'T', 'var name is T';
+    ok $vars[0]{bound}->is_intersection, 'bound is Intersection';
+    my @members = $vars[0]{bound}->members;
+    is scalar @members, 2, 'intersection has 2 members';
+};
+
+subtest 'tokenizer accepts + in type expressions' => sub {
+    my @tokens = Typist::Parser::_tokenize('A + B');
+    is_deeply \@tokens, [qw(A + B)], 'tokenized A + B';
+};
+
 done_testing;

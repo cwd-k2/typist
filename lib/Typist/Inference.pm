@@ -3,7 +3,7 @@ use v5.40;
 
 our $VERSION = '0.01';
 
-use Scalar::Util 'looks_like_number', 'reftype';
+use Scalar::Util 'blessed', 'looks_like_number', 'reftype';
 use Typist::Type::Atom;
 use Typist::Type::Param;
 use Typist::Type::Record;
@@ -16,6 +16,14 @@ sub infer_value ($class, $value) {
     return Typist::Type::Atom->new('Undef') unless defined $value;
 
     if (my $rt = reftype($value)) {
+        # Blessed struct → look up struct type from Registry
+        if ($rt eq 'HASH' && blessed($value) && blessed($value) =~ /\ATypist::Struct::/) {
+            if ($value->can('_typist_struct_meta')) {
+                my $meta = $value->_typist_struct_meta;
+                my $struct_type = Typist::Registry->lookup_struct($meta->{name});
+                return $struct_type if $struct_type;
+            }
+        }
         if ($rt eq 'ARRAY') {
             return _infer_array($value);
         }

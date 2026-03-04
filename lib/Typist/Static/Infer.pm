@@ -818,6 +818,12 @@ sub _infer_number ($token, $expected = undef) {
 # ── Array Inference ──────────────────────────────
 
 sub _infer_array ($constructor, $env = undef, $expected = undef) {
+    # Resolve alias on expected type (e.g., IntList → Union(Int, ArrayRef[IntList]))
+    if ($expected && $expected->is_alias && $env && $env->{registry}) {
+        my $resolved = $env->{registry}->lookup_type($expected->alias_name);
+        $expected = $resolved if $resolved;
+    }
+
     # PPI uses PPI::Statement (not ::Expression) inside array constructors
     my $expr = $constructor->find_first('PPI::Statement');
 
@@ -883,9 +889,18 @@ sub _infer_array ($constructor, $env = undef, $expected = undef) {
         # Fallback: arity mismatch or spread → treat as ArrayRef
     }
 
-    # Extract element expected type from ArrayRef[T]
-    my $elem_expected = ($expected && $expected->is_param && $expected->base eq 'ArrayRef')
-        ? ($expected->params)[0] : undef;
+    # Extract element expected type from ArrayRef[T] or Union containing ArrayRef[T]
+    my $elem_expected;
+    if ($expected && $expected->is_param && $expected->base eq 'ArrayRef') {
+        $elem_expected = ($expected->params)[0];
+    } elsif ($expected && $expected->is_union) {
+        for my $member ($expected->members) {
+            if ($member->is_param && $member->base eq 'ArrayRef') {
+                $elem_expected = ($member->params)[0];
+                last;
+            }
+        }
+    }
 
     # Single-expression array (no commas): infer the whole Statement as one element.
     # Handles complex expressions like [$p->method >= 5000 ? "a" : "b"]
