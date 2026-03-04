@@ -211,7 +211,19 @@ effect 'DB', [qw(None Connected Authed)] => +{
 };
 ```
 
-Annotation: `![DB<None -> Authed>]` declares start/end states. `![DB<Authed>]` is invariant. ProtocolChecker traces operation sequences and verifies state transitions.
+The first element of the states list is the **initial state** by convention. A function that begins a protocol session uses this state as its `From`:
+
+```perl
+sub start_session :sig(() -> Void ![DB<None -> Connected>]) ($self) { ... }
+```
+
+Mid-protocol functions may use any valid state as `From`:
+
+```perl
+sub run_query :sig((Str) -> Str ![DB<Authed -> Authed>]) ($self, $q) { ... }
+```
+
+Annotation: `![DB<None -> Authed>]` declares start/end states. `![DB<Authed>]` is invariant. ProtocolChecker traces operation sequences and verifies state transitions. Use `$protocol->initial_state` to obtain the initial state programmatically.
 
 ### Effect Handlers
 

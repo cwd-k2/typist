@@ -85,4 +85,29 @@ subtest 'validate — unreachable operations' => sub {
     is_deeply \@all_ok, [], 'no unreachable when all covered';
 };
 
+# ── initial_state ────────────────────────────
+
+subtest 'initial_state — explicit states' => sub {
+    my $p = Typist::Protocol->new(
+        transitions => +{
+            Idle      => +{ scan => 'Scanning' },
+            Scanning  => +{ pay  => 'Paying' },
+            Paying    => +{ done => 'Done' },
+        },
+        states => [qw(Idle Scanning Paying Done)],
+    );
+
+    is $p->initial_state, 'Idle', 'first element of states list';
+};
+
+subtest 'initial_state — no explicit states' => sub {
+    my $p = Typist::Protocol->new(
+        transitions => +{
+            None => +{ connect => 'Connected' },
+        },
+    );
+
+    is $p->initial_state, undef, 'undef when no explicit states';
+};
+
 done_testing;

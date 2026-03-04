@@ -25,11 +25,13 @@ sub next_state ($self, $state, $op) {
     $state_map->{$op};
 }
 
-# Sorted list of all declared states.
-# Uses explicit states list if provided at construction; otherwise infers from transitions.
+# All declared states.
+# Uses explicit states list if provided at construction (preserving declaration
+# order -- the first element is the initial state by convention); otherwise
+# infers from transitions (sorted for determinism).
 sub states ($self) {
     if ($self->{_states}) {
-        return sort $self->{_states}->@*;
+        return $self->{_states}->@*;
     }
     my %seen;
     for my $from (keys $self->{transitions}->%*) {
@@ -40,6 +42,12 @@ sub states ($self) {
 }
 
 sub has_explicit_states ($self) { defined $self->{_states} && $self->{_states}->@* > 0 }
+
+# The first element of the explicit states list, or undef.
+sub initial_state ($self) {
+    return $self->{_states}[0] if $self->{_states} && $self->{_states}->@*;
+    undef;
+}
 
 # Operations valid in a given state.
 sub ops_in ($self, $state) {
@@ -99,9 +107,10 @@ C<undef> if the operation is not allowed in that state.
 
     my @states = $proto->states;
 
-Returns a sorted list of all declared states. Uses the explicit states
-list if one was provided at construction; otherwise infers states from
-the transitions.
+Returns all declared states. When an explicit states list was provided at
+construction, returns them in declaration order (the first element is the
+initial state by convention). Otherwise infers states from the transitions
+and returns them sorted for determinism.
 
 =head2 has_explicit_states
 
@@ -109,6 +118,18 @@ the transitions.
 
 Returns true if the protocol was constructed with an explicit states
 list rather than relying on inference from transitions.
+
+=head2 initial_state
+
+    my $state = $proto->initial_state;
+
+Returns the initial state of the protocol -- the first element of the
+explicit states list provided at construction. Returns C<undef> if no
+explicit states were given.
+
+By convention, the first element of the states list is always the initial
+state. Functions that begin a protocol session annotate this state as their
+C<From> state.
 
 =head2 ops_in
 
