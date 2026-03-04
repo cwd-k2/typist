@@ -32,6 +32,12 @@ sub constructor_kind ($class, $name) {
     $CONSTRUCTOR_KINDS{$name};
 }
 
+# Reset kinds to built-in defaults (for test isolation).
+sub reset_kinds ($class) {
+    %CONSTRUCTOR_KINDS = ();
+    _init_kinds();
+}
+
 # Register a custom type constructor kind.
 sub register_kind ($class, $name, $kind) {
     _init_kinds();

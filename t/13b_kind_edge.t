@@ -204,6 +204,11 @@ subtest 'register_kind custom constructor' => sub {
 
     my $result = Typist::KindChecker->check_application('MyFunctor', $star);
     ok $result->equals($star), 'MyFunctor[*] = *';
+
+    # Clean up: reset to built-in defaults to avoid test leaks
+    Typist::KindChecker->reset_kinds;
+    ok !defined Typist::KindChecker->constructor_kind('MyFunctor'),
+        'MyFunctor removed after reset_kinds';
 };
 
 done_testing;

@@ -140,7 +140,6 @@ sub _check ($sub, $super, $registry = undef) {
     return 1 if $sub->equals($super);
     return 1 if $super->is_atom && $super->name eq 'Any';
     return 1 if $sub->is_atom && $sub->name eq 'Never';
-    return 0 if $sub->is_atom && $sub->name eq 'Void';
 
     # Memoization: check cache by refaddr pair.
     # Anchor references to prevent GC / refaddr reuse.
@@ -300,7 +299,6 @@ sub _check_impl ($sub, $super, $registry = undef) {
         my @sp = $super->params;
         my $val_type = $sp[1] // $sp[0];
         my %all_fields = (%{$sub->required_ref}, %{$sub->optional_ref // +{}});
-        return 0 unless %all_fields;
         for my $ftype (values %all_fields) {
             return 0 unless _check($ftype, $val_type, $registry);
         }

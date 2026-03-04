@@ -61,6 +61,7 @@ sub to_string ($self) {
     for my $key (sort keys %{$self->{optional}}) {
         push @parts, "${key}? => " . $self->{optional}{$key}->to_string;
     }
+    return '{}' unless @parts;
     "{ " . join(', ', @parts) . " }";
 }
 

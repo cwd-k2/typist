@@ -31,6 +31,8 @@ sub unify ($class, $formal, $actual, $bindings = +{}, %opts) {
             my $widened = Typist::Subtype->common_super($bindings->{$name}, $actual);
             return +{ %$bindings, $name => $widened };
         }
+        # Skip binding to Any — carries no information (gradual typing)
+        return $bindings if $actual->is_atom && $actual->name eq 'Any';
         return +{ %$bindings, $name => $actual };
     }
 

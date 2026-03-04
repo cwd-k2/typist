@@ -72,7 +72,20 @@ sub equals ($self, $other) {
 
     my $sv = $self->row_var_name  // '';
     my $ov = $other->row_var_name // '';
-    $sv eq $ov;
+    return 0 unless $sv eq $ov;
+
+    # Compare protocol label_states
+    my $ss = $self->{label_states};
+    my $os = $other->label_states;
+    my @ssk = sort keys %$ss;
+    my @osk = sort keys %$os;
+    return 0 unless @ssk == @osk;
+    return 0 unless all { $ssk[$_] eq $osk[$_] } 0 .. $#ssk;
+    for my $k (@ssk) {
+        return 0 unless $ss->{$k}{from} eq $os->{$k}{from}
+                      && $ss->{$k}{to}   eq $os->{$k}{to};
+    }
+    1;
 }
 
 # Phantom — always validates

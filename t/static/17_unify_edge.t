@@ -160,6 +160,20 @@ subtest 'quantified body unification' => sub {
 
 # ── collect_bindings: conflict rejection ───────
 
+subtest 'unify skips Any initial binding' => sub {
+    # Pass 1: T unified with Any → should NOT bind (no information)
+    my $bindings = Typist::Static::Unify->unify(var('T'), atom('Any'));
+    ok $bindings, 'unification with Any succeeds';
+    ok !exists $bindings->{T}, 'T not bound to Any';
+
+    # Pass 2: T unified with Int → should bind to Int
+    $bindings = Typist::Static::Unify->unify(var('T'), atom('Int'), $bindings);
+    ok $bindings, 'subsequent concrete binding succeeds';
+    is $bindings->{T}->to_string, 'Int', 'T bound to Int (not widened to Any)';
+};
+
+# ── collect_bindings: conflict rejection ───────
+
 subtest 'collect_bindings conflict rejection' => sub {
     my %bindings;
     my $ok1 = Typist::Static::Unify->collect_bindings(var('T'), atom('Int'), \%bindings);

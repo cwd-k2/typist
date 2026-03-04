@@ -667,7 +667,7 @@ sub parse_annotation ($class, $input) {
     die "Typist::Parser: unexpected token '$tokens[$pos]' in annotation '$input'"
         if $pos < @tokens;
 
-    my $result = +{ generics_raw => \@generics_raw, type => $type };
+    my $result = +{ generics_raw => \@generics_raw, generics => \@generics_raw, type => $type };
     _cache_evict(\%_ANNOTATION_CACHE) if keys %_ANNOTATION_CACHE >= $_CACHE_LIMIT;
     $_ANNOTATION_CACHE{$input} = [$result, ++$_CACHE_EPOCH];
     $result;

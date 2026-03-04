@@ -168,7 +168,7 @@ subtest 'annotation with nested generic params' => sub {
     ok $ann, 'complex annotation parses';
     my $type = $ann->{type};
     ok $type->is_func, 'is func';
-    my @gen = @{ $ann->{generics_raw} // $ann->{generics} // [] };
+    my @gen = @{ $ann->{generics} // [] };
     is scalar @gen, 2, 'two generic params';
     is $gen[0], 'T', 'first generic is T';
     is $gen[1], 'U', 'second generic is U';
@@ -187,7 +187,7 @@ subtest 'annotation with effects and generics' => sub {
     my $type = $ann->{type};
     ok $type->effects, 'has effects';
     is_deeply [sort $type->effects->labels], [qw(Console IO)], 'two effect labels';
-    like(($ann->{generics_raw} // $ann->{generics})->[0], qr/^T/, 'generic starts with T');
+    like($ann->{generics}->[0], qr/^T/, 'generic starts with T');
 };
 
 # ── Complex type expressions ────────────────────

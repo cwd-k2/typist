@@ -158,7 +158,7 @@ subtest 'Record: empty record' => sub {
     ok $r->is_record, 'empty record is record';
     is scalar(keys %{{ $r->required_fields }}), 0, 'no required fields';
     is scalar(keys %{{ $r->optional_fields }}), 0, 'no optional fields';
-    like $r->to_string, qr/^\{\s*\}$/, 'empty record to_string';
+    is $r->to_string, '{}', 'empty record to_string';
 };
 
 subtest 'Record: optional field covariance' => sub {
@@ -236,6 +236,27 @@ subtest 'Row: free_vars' => sub {
     my $closed = Typist::Type::Row->new(labels => ['IO']);
     my @fv2 = $closed->free_vars;
     is_deeply \@fv2, [], 'closed row has no free vars';
+};
+
+subtest 'Row: equals with label_states' => sub {
+    my $r1 = Typist::Type::Row->new(
+        labels => ['IO'],
+        label_states => +{ IO => { from => 'Init', to => 'Done' } },
+    );
+    my $r2 = Typist::Type::Row->new(
+        labels => ['IO'],
+        label_states => +{ IO => { from => 'Init', to => 'Done' } },
+    );
+    my $r3 = Typist::Type::Row->new(
+        labels => ['IO'],
+    );
+    my $r4 = Typist::Type::Row->new(
+        labels => ['IO'],
+        label_states => +{ IO => { from => 'Init', to => 'Open' } },
+    );
+    ok  $r1->equals($r2), 'same label_states are equal';
+    ok !$r1->equals($r3), 'with states != without states';
+    ok !$r1->equals($r4), 'different to state not equal';
 };
 
 # ── Literal edge cases ──────────────────────────

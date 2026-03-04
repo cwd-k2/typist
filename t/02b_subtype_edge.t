@@ -31,6 +31,10 @@ subtest 'Void semantics' => sub {
     ok !is_sub(parse('Int'),  parse('Void')),  'Int </: Void';
     ok !is_sub(parse('Str'),  parse('Void')),  'Str </: Void';
     ok !is_sub(parse('Any'),  parse('Void')),  'Any </: Void';
+
+    # Void <: Union containing Void
+    ok  is_sub(parse('Void'), parse('Void | Int')),  'Void <: Void | Int';
+    ok  is_sub(parse('Void'), parse('Void | Str')),  'Void <: Void | Str';
 };
 
 # ── Never exhaustive ────────────────────────────
@@ -288,6 +292,11 @@ subtest 'Record <: HashRef' => sub {
     my $record_mixed = parse('{ name => Str, count => Int }');
     ok !is_sub($record_mixed, $hashref_str),
         'Record { name => Str, count => Int } </: HashRef[Str, Str]';
+
+    # Empty record <: HashRef (vacuous truth)
+    my $empty_record = Typist::Type::Record->new();
+    ok is_sub($empty_record, $hashref_str),
+        'empty Record {} <: HashRef[Str, Str]';
 
     # Covariant value: Int <: Num
     my $record_ints = parse('{ x => Int, y => Int }');
