@@ -40,7 +40,8 @@ sub extract ($class, $source) {
     for my $stmt (@$all_stmts) {
         if ($stmt->isa('PPI::Statement::Package')) {
             $result->{package} = $stmt->namespace;
-        } elsif ($stmt->isa('PPI::Statement::Sub')) {
+        } elsif ($stmt->isa('PPI::Statement::Sub')
+                 && !$stmt->isa('PPI::Statement::Scheduled')) {
             push @sub_stmts, $stmt;
         } elsif ($stmt->isa('PPI::Statement::Variable')) {
             push @var_stmts, $stmt;
