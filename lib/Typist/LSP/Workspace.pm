@@ -42,14 +42,23 @@ sub scan ($self) {
         push @pm_files, $File::Find::name;
     }, $root);
 
+    # Two-pass scan: type definitions first, then function signatures.
+    # This ensures cross-file typeclasses are registered before
+    # parse_generic_decl classifies constraints (tc vs bound).
+    my @all_extracted;
     for my $file (sort @pm_files) {
-        $self->_index_file($file);
+        my $ext = $self->_extract_file($file) // next;
+        push @all_extracted, $ext;
+        Typist::Static::Registration->register_types($ext, $self->{registry});
+    }
+    for my $ext (@all_extracted) {
+        Typist::Static::Registration->register_signatures($ext, $self->{registry});
     }
 }
 
 # ── File Indexing ────────────────────────────────
 
-sub _index_file ($self, $path) {
+sub _extract_file ($self, $path) {
     open my $fh, '<:encoding(UTF-8)', $path or return;
     my $source = do { local $/; <$fh> };
     close $fh;
@@ -70,6 +79,11 @@ sub _index_file ($self, $path) {
         package     => $extracted->{package},
     };
 
+    $extracted;
+}
+
+sub _index_file ($self, $path) {
+    my $extracted = $self->_extract_file($path) // return;
     $self->_register_file_types($extracted);
 }
 
@@ -214,10 +228,11 @@ sub _rebuild_registry ($self) {
     # Re-install builtin type prelude (CORE:: defaults)
     Typist::Prelude->install($self->{registry});
 
+    # Two-pass rebuild: types first, signatures second
+    my @all_extracted;
     for my $path (sort keys $self->{files}->%*) {
         my $info = $self->{files}{$path};
-        # Re-register from stored extracted data (simulate extraction result)
-        $self->_register_file_types(+{
+        my $ext = +{
             aliases     => $info->{aliases}     // +{},
             functions   => $info->{functions}   // +{},
             newtypes    => $info->{newtypes}    // +{},
@@ -228,7 +243,12 @@ sub _rebuild_registry ($self) {
             instances   => $info->{instances}   // [],
             declares    => $info->{declares}    // +{},
             package     => $info->{package}     // 'main',
-        });
+        };
+        Typist::Static::Registration->register_types($ext, $self->{registry});
+        push @all_extracted, $ext;
+    }
+    for my $ext (@all_extracted) {
+        Typist::Static::Registration->register_signatures($ext, $self->{registry});
     }
 }
 

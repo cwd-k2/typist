@@ -27,6 +27,12 @@ use Typist::Type::Struct;
 # When errors/file are absent, parse failures are silently skipped.
 
 sub register_all ($class, $extracted, $registry, %opts) {
+    $class->register_types($extracted, $registry, %opts);
+    $class->register_signatures($extracted, $registry, %opts);
+}
+
+# Phase 1: type definitions (no dependency on other files' typeclasses)
+sub register_types ($class, $extracted, $registry, %opts) {
     $class->register_aliases($extracted, $registry, %opts);
     $class->register_newtypes($extracted, $registry, %opts);
     $class->register_typeclasses($extracted, $registry, %opts);
@@ -34,6 +40,10 @@ sub register_all ($class, $extracted, $registry, %opts) {
     $class->register_structs($extracted, $registry, %opts);
     $class->register_datatypes($extracted, $registry, %opts);
     $class->register_effects($extracted, $registry, %opts);
+}
+
+# Phase 2: function/declare signatures (may need cross-file typeclasses for generic parsing)
+sub register_signatures ($class, $extracted, $registry, %opts) {
     $class->register_declares($extracted, $registry, %opts);
     $class->register_functions($extracted, $registry, %opts);
 }
