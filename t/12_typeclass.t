@@ -559,4 +559,97 @@ subtest 'infer_value: blessed struct recognized' => sub {
     is $inferred->to_string, $struct_type->to_string, 'inferred struct type matches';
 };
 
+# ── Multi-param prefix matching ────────────────
+
+subtest 'multi-param prefix matching: unique instance' => sub {
+    Typist::Registry->reset;
+
+    my $def = Typist::TypeClass->new_class(
+        name    => 'Convertible',
+        var     => 'T, U',
+        methods => +{ convert => '(T) -> U' },
+    );
+    Typist::Registry->register_typeclass('Convertible', $def);
+
+    my $inst1 = Typist::TypeClass->new_instance(
+        class     => 'Convertible',
+        type_expr => 'Int, Str',
+        methods   => +{ convert => sub ($x) { "int:$x" } },
+    );
+    Typist::Registry->register_instance('Convertible', 'Int, Str', $inst1);
+
+    my $inst2 = Typist::TypeClass->new_instance(
+        class     => 'Convertible',
+        type_expr => 'Str, Int',
+        methods   => +{ convert => sub ($x) { length($x) } },
+    );
+    Typist::Registry->register_instance('Convertible', 'Str, Int', $inst2);
+
+    # Prefix match with [Int] should uniquely resolve to Int,Str
+    my $int_type = Typist::Parser->parse('Int');
+    my $resolved = Typist::Registry->resolve_instance('Convertible', [$int_type]);
+    ok $resolved, 'prefix match resolved unique instance';
+    is $resolved->type_expr, 'Int, Str', 'resolved to Int, Str';
+    is $resolved->get_method('convert')->(42), 'int:42', 'dispatch works';
+};
+
+subtest 'multi-param prefix matching: ambiguous' => sub {
+    Typist::Registry->reset;
+
+    my $def = Typist::TypeClass->new_class(
+        name    => 'Convertible',
+        var     => 'T, U',
+        methods => +{ convert => '(T) -> U' },
+    );
+    Typist::Registry->register_typeclass('Convertible', $def);
+
+    # Two instances with same first param
+    my $inst1 = Typist::TypeClass->new_instance(
+        class     => 'Convertible',
+        type_expr => 'Int, Str',
+        methods   => +{ convert => sub ($x) { "str:$x" } },
+    );
+    Typist::Registry->register_instance('Convertible', 'Int, Str', $inst1);
+
+    my $inst2 = Typist::TypeClass->new_instance(
+        class     => 'Convertible',
+        type_expr => 'Int, Bool',
+        methods   => +{ convert => sub ($x) { $x > 0 ? 1 : 0 } },
+    );
+    Typist::Registry->register_instance('Convertible', 'Int, Bool', $inst2);
+
+    # Prefix match with [Int] is ambiguous — should return undef
+    my $int_type = Typist::Parser->parse('Int');
+    my $resolved = Typist::Registry->resolve_instance('Convertible', [$int_type]);
+    ok !$resolved, 'ambiguous prefix match returns undef';
+
+    # Full match still works
+    my $str_type = Typist::Parser->parse('Str');
+    my $full = Typist::Registry->resolve_instance('Convertible', [$int_type, $str_type]);
+    ok $full, 'full match still works';
+    is $full->type_expr, 'Int, Str', 'full match correct';
+};
+
+subtest 'multi-param install_dispatch with prefix' => sub {
+    Typist::Registry->reset;
+
+    my $def = Typist::TypeClass->new_class(
+        name    => 'Convertible',
+        var     => 'T, U',
+        methods => +{ convert => '(T) -> U' },
+    );
+    Typist::Registry->register_typeclass('Convertible', $def);
+
+    my $inst = Typist::TypeClass->new_instance(
+        class     => 'Convertible',
+        type_expr => 'Int, Str',
+        methods   => +{ convert => sub ($x) { "num:$x" } },
+    );
+    Typist::Registry->register_instance('Convertible', 'Int, Str', $inst);
+
+    $def->install_dispatch('TestPkg');
+    my $result = TestPkg::Convertible::convert(99);
+    is $result, 'num:99', 'install_dispatch works with single-arg multi-param';
+};
+
 done_testing;

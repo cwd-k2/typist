@@ -103,10 +103,12 @@ sub install_dispatch ($self, $caller) {
         *{"${caller}::${name}::${method_name}"} = sub {
             my @args = @_;
             if ($arity > 1) {
-                # Multi-parameter: infer types from first N arguments
+                # Multi-parameter: infer types from available arguments
+                # (method arity may be less than typeclass arity)
+                my $n = $#args < $arity - 1 ? $#args : $arity - 1;
                 my @arg_types = map {
                     Typist::Inference->infer_value($args[$_])
-                } 0 .. ($arity - 1);
+                } 0 .. $n;
                 my $inst = Typist::Registry->resolve_instance($name, \@arg_types)
                     // die "Typist: no instance of $name for ("
                          . join(', ', map { $_->to_string } @arg_types) . ")\n";
@@ -158,12 +160,15 @@ sub resolve ($class_or_self, $class_name, $type_or_types, $instances) {
     my $insts = $instances->{$class_name} // return undef;
 
     # Multi-parameter resolution: match each type against comma-split type_exprs
+    # Supports prefix matching when fewer types than instance params
+    # (e.g., convert(T)->U infers only T; U is determined by unique match)
     if (ref $type_or_types eq 'ARRAY') {
         my @types = @$type_or_types;
+        my @candidates;
         for my $inst (@$insts) {
             my @inst_exprs = map { s/\A\s+//r =~ s/\s+\z//r }
                              split /,/, $inst->type_expr;
-            next unless @inst_exprs == @types;
+            next unless @inst_exprs >= @types;
             my $match = 1;
             for my $i (0 .. $#types) {
                 my $inst_type = Typist::Parser->parse($inst_exprs[$i]);
@@ -173,8 +178,11 @@ sub resolve ($class_or_self, $class_name, $type_or_types, $instances) {
                     last;
                 }
             }
-            return $inst if $match;
+            push @candidates, $inst if $match;
         }
+        return $candidates[0] if @candidates == 1;
+        return $candidates[0] if @candidates > 1
+            && @types == (split /,/, $candidates[0]->type_expr);
         return undef;
     }
 
