@@ -66,6 +66,10 @@ sub infer_expr ($class, $element, $env = undef, $expected = undef) {
     if ($element->isa('PPI::Token::HereDoc')) {
         return Typist::Type::Atom->new('Str');
     }
+    # ── qw() word list ────────────────────────────
+    if ($element->isa('PPI::Token::QuoteLike::Words')) {
+        return Typist::Type::Atom->new('Str');
+    }
 
     # ── undef keyword ──────────────────────────
     if ($element->isa('PPI::Token::Word') && $element->content eq 'undef') {
@@ -369,8 +373,12 @@ sub _maybe_instantiate_return ($sig, $env, $list_element, $expected = undef) {
         }
     }
 
-    # Pass 2: re-infer callback args with substituted formal type as expected
-    if (%bindings) {
+    # Pass 2: re-infer callback args with substituted formal type as expected.
+    # Activates when Pass 1 produced bindings, OR when there are Func params
+    # (bidirectional inference can discover bindings from callback bodies even
+    # when Pass 1 failed — e.g., kleisli(sub { ... }, sub { ... })).
+    my $has_func_params = grep { $_->is_func } @params;
+    if (%bindings || $has_func_params) {
         for my $i (0 .. $#params) {
             last if $i > $#arg_nodes;
             next unless $params[$i]->is_func;
@@ -879,8 +887,21 @@ sub _infer_array ($constructor, $env = undef, $expected = undef) {
     my $elem_expected = ($expected && $expected->is_param && $expected->base eq 'ArrayRef')
         ? ($expected->params)[0] : undef;
 
-    my @elem_types;
+    # Single-expression array (no commas): infer the whole Statement as one element.
+    # Handles complex expressions like [$p->method >= 5000 ? "a" : "b"]
+    # where child-by-child iteration would only see the first token.
     my @children = $expr->schildren;
+    my $has_comma = grep { $_->isa('PPI::Token::Operator') && $_->content eq ',' } @children;
+    if (!$has_comma && @children > 1) {
+        my $t = __PACKAGE__->infer_expr($expr, $env, $elem_expected);
+        if (defined $t) {
+            $t = ($t->params)[0] if $t->is_param && $t->base eq 'Array';
+            $t = Typist::Type::Atom->new($t->base_type) if $t->is_literal;
+            return Typist::Type::Param->new('ArrayRef', $t);
+        }
+    }
+
+    my @elem_types;
     my $i = 0;
     while ($i <= $#children) {
         my $child = $children[$i];

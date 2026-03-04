@@ -176,6 +176,9 @@ sub collect_bindings ($class, $formal, $actual, $bindings) {
         if (exists $bindings->{$name}) {
             return $bindings->{$name}->equals($actual) ? 1 : 0;
         }
+        # Skip binding to Any — it carries no information (gradual typing)
+        # and would prevent Pass 2 from discovering a concrete type.
+        return 1 if $actual->is_atom && $actual->name eq 'Any';
         $bindings->{$name} = $actual;
         return 1;
     }
