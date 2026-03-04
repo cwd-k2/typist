@@ -134,13 +134,14 @@ enabling static verification of operation sequencing.
 =head2 new
 
     my $proto = Typist::Protocol->new(
-        transitions => +{ None => +{ connect => 'Connected' } },
-        states      => [qw(None Connected)],
+        transitions => +{ '*' => +{ connect => 'Connected' } },
+        states      => [qw(Connected)],
     );
 
-Construct a new Protocol from a transitions hash. The optional C<states>
-argument provides an explicit states list; otherwise states are inferred
-from the transitions.
+Construct a new Protocol from a transitions hash. C<*> is the ground
+state (protocol inactive). The optional C<states> argument provides an
+explicit active states list; otherwise states are inferred from the
+transitions.
 
 =head2 transitions
 

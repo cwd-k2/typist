@@ -895,8 +895,8 @@ auto-installed as qualified subs (e.g. C<< Console::log(@args) >>).
 
 With protocol (stateful effects):
 
-    effect 'DB', [qw(None Connected Authed)] => +{
-        connect => ['(Str) -> Void', protocol('None -> Connected')],
+    effect 'DB', [qw(Connected Authed)] => +{
+        connect => ['(Str) -> Void', protocol('* -> Connected')],
         query   => ['(Str) -> Str',  protocol('Authed -> Authed')],
     };
 

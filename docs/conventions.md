@@ -205,25 +205,26 @@ Operations are auto-installed as qualified subs (`Console::writeLine(@args)`), d
 ### Effect Protocols
 
 ```perl
-effect 'DB', [qw(None Connected Authed)] => +{
-    connect => ['(Str) -> Void', protocol('None -> Connected')],
-    query   => ['(Str) -> Str',  protocol('Authed -> Authed')],
+effect 'DB', [qw(Connected Authed)] => +{
+    connect    => ['(Str) -> Void', protocol('* -> Connected')],
+    query      => ['(Str) -> Str',  protocol('Authed -> Authed')],
+    disconnect => ['() -> Void',    protocol('Authed -> *')],
 };
 ```
 
-The first element of the states list is the **initial state** by convention. A function that begins a protocol session uses this state as its `From`:
+`*` is the ground state (protocol inactive). Only active states appear in the states list. A function that begins a protocol session transitions from `*`:
 
 ```perl
-sub start_session :sig(() -> Void ![DB<None -> Connected>]) ($self) { ... }
+sub start_session :sig(() -> Void ![DB<* -> Connected>]) ($self) { ... }
 ```
 
-Mid-protocol functions may use any valid state as `From`:
+Mid-protocol functions may use any valid active state as `From`:
 
 ```perl
-sub run_query :sig((Str) -> Str ![DB<Authed -> Authed>]) ($self, $q) { ... }
+sub run_query :sig((Str) -> Str ![DB<Authed>]) ($self, $q) { ... }
 ```
 
-Annotation: `![DB<None -> Authed>]` declares start/end states. `![DB<Authed>]` is invariant. ProtocolChecker traces operation sequences and verifies state transitions. Use `$protocol->initial_state` to obtain the initial state programmatically.
+Annotation: `![DB<* -> Authed>]` declares start/end states. `![DB<Authed>]` is invariant. `![DB]` defaults to `* -> *` (full session cycle). ProtocolChecker traces operation sequences and verifies state transitions.
 
 ### Effect Handlers
 

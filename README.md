@@ -103,7 +103,7 @@ For the complete type system reference, see [docs/type-system.md](docs/type-syst
 | Variadic functions | `...Type` | `(Int, ...Str) -> Void` |
 | Type classes / HKT | `typeclass` / `instance` | Ad-hoc polymorphism, `F: * -> *` |
 | Algebraic effects | `effect` / `![...]` | `![Console, Log]` |
-| Effect protocols | `protocol('From -> To')` | `![DB<None -> Authed>]` |
+| Effect protocols | `protocol('From -> To')` | `![DB<* -> Authed>]` |
 | Row polymorphism | `<r: Row>` / `[E, r]` | Effect row extension |
 | Effect handlers | `Effect::op(...)` / `handle` | Direct dispatch + scoped handling |
 
@@ -314,17 +314,18 @@ Effects can carry protocol state machines that enforce operation ordering:
 
 ```perl
 BEGIN {
-    # Quote the name when using comma syntax (strict subs)
-    effect 'Database', [qw(None Connected Authed)] => +{
-        connect => ['(Str) -> Void',      protocol('None -> Connected')],
-        auth    => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-        query   => ['(Str) -> Str',       protocol('Authed -> Authed')],
+    # * is the ground state (protocol inactive); explicit states are active states only
+    effect 'Database', [qw(Connected Authed)] => +{
+        connect    => ['(Str) -> Void',      protocol('* -> Connected')],
+        auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+        query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
+        disconnect => ['() -> Void',         protocol('Authed -> *')],
     };
 }
 
 # State transitions are declared in type annotations
-sub setup :sig(() -> Void ![Database<None -> Authed>]) () {
-    Database::connect("localhost");  # None → Connected
+sub setup :sig(() -> Void ![Database<* -> Authed>]) () {
+    Database::connect("localhost");  # * → Connected
     Database::auth("user", "pass");  # Connected → Authed
 }
 
@@ -332,9 +333,17 @@ sub setup :sig(() -> Void ![Database<None -> Authed>]) () {
 sub run_query :sig((Str) -> Str ![Database<Authed>]) ($sql) {
     Database::query($sql);           # Authed → Authed
 }
+
+# ![Database] defaults to * -> * (full session cycle)
+sub session :sig(() -> Str ![Database]) () {
+    setup();
+    my $r = run_query("SELECT 1");
+    Database::disconnect();
+    $r;
+}
 ```
 
-The static analyzer traces operation sequences and verifies that the final state matches the declared end state. Calling `DB::query` from state `None` produces a `ProtocolMismatch` diagnostic.
+The static analyzer traces operation sequences and verifies that the final state matches the declared end state. Calling `DB::query` from state `*` produces a `ProtocolMismatch` diagnostic.
 
 ### Type Classes
 

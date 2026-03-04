@@ -83,15 +83,15 @@ sub pure_caller :sig((Str) -> Void) ($msg) {
 # machines.  The static analyzer traces calls inside each
 # function body and verifies state transitions.
 #
-# State machine for DB:
+# State machine for DB (* = ground/inactive):
 #
-#   Disconnected ──connect──→ Connected ──auth──→ Authenticated
-#                                                    ↕ query
+#   * ──connect──→ Connected ──auth──→ Authenticated
+#                                          ↕ query
 #
 
 BEGIN {
-    effect 'DB', [qw(Disconnected Connected Authenticated)] => +{
-        connect => ['(Str) -> Void',      protocol('Disconnected -> Connected')],
+    effect 'DB', [qw(Connected Authenticated)] => +{
+        connect => ['(Str) -> Void',      protocol('* -> Connected')],
         auth    => ['(Str, Str) -> Void', protocol('Connected -> Authenticated')],
         query   => ['(Str) -> Str',       protocol('Authenticated -> Authenticated')],
     };
@@ -99,36 +99,36 @@ BEGIN {
 
 # ── 4a. Operation not allowed in current state ──────────
 #
-# query requires Authenticated, but we start in Disconnected.
+# query requires Authenticated, but we start in *.
 #
-# [ProtocolMismatch] operation 'query' is not allowed in state 'Disconnected'
+# [ProtocolMismatch] operation 'query' is not allowed in state '*'
 
-sub query_too_early :sig(() -> Str ![DB<Disconnected>]) () {
+sub query_too_early :sig(() -> Str ![DB<*>]) () {
     DB::query("SELECT 1");
 }
 
 # ── 4b. Ends in wrong state ─────────────────────────────
 #
-# Declared DB<Disconnected -> Authenticated> but only connects
+# Declared DB<* -> Authenticated> but only connects
 # (stops at Connected).
 #
 # [ProtocolMismatch] ends in state 'Connected' but declared end state is 'Authenticated'
 
-sub incomplete_setup :sig(() -> Void ![DB<Disconnected -> Authenticated>]) () {
+sub incomplete_setup :sig(() -> Void ![DB<* -> Authenticated>]) () {
     DB::connect("localhost");
 }
 
 # ── 4c. Sub-call state mismatch ─────────────────────────
 #
-# do_auth expects Connected, but caller starts in Disconnected.
+# do_auth expects Connected, but caller starts in *.
 #
-# [ProtocolMismatch] do_auth() expects state 'Connected' but current state is 'Disconnected'
+# [ProtocolMismatch] do_auth() expects state 'Connected' but current state is '*'
 
 sub do_auth :sig(() -> Void ![DB<Connected -> Authenticated>]) () {
     DB::auth("admin", "secret");
 }
 
-sub bad_composition :sig(() -> Str ![DB<Disconnected -> Authenticated>]) () {
+sub bad_composition :sig(() -> Str ![DB<* -> Authenticated>]) () {
     do_auth();
     DB::query("SELECT 1");
 }
@@ -138,7 +138,7 @@ sub bad_composition :sig(() -> Str ![DB<Disconnected -> Authenticated>]) () {
 #
 # No errors: all operations follow the protocol.
 
-sub db_session :sig(() -> Str ![DB<Disconnected -> Authenticated>]) () {
+sub db_session :sig(() -> Str ![DB<* -> Authenticated>]) () {
     DB::connect("localhost");
     DB::auth("admin", "secret");
     DB::query("SELECT 1");
