@@ -6,6 +6,7 @@ our $VERSION = '0.01';
 use Typist::Type::Atom;
 use Typist::Type::Var;
 use List::Util 'any', 'all';
+use Scalar::Util 'refaddr';
 
 # Primitive hierarchy: Any > Num > Double > Int > Bool, Any > Str, Any > Undef, Any > Void
 my %PARENT = (
@@ -20,6 +21,20 @@ my %PARENT = (
 
 # Atom ordering for common supertype (LUB) computation
 my %ATOM_ORDER = (Bool => 0, Int => 1, Double => 2, Num => 3, Str => 4, Any => 5);
+
+# ── Subtype Cache ─────────────────────────────────
+#
+# Per-session memoization keyed by refaddr pair. Avoids redundant
+# recursive subtype checks within a single analysis pass.
+# %_CACHE_ANCHORS keeps references alive to prevent refaddr reuse.
+
+my %_SUBTYPE_CACHE;
+my %_CACHE_ANCHORS;
+
+sub clear_cache ($class) {
+    %_SUBTYPE_CACHE  = ();
+    %_CACHE_ANCHORS  = ();
+}
 
 # ── Public API ────────────────────────────────────
 
@@ -121,18 +136,29 @@ sub common_super ($class, $a, $b) {
 # $registry is optional: when provided, used for alias resolution
 # instead of the singleton Typist::Registry.
 sub _check ($sub, $super, $registry = undef) {
-    # Identity — T <: T
+    # Fast-path identity checks before cache lookup
     return 1 if $sub->equals($super);
-
-    # Everything <: Any
     return 1 if $super->is_atom && $super->name eq 'Any';
-
-    # Never <: T for all T (bottom type)
     return 1 if $sub->is_atom && $sub->name eq 'Never';
-
-    # Void <: nothing (except Any, handled above)
     return 0 if $sub->is_atom && $sub->name eq 'Void';
 
+    # Memoization: check cache by refaddr pair.
+    # Anchor references to prevent GC / refaddr reuse.
+    my $sa = refaddr($sub);
+    my $pa = refaddr($super);
+    my $cache_key = "$sa,$pa";
+    if (exists $_SUBTYPE_CACHE{$cache_key}) {
+        return $_SUBTYPE_CACHE{$cache_key};
+    }
+
+    my $result = _check_impl($sub, $super, $registry);
+    $_CACHE_ANCHORS{$sa} = $sub;
+    $_CACHE_ANCHORS{$pa} = $super;
+    $_SUBTYPE_CACHE{$cache_key} = $result;
+    $result;
+}
+
+sub _check_impl ($sub, $super, $registry = undef) {
     # Resolve aliases before comparison
     if ($sub->is_alias) {
         my $r = $registry

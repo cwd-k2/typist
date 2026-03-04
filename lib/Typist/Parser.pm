@@ -29,16 +29,29 @@ my %DSL_CONSTRUCTORS = (
     (map { $_ => \&_parse_dsl_param } qw(ArrayRef HashRef Array Hash Maybe Tuple Ref CodeRef)),
 );
 
-# ── Parse Cache ──────────────────────────────────
+# ── Parse Cache (LRU) ────────────────────────────
+#
+# Each cache stores [result, epoch] pairs. On overflow, the oldest 25%
+# of entries (by access epoch) are evicted, preserving hot entries.
 
-my %_PARSE_CACHE;
-my %_ANNOTATION_CACHE;
+my %_PARSE_CACHE;         # expr => [result, epoch]
+my %_ANNOTATION_CACHE;    # input => [result, epoch]
 my $_CACHE_LIMIT = 1000;
+my $_CACHE_EPOCH = 0;
+
+sub _cache_evict ($cache) {
+    my $keep = int($_CACHE_LIMIT * 3 / 4);
+    my @sorted = sort { $cache->{$a}[1] <=> $cache->{$b}[1] } keys %$cache;
+    delete $cache->{$sorted[$_]} for 0 .. @sorted - $keep - 1;
+}
 
 # ── Public API ────────────────────────────────────
 
 sub parse ($class, $expr) {
-    if (my $cached = $_PARSE_CACHE{$expr}) { return $cached }
+    if (my $entry = $_PARSE_CACHE{$expr}) {
+        $entry->[1] = ++$_CACHE_EPOCH;
+        return $entry->[0];
+    }
 
     my @tokens = _tokenize($expr);
     my $pos    = 0;
@@ -46,8 +59,8 @@ sub parse ($class, $expr) {
     die "Typist::Parser: unexpected token '$tokens[$pos]' at position $pos in '$expr'"
         if $pos < @tokens;
 
-    %_PARSE_CACHE = () if keys %_PARSE_CACHE > $_CACHE_LIMIT;
-    $_PARSE_CACHE{$expr} = $result;
+    _cache_evict(\%_PARSE_CACHE) if keys %_PARSE_CACHE >= $_CACHE_LIMIT;
+    $_PARSE_CACHE{$expr} = [$result, ++$_CACHE_EPOCH];
     $result;
 }
 
@@ -611,7 +624,10 @@ sub parse_row ($class, $expr) {
 #   "<T: Num>(T, T) -> T"              → { generics_raw => ["T: Num"], type => Func }
 #   "<T, r: Row>(T) -> Str ![Console, r]"
 sub parse_annotation ($class, $input) {
-    if (my $cached = $_ANNOTATION_CACHE{$input}) { return $cached }
+    if (my $entry = $_ANNOTATION_CACHE{$input}) {
+        $entry->[1] = ++$_CACHE_EPOCH;
+        return $entry->[0];
+    }
 
     my @generics_raw;
     my $trimmed = $input;
@@ -652,8 +668,8 @@ sub parse_annotation ($class, $input) {
         if $pos < @tokens;
 
     my $result = +{ generics_raw => \@generics_raw, type => $type };
-    %_ANNOTATION_CACHE = () if keys %_ANNOTATION_CACHE > $_CACHE_LIMIT;
-    $_ANNOTATION_CACHE{$input} = $result;
+    _cache_evict(\%_ANNOTATION_CACHE) if keys %_ANNOTATION_CACHE >= $_CACHE_LIMIT;
+    $_ANNOTATION_CACHE{$input} = [$result, ++$_CACHE_EPOCH];
     $result;
 }
 

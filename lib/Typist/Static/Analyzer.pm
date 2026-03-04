@@ -13,6 +13,7 @@ use Typist::Parser;
 use Typist::Static::Checker;
 use Typist::Error;
 use Typist::Prelude;
+use Typist::Subtype;
 use Typist::Type::Data;
 use Typist::Static::SymbolInfo qw(
     sym_function sym_parameter sym_variable sym_typedef sym_newtype
@@ -43,6 +44,8 @@ my %SEVERITY = (
 #   workspace_registry => Typist::Registry instance with external typedefs
 #   file               => filename for diagnostics
 sub analyze ($class, $source, %opts) {
+    Typist::Subtype->clear_cache;
+
     my $extracted = $opts{extracted} // Typist::Static::Extractor->extract($source);
     my $registry  = Typist::Registry->new;
     my $errors    = Typist::Error->collector;

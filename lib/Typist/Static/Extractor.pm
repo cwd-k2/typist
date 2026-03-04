@@ -30,23 +30,42 @@ sub extract ($class, $source) {
         ppi_doc        => $doc,
     };
 
-    # Detect package declaration
-    if (my $pkg = $doc->find_first('PPI::Statement::Package')) {
-        $result->{package} = $pkg->namespace;
+    # ── Single-pass PPI traversal ────────────────
+    # Classify all statements by type and keyword in one tree walk,
+    # replacing 12+ separate find() calls with a single traversal.
+    my $all_stmts = $doc->find('PPI::Statement') || [];
+    my (@var_stmts, @sub_stmts, @compound_stmts);
+    my %kw_stmts;
+
+    for my $stmt (@$all_stmts) {
+        if ($stmt->isa('PPI::Statement::Package')) {
+            $result->{package} = $stmt->namespace;
+        } elsif ($stmt->isa('PPI::Statement::Sub')) {
+            push @sub_stmts, $stmt;
+        } elsif ($stmt->isa('PPI::Statement::Variable')) {
+            push @var_stmts, $stmt;
+        } elsif ($stmt->isa('PPI::Statement::Compound')) {
+            push @compound_stmts, $stmt;
+        } else {
+            my $first = $stmt->schild(0);
+            if ($first && $first->isa('PPI::Token::Word')) {
+                push @{$kw_stmts{$first->content}}, $stmt;
+            }
+        }
     }
 
-    $class->_extract_typedefs($doc, $result);
-    $class->_extract_newtypes($doc, $result);
-    $class->_extract_datatypes($doc, $result);
-    $class->_extract_enums($doc, $result);
-    $class->_extract_structs($doc, $result);
-    $class->_extract_effects($doc, $result);
-    $class->_extract_typeclasses($doc, $result);
-    $class->_extract_instances($doc, $result);
-    $class->_extract_declares($doc, $result);
-    $class->_extract_variables($doc, $result);
-    $class->_extract_functions($doc, $result);
-    $class->_extract_loop_variables($doc, $result);
+    $class->_extract_typedefs($kw_stmts{typedef}   // [], $result);
+    $class->_extract_newtypes($kw_stmts{newtype}   // [], $result);
+    $class->_extract_datatypes($kw_stmts{datatype} // [], $result);
+    $class->_extract_enums($kw_stmts{enum}         // [], $result);
+    $class->_extract_structs($kw_stmts{struct}     // [], $result);
+    $class->_extract_effects($kw_stmts{effect}     // [], $result);
+    $class->_extract_typeclasses($kw_stmts{typeclass} // [], $result);
+    $class->_extract_instances($kw_stmts{instance} // [], $result);
+    $class->_extract_declares($kw_stmts{declare}   // [], $result);
+    $class->_extract_variables(\@var_stmts, $result);
+    $class->_extract_functions(\@sub_stmts, $result);
+    $class->_extract_loop_variables(\@compound_stmts, $result);
 
     $result->{ignore_lines} = $class->_collect_ignore_lines($doc);
 
@@ -55,10 +74,8 @@ sub extract ($class, $source) {
 
 # ── typedef Extraction ──────────────────────────
 
-sub _extract_typedefs ($class, $doc, $result) {
-    my $statements = $doc->find('PPI::Statement') || [];
-
-    for my $stmt (@$statements) {
+sub _extract_typedefs ($class, $stmts, $result) {
+    for my $stmt (@$stmts) {
         my @children = $stmt->schildren;
         next unless @children >= 4;
 
@@ -84,10 +101,8 @@ sub _extract_typedefs ($class, $doc, $result) {
 
 # ── Newtype Extraction ─────────────────────────
 
-sub _extract_newtypes ($class, $doc, $result) {
-    my $statements = $doc->find('PPI::Statement') || [];
-
-    for my $stmt (@$statements) {
+sub _extract_newtypes ($class, $stmts, $result) {
+    for my $stmt (@$stmts) {
         my @children = $stmt->schildren;
         next unless @children >= 4;
 
@@ -112,10 +127,8 @@ sub _extract_newtypes ($class, $doc, $result) {
 
 # ── Datatype Extraction ────────────────────────
 
-sub _extract_datatypes ($class, $doc, $result) {
-    my $statements = $doc->find('PPI::Statement') || [];
-
-    for my $stmt (@$statements) {
+sub _extract_datatypes ($class, $stmts, $result) {
+    for my $stmt (@$stmts) {
         my @children = $stmt->schildren;
         next unless @children >= 4;
 
@@ -193,10 +206,8 @@ sub _extract_datatypes ($class, $doc, $result) {
 # enum Name => qw(Tag1 Tag2 Tag3);
 # Stored as datatypes with all-nullary variants.
 
-sub _extract_enums ($class, $doc, $result) {
-    my $statements = $doc->find('PPI::Statement') || [];
-
-    for my $stmt (@$statements) {
+sub _extract_enums ($class, $stmts, $result) {
+    for my $stmt (@$stmts) {
         my @children = $stmt->schildren;
         next unless @children >= 4;
 
@@ -235,10 +246,8 @@ sub _extract_enums ($class, $doc, $result) {
 #
 # struct Name => (field => Type, field2 => optional(Type), ...);
 
-sub _extract_structs ($class, $doc, $result) {
-    my $statements = $doc->find('PPI::Statement') || [];
-
-    for my $stmt (@$statements) {
+sub _extract_structs ($class, $stmts, $result) {
+    for my $stmt (@$stmts) {
         my @children = $stmt->schildren;
         next unless @children >= 4;
 
@@ -339,10 +348,8 @@ sub _extract_struct_fields ($class, $list, $fields, $optional_fields) {
 # Operations with arrayref values carry inline protocol transitions.
 # String values are plain signatures (no protocol).
 
-sub _extract_effects ($class, $doc, $result) {
-    my $statements = $doc->find('PPI::Statement') || [];
-
-    for my $stmt (@$statements) {
+sub _extract_effects ($class, $stmts, $result) {
+    for my $stmt (@$stmts) {
         my @children = $stmt->schildren;
         next unless @children >= 3;
 
@@ -485,10 +492,8 @@ sub _extract_op_entry ($class, $constructor) {
 
 # ── TypeClass Extraction ───────────────────────
 
-sub _extract_typeclasses ($class, $doc, $result) {
-    my $statements = $doc->find('PPI::Statement') || [];
-
-    for my $stmt (@$statements) {
+sub _extract_typeclasses ($class, $stmts, $result) {
+    for my $stmt (@$stmts) {
         my @children = $stmt->schildren;
         next unless @children >= 3;
 
@@ -554,10 +559,8 @@ sub _extract_typeclasses ($class, $doc, $result) {
 # instance ClassName => TypeExpr, +{ method => sub ... }
 # instance ClassName => 'TypeExpr', +{ method => sub ... }
 
-sub _extract_instances ($class, $doc, $result) {
-    my $statements = $doc->find('PPI::Statement') || [];
-
-    for my $stmt (@$statements) {
+sub _extract_instances ($class, $stmts, $result) {
+    for my $stmt (@$stmts) {
         my @children = $stmt->schildren;
         next unless @children >= 4;
 
@@ -617,10 +620,8 @@ sub _extract_instances ($class, $doc, $result) {
 
 # ── Declare Extraction ─────────────────────────
 
-sub _extract_declares ($class, $doc, $result) {
-    my $statements = $doc->find('PPI::Statement') || [];
-
-    for my $stmt (@$statements) {
+sub _extract_declares ($class, $stmts, $result) {
+    for my $stmt (@$stmts) {
         my @children = $stmt->schildren;
         next unless @children >= 4;
 
@@ -672,8 +673,7 @@ sub _extract_declares ($class, $doc, $result) {
 # Instead, `my $x :sig(Int)` is parsed as:
 #   Symbol($x) Operator(:) Word(sig) List( Expression(Word(Int)) )
 # We detect this pattern by scanning PPI::Statement::Variable children.
-sub _extract_variables ($class, $doc, $result) {
-    my $stmts = $doc->find('PPI::Statement::Variable') || [];
+sub _extract_variables ($class, $stmts, $result) {
     my %typed_vars;
 
     # First pass: annotated variables (:sig(...))
@@ -777,9 +777,7 @@ sub _extract_variables ($class, $doc, $result) {
 
 # ── Function Extraction ─────────────────────────
 
-sub _extract_functions ($class, $doc, $result) {
-    my $subs = $doc->find('PPI::Statement::Sub') || [];
-
+sub _extract_functions ($class, $subs, $result) {
     for my $sub_stmt (@$subs) {
         my $name = $sub_stmt->name // next;
 
@@ -915,9 +913,7 @@ sub parse_loop_compound ($class, $compound) {
 
 # ── Loop Variable Extraction ─────────────────────
 
-sub _extract_loop_variables ($class, $doc, $result) {
-    my $compounds = $doc->find('PPI::Statement::Compound') || [];
-
+sub _extract_loop_variables ($class, $compounds, $result) {
     for my $stmt (@$compounds) {
         my $parsed = $class->parse_loop_compound($stmt) // next;
 
