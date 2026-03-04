@@ -25,7 +25,16 @@ sub name ($self) { 'Quantified' }
 
 sub to_string ($self) {
     my @var_strs = map {
-        $_->{bound} ? "$_->{name}: " . $_->{bound}->to_string : $_->{name}
+        if ($_->{bound}) {
+            my $b = $_->{bound};
+            # Compound constraints: Intersection → join with '+' (not '&')
+            my $bs = $b->is_intersection
+                ? join(' + ', map { $_->to_string } $b->members)
+                : $b->to_string;
+            "$_->{name}: $bs";
+        } else {
+            $_->{name};
+        }
     } $self->{vars}->@*;
     'forall ' . join(' ', @var_strs) . '. ' . $self->{body}->to_string;
 }

@@ -150,8 +150,10 @@ sub register_structs ($class, $extracted, $registry, %opts) {
         my %type_bounds;
         for my $g (@generics) {
             next unless $g->{bound_expr} || $g->{tc_constraints};
-            $type_bounds{$g->{name}} = $g->{bound_expr}
-                // join(' + ', $g->{tc_constraints}->@*);
+            my @parts;
+            push @parts, $g->{tc_constraints}->@* if $g->{tc_constraints};
+            push @parts, $g->{bound_expr}         if $g->{bound_expr};
+            $type_bounds{$g->{name}} = join(' + ', @parts);
         }
 
         my $struct_type = Typist::Type::Struct->new(

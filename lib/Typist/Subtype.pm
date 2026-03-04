@@ -269,6 +269,18 @@ sub _check ($sub, $super, $registry = undef) {
     # Record </: Struct (nominal barrier)
     return 0 if $sub->is_record && $super->is_struct;
 
+    # Record <: HashRef[Str, V] (all values <: V)
+    if ($sub->is_record && $super->is_param && $super->base eq 'HashRef') {
+        my @sp = $super->params;
+        my $val_type = $sp[1] // $sp[0];
+        my %all_fields = (%{$sub->required_ref}, %{$sub->optional_ref // +{}});
+        return 0 unless %all_fields;
+        for my $ftype (values %all_fields) {
+            return 0 unless _check($ftype, $val_type, $registry);
+        }
+        return 1;
+    }
+
     # ── Record width subtyping ───────────────────
     # { a: T, b: U } <: { a: T }  (more fields <: fewer fields)
     # Optional field rules:
