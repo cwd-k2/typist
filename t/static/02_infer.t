@@ -794,4 +794,52 @@ subtest 'sibling: fat comma (=>) is not a binary operator' => sub {
     ok !defined($result), 'word followed by => returns undef (no binop)';
 };
 
+# ── Tuple inference from array literals ──────────
+
+subtest 'tuple: [42, "hello"] with expected Tuple[Int, Str]' => sub {
+    my $expected = Typist::Type::Param->new('Tuple',
+        Typist::Type::Atom->new('Int'), Typist::Type::Atom->new('Str'));
+    my $doc = PPI::Document->new(\'[42, "hello"]');
+    my $arr = $doc->find_first('PPI::Structure::Constructor');
+    my $t = Typist::Static::Infer->infer_expr($arr, undef, $expected);
+    ok $t, 'inferred';
+    ok $t->is_param, 'is param';
+    is $t->base, 'Tuple', 'base is Tuple';
+    my @p = $t->params;
+    is scalar @p, 2, '2 params';
+    is $p[0]->base_type, 'Int', 'first element Int (literal)';
+    is $p[1]->base_type, 'Str', 'second element Str (literal)';
+};
+
+subtest 'tuple: [1, "hello"] without expected → ArrayRef' => sub {
+    my $doc = PPI::Document->new(\'[1, "hello"]');
+    my $arr = $doc->find_first('PPI::Structure::Constructor');
+    my $t = Typist::Static::Infer->infer_expr($arr);
+    ok $t, 'inferred';
+    ok $t->is_param, 'is param';
+    is $t->base, 'ArrayRef', 'base is ArrayRef (no Tuple expected)';
+};
+
+subtest 'tuple: [] with expected Tuple[Int, Str] → Tuple[Int, Str]' => sub {
+    my $expected = Typist::Type::Param->new('Tuple',
+        Typist::Type::Atom->new('Int'), Typist::Type::Atom->new('Str'));
+    my $doc = PPI::Document->new(\'[]');
+    my $arr = $doc->find_first('PPI::Structure::Constructor');
+    my $t = Typist::Static::Infer->infer_expr($arr, undef, $expected);
+    ok $t, 'inferred';
+    is $t->base, 'Tuple', 'empty array with Tuple expected → Tuple';
+    my @p = $t->params;
+    is scalar @p, 2, 'preserves 2 params from expected';
+};
+
+subtest 'tuple: arity mismatch [1, 2, 3] with Tuple[Int, Str] → ArrayRef fallback' => sub {
+    my $expected = Typist::Type::Param->new('Tuple',
+        Typist::Type::Atom->new('Int'), Typist::Type::Atom->new('Str'));
+    my $doc = PPI::Document->new(\'[1, 2, 3]');
+    my $arr = $doc->find_first('PPI::Structure::Constructor');
+    my $t = Typist::Static::Infer->infer_expr($arr, undef, $expected);
+    ok $t, 'inferred';
+    is $t->base, 'ArrayRef', 'arity mismatch → ArrayRef fallback';
+};
+
 done_testing;

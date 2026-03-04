@@ -1769,4 +1769,41 @@ PERL
         'error message mentions specific missing instance';
 };
 
+# ── Tuple inference from array literals ──────────
+
+subtest 'tuple: :sig(Tuple[Int, Str]) with [42, "hello"] → OK' => sub {
+    my $errs = type_errors(<<'PERL');
+package main;
+use v5.40;
+use Typist;
+my $t :sig(Tuple[Int, Str]) = [42, "hello"];
+PERL
+    is scalar @$errs, 0, 'no error for matching tuple literal';
+};
+
+subtest 'tuple: function return type Tuple' => sub {
+    my $errs = type_errors(<<'PERL');
+package main;
+use v5.40;
+use Typist;
+sub make_pair :sig(() -> Tuple[Int, Str]) () {
+    return [42, "hello"];
+}
+PERL
+    is scalar @$errs, 0, 'no error for tuple return';
+};
+
+subtest 'tuple: function argument with Tuple expected' => sub {
+    my $errs = type_errors(<<'PERL');
+package main;
+use v5.40;
+use Typist;
+sub consume :sig((Tuple[Int, Str]) -> Void) ($t) { }
+sub test :sig(() -> Void) () {
+    consume([42, "hello"]);
+}
+PERL
+    is scalar @$errs, 0, 'no error for tuple argument';
+};
+
 done_testing;

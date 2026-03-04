@@ -793,8 +793,64 @@ sub _infer_array ($constructor, $env = undef, $expected = undef) {
 
     # Empty array: use expected type if available
     unless ($expr) {
-        return $expected if $expected && $expected->is_param && $expected->base eq 'ArrayRef';
+        return $expected if $expected && $expected->is_param
+            && ($expected->base eq 'ArrayRef' || $expected->base eq 'Tuple');
         return Typist::Type::Param->new('ArrayRef', Typist::Type::Atom->new('Any'));
+    }
+
+    # Tuple expected: position-based inference
+    if ($expected && $expected->is_param && $expected->base eq 'Tuple') {
+        my @tuple_expected = $expected->params;
+        # Collect non-operator children as elements
+        my @children = $expr->schildren;
+        my @elems;
+        my $has_spread = 0;
+        my $ci = 0;
+        while ($ci <= $#children) {
+            my $child = $children[$ci];
+            if ($child->isa('PPI::Token::Operator')) { $ci++; next }
+            # Spread or map/grep/sort → not a fixed-length tuple
+            if ($child->isa('PPI::Token::Cast') && $child->content eq '@') {
+                $has_spread = 1; last;
+            }
+            if ($child->isa('PPI::Token::Word')
+                && ($child->content eq 'map' || $child->content eq 'grep' || $child->content eq 'sort'))
+            {
+                $has_spread = 1; last;
+            }
+            # Anonymous sub coalescing: sub + Prototype/List + Block → single element
+            if ($child->isa('PPI::Token::Word') && $child->content eq 'sub') {
+                push @elems, $child;
+                $ci++;
+                while ($ci <= $#children) {
+                    last unless $children[$ci]->isa('PPI::Token::Prototype')
+                             || $children[$ci]->isa('PPI::Structure::List')
+                             || $children[$ci]->isa('PPI::Structure::Block');
+                    $ci++;
+                }
+                next;
+            }
+            # Function call coalescing: Word + List → single element
+            if ($child->isa('PPI::Token::Word') && $ci + 1 <= $#children
+                && $children[$ci + 1]->isa('PPI::Structure::List'))
+            {
+                push @elems, $child;
+                $ci += 2;
+                next;
+            }
+            push @elems, $child;
+            $ci++;
+        }
+        # Arity match and no spread → position-based inference
+        if (!$has_spread && @elems == @tuple_expected) {
+            my @inferred;
+            for my $idx (0 .. $#elems) {
+                my $t = __PACKAGE__->infer_expr($elems[$idx], $env, $tuple_expected[$idx]);
+                push @inferred, $t // $tuple_expected[$idx];
+            }
+            return Typist::Type::Param->new('Tuple', @inferred);
+        }
+        # Fallback: arity mismatch or spread → treat as ArrayRef
     }
 
     # Extract element expected type from ArrayRef[T]
