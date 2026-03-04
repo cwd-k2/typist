@@ -21,14 +21,15 @@ sub actions_for_diagnostics ($class, $diagnostics, $doc, $registry) {
         }
 
         if ($kind eq 'TypeMismatch') {
+            my $auto_fix = $class->_suggest_type_fix($diag, $doc);
             if ($data->{_suggestions}) {
                 for my $suggestion (@{$data->{_suggestions}}) {
+                    # Skip if auto-fix already covers this suggestion
+                    next if $auto_fix && $auto_fix->{title} eq $suggestion;
                     push @actions, $class->_make_suggestion_action($diag, $suggestion, $doc);
                 }
             }
-            if (my $action = $class->_suggest_type_fix($diag, $doc)) {
-                push @actions, $action;
-            }
+            push @actions, $auto_fix if $auto_fix;
         }
     }
 
@@ -147,8 +148,8 @@ sub _suggest_type_fix ($class, $diag, $doc) {
     my $uri      = $doc->uri;
     my $diag_line = $diag->{range}{start}{line};
 
-    # Case 1: "Return value of foo(): expected X, got Y"
-    # or "Implicit return of foo(): expected X, got Y"
+    # Case 1: "Return value of foo(): cannot return Y as X"
+    # or "Implicit return of foo(): cannot return Y as X"
     if ($msg =~ /(?:Return value|Implicit return) of (\w+)\(\)/) {
         my $fn = $1;
         for my $i (0 .. $#$lines) {
@@ -171,7 +172,7 @@ sub _suggest_type_fix ($class, $diag, $doc) {
         }
     }
 
-    # Case 2: "Variable $x: expected X, got Y" or "Assignment to $x: expected X, got Y"
+    # Case 2: "Variable $x: cannot assign Y to X" or "Assignment to $x: cannot assign Y to X"
     if ($msg =~ /(?:Variable|Assignment to) (\$\w+):/) {
         my $var = $1;
         # Search for the :sig() declaration line for this variable

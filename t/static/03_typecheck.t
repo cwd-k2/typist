@@ -342,7 +342,7 @@ my $x :sig(Int) = greet("world");
 PERL
 
     is scalar @$errs, 1, 'one error';
-    like $errs->[0]{message}, qr/\$x.*Int.*Str/, 'Str vs Int mismatch';
+    like $errs->[0]{message}, qr/\$x.*Str.*Int/, 'Str vs Int mismatch';
 };
 
 subtest 'call: nested call type propagation' => sub {
@@ -373,7 +373,7 @@ add(greet("world"), 42);
 PERL
 
     is scalar @$errs, 1, 'one error';
-    like $errs->[0]{message}, qr/Argument 1.*add.*Int.*Str/, 'greet returns Str, add expects Int';
+    like $errs->[0]{message}, qr/Argument 1.*add.*Str.*Int/, 'greet returns Str, add expects Int';
 };
 
 subtest 'call: nested call with correct arg count' => sub {
@@ -417,7 +417,7 @@ add($name, 42);
 PERL
 
     is scalar @$errs, 1, 'one error';
-    like $errs->[0]{message}, qr/Argument 1.*add.*Int.*Str/, '$name is Str but add expects Int';
+    like $errs->[0]{message}, qr/Argument 1.*add.*Str.*Int/, '$name is Str but add expects Int';
 };
 
 subtest 'variable: unannotated variable → skip' => sub {
@@ -506,7 +506,7 @@ add($result, 42);
 PERL
 
     is scalar @$errs, 1, 'one error';
-    like $errs->[0]{message}, qr/Argument 1.*add.*Int.*Str/, '$result inferred as Str, add expects Int';
+    like $errs->[0]{message}, qr/Argument 1.*add.*Str.*Int/, '$result inferred as Str, add expects Int';
 };
 
 subtest 'flow: inferred variable from literal' => sub {
@@ -596,7 +596,7 @@ sub greet :sig((Str) -> Int) ($name) {
 PERL
 
     is scalar @$errs, 1, 'one error: returning Str param as Int';
-    like $errs->[0]{message}, qr/Return.*greet.*Int.*Str/, 'detects Str vs Int mismatch';
+    like $errs->[0]{message}, qr/Return.*greet.*Str.*Int/, 'detects Str vs Int mismatch';
 };
 
 subtest 'return: param type matches return type' => sub {
@@ -622,7 +622,7 @@ sub wrong :sig((Str) -> Int) ($s) {
 PERL
 
     is scalar @$errs, 1, 'one error: Str param passed to Int arg';
-    like $errs->[0]{message}, qr/Argument 1.*add.*Int.*Str/, 'detects param type mismatch at inner call';
+    like $errs->[0]{message}, qr/Argument 1.*add.*Str.*Int/, 'detects param type mismatch at inner call';
 };
 
 # ── @typist-ignore ────────────────────────────────
@@ -685,7 +685,7 @@ sub wrong :sig((Str) -> Int) ($name) {
 PERL
 
     is scalar @$errs, 1, 'one error';
-    like $errs->[0]{message}, qr/Implicit return.*wrong.*Int.*Str/, 'param variable Str vs Int';
+    like $errs->[0]{message}, qr/Implicit return.*wrong.*Str.*Int/, 'param variable Str vs Int';
 };
 
 # ── @typist-ignore ────────────────────────────────
@@ -1804,6 +1804,61 @@ sub test :sig(() -> Void) () {
 }
 PERL
     is scalar @$errs, 0, 'no error for tuple argument';
+};
+
+# ── Diagnostics: suggestions / related / GradualHint ──
+
+subtest 'diagnostics include suggestions' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+my $x :sig(Int) = "hello";
+PERL
+
+    my @errs = grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@*;
+    is scalar @errs, 1, 'one type error';
+    ok $errs[0]{suggestions}, 'diagnostic has suggestions';
+    like $errs[0]{suggestions}[0], qr/Change annotation/, 'suggestion mentions changing annotation';
+};
+
+subtest 'diagnostics include related' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+sub greet :sig((Str) -> Int) ($name) {
+    return $name;
+}
+PERL
+
+    my @errs = grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@*;
+    is scalar @errs, 1, 'one type error';
+    ok $errs[0]{related}, 'diagnostic has related';
+    like $errs[0]{related}[0]{message}, qr/declared here/, 'related points to declaration';
+};
+
+subtest 'GradualHint emitted at function boundary' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', gradual_hints => 1);
+use v5.40;
+sub id ($x) { $x }
+sub test :sig(() -> Int) () {
+    return id(42);
+}
+PERL
+
+    my @hints = grep { $_->{kind} eq 'GradualHint' } $result->{diagnostics}->@*;
+    ok @hints >= 1, 'at least one GradualHint emitted';
+    like $hints[0]{message}, qr/not checked.*Any/, 'hint mentions Any';
+};
+
+subtest 'GradualHint not emitted when off' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+sub id ($x) { $x }
+sub test :sig(() -> Int) () {
+    return id(42);
+}
+PERL
+
+    my @hints = grep { $_->{kind} eq 'GradualHint' } $result->{diagnostics}->@*;
+    is scalar @hints, 0, 'no GradualHint when gradual_hints is off';
 };
 
 done_testing;

@@ -45,7 +45,7 @@ sub count :sig((Int) -> Int) ($n) {
 PERL
 
     is scalar @$errs, 1, 'one type error';
-    like $errs->[0]{message}, qr/length.*Str.*Int/, 'length expects Str, got Int';
+    like $errs->[0]{message}, qr/length.*Int.*Str/, 'length: cannot pass Int as Str';
 };
 
 subtest 'typecheck: length(Str) → no error' => sub {
@@ -72,7 +72,7 @@ sub upper :sig((Int) -> Str) ($n) {
 PERL
 
     is scalar @$errs, 1, 'one type error';
-    like $errs->[0]{message}, qr/uc.*Str.*Int/, 'uc expects Str, got Int';
+    like $errs->[0]{message}, qr/uc.*Int.*Str/, 'uc: cannot pass Int as Str';
 };
 
 subtest 'typecheck: abs(Str) → TypeMismatch' => sub {
@@ -86,7 +86,7 @@ sub positive :sig((Str) -> Num) ($s) {
 PERL
 
     is scalar @$errs, 1, 'one type error';
-    like $errs->[0]{message}, qr/abs.*Num.*Str/, 'abs expects Num, got Str';
+    like $errs->[0]{message}, qr/abs.*Str.*Num/, 'abs: cannot pass Str as Num';
 };
 
 # ── Return type inference from builtins ──────────
@@ -100,7 +100,7 @@ my $x :sig(Str) = length("hello");
 PERL
 
     is scalar @$errs, 1, 'one type error';
-    like $errs->[0]{message}, qr/\$x.*Str.*Int/, 'length returns Int, not Str';
+    like $errs->[0]{message}, qr/\$x.*Int.*Str/, 'length returns Int, cannot assign to Str';
 };
 
 subtest 'infer: length() return assigned to Int → no error' => sub {
@@ -123,7 +123,7 @@ my $x :sig(Int) = uc("hello");
 PERL
 
     is scalar @$errs, 1, 'one type error';
-    like $errs->[0]{message}, qr/\$x.*Int.*Str/, 'uc returns Str, not Int';
+    like $errs->[0]{message}, qr/\$x.*Str.*Int/, 'uc returns Str, cannot assign to Int';
 };
 
 # ── Effect checking: builtin IO effects ──────────

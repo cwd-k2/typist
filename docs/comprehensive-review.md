@@ -1326,26 +1326,26 @@ cmpthese(10, {
 });
 ```
 
-#### 13.1.2 エラーメッセージの改善
+#### 13.1.2 エラーメッセージの改善 ✅
 
-**問題**: エラーメッセージが初心者には難解。
+**対応済み**: メッセージ文面を能動態に改善し、`suggestions`/`related` フィールドを実装。
 
-**現状**:
+**改善前**:
 ```
-[TypeMismatch] expected Int, got Str
-```
-
-**提案**:
-```
-[TypeMismatch] Cannot assign Str value to Int variable $x
-  at myfile.pm line 10 col 5
-  
-  Suggestion: Use `int()` to convert, or change the type annotation.
+[TypeMismatch] Variable $x: expected Int, got Str
 ```
 
-**実装**:
-- `Error.pm` に `with_suggestion()` メソッド追加
-- `TypeChecker.pm` で context 情報を含める
+**改善後**:
+```
+[TypeMismatch] Variable $x: cannot assign Str to Int
+  suggestion: Change annotation to :sig(Str)
+  related: declared here (line N)
+```
+
+**実装内容**:
+- `TypeChecker.pm` / `CallChecker.pm` の全エラー発行箇所に `suggestions` と `related` を追加
+- `CodeAction.pm` が `suggestions` を自動消費し LSP quickfix 化（重複排除あり）
+- `related` は LSP `relatedInformation` として宣言箇所を参照
 
 #### 13.1.3 初学者向けチュートリアル
 
@@ -1569,13 +1569,13 @@ while (my $msg = read_message()) {
 | Infer.pm グローバル状態 | `@_CALLBACK_PARAMS` の安全性をコメントで明文化 |
 | Parser キャッシュ epoch オーバーフロー | `2**53` 超過時のリセット処理を追加 |
 | Typist.pm モジュール分割 | 5サブモジュールに分割 (Definition, Algebra, StructDef, EffectDef, External)。公開 API 不変 |
+| エラーメッセージ改善 (§13.1.2) | `suggestions`/`related` フィールド実装。メッセージ文面を能動態に改善。CodeAction が自動消費し LSP quickfix 化 |
 
 ### 将来対応
 
 | 提案 | 方針 |
 |------|------|
 | パフォーマンスベンチマーク (P0) | 大規模コードベースでの実測が必要。テストインフラ整備後に対応 |
-| エラーメッセージ改善 (P0) | 段階的に実施 |
 | 初学者向けチュートリアル (P0) | getting-started.md の拡充で対応予定 |
 | TypeChecker 責務分離 (P1) | multi-pass 最適化と同時に実施 |
 | 型スタブ機構 (P1) | CPAN モジュール型定義の外部ファイル化。設計検討中 |

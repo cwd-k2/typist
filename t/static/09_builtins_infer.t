@@ -28,7 +28,7 @@ my $x :sig(Str) = handle { 42 } Console => +{ log => sub ($msg) {} };
 PERL
 
     is scalar @$errs, 1, 'one type error';
-    like $errs->[0]{message}, qr/\$x.*Str.*\b42\b/i, 'expected Str, got 42 (Int literal)';
+    like $errs->[0]{message}, qr/\$x.*\b42\b.*Str/i, 'literal 42 cannot be assigned to Str';
 };
 
 subtest 'handle: infer Str from string expression' => sub {
@@ -64,7 +64,7 @@ my $x :sig(Str) = match $val,
 PERL
 
     is scalar @$errs, 1, 'one type error';
-    like $errs->[0]{message}, qr/\$x.*Str.*Int/i, 'expected Str, got Int';
+    like $errs->[0]{message}, qr/\$x.*Int.*Str/i, 'Int cannot be assigned to Str';
 };
 
 subtest 'match: mixed types produce union (Int | Str)' => sub {

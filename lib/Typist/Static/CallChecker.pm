@@ -15,14 +15,15 @@ use Typist::Transform;
 
 sub new ($class, %args) {
     bless +{
-        extracted    => $args{extracted},
-        registry     => $args{registry},
-        errors       => $args{errors},
-        file         => $args{file},
-        ppi_doc      => $args{ppi_doc},
-        env_for_node => $args{env_for_node},
-        resolve_type => $args{resolve_type},
-        has_type_var => $args{has_type_var},
+        extracted     => $args{extracted},
+        registry      => $args{registry},
+        errors        => $args{errors},
+        file          => $args{file},
+        ppi_doc       => $args{ppi_doc},
+        env_for_node  => $args{env_for_node},
+        resolve_type  => $args{resolve_type},
+        has_type_var  => $args{has_type_var},
+        gradual_hints => $args{gradual_hints},
     }, $class;
 }
 
@@ -144,6 +145,7 @@ sub check_call_sites ($self) {
                 line    => $word->line_number,
                 col     => $word->column_number,
                 end_col => $word->column_number + length($word->content),
+                ($fn->{line} ? (related => [+{ line => $fn->{line}, col => $fn->{col} // 1, message => "$name() declared here" }]) : ()),
             );
             next;
         }
@@ -156,6 +158,7 @@ sub check_call_sites ($self) {
                 line    => $word->line_number,
                 col     => $word->column_number,
                 end_col => $word->column_number + length($word->content),
+                ($fn->{line} ? (related => [+{ line => $fn->{line}, col => $fn->{col} // 1, message => "$name() declared here" }]) : ()),
             );
         }
 
@@ -196,18 +199,23 @@ sub check_call_sites ($self) {
 
             my $inferred = Typist::Static::Infer->infer_expr($args[$i], $env, $declared);
             next unless defined $inferred;
-            next if _contains_any($inferred);
+            if (_contains_any($inferred)) {
+                $self->_emit_gradual_hint($name, $i, $word, $inferred);
+                next;
+            }
 
             unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
                 $self->{errors}->collect(
                     kind          => 'TypeMismatch',
-                    message       => "Argument " . ($i + 1) . " of $name(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
+                    message       => "Argument " . ($i + 1) . " of $name(): cannot pass ${\$inferred->to_string} as ${\$declared->to_string}",
                     file          => $self->{file},
                     line          => $word->line_number,
                     col           => $word->column_number,
                     end_col       => $word->column_number + length($word->content),
                     expected_type => $declared->to_string,
                     actual_type   => $inferred->to_string,
+                    suggestions   => ["Ensure argument is ${\$declared->to_string}"],
+                    ($fn->{line} ? (related => [+{ line => $fn->{line}, col => $fn->{col} // 1, message => "$name() declared here" }]) : ()),
                 );
             }
         }
@@ -274,12 +282,13 @@ sub _check_struct_constructor_call ($self, $name, $fn, $list, $env, $word) {
         # Unknown field check
         unless (exists $all{$field_name}) {
             $self->{errors}->collect(
-                kind    => 'TypeMismatch',
-                message => "${name}(): unknown field '$field_name'",
-                file    => $self->{file},
-                line    => $word->line_number,
-                col     => $word->column_number,
-                end_col => $word->column_number + length($word->content),
+                kind        => 'TypeMismatch',
+                message     => "${name}(): unknown field '$field_name'",
+                file        => $self->{file},
+                line        => $word->line_number,
+                col         => $word->column_number,
+                end_col     => $word->column_number + length($word->content),
+                suggestions => ["Available fields: " . join(', ', sort keys %all)],
             );
             next;
         }
@@ -353,13 +362,14 @@ sub _check_struct_constructor_call ($self, $name, $fn, $list, $env, $word) {
         unless (Typist::Subtype->is_subtype($check->{inferred}, $expected, registry => $self->{registry})) {
             $self->{errors}->collect(
                 kind          => 'TypeMismatch',
-                message       => "${name}(): field '$check->{field_name}' expected ${\$expected->to_string}, got ${\$check->{inferred}->to_string}",
+                message       => "${name}(): field '$check->{field_name}' cannot assign ${\$check->{inferred}->to_string} to ${\$expected->to_string}",
                 file          => $self->{file},
                 line          => $word->line_number,
                 col           => $word->column_number,
                 end_col       => $word->column_number + length($word->content),
                 expected_type => $expected->to_string,
                 actual_type   => $check->{inferred}->to_string,
+                suggestions   => ["Change field value to ${\$expected->to_string}"],
             );
         }
     }
@@ -368,12 +378,13 @@ sub _check_struct_constructor_call ($self, $name, $fn, $list, $env, $word) {
     for my $rk (sort keys %$req) {
         next if $seen{$rk};
         $self->{errors}->collect(
-            kind    => 'TypeMismatch',
-            message => "${name}(): missing required field '$rk'",
-            file    => $self->{file},
-            line    => $word->line_number,
-            col     => $word->column_number,
-            end_col => $word->column_number + length($word->content),
+            kind        => 'TypeMismatch',
+            message     => "${name}(): missing required field '$rk'",
+            file        => $self->{file},
+            line        => $word->line_number,
+            col         => $word->column_number,
+            end_col     => $word->column_number + length($word->content),
+            suggestions => ["Add field: $rk => ..."],
         );
     }
 }
@@ -507,7 +518,7 @@ sub _check_method_call ($self, $word, $arrow) {
             unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
                 $self->{errors}->collect(
                     kind          => 'TypeMismatch',
-                    message       => "Argument " . ($i + 1) . " of $display(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
+                    message       => "Argument " . ($i + 1) . " of $display(): cannot pass ${\$inferred->to_string} as ${\$declared->to_string}",
                     file          => $self->{file},
                     line          => $word->line_number,
                     col           => $word->column_number,
@@ -602,7 +613,7 @@ sub _check_chained_method ($self, $return_type, $arrow, $env) {
                 unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
                     $self->{errors}->collect(
                         kind          => 'TypeMismatch',
-                        message       => "Argument " . ($i + 1) . " of $display(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
+                        message       => "Argument " . ($i + 1) . " of $display(): cannot pass ${\$inferred->to_string} as ${\$declared->to_string}",
                         file          => $self->{file},
                         line          => $method_word->line_number,
                         col           => $method_word->column_number,
@@ -693,7 +704,7 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
     unless ($bindings) {
         $self->{errors}->collect(
             kind          => 'TypeMismatch',
-            message       => "Argument " . ($failed_at + 1) . " of $name(): expected ${\$param_types[$failed_at]->to_string}, got ${\$arg_types[$failed_at]->to_string}",
+            message       => "Argument " . ($failed_at + 1) . " of $name(): cannot pass ${\$arg_types[$failed_at]->to_string} as ${\$param_types[$failed_at]->to_string}",
             file          => $self->{file},
             line          => $word->line_number,
             col           => $word->column_number,
@@ -752,7 +763,7 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
         unless (Typist::Subtype->is_subtype($arg_types[$i], $concrete, registry => $self->{registry})) {
             $self->{errors}->collect(
                 kind          => 'TypeMismatch',
-                message       => "Argument " . ($i + 1) . " of $name(): expected ${\$concrete->to_string}, got ${\$arg_types[$i]->to_string}",
+                message       => "Argument " . ($i + 1) . " of $name(): cannot pass ${\$arg_types[$i]->to_string} as ${\$concrete->to_string}",
                 file          => $self->{file},
                 line          => $word->line_number,
                 col           => $word->column_number,
@@ -894,6 +905,21 @@ sub _extract_args ($self, $list) {
     }
 
     @args;
+}
+
+# ── GradualHint Emission ────────────────────────
+
+sub _emit_gradual_hint ($self, $name, $arg_idx, $word, $inferred) {
+    return unless $self->{gradual_hints};
+    my $n = $arg_idx + 1;
+    $self->{errors}->collect(
+        kind    => 'GradualHint',
+        message => "Argument $n of $name() not checked: inferred type contains Any (${\$inferred->to_string})",
+        file    => $self->{file},
+        line    => $word->line_number,
+        col     => $word->column_number,
+        end_col => $word->column_number + length($word->content),
+    );
 }
 
 # ── Type Utility Functions ───────────────────────

@@ -257,7 +257,7 @@ sub identity :sig((Int) -> Int) ($x) { $x }
 PERL
 
     my $synthetic_diag = +{
-        message  => "Return value of test(): expected Int, got Str",
+        message  => "Return value of test(): cannot return Str as Int",
         range    => +{
             start => +{ line => 1, character => 0 },
             end   => +{ line => 1, character => 20 },
@@ -341,8 +341,8 @@ PERL
     ok $diag_notif, 'got publishDiagnostics';
 
     my @all_diags = @{$diag_notif->{params}{diagnostics}};
-    my ($type_diag) = grep { ($_->{message} // '') =~ /expected Int, got Str/ } @all_diags;
-    ok $type_diag, 'found TypeMismatch diagnostic (expected Int, got Str)';
+    my ($type_diag) = grep { ($_->{message} // '') =~ /cannot return Str as Int/ } @all_diags;
+    ok $type_diag, 'found TypeMismatch diagnostic (cannot return Str as Int)';
     ok $type_diag->{data}, 'diagnostic has data field';
     is $type_diag->{data}{_typist_kind}, 'TypeMismatch', 'data._typist_kind is TypeMismatch';
     is $type_diag->{data}{_expected_type}, 'Int', 'data._expected_type is Int';
@@ -405,7 +405,7 @@ PERL
     ok $diag_notif, 'got publishDiagnostics';
 
     my @all_diags = @{$diag_notif->{params}{diagnostics}};
-    my ($type_diag) = grep { ($_->{message} // '') =~ /Assignment to \$count.*expected Str/ } @all_diags;
+    my ($type_diag) = grep { ($_->{message} // '') =~ /Assignment to \$count/ } @all_diags;
     ok $type_diag, 'found TypeMismatch diagnostic for $count assignment';
     is $type_diag->{data}{_typist_kind}, 'TypeMismatch', 'kind is TypeMismatch';
     is $type_diag->{data}{_expected_type}, 'Str', 'expected is Str';

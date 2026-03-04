@@ -23,6 +23,7 @@ sub new ($class, %args) {
         errors               => $args{errors},
         extracted            => $args{extracted},
         file                 => $args{file} // '(buffer)',
+        gradual_hints        => $args{gradual_hints},
         _inferred_fn_returns => +{},
     }, $class;
 }
@@ -83,13 +84,15 @@ sub check_variables ($self) {
         unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{type_env}->registry)) {
             $self->{errors}->collect(
                 kind          => 'TypeMismatch',
-                message       => "Variable $var->{name}: expected ${\$declared->to_string}, got ${\$inferred->to_string}",
+                message       => "Variable $var->{name}: cannot assign ${\$inferred->to_string} to ${\$declared->to_string}",
                 file          => $self->{file},
                 line          => $var->{line},
                 col           => $var->{col} // 0,
                 end_col       => ($var->{col} // 0) + length($var->{name}),
                 expected_type => $declared->to_string,
                 actual_type   => $inferred->to_string,
+                suggestions   => ["Change annotation to :sig(${\$inferred->to_string})"],
+                related       => [+{ line => $var->{line}, col => $var->{col} // 1, message => 'declared here' }],
             );
         }
     }
@@ -102,6 +105,10 @@ sub check_assignments ($self) {
     my %annotated = map { $_->{name} => 1 }
                     grep { $_->{type_expr} }
                     $self->{extracted}{variables}->@*;
+
+    my %var_info = map { $_->{name} => $_ }
+                   grep { $_->{type_expr} }
+                   $self->{extracted}{variables}->@*;
 
     my $ops = $ppi_doc->find('PPI::Token::Operator') || [];
     for my $op (@$ops) {
@@ -131,15 +138,18 @@ sub check_assignments ($self) {
         next if _contains_any($inferred);
 
         unless (Typist::Subtype->is_subtype($inferred, $declared_type, registry => $self->{type_env}->registry)) {
+            my $vi = $var_info{$var_name};
             $self->{errors}->collect(
                 kind          => 'TypeMismatch',
-                message       => "Assignment to $var_name: expected ${\$declared_type->to_string}, got ${\$inferred->to_string}",
+                message       => "Assignment to $var_name: cannot assign ${\$inferred->to_string} to ${\$declared_type->to_string}",
                 file          => $self->{file},
                 line          => $lhs->line_number,
                 col           => $lhs->column_number,
                 end_col       => $lhs->column_number + length($lhs->content),
                 expected_type => $declared_type->to_string,
                 actual_type   => $inferred->to_string,
+                suggestions   => ["Change annotation to :sig(${\$inferred->to_string})"],
+                ($vi ? (related => [+{ line => $vi->{line}, col => $vi->{col} // 1, message => 'declared here' }]) : ()),
             );
         }
     }
@@ -148,14 +158,15 @@ sub check_assignments ($self) {
 sub check_call_sites ($self) {
     my $te = $self->{type_env};
     Typist::Static::CallChecker->new(
-        extracted    => $self->{extracted},
-        registry     => $te->registry,
-        errors       => $self->{errors},
-        file         => $self->{file},
-        ppi_doc      => $te->ppi_doc,
-        env_for_node => sub ($node) { $te->env_for_node($node) },
-        resolve_type => sub ($expr) { $te->resolve_type($expr) },
-        has_type_var => \&_has_type_var,
+        extracted     => $self->{extracted},
+        registry      => $te->registry,
+        errors        => $self->{errors},
+        file          => $self->{file},
+        ppi_doc       => $te->ppi_doc,
+        env_for_node  => sub ($node) { $te->env_for_node($node) },
+        resolve_type  => sub ($expr) { $te->resolve_type($expr) },
+        has_type_var  => \&_has_type_var,
+        gradual_hints => $self->{gradual_hints},
     )->check_call_sites;
 }
 
@@ -186,18 +197,23 @@ sub check_function_returns ($self, $name) {
         my $ret_env = $self->_env_for_node($ret);
         my $inferred = Typist::Static::Infer->infer_expr($val, $ret_env, $declared);
         next unless defined $inferred;
-        next if _contains_any($inferred);
+        if (_contains_any($inferred)) {
+            $self->_emit_gradual_hint($name, $val, $inferred, 'return value');
+            next;
+        }
 
         unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{type_env}->registry)) {
             $self->{errors}->collect(
                 kind          => 'TypeMismatch',
-                message       => "Return value of $name(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
+                message       => "Return value of $name(): cannot return ${\$inferred->to_string} as ${\$declared->to_string}",
                 file          => $self->{file},
                 line          => $val->line_number,
                 col           => $val->column_number,
                 end_col       => $val->column_number + length($val->content),
                 expected_type => $declared->to_string,
                 actual_type   => $inferred->to_string,
+                suggestions   => ["Change return type to ${\$inferred->to_string}"],
+                related       => [+{ line => $fn->{line}, col => $fn->{col} // 1, message => "$name() declared here" }],
             );
         }
     }
@@ -317,18 +333,24 @@ sub _check_implicit_return_of_stmt ($self, $stmt, $env, $declared, $name) {
     my $inferred = Typist::Static::Infer->infer_expr($stmt, $env, $declared)
                 // Typist::Static::Infer->infer_expr($first, $env, $declared);
     return unless defined $inferred;
-    return if _contains_any($inferred);
+    if (_contains_any($inferred)) {
+        $self->_emit_gradual_hint($name, $first, $inferred, 'implicit return');
+        return;
+    }
 
     unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{type_env}->registry)) {
+        my $fn_info = $self->{extracted}{functions}{$name};
         $self->{errors}->collect(
             kind          => 'TypeMismatch',
-            message       => "Implicit return of $name(): expected ${\$declared->to_string}, got ${\$inferred->to_string}",
+            message       => "Implicit return of $name(): cannot return ${\$inferred->to_string} as ${\$declared->to_string}",
             file          => $self->{file},
             line          => $first->line_number,
             col           => $first->column_number,
             end_col       => $first->column_number + length($first->content),
             expected_type => $declared->to_string,
             actual_type   => $inferred->to_string,
+            suggestions   => ["Change return type to ${\$inferred->to_string}"],
+            ($fn_info ? (related => [+{ line => $fn_info->{line}, col => $fn_info->{col} // 1, message => "$name() declared here" }]) : ()),
         );
     }
 }
@@ -338,6 +360,20 @@ sub _check_implicit_return_of_stmt ($self, $stmt, $env, $declared, $name) {
 sub _env_for_node ($self, $node) { $self->{type_env}->env_for_node($node) }
 sub _fn_env       ($self, $fn)   { $self->{type_env}->fn_env($fn) }
 sub _resolve_type ($self, $expr) { $self->{type_env}->resolve_type($expr) }
+
+# ── GradualHint Emission ───────────────────────
+
+sub _emit_gradual_hint ($self, $name, $node, $inferred, $context) {
+    return unless $self->{gradual_hints};
+    $self->{errors}->collect(
+        kind    => 'GradualHint',
+        message => "$context of $name() not checked: inferred type contains Any (${\$inferred->to_string})",
+        file    => $self->{file},
+        line    => $node->line_number,
+        col     => $node->column_number,
+        end_col => $node->column_number + length($node->content),
+    );
+}
 
 # ── Helpers ─────────────────────────────────────
 

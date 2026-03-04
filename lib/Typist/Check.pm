@@ -17,6 +17,7 @@ my %SEVERITY_LABEL = (
     2 => 'error',
     3 => 'warning',
     4 => 'warning',
+    5 => 'hint',
 );
 
 # ── Public API ──────────────────────────────────
@@ -73,8 +74,9 @@ sub run ($class, @argv) {
 
             for my $d (@$diags) {
                 my $sev = $d->{severity} // 3;
-                if ($sev <= 2) { $total_errors++ }
-                else           { $total_warnings++ }
+                if    ($sev <= 2) { $total_errors++ }
+                elsif ($sev <= 4) { $total_warnings++ }
+                # severity >= 5 (hints) are not counted in summary
             }
         }
 
@@ -182,9 +184,14 @@ sub _print_file_diagnostics ($file, $diags, $use_color, $verbose) {
         my $line  = $d->{line} // 0;
         my $col   = $d->{col}  // 1;
 
+        # Hints (severity >= 5) only shown in verbose mode
+        next if $sev >= 5 && !$verbose;
+
         my $loc   = sprintf '%4d:%-3d', $line, $col;
         my $colored_label = $label eq 'error'
-            ? _c('31', $label, $use_color)      # red
+            ? _c('31', $label, $use_color)       # red
+            : $label eq 'hint'
+            ? _c('36', $label, $use_color)       # cyan
             : _c('33', $label, $use_color);      # yellow
         my $colored_kind = _c('2', "[$kind]", $use_color);  # dim
 

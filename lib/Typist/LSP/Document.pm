@@ -75,7 +75,8 @@ sub analyze ($self, %opts) {
         $self->{content},
         file               => $file,
         workspace_registry => $opts{workspace_registry},
-        ($opts{extracted} ? (extracted => $opts{extracted}) : ()),
+        ($opts{extracted}      ? (extracted      => $opts{extracted})      : ()),
+        ($opts{gradual_hints}  ? (gradual_hints  => $opts{gradual_hints}) : ()),
     );
 
     $self->{result};

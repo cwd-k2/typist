@@ -37,6 +37,7 @@ my %SEVERITY = (
     UnknownTypeClass => 2,
     UnknownType      => 4,
     ProtocolMismatch => 2,
+    GradualHint      => 5,  # opt-in hint — blame tracking for Any
 );
 
 # ── Public API ───────────────────────────────────
@@ -83,10 +84,11 @@ sub analyze ($class, $source, %opts) {
     # Phase 4: File-level checks
     Typist::Static::Infer->clear_callback_params;
     my $type_checker = Typist::Static::TypeChecker->new(
-        type_env  => $type_env,
-        errors    => $errors,
-        extracted => $extracted,
-        file      => $file,
+        type_env      => $type_env,
+        errors        => $errors,
+        extracted     => $extracted,
+        file          => $file,
+        gradual_hints => $opts{gradual_hints},
     );
     $type_checker->check_variables;
     $type_checker->check_assignments;

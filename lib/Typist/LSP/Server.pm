@@ -617,6 +617,7 @@ sub _publish_diagnostics_with_extracted ($self, $doc, $extracted) {
         $doc->analyze(
             workspace_registry => $self->_ws_registry,
             extracted          => $extracted,
+            gradual_hints      => 1,
         );
     };
     if ($@) {
@@ -636,6 +637,7 @@ sub _publish_diagnostics ($self, $doc) {
     my $result = eval {
         $doc->analyze(
             workspace_registry => $self->_ws_registry,
+            gradual_hints      => 1,
         );
     };
     if ($@) {
@@ -716,8 +718,9 @@ sub _emit_diagnostics ($self, $doc, $result) {
     });
 }
 
-# Map internal severity (1=critical..4=info) to LSP severity (1=Error..4=Hint)
+# Map internal severity (1=critical..4=info, 5=hint) to LSP severity (1=Error..4=Hint)
 sub _lsp_severity ($internal) {
+    return 4 if ($internal // 3) >= 5;  # GradualHint → LSP Hint
     $internal // 3;
 }
 
