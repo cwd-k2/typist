@@ -185,29 +185,31 @@ handle {
 # ordering at the type level.  Each operation carries an inline
 # protocol('From -> To') transition marker.
 #
-#   effect DB, [qw(None Connected Authed)] => +{
-#       connect => ['sig', protocol('None -> Connected')],
+#   effect DB, [qw(Connected Authed)] => +{
+#       connect => ['sig', protocol('* -> Connected')],
 #       ...
 #   };
 #
-# Annotations declare start/end states:
-#   ![DB<None -> Authed>]   — transition from None to Authed
+# * is the ground state (protocol inactive).  Annotations declare
+# start/end states:
+#   ![DB<* -> Authed>]      — activate and reach Authed
 #   ![DB<Authed>]           — invariant: stay in Authed
+#   ![DB]                   — default * -> * (session pattern)
 
 say "";
 say "── Effect protocol (database) ─────────────────";
 
 BEGIN {
-    effect 'Database', [qw(Disconnected Connected Authenticated)] => +{
-        connect    => ['(Str) -> Void',      protocol('Disconnected -> Connected')],
+    effect 'Database', [qw(Connected Authenticated)] => +{
+        connect    => ['(Str) -> Void',      protocol('* -> Connected')],
         auth       => ['(Str, Str) -> Void', protocol('Connected -> Authenticated')],
         query      => ['(Str) -> Str',       protocol('Authenticated -> Authenticated')],
-        disconnect => ['() -> Void',         protocol('Authenticated -> Disconnected')],
+        disconnect => ['() -> Void',         protocol('Authenticated -> *')],
     };
 }
 
-# setup transitions: Disconnected → Connected → Authenticated
-sub db_setup :sig(() -> Void ![Database<Disconnected -> Authenticated>]) () {
+# setup transitions: * → Connected → Authenticated
+sub db_setup :sig(() -> Void ![Database<* -> Authenticated>]) () {
     Database::connect("localhost");
     Database::auth("admin", "secret");
 }
@@ -217,8 +219,8 @@ sub db_query :sig((Str) -> Str ![Database<Authenticated>]) ($sql) {
     Database::query($sql);
 }
 
-# Full session: Disconnected → Authenticated → Disconnected
-sub db_session :sig(() -> Str ![Database<Disconnected -> Disconnected>]) () {
+# Full session: * → Authenticated → * (default * -> *)
+sub db_session :sig(() -> Str ![Database]) () {
     db_setup();
     my $result = db_query("SELECT 1");
     Database::disconnect();
