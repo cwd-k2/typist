@@ -183,10 +183,10 @@ handle {
 #
 # Protocols add state machines to effects, enforcing operation
 # ordering at the type level.  Each operation carries an inline
-# protocol('From -> To') transition marker.
+# protocol('sig', 'From -> To') combines signature and transition.
 #
-#   effect DB, [qw(Connected Authed)] => +{
-#       connect => ['sig', protocol('* -> Connected')],
+#   effect DB => qw/Connected Authed/ => +{
+#       connect => protocol('sig', '* -> Connected'),
 #       ...
 #   };
 #
@@ -200,11 +200,11 @@ say "";
 say "── Effect protocol (database) ─────────────────";
 
 BEGIN {
-    effect 'Database', [qw(Connected Authenticated)] => +{
-        connect    => ['(Str) -> Void',      protocol('* -> Connected')],
-        auth       => ['(Str, Str) -> Void', protocol('Connected -> Authenticated')],
-        query      => ['(Str) -> Str',       protocol('Authenticated -> Authenticated')],
-        disconnect => ['() -> Void',         protocol('Connected | Authenticated -> *')],
+    effect Database => qw/Connected Authenticated/ => +{
+        connect    => protocol('(Str) -> Void',      '* -> Connected'),
+        auth       => protocol('(Str, Str) -> Void', 'Connected -> Authenticated'),
+        query      => protocol('(Str) -> Str',       'Authenticated -> Authenticated'),
+        disconnect => protocol('() -> Void',         'Connected | Authenticated -> *'),
     };
 }
 

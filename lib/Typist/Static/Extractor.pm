@@ -343,10 +343,10 @@ sub _extract_struct_fields ($class, $list, $fields, $optional_fields) {
 # ── Effect Extraction ──────────────────────────
 #
 # Supports two syntaxes:
-#   New: effect Name, [qw(States...)] => +{ op => ['sig', protocol('From -> To')], ... }
-#   Old: effect Name => +{ op => 'sig', ... }  (protocol-less)
+#   Protocol: effect Name => qw/States.../ => +{ op => protocol('sig', 'From -> To'), ... }
+#   Plain:    effect Name => +{ op => 'sig', ... }  (protocol-less)
 #
-# Operations with arrayref values carry inline protocol transitions.
+# Operations with protocol() values carry inline protocol transitions.
 # String values are plain signatures (no protocol).
 
 sub _extract_effects ($class, $stmts, $result) {
@@ -361,32 +361,18 @@ sub _extract_effects ($class, $stmts, $result) {
             ? $children[1]->string
             : $children[1]->content;
 
-        # Detect states list: effect Name, [qw(...)] => +{...}
+        # Detect states: effect Name => qw/States.../ => +{...}
+        # States appear as QuoteLike::Words tokens between the name and the ops block
         my @states;
         my $scan_start = 2;
-        if ($children[2]->isa('PPI::Token::Operator') && $children[2]->content eq ',') {
-            # Look for [qw(...)] after the comma
-            for my $ci (3 .. $#children) {
-                my $child = $children[$ci];
-                if ($child->isa('PPI::Structure::Constructor')
-                    && $child->content =~ /\A\[/)
-                {
-                    # Extract state names from [qw(...)]
-                    for my $inner ($child->schildren) {
-                        if ($inner->isa('PPI::Token::QuoteLike::Words')) {
-                            push @states, $inner->literal;
-                        } elsif ($inner->isa('PPI::Statement') || $inner->isa('PPI::Statement::Expression')) {
-                            for my $tok ($inner->schildren) {
-                                push @states, $tok->literal if $tok->isa('PPI::Token::QuoteLike::Words');
-                            }
-                        }
-                    }
-                    $scan_start = $ci + 1;
-                    last;
-                }
-                last if $child->isa('PPI::Structure::Constructor')
-                     || $child->isa('PPI::Structure::Block');
+        for my $ci (2 .. $#children) {
+            my $child = $children[$ci];
+            if ($child->isa('PPI::Token::QuoteLike::Words')) {
+                push @states, $child->literal;
+                $scan_start = $ci + 1;
             }
+            last if $child->isa('PPI::Structure::Constructor')
+                 || $child->isa('PPI::Structure::Block');
         }
 
         # Find the operations block (Constructor/Block)
@@ -418,28 +404,26 @@ sub _extract_effects ($class, $stmts, $result) {
                     $i++;
                     last unless $i <= $#sc;
 
-                    # Value: Quote (string) or Constructor ([...]) for arrayref
+                    # Value: Quote (string) or protocol('sig', 'transition') call
                     if ($sc[$i]->isa('PPI::Token::Quote')) {
                         push @op_names, $op_name;
                         $op_sigs{$op_name} = $sc[$i]->string;
                         $i++;
-                    } elsif ($sc[$i]->isa('PPI::Structure::Constructor')
-                          && $sc[$i]->content =~ /\A\[/)
+                    } elsif ($sc[$i]->isa('PPI::Token::Word') && $sc[$i]->content eq 'protocol'
+                          && $i + 1 <= $#sc && $sc[$i + 1]->isa('PPI::Structure::List'))
                     {
-                        my ($sig, $from, $to) = $class->_extract_op_entry($sc[$i]);
+                        my ($sig, $from, $to) = $class->_extract_protocol_call($sc[$i + 1]);
                         if (defined $sig) {
                             push @op_names, $op_name;
                             $op_sigs{$op_name} = $sig;
                             if (defined $from && defined $to) {
-                                # $from/$to are arrayrefs now
                                 $op_map{$op_name} = { from => $from, to => $to };
-                                # Back-compat transitions: expand from-set
                                 for my $f (@$from) {
                                     $transitions{$f}{$op_name} = $to->[0];
                                 }
                             }
                         }
-                        $i++;
+                        $i += 2; # skip Word('protocol') + List(...)
                     } else {
                         $i++;
                     }
@@ -460,38 +444,26 @@ sub _extract_effects ($class, $stmts, $result) {
     }
 }
 
-# Extract (sig_string, from, to) from an arrayref PPI node: [sig, protocol('From -> To')]
-# Returns ($sig, $from, $to) or ($sig, undef, undef) if no protocol marker.
-sub _extract_op_entry ($class, $constructor) {
+# Extract (sig_string, from, to) from a protocol('sig', 'transition') call's List node.
+# Returns ($sig, $from, $to) or ($sig, undef, undef) if transition parse fails.
+sub _extract_protocol_call ($class, $list) {
     my ($sig, $from, $to);
+    my @quotes;
 
-    for my $inner ($constructor->schildren) {
-        next unless $inner->isa('PPI::Statement') || $inner->isa('PPI::Statement::Expression');
-        my @sc = $inner->schildren;
+    for my $le ($list->schildren) {
+        my @lc = ref($le) && $le->can('schildren') ? $le->schildren : ($le);
+        for my $tok (@lc) {
+            push @quotes, $tok->string if $tok->isa('PPI::Token::Quote');
+        }
+    }
 
-        for my $i (0 .. $#sc) {
-            # First Quote is the signature string
-            if (!defined $sig && $sc[$i]->isa('PPI::Token::Quote')) {
-                $sig = $sc[$i]->string;
-                next;
-            }
-            # Look for protocol('From -> To')
-            if ($sc[$i]->isa('PPI::Token::Word') && $sc[$i]->content eq 'protocol'
-                && $i + 1 <= $#sc && $sc[$i + 1]->isa('PPI::Structure::List'))
-            {
-                my $list = $sc[$i + 1];
-                for my $le ($list->schildren) {
-                    my @lc = ref($le) && $le->can('schildren') ? $le->schildren : ($le);
-                    for my $tok (@lc) {
-                        next unless $tok->isa('PPI::Token::Quote');
-                        my $spec = $tok->string;
-                        if ($spec =~ /^\s*(.+?)\s*->\s*(.+?)\s*$/) {
-                            $from = [sort map { s/\s+//gr } split(/\s*\|\s*/, $1)];
-                            $to   = [sort map { s/\s+//gr } split(/\s*\|\s*/, $2)];
-                        }
-                    }
-                }
-            }
+    # First quote = sig, second quote = transition
+    $sig = $quotes[0] if @quotes >= 1;
+    if (@quotes >= 2) {
+        my $trans = $quotes[1];
+        if ($trans =~ /^\s*(.+?)\s*->\s*(.+?)\s*$/) {
+            $from = [sort map { s/\s+//gr } split(/\s*\|\s*/, $1)];
+            $to   = [sort map { s/\s+//gr } split(/\s*\|\s*/, $2)];
         }
     }
 

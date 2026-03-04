@@ -36,11 +36,11 @@ subtest 'clean — correct protocol sequence' => sub {
 package ProtoClean;
 use v5.40;
 
-effect DB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected -> None')],
+effect DB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected -> None'),
 };
 
 sub setup :sig(() -> Void ![DB<None -> Authed>]) () {
@@ -60,11 +60,11 @@ subtest 'error — operation disallowed in current state' => sub {
 package ProtoBadOp;
 use v5.40;
 
-effect DB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected -> None')],
+effect DB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected -> None'),
 };
 
 sub bad :sig(() -> Void ![DB<None -> Authed>]) () {
@@ -84,11 +84,11 @@ subtest 'error — end state mismatch' => sub {
 package ProtoEndState;
 use v5.40;
 
-effect DB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected -> None')],
+effect DB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected -> None'),
 };
 
 sub partial :sig(() -> Void ![DB<None -> Authed>]) () {
@@ -108,11 +108,11 @@ subtest 'clean — invariant state annotation' => sub {
 package ProtoInvariant;
 use v5.40;
 
-effect DB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected -> None')],
+effect DB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected -> None'),
 };
 
 sub query_only :sig((Str) -> Str ![DB<Authed>]) ($sql) {
@@ -134,11 +134,11 @@ subtest 'clean — mixed protocol/non-protocol effects' => sub {
 package ProtoMixed;
 use v5.40;
 
-effect DB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected -> None')],
+effect DB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected -> None'),
 };
 
 effect IO => +{};
@@ -159,9 +159,9 @@ subtest 'well-formedness — unreachable operation' => sub {
 package ProtoUnreachable;
 use v5.40;
 
-effect BadDB, [qw(None Connected)] => +{
-    connect    => ['(Str) -> Void', protocol('None -> Connected')],
-    query      => ['(Str) -> Str',  protocol('Connected -> Connected')],
+effect BadDB => qw/None Connected/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    query      => protocol('(Str) -> Str', 'Connected -> Connected'),
     orphan_op  => '() -> Void',
 };
 PERL
@@ -178,8 +178,8 @@ subtest 'well-formedness — undefined transition target' => sub {
 package ProtoUndefined;
 use v5.40;
 
-effect BadDB2, [qw(None Ghost)] => +{
-    connect    => ['(Str) -> Void', protocol('None -> Ghost')],
+effect BadDB2 => qw/None Ghost/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Ghost'),
 };
 PERL
 
@@ -195,8 +195,8 @@ subtest 'well-formedness — state not in declared states list' => sub {
 package ProtoMissing;
 use v5.40;
 
-effect BadDB3, [qw(None)] => +{
-    connect    => ['(Str) -> Void', protocol('None -> Connected')],
+effect BadDB3 => qw/None/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
 };
 PERL
 
@@ -212,11 +212,11 @@ subtest 'clean — function call protocol composition' => sub {
 package ProtoCompose;
 use v5.40;
 
-effect DB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected -> None')],
+effect DB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected -> None'),
 };
 
 sub do_connect :sig(() -> Void ![DB<None -> Connected>]) () {
@@ -240,11 +240,11 @@ subtest 'protocol hints generated' => sub {
 package ProtoHints;
 use v5.40;
 
-effect DB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected -> None')],
+effect DB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected -> None'),
 };
 
 sub setup :sig(() -> Void ![DB<None -> Authed>]) () {
@@ -267,11 +267,11 @@ subtest 'branching — convergent if/else (same transition both branches)' => su
 package ProtoBranch1;
 use v5.40;
 
-effect DB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected -> None')],
+effect DB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected -> None'),
 };
 
 sub setup :sig((Bool) -> Void ![DB<None -> Connected>]) ($flag) {
@@ -294,11 +294,11 @@ subtest 'branching — divergent if/else (different end states)' => sub {
 package ProtoBranch2;
 use v5.40;
 
-effect DB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected -> None')],
+effect DB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected -> None'),
 };
 
 sub bad_branch :sig((Bool) -> Void ![DB<None -> Authed>]) ($flag) {
@@ -323,11 +323,11 @@ subtest 'branching — one branch returns, other continues' => sub {
 package ProtoBranch3;
 use v5.40;
 
-effect DB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected -> None')],
+effect DB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected -> None'),
 };
 
 sub early_return :sig((Bool) -> Void ![DB<None -> Authed>]) ($flag) {
@@ -351,11 +351,11 @@ subtest 'branching — all branches return (no final state check)' => sub {
 package ProtoBranch4;
 use v5.40;
 
-effect DB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected -> None')],
+effect DB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected -> None'),
 };
 
 sub all_return :sig((Bool) -> Void ![DB<None -> Authed>]) ($flag) {
@@ -381,11 +381,11 @@ subtest 'branching — if without else (state changes in then block)' => sub {
 package ProtoBranch5;
 use v5.40;
 
-effect DB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected -> None')],
+effect DB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected -> None'),
 };
 
 sub maybe_connect :sig((Bool) -> Void ![DB<None -> Connected>]) ($flag) {
@@ -407,11 +407,11 @@ subtest 'branching — if without else (no state change in then block)' => sub {
 package ProtoBranch6;
 use v5.40;
 
-effect DB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected -> None')],
+effect DB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected -> None'),
 };
 
 sub query_loop :sig((Bool) -> Void ![DB<Authed>]) ($flag) {
@@ -432,11 +432,11 @@ subtest 'branching — nested if/else convergence' => sub {
 package ProtoNested;
 use v5.40;
 
-effect DB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected -> None')],
+effect DB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected -> None'),
 };
 
 sub nested :sig((Bool, Bool) -> Void ![DB<None -> Authed>]) ($a, $b) {
@@ -465,11 +465,11 @@ subtest 'loop — idempotent operation in while loop' => sub {
 package ProtoLoop1;
 use v5.40;
 
-effect DB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected -> None')],
+effect DB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected -> None'),
 };
 
 sub query_loop :sig(() -> Void ![DB<Authed>]) () {
@@ -490,11 +490,11 @@ subtest 'loop — state-changing operation in for loop' => sub {
 package ProtoLoop2;
 use v5.40;
 
-effect DB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected -> None')],
+effect DB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected -> None'),
 };
 
 sub bad_loop :sig(() -> Void ![DB<Connected>]) () {
@@ -516,11 +516,11 @@ subtest 'loop — empty body is idempotent' => sub {
 package ProtoLoop3;
 use v5.40;
 
-effect DB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected -> None')],
+effect DB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected -> None'),
 };
 
 sub noop_loop :sig(() -> Void ![DB<Authed>]) () {
@@ -546,11 +546,11 @@ subtest 'handle — protocol ops inside handle body traced' => sub {
 package ProtoHandle1;
 use v5.40;
 
-effect DB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected -> None')],
+effect DB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected -> None'),
 };
 
 effect Logger => +{ log => '(Str) -> Void' };
@@ -577,11 +577,11 @@ subtest 'handle — wrong protocol ops inside handle body detected' => sub {
 package ProtoHandle2;
 use v5.40;
 
-effect DB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected -> None')],
+effect DB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected -> None'),
 };
 
 effect Logger => +{ log => '(Str) -> Void' };
@@ -604,11 +604,11 @@ subtest 'match — protocol ops inside match arms traced' => sub {
 package ProtoMatch1;
 use v5.40;
 
-effect DB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected -> None')],
+effect DB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected -> None'),
 };
 
 sub match_ops :sig((Str) -> Void ![DB<Connected -> Authed>]) ($mode) {
@@ -627,11 +627,11 @@ subtest 'match — divergent match arms detected' => sub {
 package ProtoMatch2;
 use v5.40;
 
-effect DB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected -> None')],
+effect DB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected -> None'),
 };
 
 sub bad_match :sig((Str) -> Void ![DB<Connected -> Authed>]) ($mode) {
@@ -683,11 +683,11 @@ subtest 'superposition — branch union converges with subsequent op' => sub {
 package ProtoSuperposition1;
 use v5.40;
 
-effect DB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Authed | Connected -> None')],
+effect DB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Authed | Connected -> None'),
 };
 
 sub diverge_then_disconnect :sig((Bool) -> Void ![DB<None -> None>]) ($flag) {
@@ -708,11 +708,11 @@ subtest 'ground — * -> * with * in transitions (full cycle)' => sub {
 package ProtoGround1;
 use v5.40;
 
-effect DB, [qw(Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('* -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected | Authed -> *')],
+effect DB => qw/Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', '* -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected | Authed -> *'),
 };
 
 sub full_cycle :sig(() -> Void ![DB<* -> *>]) () {
@@ -732,10 +732,10 @@ subtest 'ground — * -> * incomplete cycle errors' => sub {
 package ProtoGround2;
 use v5.40;
 
-effect DB, [qw(Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('* -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected | Authed -> *')],
+effect DB => qw/Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', '* -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected | Authed -> *'),
 };
 
 sub incomplete :sig(() -> Void ![DB<* -> *>]) () {
@@ -754,11 +754,11 @@ subtest 'handle — auto * -> * with * in transitions' => sub {
 package ProtoHandleAuto;
 use v5.40;
 
-effect DB, [qw(Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('* -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected | Authed -> *')],
+effect DB => qw/Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', '* -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected | Authed -> *'),
 };
 
 sub with_handle :sig(() -> Void ![DB<* -> *>]) () {
@@ -785,10 +785,10 @@ subtest 'handle — auto * -> * incomplete cycle errors' => sub {
 package ProtoHandleAutoErr;
 use v5.40;
 
-effect DB, [qw(Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('* -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected | Authed -> *')],
+effect DB => qw/Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', '* -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected | Authed -> *'),
 };
 
 sub incomplete_handle :sig(() -> Void ![DB<* -> *>]) () {
@@ -818,11 +818,11 @@ subtest 'handle — transparent when capturing different effect' => sub {
 package ProtoHandleTransparent;
 use v5.40;
 
-effect DB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected -> None')],
+effect DB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected -> None'),
 };
 
 effect Logger => +{ log => '(Str) -> Void' };
@@ -846,11 +846,11 @@ subtest 'default — ![DB] without state annotation defaults to * -> *' => sub {
 package ProtoDefault1;
 use v5.40;
 
-effect DB, [qw(Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('* -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected | Authed -> *')],
+effect DB => qw/Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', '* -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected | Authed -> *'),
 };
 
 sub full_cycle :sig(() -> Void ![DB]) () {
@@ -870,10 +870,10 @@ subtest 'default — ![DB] incomplete cycle errors' => sub {
 package ProtoDefault2;
 use v5.40;
 
-effect DB, [qw(Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('* -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected | Authed -> *')],
+effect DB => qw/Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', '* -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected | Authed -> *'),
 };
 
 sub incomplete :sig(() -> Void ![DB]) () {
@@ -894,11 +894,11 @@ subtest 'handle-driven — unannotated function with handle block verified' => s
 package ProtoHandleDriven1;
 use v5.40;
 
-effect DB, [qw(Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('* -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected | Authed -> *')],
+effect DB => qw/Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', '* -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    query      => protocol('(Str) -> Str', 'Authed -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected | Authed -> *'),
 };
 
 sub run () {
@@ -925,10 +925,10 @@ subtest 'handle-driven — unannotated function with incomplete handle errors' =
 package ProtoHandleDriven2;
 use v5.40;
 
-effect DB, [qw(Connected Authed)] => +{
-    connect    => ['(Str) -> Void',      protocol('* -> Connected')],
-    auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-    disconnect => ['() -> Void',         protocol('Connected | Authed -> *')],
+effect DB => qw/Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', '* -> Connected'),
+    auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+    disconnect => protocol('() -> Void', 'Connected | Authed -> *'),
 };
 
 sub run () {
@@ -952,9 +952,9 @@ subtest 'extraction — protocol(\'A | B -> C\') syntax' => sub {
 package ProtoExtractSet;
 use v5.40;
 
-effect MultiDB, [qw(None Connected Authed)] => +{
-    connect    => ['(Str) -> Void',       protocol('None -> Connected')],
-    disconnect => ['() -> Void',          protocol('Authed | Connected -> None')],
+effect MultiDB => qw/None Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', 'None -> Connected'),
+    disconnect => protocol('() -> Void', 'Authed | Connected -> None'),
 };
 PERL
 

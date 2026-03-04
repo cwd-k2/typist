@@ -202,9 +202,9 @@ subtest 'extracts effect with inline protocol (new syntax)' => sub {
     my $result = Typist::Static::Extractor->extract(<<'PERL');
 use v5.40;
 
-effect DB, [qw(None Connected)] => +{
-    connect => ['(Str) -> Void', protocol('None -> Connected')],
-    query   => ['(Str) -> Str',  protocol('Connected -> Connected')],
+effect DB => qw/None Connected/ => +{
+    connect => protocol('(Str) -> Void', 'None -> Connected'),
+    query   => protocol('(Str) -> Str',  'Connected -> Connected'),
 };
 PERL
 
@@ -314,8 +314,8 @@ subtest 'extracts mixed ops with and without protocol' => sub {
     my $result = Typist::Static::Extractor->extract(<<'PERL');
 use v5.40;
 
-effect Mixed, [qw(A B)] => +{
-    step    => ['(Int) -> Void', protocol('A -> B')],
+effect Mixed => qw/A B/ => +{
+    step    => protocol('(Int) -> Void', 'A -> B'),
     helper  => '(Str) -> Str',
 };
 PERL

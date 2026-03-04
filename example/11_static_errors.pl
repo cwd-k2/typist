@@ -90,10 +90,10 @@ sub pure_caller :sig((Str) -> Void) ($msg) {
 #
 
 BEGIN {
-    effect 'DB', [qw(Connected Authenticated)] => +{
-        connect => ['(Str) -> Void',      protocol('* -> Connected')],
-        auth    => ['(Str, Str) -> Void', protocol('Connected -> Authenticated')],
-        query   => ['(Str) -> Str',       protocol('Authenticated -> Authenticated')],
+    effect DB => qw/Connected Authenticated/ => +{
+        connect => protocol('(Str) -> Void',      '* -> Connected'),
+        auth    => protocol('(Str, Str) -> Void', 'Connected -> Authenticated'),
+        query   => protocol('(Str) -> Str',       'Authenticated -> Authenticated'),
     };
 }
 

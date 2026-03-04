@@ -57,11 +57,11 @@ use Typist::DSL;
 # since the body depends on it.
 
 BEGIN {
-    effect 'Contract', [qw(Guarded)] => +{
-        pre  => ['(Any, Str) -> Void', protocol('* | Guarded -> Guarded')],
-        old  => ['(Any) -> Any',       protocol('Guarded -> Guarded')],
-        inv  => ['(Any, Str) -> Void', protocol('Guarded -> Guarded')],
-        post => ['(Any, Str) -> Void', protocol('Guarded -> *')],
+    effect Contract => qw/Guarded/ => +{
+        pre  => protocol('(Any, Str) -> Void', '* | Guarded -> Guarded'),
+        old  => protocol('(Any) -> Any',       'Guarded -> Guarded'),
+        inv  => protocol('(Any, Str) -> Void', 'Guarded -> Guarded'),
+        post => protocol('(Any, Str) -> Void', 'Guarded -> *'),
     };
 
     effect State => +{

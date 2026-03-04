@@ -103,7 +103,7 @@ For the complete type system reference, see [docs/type-system.md](docs/type-syst
 | Variadic functions | `...Type` | `(Int, ...Str) -> Void` |
 | Type classes / HKT | `typeclass` / `instance` | Ad-hoc polymorphism, `F: * -> *` |
 | Algebraic effects | `effect` / `![...]` | `![Console, Log]` |
-| Effect protocols | `protocol('From -> To')` | `![DB<* -> Authed>]` |
+| Effect protocols | `protocol('sig', 'From -> To')` | `![DB<* -> Authed>]` |
 | Row polymorphism | `<r: Row>` / `[E, r]` | Effect row extension |
 | Effect handlers | `Effect::op(...)` / `handle` | Direct dispatch + scoped handling |
 
@@ -315,11 +315,11 @@ Effects can carry protocol state machines that enforce operation ordering:
 ```perl
 BEGIN {
     # * is the ground state (protocol inactive); explicit states are active states only
-    effect 'Database', [qw(Connected Authed)] => +{
-        connect    => ['(Str) -> Void',      protocol('* -> Connected')],
-        auth       => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
-        query      => ['(Str) -> Str',       protocol('Authed -> Authed')],
-        disconnect => ['() -> Void',         protocol('Authed -> *')],
+    effect Database => qw/Connected Authed/ => +{
+        connect    => protocol('(Str) -> Void',      '* -> Connected'),
+        auth       => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
+        query      => protocol('(Str) -> Str',       'Authed -> Authed'),
+        disconnect => protocol('() -> Void',         'Authed -> *'),
     };
 }
 

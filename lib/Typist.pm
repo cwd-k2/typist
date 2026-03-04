@@ -145,13 +145,14 @@ sub _coerce_method_sigs ($methods_ref) {
 # ── Protocol Support ────────────────────────────
 
 sub _make_protocol (@args) {
-    if (@args == 1 && !ref $args[0]) {
-        # protocol('From | A -> To | B') — transition marker with sets
-        my ($lhs, $rhs) = $args[0] =~ /^\s*(.+?)\s*->\s*(.+?)\s*$/;
-        die "Invalid protocol transition: '$args[0]'\n" unless defined $lhs;
+    if (@args == 2 && !ref $args[0] && !ref $args[1]) {
+        # protocol('(Str) -> Void', '* -> Connected')
+        my ($sig, $trans) = @args;
+        my ($lhs, $rhs) = $trans =~ /^\s*(.+?)\s*->\s*(.+?)\s*$/;
+        die "Invalid protocol transition: '$trans'\n" unless defined $lhs;
         my @from = sort map { s/\s+//gr } split(/\s*\|\s*/, $lhs);
         my @to   = sort map { s/\s+//gr } split(/\s*\|\s*/, $rhs);
-        return +{ __protocol_transition__ => 1, from => \@from, to => \@to };
+        return +{ __protocol__ => 1, sig => $sig, from => \@from, to => \@to };
     }
     die "Invalid protocol() call\n";
 }
@@ -159,29 +160,20 @@ sub _make_protocol (@args) {
 # ── Effect Support ──────────────────────────────
 
 sub _effect ($name, @rest) {
-    my ($states, $operations_ref);
-    if (ref $rest[0] eq 'ARRAY') {
-        # New syntax: effect Name, [states] => +{...}
-        $states = shift @rest;
-        $operations_ref = shift @rest;
-    } else {
-        # Protocol-less: effect Name => +{...}
-        $operations_ref = shift @rest;
-    }
+    # Pop the operations hashref (always last argument)
+    my $operations_ref = pop @rest;
+    # Remaining strings are states (empty for protocol-less effects)
+    my $states = @rest ? \@rest : undef;
 
-    # Process operation values: string or [sig, protocol('From | A -> To | B')]
+    # Process operation values: string or protocol('sig', 'transition') hashref
     my (%ops, %transitions, %op_map);
     for my $op_name (keys %$operations_ref) {
         my $val = $operations_ref->{$op_name};
-        if (ref $val eq 'ARRAY') {
-            $ops{$op_name} = $val->[0];
-            if (ref $val->[1] eq 'HASH' && $val->[1]{__protocol_transition__}) {
-                my $t = $val->[1];
-                # from/to are arrayrefs
-                $op_map{$op_name} = { from => $t->{from}, to => $t->{to} };
-                for my $f ($t->{from}->@*) {
-                    $transitions{$f}{$op_name} = $t->{to}[0];
-                }
+        if (ref $val eq 'HASH' && $val->{__protocol__}) {
+            $ops{$op_name} = $val->{sig};
+            $op_map{$op_name} = { from => $val->{from}, to => $val->{to} };
+            for my $f ($val->{from}->@*) {
+                $transitions{$f}{$op_name} = $val->{to}[0];
             }
         } else {
             $ops{$op_name} = $val;
@@ -895,17 +887,17 @@ auto-installed as qualified subs (e.g. C<< Console::log(@args) >>).
 
 With protocol (stateful effects):
 
-    effect 'DB', [qw(Connected Authed)] => +{
-        connect => ['(Str) -> Void', protocol('* -> Connected')],
-        query   => ['(Str) -> Str',  protocol('Authed -> Authed')],
+    effect DB => qw/Connected Authed/ => +{
+        connect => protocol('(Str) -> Void', '* -> Connected'),
+        query   => protocol('(Str) -> Str',  'Authed -> Authed'),
     };
 
 =head2 protocol
 
-    protocol('From -> To')
+    protocol('(Str) -> Void', '* -> Connected')
 
-Inline state transition marker for effect protocols.
-Used inside C<effect> definitions to attach FSM transitions to operations.
+Inline operation definition with state transition for effect protocols.
+First argument is the type signature, second is the state transition.
 
 =head2 declare
 

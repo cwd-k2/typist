@@ -9,9 +9,9 @@ use Test::Typist::LSP qw(run_session lsp_request lsp_notification init_shutdown_
 subtest 'hover shows protocol on effect' => sub {
     my $source = <<'PERL';
 use v5.40;
-effect DB, [qw(None Connected)] => +{
-    connect => ['(Str) -> Void', protocol('None -> Connected')],
-    query   => ['(Str) -> Str',  protocol('Connected -> Connected')],
+effect DB => qw/None Connected/ => +{
+    connect => protocol('(Str) -> Void', 'None -> Connected'),
+    query   => protocol('(Str) -> Str',  'Connected -> Connected'),
 };
 PERL
 
@@ -37,9 +37,9 @@ PERL
 subtest 'inlay hints include protocol state' => sub {
     my $source = <<'PERL';
 use v5.40;
-effect DB, [qw(None Connected Authed)] => +{
-    connect => ['(Str) -> Void',      protocol('None -> Connected')],
-    auth    => ['(Str, Str) -> Void', protocol('Connected -> Authed')],
+effect DB => qw/None Connected Authed/ => +{
+    connect => protocol('(Str) -> Void',      'None -> Connected'),
+    auth    => protocol('(Str, Str) -> Void', 'Connected -> Authed'),
 };
 
 sub setup :sig(() -> Void ![DB<None -> Authed>]) () {

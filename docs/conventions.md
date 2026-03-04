@@ -205,10 +205,10 @@ Operations are auto-installed as qualified subs (`Console::writeLine(@args)`), d
 ### Effect Protocols
 
 ```perl
-effect 'DB', [qw(Connected Authed)] => +{
-    connect    => ['(Str) -> Void', protocol('* -> Connected')],
-    query      => ['(Str) -> Str',  protocol('Authed -> Authed')],
-    disconnect => ['() -> Void',    protocol('Authed -> *')],
+effect DB => qw/Connected Authed/ => +{
+    connect    => protocol('(Str) -> Void', '* -> Connected'),
+    query      => protocol('(Str) -> Str',  'Authed -> Authed'),
+    disconnect => protocol('() -> Void',    'Authed -> *'),
 };
 ```
 
@@ -352,18 +352,6 @@ PPI parses anonymous sub signatures as `PPI::Token::Prototype`, not `PPI::Struct
 
 ```perl
 reverse(1 .. 10)
-```
-
-### Protocol Bareword Quoting
-
-The `effect` keyword with a states list requires a quoted name because the comma after the name does not auto-quote like `=>` does:
-
-```perl
-# Wrong: Name is a bareword, comma doesn't quote it
-effect Name, [qw(A B)] => +{ ... };
-
-# Correct: quote the name explicitly
-effect 'Name', [qw(A B)] => +{ ... };
 ```
 
 ### `(&@)` Prototype Comma Trap
