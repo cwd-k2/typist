@@ -915,4 +915,64 @@ subtest 'array: Union expected extracts ArrayRef elem type' => sub {
     is $t->base, 'ArrayRef', 'is ArrayRef';
 };
 
+# ── List assignment RHS inference ─────────────────
+
+subtest 'infer_list_rhs_type: function call via @{func()}' => sub {
+    my $ret = Typist::Type::Param->new('Tuple',
+        Typist::Type::Atom->new('Int'),
+        Typist::Type::Atom->new('Str'),
+    );
+    my $env = +{
+        variables => {},
+        functions => { make_pair => $ret },
+        known     => { make_pair => 1 },
+    };
+
+    my $doc = PPI::Document->new(\'my ($a, $b) = @{make_pair()}');
+    my @stmts = $doc->schildren;
+    my @children = $stmts[0]->schildren;
+
+    # Find init_node (first token after '=')
+    my $init_node;
+    for my $i (0 .. $#children) {
+        if ($children[$i]->isa('PPI::Token::Operator') && $children[$i]->content eq '=') {
+            $init_node = $children[$i + 1];
+            last;
+        }
+    }
+    ok $init_node, 'found init_node';
+
+    my $rhs = Typist::Static::Infer->infer_list_rhs_type($init_node, $env);
+    ok $rhs, 'inferred RHS type';
+    is $rhs->to_string, 'Tuple[Int, Str]', 'RHS is Tuple[Int, Str]';
+};
+
+subtest 'infer_list_rhs_type: direct function call' => sub {
+    my $ret = Typist::Type::Param->new('ArrayRef',
+        Typist::Type::Atom->new('Int'),
+    );
+    my $env = +{
+        variables => {},
+        functions => { get_pair => $ret },
+        known     => { get_pair => 1 },
+    };
+
+    my $doc = PPI::Document->new(\'my ($a, $b) = get_pair()');
+    my @stmts = $doc->schildren;
+    my @children = $stmts[0]->schildren;
+
+    my $init_node;
+    for my $i (0 .. $#children) {
+        if ($children[$i]->isa('PPI::Token::Operator') && $children[$i]->content eq '=') {
+            $init_node = $children[$i + 1];
+            last;
+        }
+    }
+    ok $init_node, 'found init_node';
+
+    my $rhs = Typist::Static::Infer->infer_list_rhs_type($init_node, $env);
+    ok $rhs, 'inferred RHS type';
+    is $rhs->to_string, 'ArrayRef[Int]', 'RHS is ArrayRef[Int]';
+};
+
 done_testing;

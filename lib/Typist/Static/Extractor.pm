@@ -730,9 +730,18 @@ sub _extract_variables ($class, $stmts, $result) {
     for my $stmt (@$stmts) {
         my @children = $stmt->schildren;
         my ($var_name, $var_sym, $init_node);
+        my @list_syms;
 
         for my $i (0 .. $#children) {
-            if ($children[$i]->isa('PPI::Token::Symbol') && !$var_name) {
+            # List pattern: my ($a, $b) = ...
+            if ($children[$i]->isa('PPI::Structure::List') && !$var_name && !@list_syms) {
+                my $expr = $children[$i]->find_first('PPI::Statement::Expression')
+                        || $children[$i]->find_first('PPI::Statement');
+                if ($expr) {
+                    @list_syms = grep { $_->isa('PPI::Token::Symbol') } $expr->schildren;
+                }
+            }
+            if ($children[$i]->isa('PPI::Token::Symbol') && !$var_name && !@list_syms) {
                 $var_name = $children[$i]->content;
                 $var_sym  = $children[$i];
             }
@@ -740,6 +749,25 @@ sub _extract_variables ($class, $stmts, $result) {
                 $init_node = $children[$i + 1] if $i + 1 <= $#children;
                 last;
             }
+        }
+
+        # List assignment: my ($a, $b) = expr
+        if (@list_syms && $init_node) {
+            for my $pos (0 .. $#list_syms) {
+                my $sym = $list_syms[$pos];
+                next if $typed_vars{$sym->content};
+                $typed_vars{$sym->content} = 1;
+                push $result->{variables}->@*, +{
+                    name          => $sym->content,
+                    type_expr     => undef,
+                    line          => $sym->line_number,
+                    col           => $sym->column_number,
+                    init_node     => $init_node,
+                    list_position => $pos,
+                    list_count    => scalar @list_syms,
+                };
+            }
+            next;
         }
 
         next unless $var_name && $init_node;

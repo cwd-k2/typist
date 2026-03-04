@@ -391,6 +391,7 @@ sub _build_env ($self) {
     }
 
     # Phase 2: unannotated variables — infer from init expression
+    my %list_rhs_cache;  # refaddr(init_node) → distributed type arrayref
     my $partial_env = +{
         variables => \%variables,
         functions => \%functions,
@@ -415,6 +416,33 @@ sub _build_env ($self) {
 
         # Enrich env with enclosing function parameters for accurate inference
         my $infer_env = $self->_scoped_env($partial_env, $init_node);
+
+        # List assignment: use cached RHS type and distribute by position
+        if (defined $var->{list_position}) {
+            my $addr = refaddr($init_node);
+            $list_rhs_cache{$addr} //=
+                _distribute_list_type(
+                    Typist::Static::Infer->infer_list_rhs_type($init_node, $infer_env),
+                    $var->{list_count},
+                );
+            my $inferred = $list_rhs_cache{$addr}[$var->{list_position}];
+
+            my $status = !defined $inferred  ? 'undef'
+                       : ($inferred->is_atom && $inferred->name eq 'Any') ? 'Any_skip'
+                       : 'ok';
+            my $widened = ($status eq 'ok') ? _widen_literal($inferred) : $inferred;
+            push $self->{_infer_log}->@*, +{
+                name   => $var->{name}, line => $var->{line},
+                type   => $widened ? $widened->to_string : undef,
+                status => $status,
+                scope  => 'top',
+            };
+            if (defined $inferred && !($inferred->is_atom && $inferred->name eq 'Any')) {
+                $variables{$var->{name}} = $widened;
+            }
+            next;
+        }
+
         my $inferred = Typist::Static::Infer->infer_expr_with_siblings($init_node, $infer_env);
 
         my $status = !defined $inferred  ? 'undef'
@@ -485,6 +513,26 @@ sub _widen_literal ($type) {
         return Typist::Type::Param->new($type->base, @widened) if $changed;
     }
     $type;
+}
+
+# Distribute a container type to list-assignment positions.
+# Returns an arrayref of types (one per position), or undef entries for unknowns.
+sub _distribute_list_type ($type, $count) {
+    return [(undef) x $count] unless defined $type;
+
+    # Tuple[T1, T2, ...] → positional distribution
+    if ($type->is_param && $type->base eq 'Tuple') {
+        my @params = $type->params;
+        return [map { $params[$_] } 0 .. $count - 1];
+    }
+
+    # ArrayRef[T] → all positions get T
+    if ($type->is_param && ($type->base eq 'ArrayRef' || $type->base eq 'Array')) {
+        my $elem = ($type->params)[0];
+        return [($elem) x $count];
+    }
+
+    [(undef) x $count];
 }
 
 sub _resolve_type ($self, $expr) {
@@ -583,10 +631,19 @@ sub _collect_local_var_types ($self) {
             next unless ($stmt->type // '') eq 'my';
             my @children = $stmt->schildren;
 
-            # Find $var = EXPR pattern
+            # Find $var = EXPR or ($a, $b) = EXPR pattern
             my ($var_name, $var_sym, $init_node);
+            my @list_syms;
             for my $i (0 .. $#children) {
-                if ($children[$i]->isa('PPI::Token::Symbol') && !$var_name) {
+                # List pattern: my ($a, $b) = ...
+                if ($children[$i]->isa('PPI::Structure::List') && !$var_name && !@list_syms) {
+                    my $expr = $children[$i]->find_first('PPI::Statement::Expression')
+                            || $children[$i]->find_first('PPI::Statement');
+                    if ($expr) {
+                        @list_syms = grep { $_->isa('PPI::Token::Symbol') } $expr->schildren;
+                    }
+                }
+                if ($children[$i]->isa('PPI::Token::Symbol') && !$var_name && !@list_syms) {
                     $var_name = $children[$i]->content;
                     $var_sym  = $children[$i];
                 }
@@ -595,7 +652,6 @@ sub _collect_local_var_types ($self) {
                     last;
                 }
             }
-            next unless $var_name && $init_node;
 
             # Skip annotated variables (have :sig attribute)
             my $has_sig = 0;
@@ -609,6 +665,53 @@ sub _collect_local_var_types ($self) {
                 }
             }
             next if $has_sig;
+
+            # List assignment: my ($a, $b) = expr
+            if (@list_syms && $init_node) {
+                my $env = $self->_fn_env($fn);
+                $env = $self->_inject_loop_vars($env, $init_node);
+                if (keys $self->{_local_var_types}->%*) {
+                    my %vars = $env->{variables}->%*;
+                    for my $lv (values $self->{_local_var_types}->%*) {
+                        next unless $lv->{scope_start} == $fn->{line};
+                        $vars{$lv->{name}} //= $lv->{type};
+                    }
+                    $env = +{ $env->%*, variables => \%vars };
+                }
+                my $distributed = _distribute_list_type(
+                    Typist::Static::Infer->infer_list_rhs_type($init_node, $env),
+                    scalar @list_syms,
+                );
+                for my $pos (0 .. $#list_syms) {
+                    my $sym = $list_syms[$pos];
+                    my $inferred = $distributed->[$pos];
+                    my $status = !defined $inferred  ? 'undef'
+                               : ($inferred->is_atom && $inferred->name eq 'Any') ? 'Any_skip'
+                               : 'ok';
+                    my $widened = ($status eq 'ok') ? _widen_literal($inferred) : $inferred;
+                    push $self->{_infer_log}->@*, +{
+                        name   => $sym->content, line => $sym->line_number,
+                        type   => $widened ? $widened->to_string : undef,
+                        status => $status,
+                        scope  => "fn:$fn_name",
+                    };
+                    next unless defined $inferred;
+                    next if $inferred->is_atom && $inferred->name eq 'Any';
+
+                    my $key = $sym->content . ':' . $sym->line_number;
+                    $self->{_local_var_types}{$key} = +{
+                        name        => $sym->content,
+                        type        => $widened,
+                        line        => $sym->line_number,
+                        col         => $sym->column_number,
+                        scope_start => $fn->{line},
+                        scope_end   => $fn->{end_line},
+                    };
+                }
+                next;
+            }
+
+            next unless $var_name && $init_node;
 
             # Use function-scoped env (includes parameter bindings)
             my $env = $self->_fn_env($fn);

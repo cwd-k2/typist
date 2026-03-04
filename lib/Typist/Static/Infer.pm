@@ -216,6 +216,49 @@ sub infer_expr_with_siblings ($class, $element, $env = undef) {
     $class->infer_expr($element, $env);
 }
 
+# Infer the **container** type of a list-assignment RHS (before array deref).
+# For `@{func()}` returns the return type of func(); for `@$ref` returns ref's type.
+# Used by TypeChecker to distribute Tuple elements to individual list variables.
+sub infer_list_rhs_type ($class, $init_node, $env) {
+    return undef unless defined $init_node && $env;
+
+    # Pattern 1: Cast('@') + Block → @{EXPR}
+    if ($init_node->isa('PPI::Token::Cast') && $init_node->content eq '@') {
+        my $next = $init_node->snext_sibling;
+        if ($next && $next->isa('PPI::Structure::Block')) {
+            my @inner = $next->schildren;
+            my $inner_expr = $inner[0];
+            @inner = $inner_expr->schildren if $inner_expr && $inner_expr->isa('PPI::Statement');
+
+            # @{func()} — Word + List inside block
+            if (@inner >= 2 && $inner[0]->isa('PPI::Token::Word')
+                && $inner[1]->isa('PPI::Structure::List'))
+            {
+                return _infer_call($inner[0]->content, $env, $inner[1]);
+            }
+            # @{$var->method} or @{$ref} — general expression inside block
+            if (@inner >= 1) {
+                return $class->infer_expr($inner[0], $env);
+            }
+        }
+        # Pattern 2: Cast('@') + Symbol → @$ref
+        if ($next && $next->isa('PPI::Token::Symbol')) {
+            return _lookup_var($next->content, $env);
+        }
+    }
+
+    # Pattern 3: Word + List → func() direct call
+    if ($init_node->isa('PPI::Token::Word')) {
+        my $next = $init_node->snext_sibling;
+        if ($next && $next->isa('PPI::Structure::List')) {
+            return _infer_call($init_node->content, $env, $next);
+        }
+    }
+
+    # Fallback: general expression inference
+    $class->infer_expr_with_siblings($init_node, $env);
+}
+
 # ── Function Call Inference ──────────────────────
 
 sub _infer_call ($name, $env, $list_element = undef, $expected = undef) {

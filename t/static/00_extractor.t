@@ -217,4 +217,31 @@ PERL
     ok $fn->{end_line} > $fn->{line}, 'end_line > line';
 };
 
+# ── List assignment extraction ─────────────────
+
+subtest 'extracts list assignment variables with position' => sub {
+    my $result = Typist::Static::Extractor->extract(<<'PERL');
+use v5.40;
+my ($a, $b) = @{func()};
+PERL
+
+    my @vars = grep { $_->{name} eq '$a' || $_->{name} eq '$b' }
+               $result->{variables}->@*;
+    is scalar @vars, 2, 'two variables extracted';
+
+    my ($va) = grep { $_->{name} eq '$a' } @vars;
+    my ($vb) = grep { $_->{name} eq '$b' } @vars;
+
+    is $va->{list_position}, 0, '$a is at position 0';
+    is $va->{list_count},    2, '$a list_count is 2';
+    ok $va->{init_node},        '$a has init_node';
+
+    is $vb->{list_position}, 1, '$b is at position 1';
+    is $vb->{list_count},    2, '$b list_count is 2';
+    ok $vb->{init_node},        '$b has init_node';
+
+    # Both share the same init_node
+    is $va->{init_node}, $vb->{init_node}, 'shared init_node';
+};
+
 done_testing;
