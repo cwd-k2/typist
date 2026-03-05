@@ -223,21 +223,30 @@ sub _handle_did_save ($self, $params) {
         $doc->update($text, $doc->version);
     }
 
-    # Update workspace index — returns extracted data for the saved file
+    # Update workspace index — returns (extracted, exports_changed)
     my $path = _uri_to_path($uri);
-    my $extracted = $self->{workspace}
+    my ($extracted, $exports_changed) = $self->{workspace}
         ? $self->{workspace}->update_file($path, $doc->content)
-        : undef;
-    $self->{log}->debug("didSave $uri -> workspace updated");
+        : (undef, 1);
+    $self->{log}->debug("didSave $uri -> workspace updated (exports_changed=$exports_changed)");
 
-    # Invalidate and re-diagnose all open documents (cross-file types may have changed)
-    for my $other_doc (values $self->{documents}->%*) {
-        $other_doc->invalidate;
-        # Pass extracted only to the saved file itself (same source)
-        if ($other_doc->uri eq $uri && $extracted) {
-            $self->_publish_diagnostics_with_extracted($other_doc, $extracted);
+    if ($exports_changed) {
+        # Export surface changed — invalidate and re-diagnose all open documents
+        for my $other_doc (values $self->{documents}->%*) {
+            $other_doc->invalidate;
+            if ($other_doc->uri eq $uri && $extracted) {
+                $self->_publish_diagnostics_with_extracted($other_doc, $extracted);
+            } else {
+                $self->_publish_diagnostics($other_doc);
+            }
+        }
+    } else {
+        # Body-only change — only re-diagnose the saved file
+        $doc->invalidate;
+        if ($extracted) {
+            $self->_publish_diagnostics_with_extracted($doc, $extracted);
         } else {
-            $self->_publish_diagnostics($other_doc);
+            $self->_publish_diagnostics($doc);
         }
     }
 

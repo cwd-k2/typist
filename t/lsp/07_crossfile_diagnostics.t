@@ -19,27 +19,13 @@ my @sent;
     };
 }
 
-# ── Re-diagnosis on save ────────────────────────
-
-subtest 'didSave triggers re-diagnosis of all open docs' => sub {
-    @sent = ();
-
-    my $dir = tempdir(CLEANUP => 1);
+# Helper: create a fresh server with two open docs
+sub _setup_server_two_docs ($dir) {
     make_path("$dir/lib");
 
-    # Write a types file
-    open my $fh, '>', "$dir/lib/Types.pm" or die;
-    print $fh "package Types;\ntypedef Age => 'Int';\n1;\n";
-    close $fh;
-
     my $server = Typist::LSP::Server->new(logger => Typist::LSP::Logger->new(level => 'off'));
+    $server->_handle_initialize(+{ rootUri => "file://$dir" });
 
-    # Initialize
-    $server->_handle_initialize(+{
-        rootUri => "file://$dir",
-    });
-
-    # Open two documents
     $server->_handle_did_open(+{
         textDocument => +{
             uri     => 'file:///doc_a.pm',
@@ -57,16 +43,62 @@ subtest 'didSave triggers re-diagnosis of all open docs' => sub {
     });
 
     @sent = ();  # Clear diagnostics from initial open
+    $server;
+}
 
-    # Save doc_a — should re-diagnose both docs
+# ── Body-only change: selective re-diagnosis ─────
+
+subtest 'body-only change re-diagnoses saved file only' => sub {
+    my $dir = tempdir(CLEANUP => 1);
+    my $server = _setup_server_two_docs($dir);
+
+    # Save doc_a with same signature, different body
     $server->_handle_did_save(+{
         textDocument => +{ uri => 'file:///doc_a.pm' },
-        text => "package A;\nuse v5.40;\nsub foo :sig((Int) -> Int) (\$x) { \$x }\n",
+        text => "package A;\nuse v5.40;\nsub foo :sig((Int) -> Int) (\$x) { \$x + 1 }\n",
     });
 
-    # Should have published diagnostics for both documents
     my @diag_msgs = grep { $_->{method} eq 'textDocument/publishDiagnostics' } @sent;
-    ok scalar @diag_msgs >= 2, 'diagnostics published for multiple documents on save';
+    my %seen_uris = map { $_->{params}{uri} => 1 } @diag_msgs;
+
+    ok $seen_uris{'file:///doc_a.pm'}, 'saved doc re-diagnosed';
+    ok !$seen_uris{'file:///doc_b.pm'}, 'other doc NOT re-diagnosed (body-only change)';
+};
+
+# ── Signature change: full re-diagnosis ──────────
+
+subtest 'signature change triggers re-diagnosis of all open docs' => sub {
+    my $dir = tempdir(CLEANUP => 1);
+    my $server = _setup_server_two_docs($dir);
+
+    # Save doc_a with changed signature (Int -> Str instead of Int -> Int)
+    $server->_handle_did_save(+{
+        textDocument => +{ uri => 'file:///doc_a.pm' },
+        text => "package A;\nuse v5.40;\nsub foo :sig((Int) -> Str) (\$x) { \"\$x\" }\n",
+    });
+
+    my @diag_msgs = grep { $_->{method} eq 'textDocument/publishDiagnostics' } @sent;
+    ok scalar @diag_msgs >= 2, 'diagnostics published for multiple documents';
+
+    my %seen_uris = map { $_->{params}{uri} => 1 } @diag_msgs;
+    ok $seen_uris{'file:///doc_a.pm'}, 'doc_a re-diagnosed';
+    ok $seen_uris{'file:///doc_b.pm'}, 'doc_b re-diagnosed';
+};
+
+# ── Typedef added: full re-diagnosis ─────────────
+
+subtest 'typedef added triggers re-diagnosis of all open docs' => sub {
+    my $dir = tempdir(CLEANUP => 1);
+    my $server = _setup_server_two_docs($dir);
+
+    # Save doc_a with a new typedef
+    $server->_handle_did_save(+{
+        textDocument => +{ uri => 'file:///doc_a.pm' },
+        text => "package A;\nuse v5.40;\ntypedef Age => 'Int';\nsub foo :sig((Int) -> Int) (\$x) { \$x }\n",
+    });
+
+    my @diag_msgs = grep { $_->{method} eq 'textDocument/publishDiagnostics' } @sent;
+    ok scalar @diag_msgs >= 2, 'diagnostics published for multiple documents';
 
     my %seen_uris = map { $_->{params}{uri} => 1 } @diag_msgs;
     ok $seen_uris{'file:///doc_a.pm'}, 'doc_a re-diagnosed';

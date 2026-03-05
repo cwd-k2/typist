@@ -224,4 +224,81 @@ PERL
     ok $type, 'Token type found in registry';
 };
 
+# ── Export fingerprint comparison ────────────────
+
+subtest 'fingerprint: same source → exports_changed false' => sub {
+    my $dir = tempdir(CLEANUP => 1);
+    make_path("$dir/lib");
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source = <<'PERL';
+package Fp;
+use v5.40;
+sub greet :sig((Str) -> Str) ($name) { "Hello, $name" }
+1;
+PERL
+
+    # First call — no prior data → exports_changed = true
+    my ($ext1, $changed1) = $ws->update_file("$dir/lib/Fp.pm", $source);
+    ok $ext1, 'first update returns extracted';
+    ok $changed1, 'first update reports exports_changed (no prior)';
+
+    # Second call with identical source → exports_changed = false
+    my ($ext2, $changed2) = $ws->update_file("$dir/lib/Fp.pm", $source);
+    ok $ext2, 'second update returns extracted';
+    ok !$changed2, 'same source → exports_changed false';
+};
+
+subtest 'fingerprint: signature change → exports_changed true' => sub {
+    my $dir = tempdir(CLEANUP => 1);
+    make_path("$dir/lib");
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source_v1 = <<'PERL';
+package Fp;
+use v5.40;
+sub calc :sig((Int) -> Int) ($x) { $x * 2 }
+1;
+PERL
+
+    my $source_v2 = <<'PERL';
+package Fp;
+use v5.40;
+sub calc :sig((Int) -> Str) ($x) { "$x" }
+1;
+PERL
+
+    $ws->update_file("$dir/lib/Fp.pm", $source_v1);
+    my (undef, $changed) = $ws->update_file("$dir/lib/Fp.pm", $source_v2);
+    ok $changed, 'signature change → exports_changed true';
+};
+
+subtest 'fingerprint: unannotated function added → exports_changed false' => sub {
+    my $dir = tempdir(CLEANUP => 1);
+    make_path("$dir/lib");
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source_v1 = <<'PERL';
+package Fp;
+use v5.40;
+sub calc :sig((Int) -> Int) ($x) { $x * 2 }
+1;
+PERL
+
+    my $source_v2 = <<'PERL';
+package Fp;
+use v5.40;
+sub calc :sig((Int) -> Int) ($x) { $x * 2 }
+sub helper ($y) { $y + 1 }
+1;
+PERL
+
+    $ws->update_file("$dir/lib/Fp.pm", $source_v1);
+    my (undef, $changed) = $ws->update_file("$dir/lib/Fp.pm", $source_v2);
+    ok !$changed, 'unannotated function added → exports_changed false';
+};
+
 done_testing;

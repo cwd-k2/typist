@@ -10,6 +10,7 @@ use Typist::Static::Extractor;
 use Typist::Static::Registration;
 use Typist::Prelude;
 use Typist::Subtype;
+use JSON::PP ();
 
 # ── Constructor ──────────────────────────────────
 
@@ -78,6 +79,7 @@ sub _extract_file ($self, $path) {
         instances   => $extracted->{instances},
         declares    => $extracted->{declares},
         package     => $extracted->{package},
+        fingerprint => $self->_compute_fingerprint($extracted),
     };
 
     $extracted;
@@ -94,7 +96,15 @@ sub update_file ($self, $path, $source) {
     my $old_info = $self->{files}{$path};
 
     my $extracted = eval { Typist::Static::Extractor->extract($source) };
-    return if $@;
+    if ($@) {
+        # Parse error — conservatively report exports changed
+        return (undef, 1);
+    }
+
+    my $new_fingerprint = $self->_compute_fingerprint($extracted);
+    my $old_fingerprint = $old_info && $old_info->{fingerprint};
+    my $exports_changed = !defined $old_fingerprint
+                       || $old_fingerprint ne $new_fingerprint;
 
     # Differential update: unregister old, register new
     if ($old_info) {
@@ -112,11 +122,12 @@ sub update_file ($self, $path, $source) {
         instances   => $extracted->{instances},
         declares    => $extracted->{declares},
         package     => $extracted->{package},
+        fingerprint => $new_fingerprint,
     };
 
     $self->_register_file_types($extracted);
 
-    $extracted;
+    ($extracted, $exports_changed);
 }
 
 sub _unregister_file_types ($self, $old_info) {
@@ -254,6 +265,120 @@ sub _rebuild_registry ($self) {
     for my $ext (@all_extracted) {
         Typist::Static::Registration->register_signatures($ext, $self->{registry});
     }
+}
+
+# ── Export Fingerprint ──────────────────────────
+
+# Extract the "export surface" — fields that affect Registry registration.
+# Excludes: line, col, end_line, block, param_names, default_count,
+# method_kind, name_col, op_names (display-only / analysis-internal).
+sub _export_surface ($extracted) {
+    my %surface = (package => $extracted->{package} // 'main');
+
+    # Aliases: name => expr (string, no position info)
+    $surface{aliases} = $extracted->{aliases} if %{$extracted->{aliases} // +{}};
+
+    # Functions: only annotated ones affect Registry signatures
+    my %fns;
+    for my $name (sort keys %{$extracted->{functions} // +{}}) {
+        my $fn = $extracted->{functions}{$name};
+        next if $fn->{unannotated};
+        $fns{$name} = +{
+            params_expr  => $fn->{params_expr},
+            returns_expr => $fn->{returns_expr},
+            generics     => $fn->{generics},
+            eff_expr     => $fn->{eff_expr},
+            variadic     => $fn->{variadic},
+            is_method    => $fn->{is_method},
+        };
+    }
+    $surface{functions} = \%fns if %fns;
+
+    # Newtypes: name => inner_expr
+    $surface{newtypes} = $extracted->{newtypes}
+        if %{$extracted->{newtypes} // +{}};
+
+    # Datatypes: name => { variants, type_params }
+    if (%{$extracted->{datatypes} // +{}}) {
+        my %dts;
+        for my $name (keys %{$extracted->{datatypes}}) {
+            my $dt = $extracted->{datatypes}{$name};
+            $dts{$name} = +{
+                variants    => $dt->{variants},
+                type_params => $dt->{type_params},
+            };
+        }
+        $surface{datatypes} = \%dts;
+    }
+
+    # Structs: name => { fields, optional_fields, type_params, type_param_specs }
+    if (%{$extracted->{structs} // +{}}) {
+        my %sts;
+        for my $name (keys %{$extracted->{structs}}) {
+            my $st = $extracted->{structs}{$name};
+            $sts{$name} = +{
+                fields           => $st->{fields},
+                optional_fields  => $st->{optional_fields},
+                type_params      => $st->{type_params},
+                type_param_specs => $st->{type_param_specs},
+            };
+        }
+        $surface{structs} = \%sts;
+    }
+
+    # Effects: name => { operations, protocol, states, op_map }
+    if (%{$extracted->{effects} // +{}}) {
+        my %effs;
+        for my $name (keys %{$extracted->{effects}}) {
+            my $eff = $extracted->{effects}{$name};
+            $effs{$name} = +{
+                operations => $eff->{operations},
+                protocol   => $eff->{protocol},
+                states     => $eff->{states},
+                op_map     => $eff->{op_map},
+            };
+        }
+        $surface{effects} = \%effs;
+    }
+
+    # Typeclasses: name => { var_spec, methods }
+    if (%{$extracted->{typeclasses} // +{}}) {
+        my %tcs;
+        for my $name (keys %{$extracted->{typeclasses}}) {
+            my $tc = $extracted->{typeclasses}{$name};
+            $tcs{$name} = +{
+                var_spec => $tc->{var_spec},
+                methods  => $tc->{methods},
+            };
+        }
+        $surface{typeclasses} = \%tcs;
+    }
+
+    # Instances: sorted by class_name + type_expr
+    if (@{$extracted->{instances} // []}) {
+        $surface{instances} = [
+            map  { +{ class_name => $_->{class_name}, type_expr => $_->{type_expr} } }
+            sort { ($a->{class_name} cmp $b->{class_name}) || ($a->{type_expr} cmp $b->{type_expr}) }
+            @{$extracted->{instances}}
+        ];
+    }
+
+    # Declares: name => type_expr
+    if (%{$extracted->{declares} // +{}}) {
+        my %decls;
+        for my $name (keys %{$extracted->{declares}}) {
+            $decls{$name} = $extracted->{declares}{$name}{type_expr};
+        }
+        $surface{declares} = \%decls;
+    }
+
+    \%surface;
+}
+
+my $_json_encoder = JSON::PP->new->utf8->canonical;
+
+sub _compute_fingerprint ($self, $extracted) {
+    $_json_encoder->encode(_export_surface($extracted));
 }
 
 # ── Query ────────────────────────────────────────
