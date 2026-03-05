@@ -84,80 +84,13 @@ mise run example           # Run all examples
 
 ## Test Structure
 
-Tests are numbered and ordered by dependency:
-- `t/00_compile.t` — Module loading
-- `t/01_parser.t` — Type expression parsing
-- `t/01b_parser_edge.t` — Parser boundary conditions (empty input, deep nesting, literals)
-- `t/02_subtype.t` — Subtype relation
-- `t/02b_subtype_edge.t` — Subtype edge cases (Void, Never, Func contravariance, Row, Quantified, LUB)
-- `t/03_attribute.t` — Attribute-based type annotations
-- `t/04_inference.t` — Type inference and unification
-- `t/05_integration.t` — End-to-end scenarios
-- `t/06_instance.t` — Instance-based Registry/Checker
-- `t/06b_registry_unregister.t` — Registry unregister methods
-- `t/07_multivar.t` — Multi-character type variables and Transform
-- `t/08_literal.t` — Literal types
-- `t/09_newtype.t` — Nominal types
-- `t/10_recursive.t` — Recursive type definitions
-- `t/11_bounded.t` — Bounded quantification
-- `t/12_typeclass.t` — Type classes
-- `t/13_hkt.t` — Higher-kinded types and Kind system
-- `t/13b_kind_edge.t` — KindChecker edge cases (Row kind, HKT application, nested arrows)
-- `t/14_effects_foundation.t` — Effect/Row/Eff types
-- `t/15_effects_row.t` — Row parsing, subtyping, unification
-- `t/16_effects_attribute.t` — :Eff attribute, effect keyword
-- `t/17_effects_integration.t` — End-to-end effect system
-- `t/18_dsl.t` — Type DSL
-- `t/19_fold.t` — Type::Fold
-- `t/20_check_diagnostics.t` — CHECK-phase static analysis (subprocess)
-- `t/21_datatype.t` — Algebraic data types
-- `t/22_effects_handler.t` — Effect handlers
-- `t/23_gadt.t` — GADT
-- `t/24_rank2.t` — Rank-2 polymorphism
-- `t/25_struct.t` — Nominal struct types
-- `t/26_check_cli.t` — CLI typist-check (subprocess)
-- `t/27_protocol.t` — Protocol FSM
-- `t/27b_protocol_edge.t` — Protocol edge cases (self-loop, dead-end, branch convergence)
-- `t/28_selective_import.t` — Selective DSL export
-- `t/29_type_constructors_edge.t` — Type constructor edge cases (Union/Intersection flatten, Record, Row, Quantified)
-- `t/static/00_extractor.t` — PPI-based type extraction
-- `t/static/01_analyzer.t` — Static analysis pipeline
-- `t/static/02_infer.t` — Static type inference
-- `t/static/03_typecheck.t` — Static type mismatch detection
-- `t/static/04_effects.t` — Static effect mismatch detection
-- `t/static/05_extractor_advanced.t` — Advanced extraction
-- `t/static/06_crossfile_analyzer.t` — Cross-file type resolution
-- `t/static/07_method_typecheck.t` — Method type checking
-- `t/static/08_prelude.t` — Builtin prelude
-- `t/static/09_builtins_infer.t` — Typist builtin inference
-- `t/static/10_rank2.t` — Rank-2 polymorphism static analysis
-- `t/static/11_struct.t` — Struct static analysis
-- `t/static/12_loop_inference.t` — Loop variable inference
-- `t/static/13_hof_inference.t` — Higher-order function inference
-- `t/static/14_protocol.t` — Protocol static analysis
-- `t/static/15_ref_narrowing.t` — ref() type narrowing
-- `t/static/16_narrowing_edge.t` — NarrowingEngine edge cases (nested defined, unless, early return)
-- `t/static/17_unify_edge.t` — Unification edge cases (widening, HKT, conflict rejection)
-- `t/lsp/00_transport.t` — JSON-RPC transport
-- `t/lsp/01_server.t` — LSP server lifecycle
-- `t/lsp/02_diagnostics.t` — Diagnostics publishing
-- `t/lsp/03_hover.t` — Hover provider
-- `t/lsp/04_completion.t` — Completion provider
-- `t/lsp/05_workspace.t` — Workspace scanning
-- `t/lsp/06_workspace_crossfile.t` — Cross-file workspace registration
-- `t/lsp/07_crossfile_diagnostics.t` — Cross-file re-diagnosis on save
-- `t/lsp/09_document_symbol.t` — DocumentSymbol provider
-- `t/lsp/10_definition.t` — Go to Definition
-- `t/lsp/11_signature_help.t` — Signature Help
-- `t/lsp/12_inlay_hints.t` — Inlay Hints
-- `t/lsp/13_references.t` — Find References
-- `t/lsp/14_rename.t` — Rename
-- `t/lsp/15_code_actions.t` — Code Actions
-- `t/lsp/16_semantic_tokens.t` — Semantic Tokens
-- `t/lsp/17_protocol.t` — Protocol hover and inlay hints
-- `t/lsp/18_symbol_info.t` — SymbolInfo factory functions
-- `t/lsp/19_workspace_edge.t` — Workspace edge cases (empty, syntax error, differential update)
-- `t/critic/00_policy.t` — Perl::Critic policy bridge
-- `t/critic/01_annotation_style.t` — Annotation style policy
-- `t/critic/02_effect_completeness.t` — Effect completeness policy
-- `t/critic/03_exhaustiveness.t` — Match exhaustiveness policy
+`t/NN_name.t` の番号順が依存順序。`b` suffix はエッジケース（例: `02b_subtype_edge.t`）。
+
+| Directory | Scope | Notes |
+|-----------|-------|-------|
+| `t/` | Core type system | parser, subtype, inference, newtype, ADT, effects, struct, protocol, DSL |
+| `t/static/` | Static analysis | extractor, analyzer, inference, type/effect/protocol check, narrowing, unify |
+| `t/lsp/` | LSP server | transport, diagnostics, hover, completion, workspace, references, rename, semantic tokens |
+| `t/critic/` | Perl::Critic | annotation style, effect completeness, match exhaustiveness |
+
+`t/20_check_diagnostics.t`, `t/26_check_cli.t` は subprocess テスト（別プロセスで CHECK phase を実行）。
