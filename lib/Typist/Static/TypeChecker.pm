@@ -115,7 +115,7 @@ sub check_assignments ($self) {
         next unless $op->content eq '=';
 
         # LHS: immediate preceding sibling must be a symbol
-        my $lhs = $op->sprevious_sibling // next;
+        my $lhs = $op->sprevious_sibling or next;
         next unless $lhs->isa('PPI::Token::Symbol');
 
         my $var_name = $lhs->content;
@@ -132,7 +132,7 @@ sub check_assignments ($self) {
         next if _has_type_var($declared_type);
 
         # Infer the RHS expression type
-        my $rhs = $op->snext_sibling // next;
+        my $rhs = $op->snext_sibling or next;
         my $inferred = Typist::Static::Infer->infer_expr($rhs, $env, $declared_type);
         next unless defined $inferred;
         next if _contains_any($inferred);
@@ -189,7 +189,7 @@ sub check_function_returns ($self, $name) {
     for my $ret (@$returns) {
         next unless $ret->content eq 'return';
 
-        my $val = $ret->snext_sibling // next;
+        my $val = $ret->snext_sibling or next;
         # skip 'return;' (bare return)
         next if $val->isa('PPI::Token::Structure') && $val->content eq ';';
 
@@ -248,7 +248,7 @@ sub collect_fn_return_types ($self) {
         my $words = $block->find('PPI::Token::Word') || [];
         for my $ret (@$words) {
             next unless $ret->content eq 'return';
-            my $val = $ret->snext_sibling // next;
+            my $val = $ret->snext_sibling or next;
             next if $val->isa('PPI::Token::Structure') && $val->content eq ';';
             my $t = Typist::Static::Infer->infer_expr($val, $self->_env_for_node($ret));
             push @types, $t if $t;

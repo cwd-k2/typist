@@ -1327,7 +1327,7 @@ sub _check_ternary_extension ($result, $after_node, $env, $expected) {
     # Walk past -> chains to find what comes after
     my $node = $after_node->snext_sibling;
     while ($node && $node->isa('PPI::Token::Operator') && $node->content eq '->') {
-        my $next = $node->snext_sibling // last;
+        my $next = $node->snext_sibling or last;
         # Skip -> Subscript, -> Word, -> List
         if ($next->isa('PPI::Structure::List')) {
             $node = $next->snext_sibling;

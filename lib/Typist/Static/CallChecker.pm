@@ -117,7 +117,7 @@ sub check_call_sites ($self) {
         next if $parent && $parent->isa('PPI::Statement::Sub');
 
         # Find the argument list — next sibling should be a List
-        my $next = $word->snext_sibling // next;
+        my $next = $word->snext_sibling or next;
         next unless ref($next) && $next->isa('PPI::Structure::List');
 
         # Struct constructor: named-arg check instead of positional
@@ -402,7 +402,7 @@ sub _check_struct_constructor_call ($self, $name, $fn, $list, $env, $word) {
 sub _check_method_call ($self, $word, $arrow) {
     my $name = $word->content;
 
-    my $receiver = $arrow->sprevious_sibling // return;
+    my $receiver = $arrow->sprevious_sibling or return;
 
     my $env = $self->_env_for_node($word);
     my ($pkg, $display, $recv_type);
@@ -471,7 +471,7 @@ sub _check_method_call ($self, $word, $arrow) {
     return unless $method_sig;
 
     # The argument list must follow the method name
-    my $arg_list = $word->snext_sibling // return;
+    my $arg_list = $word->snext_sibling or return;
     return unless ref $arg_list && $arg_list->isa('PPI::Structure::List');
 
     # Generic methods: delegate to _check_generic_call with pseudo-fn
@@ -551,7 +551,7 @@ sub _check_method_call ($self, $word, $arrow) {
 # Check chained method calls: $obj->m1()->m2()->m3()
 # Resolves return type to struct, looks up next method, and recurses.
 sub _check_chained_method ($self, $return_type, $arrow, $env) {
-    my $method_word = $arrow->snext_sibling // return;
+    my $method_word = $arrow->snext_sibling or return;
     return unless ref $method_word && $method_word->isa('PPI::Token::Word');
     my $name = $method_word->content;
 
@@ -573,7 +573,7 @@ sub _check_chained_method ($self, $return_type, $arrow, $env) {
     }
     return unless $method_sig;
 
-    my $arg_list = $method_word->snext_sibling // return;
+    my $arg_list = $method_word->snext_sibling or return;
     return unless ref $arg_list && $arg_list->isa('PPI::Structure::List');
 
     # Generic methods: delegate
@@ -653,7 +653,7 @@ sub _check_record_method ($self, $word, $name, $recv_type, $display) {
     return unless $field_type;  # unknown field → gradual skip
 
     # Accessor should be called with zero args
-    my $arg_list = $word->snext_sibling // return;
+    my $arg_list = $word->snext_sibling or return;
     return unless ref $arg_list && $arg_list->isa('PPI::Structure::List');
 
     my @args = $self->_extract_args($arg_list);
