@@ -203,7 +203,9 @@ sub check_call_sites ($self) {
             my $inferred = Typist::Static::Infer->infer_expr($args[$i], $env, $declared);
             next unless defined $inferred;
             if (_contains_any($inferred)) {
-                $self->_emit_gradual_hint($name, $i, $word, $inferred);
+                # Skip hint when declared param is also Any — no useful info
+                $self->_emit_gradual_hint($name, $i, $word, $inferred)
+                    unless _contains_any($declared);
                 next;
             }
 
