@@ -500,6 +500,7 @@ sub register_functions ($class, $extracted, $registry, %opts) {
 
     for my $name (sort keys $extracted->{functions}->%*) {
         my $fn = $extracted->{functions}{$name};
+        next if $fn->{unannotated};
 
         my @param_types;
         for my $expr ($fn->{params_expr}->@*) {

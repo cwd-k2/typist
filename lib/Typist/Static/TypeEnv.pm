@@ -158,7 +158,8 @@ sub _build_env ($self) {
 
     for my $name (keys $self->{extracted}{functions}->%*) {
         my $fn = $self->{extracted}{functions}{$name};
-        $known{$name} = 1 unless $fn->{unannotated};
+        next if $fn->{unannotated};
+        $known{$name} = 1;
         if (my $ret_expr = $fn->{returns_expr}) {
             my $type = $self->resolve_type($ret_expr);
             $functions{$name} = $type if $type;

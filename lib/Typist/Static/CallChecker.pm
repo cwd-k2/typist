@@ -109,6 +109,9 @@ sub check_call_sites ($self) {
             $fn = $cross_pkg;
         }
 
+        # Skip unannotated local functions — no type info to check
+        next if $fn->{unannotated};
+
         # Skip if the word is part of a sub declaration
         my $parent = $word->parent;
         next if $parent && $parent->isa('PPI::Statement::Sub');

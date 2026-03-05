@@ -200,7 +200,6 @@ PERL
     ok $hover, 'got hover response';
     ok $hover->{result}, 'hover has result';
     like $hover->{result}{contents}{value}, qr/sub helper/, 'contains function name';
-    like $hover->{result}{contents}{value}, qr/Any/, 'shows Any for params/returns';
     unlike $hover->{result}{contents}{value}, qr/!\[/, 'no effect annotation for unannotated';
 };
 
@@ -1221,9 +1220,6 @@ subtest 'hover shows unannotated note on function' => sub {
     my $sym = +{
         kind         => 'function',
         name         => 'helper',
-        params_expr  => ['Any'],
-        returns_expr => undef,
-        eff_expr     => '[*]',
         unannotated  => 1,
     };
     my $hover = Typist::LSP::Hover->hover($sym);

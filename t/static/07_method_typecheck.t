@@ -132,8 +132,7 @@ PERL
     ok $fn->{is_method}, 'is_method flag set for unannotated method';
     is $fn->{method_kind}, 'instance', 'method_kind is instance';
     ok $fn->{unannotated}, 'still marked as unannotated';
-    is_deeply $fn->{params_expr}, ['Any', 'Any'],
-        'params_expr excludes $self (2 params, not 3)';
+    ok !exists $fn->{params_expr}, 'no params_expr for unannotated method';
 };
 
 subtest 'extractor: unannotated non-method keeps full arity' => sub {
@@ -147,8 +146,7 @@ PERL
     my $fn = $result->{functions}{helper};
     ok $fn, 'helper function extracted';
     ok !$fn->{is_method}, 'is_method flag not set';
-    is_deeply $fn->{params_expr}, ['Any', 'Any'],
-        'params_expr has 2 params';
+    ok !exists $fn->{params_expr}, 'no params_expr for unannotated function';
 };
 
 subtest 'extractor: annotated method params_expr from :Type annotation' => sub {

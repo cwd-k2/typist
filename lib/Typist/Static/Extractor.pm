@@ -864,16 +864,8 @@ sub _extract_functions ($class, $subs, $result) {
             # No :Type annotation — skip
         }
         else {
-            # Unannotated function: count signature params for Any... -> Any ![*]
-            # For methods, exclude $self/$class from the parameter count
-            my $arity = scalar @$param_names;
-            $arity -= 1 if $is_method && $arity > 0;
-
+            # Unannotated function: no synthetic type info — gradual typing treats as unconstrained
             $result->{functions}{$name} = +{
-                params_expr   => [('Any') x $arity],
-                returns_expr  => 'Any',
-                generics      => [],
-                eff_expr      => undef,
                 unannotated   => 1,
                 default_count => $default_count,
                 param_names   => $param_names,
