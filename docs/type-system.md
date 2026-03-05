@@ -444,7 +444,7 @@ BEGIN {
 
 my $p = Point(x => 1, y => 2);
 say $p->x;                      # 1
-my $q = Point::update($p, x => 10);  # Point(x => 10, y => 2) — immutable update
+my $q = Point::derive($p, x => 10);  # Point(x => 10, y => 2) — immutable derive
 ```
 
 ### Generic Structs

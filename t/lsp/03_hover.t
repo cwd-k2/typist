@@ -723,9 +723,9 @@ PERL
     like $hover->{contents}{value}, qr/\(Customer\) tier: Str/, 'shows (Customer) tier: Str';
 };
 
-# ── Hover on Point::update() function ──────────────
+# ── Hover on Point::derive() function ──────────────
 
-subtest 'hover shows Point::update function' => sub {
+subtest 'hover shows Point::derive function' => sub {
     require File::Temp;
     require File::Path;
     require Typist::LSP::Workspace;
@@ -753,7 +753,7 @@ use v5.40;
 use Typist;
 use Models;
 sub move :sig((Point, Int) -> Point) ($p, $dx) {
-    Point::update($p, x => $p->x + $dx);
+    Point::derive($p, x => $p->x + $dx);
 }
 PERL
 
@@ -763,7 +763,7 @@ PERL
         version => 1,
     );
     $doc->analyze(workspace_registry => $ws->registry);
-    pass 'Point::update source analyzes without error';
+    pass 'Point::derive source analyzes without error';
 };
 
 # ── Hover on chained accessor ────────────────────

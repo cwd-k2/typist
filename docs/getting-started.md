@@ -188,7 +188,7 @@ BEGIN {
 
 my $p = Person(name => "Alice", age => 30);
 $p->name;                    # "Alice"
-Person::update($p, age => 31);   # immutable update, returns new Person
+Person::derive($p, age => 31);   # immutable derive, returns new Person
 ```
 
 A Struct is a subtype of its corresponding Record shape (`Struct <: Record`), but not the reverse.
@@ -371,7 +371,7 @@ BEGIN {
 
 my $p = Person(name => "Alice", age => 30);
 say $p->name;                              # getter
-my $q = Person::update($p, age => 31, email => "a@b.c");  # immutable update
+my $q = Person::derive($p, age => 31, email => "a@b.c");  # immutable derive
 ```
 
 ### optional Fields

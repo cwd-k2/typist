@@ -90,9 +90,9 @@ sub _struct ($name_spec, $caller, @field_pairs) {
             *{"${pkg}::${f}"} = sub ($self) { $self->{$f} };
         }
 
-        # Immutable update: returns a new instance with specified fields changed.
-        *{"${name}::update"} = sub ($self, @args) {
-            die "Typist: ${name}::update — odd number of update arguments\n"
+        # Immutable derive: returns a new instance with specified fields changed.
+        *{"${name}::derive"} = sub ($self, @args) {
+            die "Typist: ${name}::derive — odd number of arguments\n"
                 if @args % 2;
             my %updates = @args;
             for my $key (keys %updates) {

@@ -79,10 +79,10 @@ PERL
     ok $age_method->{returns}->is_atom && $age_method->{returns}->name eq 'Int',
         'age accessor returns Int';
 
-    # update() function registered
-    my $update_fn = $registry->lookup_function('Person', 'update');
-    ok $update_fn, 'update function registered';
-    ok $update_fn->{returns}->is_struct, 'update returns struct type';
+    # derive() function registered
+    my $derive_fn = $registry->lookup_function('Person', 'derive');
+    ok $derive_fn, 'derive function registered';
+    ok $derive_fn->{returns}->is_struct, 'derive returns struct type';
 };
 
 # ── Inference ─────────────────────────────────
@@ -163,13 +163,13 @@ PERL
         registry  => $registry,
     };
 
-    # Test: Person::update($p, age => 31) infers as Person
-    my $ppi = PPI::Document->new(\q{ Person::update($p, age => 31) });
+    # Test: Person::derive($p, age => 31) infers as Person
+    my $ppi = PPI::Document->new(\q{ Person::derive($p, age => 31) });
     my $sym = $ppi->find_first('PPI::Token::Word');
     my $result = Typist::Static::Infer->infer_expr($sym, $env);
-    ok $result, 'update infers a type';
-    ok $result->is_struct, 'update infers struct type';
-    is $result->name, 'Person', 'update returns same struct type';
+    ok $result, 'derive infers a type';
+    ok $result->is_struct, 'derive infers struct type';
+    is $result->name, 'Person', 'derive returns same struct type';
 };
 
 subtest 'infer chained accessor: Person(...)->name' => sub {

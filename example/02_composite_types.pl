@@ -70,8 +70,8 @@ struct Person2 => (name => Str, age => Int, email => optional(Str));
 my $bob = Person2(name => "Bob", age => 25);
 say "struct: ${\$bob->name}, age ${\$bob->age}";
 
-# Immutable update with Person2::update
-my $older_bob = Person2::update($bob, age => 26);
+# Immutable derive with Person2::derive
+my $older_bob = Person2::derive($bob, age => 26);
 say "updated: ${\$older_bob->name}, age ${\$older_bob->age}";
 say "original unchanged: ${\$bob->age}";
 

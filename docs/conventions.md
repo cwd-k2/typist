@@ -46,7 +46,7 @@ Union and Intersection constructors normalize their members by flattening nested
 - **struct** -- nominal, blessed immutable objects via `struct Name => (fields...)`.
   - Constructors: `Name(field => val)`
   - Accessors: `$obj->field`
-  - Immutable updates: `Name::update($obj, field => val)`
+  - Immutable derive: `Name::derive($obj, field => val)`
   - `optional(Type)` marks fields that can be omitted.
 - Subtyping: `Struct <: Record` (structural compatibility), but `Record </: Struct` (nominal barrier).
 
@@ -273,7 +273,7 @@ All of the following are type-checked:
 - `$self->method()` -- same-package instance method.
 - `$p->name()` -- cross-package struct accessor.
 - `Person->new()` -- class method.
-- `Name::update($p, ...)->greet()` -- chained calls via return type resolution.
+- `Name::derive($p, ...)->greet()` -- chained calls via return type resolution.
 - Generic methods -- delegated to `_check_generic_call`.
 - Record accessor calls.
 

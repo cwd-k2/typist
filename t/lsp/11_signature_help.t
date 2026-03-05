@@ -252,13 +252,13 @@ subtest 'signatureHelp context detects qualified function call' => sub {
     my $source = <<'PERL';
 use v5.40;
 my $p :sig(Point) = Point(x => 1, y => 2);
-Point::update($p,
+Point::derive($p,
 PERL
 
     my $doc = Typist::LSP::Document->new(uri => 'file:///test_method.pm', content => $source);
-    my $ctx = $doc->signature_context(2, length('Point::update($p,'));
+    my $ctx = $doc->signature_context(2, length('Point::derive($p,'));
     ok $ctx, 'got signature context for qualified call';
-    is $ctx->{name}, 'update', 'function name is update';
+    is $ctx->{name}, 'derive', 'function name is derive';
 };
 
 done_testing;

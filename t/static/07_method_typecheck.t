@@ -633,7 +633,7 @@ PERL
 
 # ── Phase 7: Chained Method Calls ────────────────
 
-subtest 'update + method: PersonChain::update then greet OK' => sub {
+subtest 'derive + method: PersonChain::derive then greet OK' => sub {
     my $errs = type_errors(<<'PERL');
 package PersonChain;
 use v5.40;
@@ -646,15 +646,15 @@ sub greet :sig((Str) -> Str) ($self, $msg) {
 
 sub run :sig(() -> Void) () {
     my $p = PersonChain(name => "Alice", age => 30);
-    my $q = PersonChain::update($p, name => "Bob");
+    my $q = PersonChain::derive($p, name => "Bob");
     $q->greet("hello");
 }
 PERL
 
-    is scalar @$errs, 0, 'update then method call with correct types produces no error';
+    is scalar @$errs, 0, 'derive then method call with correct types produces no error';
 };
 
-subtest 'update + method: type mismatch on method call' => sub {
+subtest 'derive + method: type mismatch on method call' => sub {
     my $errs = type_errors(<<'PERL');
 package PersonChain2;
 use v5.40;
@@ -667,12 +667,12 @@ sub greet :sig((Str) -> Str) ($self, $msg) {
 
 sub run :sig(() -> Void) () {
     my $p = PersonChain2(name => "Alice", age => 30);
-    my $q = PersonChain2::update($p, name => "Bob");
+    my $q = PersonChain2::derive($p, name => "Bob");
     $q->greet(42);
 }
 PERL
 
-    is scalar @$errs, 1, 'type mismatch on method call after update detected';
+    is scalar @$errs, 1, 'type mismatch on method call after derive detected';
     like $errs->[0]{message}, qr/Argument 1.*greet.*Str/, 'error on method call';
 };
 

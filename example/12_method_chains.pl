@@ -39,18 +39,18 @@ my $p = Product(name => "Widget", price => 1200);
 say "name:  ", $p->name;     # Widget
 say "price: ", $p->price;    # 1200
 
-# ── 2. Immutable Update ───────────────────────────────
+# ── 2. Immutable Derive ───────────────────────────────
 #
-# Name::update($obj, field => val) returns a new instance.
+# Name::derive($obj, field => val) returns a new instance.
 # The original is unchanged — chain freely.
 
-my $p2 = Product::update($p, price => 980);
+my $p2 = Product::derive($p, price => 980);
 say "updated price: ", $p2->price;   # 980
 say "original:      ", $p->price;    # 1200
 
-# Chain: update then access
-my $name_after_update = Product::update($p, name => "Gadget")->name;
-say "chained: ", $name_after_update; # Gadget
+# Chain: derive then access
+my $name_after_derive = Product::derive($p, name => "Gadget")->name;
+say "chained: ", $name_after_derive; # Gadget
 
 # ── 3. Newtype Coerce ──────────────────────────────────
 #

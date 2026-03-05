@@ -218,7 +218,7 @@ inner value.
     struct Person => (name => 'Str', age => 'Int');
 
 Define a nominal struct type with a constructor, field accessors,
-and immutable update via C<< ${Name}::update($obj, field => val) >>.
+and immutable derive via C<< ${Name}::derive($obj, field => val) >>.
 Use C<optional(Type)> for optional fields.
 
 =head2 datatype

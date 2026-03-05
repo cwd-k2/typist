@@ -219,8 +219,8 @@ sub register_structs ($class, $extracted, $registry, %opts) {
             });
         }
 
-        # update: Name -> Name (variadic named args)
-        $registry->register_function($name, 'update', +{
+        # derive: Name -> Name (variadic named args)
+        $registry->register_function($name, 'derive', +{
             params             => [$struct_type],
             returns            => $struct_type,
             generics           => \@generics,

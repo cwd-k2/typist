@@ -26,19 +26,19 @@ subtest 'struct accessors' => sub {
     is $p->age,  25,     'age accessor';
 };
 
-subtest 'struct immutable update' => sub {
+subtest 'struct immutable derive' => sub {
     my $p1 = Person(name => "Alice", age => 30);
-    my $p2 = Person::update($p1, age => 31);
+    my $p2 = Person::derive($p1, age => 31);
     is $p1->age, 30, 'original unchanged';
-    is $p2->age, 31, 'updated value';
-    is $p2->name, "Alice", 'non-updated field preserved';
+    is $p2->age, 31, 'derived value';
+    is $p2->name, "Alice", 'non-derived field preserved';
     isa_ok $p2, 'Typist::Struct::Person';
 };
 
-subtest 'struct update rejects unknown fields' => sub {
+subtest 'struct derive rejects unknown fields' => sub {
     my $p = Person(name => "Alice", age => 30);
-    my $died = !eval { Person::update($p, unknown => 1); 1 };
-    ok $died, 'update dies on unknown field';
+    my $died = !eval { Person::derive($p, unknown => 1); 1 };
+    ok $died, 'derive dies on unknown field';
     like $@, qr/Unknown field 'unknown'/, 'error message';
 };
 
@@ -142,12 +142,12 @@ subtest 'generic struct: type_args inferred' => sub {
     is $p->{_type_args}[1]->name, 'Str', 'U = Str';
 };
 
-subtest 'generic struct: update preserves type_args' => sub {
+subtest 'generic struct: derive preserves type_args' => sub {
     my $p1 = Pair(fst => 42, snd => "hello");
-    my $p2 = Pair::update($p1, snd => "world");
+    my $p2 = Pair::derive($p1, snd => "world");
     is $p2->fst, 42,      'fst preserved';
-    is $p2->snd, "world", 'snd updated';
-    ok $p2->{_type_args}, 'type_args preserved after update';
+    is $p2->snd, "world", 'snd derived';
+    ok $p2->{_type_args}, 'type_args preserved after derive';
     is $p2->{_type_args}[0]->name, 'Int', 'T preserved';
 };
 

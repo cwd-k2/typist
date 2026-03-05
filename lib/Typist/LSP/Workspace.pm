@@ -158,10 +158,10 @@ sub _unregister_file_types ($self, $old_info) {
         }
     }
 
-    # Unregister struct constructors + update
+    # Unregister struct constructors + derive
     for my $name (keys(($old_info->{structs} // +{})->%*)) {
         $reg->unregister_function($pkg, $name);
-        $reg->unregister_function($name, 'update');
+        $reg->unregister_function($name, 'derive');
     }
 
     # Unregister effect operations
