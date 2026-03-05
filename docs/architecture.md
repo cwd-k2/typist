@@ -93,7 +93,7 @@ Typist operates across three phases of a Perl program's lifecycle:
 |  Always active:                          |
 |    Newtype constructors validate.        |
 |    Datatype constructors validate.       |
-|    $val->base extracts inner value.      |
+|    Name::coerce($val) extracts inner.    |
 |    Effect::op() dispatches effect ops.      |
 |    handle { } scoped handler blocks.     |
 +==========================================+

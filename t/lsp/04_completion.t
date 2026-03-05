@@ -547,7 +547,7 @@ PERL
     my @labels = map { $_->{label} } @$items;
     ok((grep { $_ eq 'x' }    @labels), 'x in completions');
     ok((grep { $_ eq 'y' }    @labels), 'y in completions');
-    ok((grep { $_ eq 'with' } @labels), 'with in completions');
+    ok(!(grep { $_ eq 'with' } @labels), 'with NOT in completions (removed)');
 };
 
 # ── Code Completion: match arm ────────────────────

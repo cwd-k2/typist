@@ -20,8 +20,6 @@ use Typist::Type::Row;
 use Typist::Type::Eff;
 use Typist::Type::Data;
 use Typist::Type::Struct;
-use Typist::Struct::Base;
-use Typist::Newtype::Base;
 use Typist::Effect;
 use Typist::TypeClass;
 use Typist::Kind;
@@ -212,15 +210,15 @@ or a L<Typist::Type> object.
     newtype UserId => 'Int';
 
 Define a nominal type with boundary enforcement. Constructor validates
-values at creation time. Use C<< $val->base >> (L<Typist::Newtype::Base>)
-to extract the inner value.
+values at creation time. Use C<< ${Name}::coerce($val) >> to extract the
+inner value.
 
 =head2 struct
 
     struct Person => (name => 'Str', age => 'Int');
 
 Define a nominal struct type with a constructor, field accessors,
-and immutable update via C<< $obj->with(field => val) >>.
+and immutable update via C<< ${Name}::update($obj, field => val) >>.
 Use C<optional(Type)> for optional fields.
 
 =head2 datatype

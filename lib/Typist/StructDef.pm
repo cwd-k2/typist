@@ -74,8 +74,6 @@ sub _struct ($name_spec, $caller, @field_pairs) {
     # 2. Generate the package (ISA, meta, accessors)
     {
         no strict 'refs';
-        @{"${pkg}::ISA"} = ('Typist::Struct::Base');
-
         my %all_types = (%required_types, %optional_types);
         my %req_copy  = %required_types;
         my %opt_copy  = %optional_types;
@@ -91,6 +89,20 @@ sub _struct ($name_spec, $caller, @field_pairs) {
             my $f = $field;  # capture
             *{"${pkg}::${f}"} = sub ($self) { $self->{$f} };
         }
+
+        # Immutable update: returns a new instance with specified fields changed.
+        *{"${name}::update"} = sub ($self, @args) {
+            die "Typist: ${name}::update — odd number of update arguments\n"
+                if @args % 2;
+            my %updates = @args;
+            for my $key (keys %updates) {
+                die "Unknown field '$key' for struct $name\n"
+                    unless exists $all_types{$key};
+            }
+            my %new = %$self;
+            @new{keys %updates} = values %updates;
+            bless \%new, ref $self;
+        };
     }
 
     # 3. Install constructor in caller's namespace

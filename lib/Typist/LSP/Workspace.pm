@@ -144,9 +144,10 @@ sub _unregister_file_types ($self, $old_info) {
         }
     }
 
-    # Unregister newtype constructors
+    # Unregister newtype constructors + coerce
     for my $name (keys(($old_info->{newtypes} // +{})->%*)) {
         $reg->unregister_function($pkg, $name);
+        $reg->unregister_function($name, 'coerce');
     }
 
     # Unregister datatype constructors
@@ -157,9 +158,10 @@ sub _unregister_file_types ($self, $old_info) {
         }
     }
 
-    # Unregister struct constructors
+    # Unregister struct constructors + update
     for my $name (keys(($old_info->{structs} // +{})->%*)) {
         $reg->unregister_function($pkg, $name);
+        $reg->unregister_function($name, 'update');
     }
 
     # Unregister effect operations
@@ -213,7 +215,6 @@ sub _unregister_file_types ($self, $old_info) {
         for my $f (keys(($old_info->{structs}{$name}{fields} // +{})->%*)) {
             $reg->unregister_method($spkg, $f);
         }
-        $reg->unregister_method($spkg, 'with');
     }
 
     # Effects (type object)

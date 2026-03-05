@@ -350,7 +350,7 @@ BEGIN {
 }
 
 my $uid = UserId(42);            # Constructs, validates inner type
-my $raw = $uid->base;            # Extracts inner value: 42
+my $raw = UserId::coerce($uid);  # Extracts inner value: 42
 
 eval { UserId("not a number") }; # Dies: validation failure
 ```
@@ -444,7 +444,7 @@ BEGIN {
 
 my $p = Point(x => 1, y => 2);
 say $p->x;                      # 1
-my $q = $p->with(x => 10);      # Point(x => 10, y => 2) — immutable update
+my $q = Point::update($p, x => 10);  # Point(x => 10, y => 2) — immutable update
 ```
 
 ### Generic Structs

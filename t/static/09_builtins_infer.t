@@ -79,17 +79,17 @@ PERL
     is scalar @$errs, 0, 'mixed arms (Int | Str) assigned to Int | Str — no error';
 };
 
-# ── newtype ->base inference ─────────────
+# ── newtype coerce inference ─────────────
 
-subtest '->base: infers newtype inner type in static analysis' => sub {
+subtest 'UserId::coerce infers newtype inner type in static analysis' => sub {
     my $errs = diags_of(<<'PERL', 'TypeMismatch');
 use v5.40;
 newtype UserId => 'Int';
 my $uid :sig(UserId) = UserId(42);
-my $x :sig(Int) = $uid->base;
+my $x :sig(Int) = UserId::coerce($uid);
 PERL
 
-    is scalar @$errs, 0, '$uid->base infers Int — no type error';
+    is scalar @$errs, 0, 'UserId::coerce($uid) infers Int — no type error';
 };
 
 # ── handle handler callback param propagation ───

@@ -713,10 +713,18 @@ use Typist::Registry;
 use Typist::Type::Newtype;
 use Typist::Type::Alias;
 
-subtest '->base: infers newtype inner type from variable' => sub {
+subtest 'UserId::coerce infers newtype inner type' => sub {
     my $registry = Typist::Registry->new;
-    $registry->register_newtype('UserId',
-        Typist::Type::Newtype->new('UserId', Typist::Type::Atom->new('Int')));
+    my $inner = Typist::Type::Atom->new('Int');
+    my $type  = Typist::Type::Newtype->new('UserId', $inner);
+    $registry->register_newtype('UserId', $type);
+    $registry->register_function('UserId', 'coerce', +{
+        params       => [$type],
+        returns      => $inner,
+        generics     => [],
+        params_expr  => ['UserId'],
+        returns_expr => 'Int',
+    });
 
     my $env = +{
         variables => +{ '$uid' => Typist::Type::Alias->new('UserId') },
@@ -726,21 +734,29 @@ subtest '->base: infers newtype inner type from variable' => sub {
         package   => 'main',
     };
 
-    # $uid->base where $uid: UserId → Int
-    my $doc = PPI::Document->new(\'$uid->base');
-    my $sym = $doc->find_first('PPI::Token::Symbol');
-    ok $sym, 'found $uid symbol';
+    # UserId::coerce($uid) → Int
+    my $doc = PPI::Document->new(\'UserId::coerce($uid)');
+    my $sym = $doc->find_first('PPI::Token::Word');
+    ok $sym, 'found UserId::coerce word';
     my $t = Typist::Static::Infer->infer_expr($sym, $env);
-    ok $t, 'inferred from variable type';
+    ok $t, 'inferred from coerce call';
     ok $t->is_atom, 'is atom';
-    is $t->name, 'Int', '$uid->base → Int';
+    is $t->name, 'Int', 'UserId::coerce($uid) → Int';
 };
 
-subtest '->base: alias chain resolves through to newtype inner' => sub {
+subtest 'coerce through alias chain resolves to newtype inner' => sub {
     # newtype UserId => Int, typedef MyId => UserId
     my $registry = Typist::Registry->new;
-    $registry->register_newtype('UserId',
-        Typist::Type::Newtype->new('UserId', Typist::Type::Atom->new('Int')));
+    my $inner = Typist::Type::Atom->new('Int');
+    my $type  = Typist::Type::Newtype->new('UserId', $inner);
+    $registry->register_newtype('UserId', $type);
+    $registry->register_function('UserId', 'coerce', +{
+        params       => [$type],
+        returns      => $inner,
+        generics     => [],
+        params_expr  => ['UserId'],
+        returns_expr => 'Int',
+    });
     $registry->define_alias('MyId', 'UserId');
 
     my $env = +{
@@ -751,13 +767,13 @@ subtest '->base: alias chain resolves through to newtype inner' => sub {
         package   => 'main',
     };
 
-    # $id->base where $id: MyId → MyId alias → UserId Newtype → Int
-    my $doc = PPI::Document->new(\'$id->base');
-    my $sym = $doc->find_first('PPI::Token::Symbol');
+    # UserId::coerce($id) where $id: MyId → UserId → Int
+    my $doc = PPI::Document->new(\'UserId::coerce($id)');
+    my $sym = $doc->find_first('PPI::Token::Word');
     my $t = Typist::Static::Infer->infer_expr($sym, $env);
     ok $t, 'inferred through alias chain';
     ok $t->is_atom, 'is atom';
-    is $t->name, 'Int', '$id->base → Int (alias → newtype → inner)';
+    is $t->name, 'Int', 'UserId::coerce($id) → Int (alias → newtype → inner)';
 };
 
 # ── infer_expr_with_siblings ────────────────────

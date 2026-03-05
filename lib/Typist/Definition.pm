@@ -3,6 +3,8 @@ use v5.40;
 
 our $VERSION = '0.01';
 
+use Scalar::Util 'blessed';
+
 # Newtype, typeclass, and instance definitions.
 # Extracted from Typist.pm for module decomposition.
 # Functions that install symbols receive $caller explicitly.
@@ -15,11 +17,16 @@ sub _newtype ($caller, $name, $expr) {
     my $class_name = "Typist::Newtype::$name";
     my $expr_str = $inner->to_string;
     no strict 'refs';
-    @{"${class_name}::ISA"} = ('Typist::Newtype::Base');
     *{"${caller}::${name}"} = sub ($value) {
         die "Typist: $name — value does not satisfy $expr_str\n"
             unless $inner->contains($value);
         bless \$value, $class_name;
+    };
+
+    *{"${name}::coerce"} = sub ($val) {
+        die "Typist: ${name}::coerce — expected $name value\n"
+            unless blessed($val) && blessed($val) eq $class_name;
+        $$val;
     };
 }
 

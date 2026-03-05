@@ -228,14 +228,6 @@ sub _complete_cross_package_methods ($class, $context, $doc, $registry) {
             detail => $opt{$f}->to_string . '?',
         };
     }
-    unless ($prefix ne '' && index('with', $prefix) != 0) {
-        push @items, +{
-            label  => 'with',
-            kind   => 2,  # Method
-            detail => "(fields...) -> $type_str",
-        };
-    }
-
     \@items;
 }
 

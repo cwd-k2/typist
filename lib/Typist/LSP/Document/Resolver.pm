@@ -122,7 +122,7 @@ sub resolve_accessor_hover ($self, $line, $col, $word) {
 
 # ── Accessor Chain Walking ──────────────────────
 
-# Walk an accessor chain, resolving struct fields and newtype ->base at each step.
+# Walk an accessor chain, resolving struct fields at each step.
 sub walk_accessor_chain ($self, $type, $chain, $word, $registry, $narrowed = 0) {
     for my $i (0 .. $#$chain) {
         my $field = $chain->[$i];
@@ -130,18 +130,9 @@ sub walk_accessor_chain ($self, $type, $chain, $word, $registry, $narrowed = 0) 
         # Resolve alias → concrete type (newtype, struct, or datatype)
         my $resolved = $self->resolve_type_deep($type, $registry) // return undef;
 
-        # Newtype: only ->base is valid
+        # Newtype: no instance methods
         if ($resolved->is_newtype) {
-            return undef unless $field eq 'base';
-            $type = $resolved->inner;
-            if ($i == $#$chain) {
-                return sym_variable(
-                    name     => 'base',
-                    type     => $type->to_string,
-                    inferred => 1,
-                );
-            }
-            next;
+            return undef;
         }
 
         # Struct: field accessor
@@ -169,15 +160,6 @@ sub walk_accessor_chain ($self, $type, $chain, $word, $registry, $narrowed = 0) 
                     type        => $type->to_string,
                     struct_name => $struct->name,
                     optional    => $narrowed ? 0 : 1,
-                );
-            }
-        } elsif ($field eq 'with') {
-            $type = $resolved;
-            if ($i == $#$chain) {
-                return sym_method(
-                    name        => 'with',
-                    struct_name => $struct->name,
-                    returns     => $resolved->to_string,
                 );
             }
         } else {

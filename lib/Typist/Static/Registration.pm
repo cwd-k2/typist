@@ -101,6 +101,15 @@ sub register_newtypes ($class, $extracted, $registry, %opts) {
             params_expr  => [$inner->to_string],
             returns_expr => $name,
         });
+
+        # coerce: Name -> Inner
+        $registry->register_function($name, 'coerce', +{
+            params       => [$type],
+            returns      => $inner,
+            generics     => [],
+            params_expr  => [$name],
+            returns_expr => $inner->to_string,
+        });
     }
 }
 
@@ -210,11 +219,14 @@ sub register_structs ($class, $extracted, $registry, %opts) {
             });
         }
 
-        # with() method: returns the same struct type
-        $registry->register_method($struct_pkg, 'with', +{
-            params   => [],
-            returns  => $struct_type,
-            variadic => 1,
+        # update: Name -> Name (variadic named args)
+        $registry->register_function($name, 'update', +{
+            params             => [$struct_type],
+            returns            => $struct_type,
+            generics           => \@generics,
+            variadic           => 1,
+            params_expr        => [$name, @ctor_params_expr],
+            returns_expr       => $name,
         });
     }
 }
@@ -620,7 +632,7 @@ and its constructor function (C<Name(Inner) -E<gt> Name>).
     Typist::Static::Registration->register_structs($extracted, $registry, %opts);
 
 Parses and registers C<struct> definitions, creating the struct type, its
-constructor function, field accessor methods, and the C<with()> method.
+constructor function, field accessor methods, and the C<update()> function.
 
 =head2 register_datatypes
 

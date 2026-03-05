@@ -18,7 +18,6 @@ subtest 'struct creates constructor' => sub {
     my $p = Person(name => "Alice", age => 30);
     ok defined $p, 'constructor returns value';
     isa_ok $p, 'Typist::Struct::Person';
-    isa_ok $p, 'Typist::Struct::Base';
 };
 
 subtest 'struct accessors' => sub {
@@ -29,17 +28,17 @@ subtest 'struct accessors' => sub {
 
 subtest 'struct immutable update' => sub {
     my $p1 = Person(name => "Alice", age => 30);
-    my $p2 = $p1->with(age => 31);
+    my $p2 = Person::update($p1, age => 31);
     is $p1->age, 30, 'original unchanged';
     is $p2->age, 31, 'updated value';
     is $p2->name, "Alice", 'non-updated field preserved';
     isa_ok $p2, 'Typist::Struct::Person';
 };
 
-subtest 'struct with() rejects unknown fields' => sub {
+subtest 'struct update rejects unknown fields' => sub {
     my $p = Person(name => "Alice", age => 30);
-    my $died = !eval { $p->with(unknown => 1); 1 };
-    ok $died, 'with() dies on unknown field';
+    my $died = !eval { Person::update($p, unknown => 1); 1 };
+    ok $died, 'update dies on unknown field';
     like $@, qr/Unknown field 'unknown'/, 'error message';
 };
 
@@ -131,7 +130,6 @@ subtest 'generic struct: construction' => sub {
     my $p = Pair(fst => 42, snd => "hi");
     ok defined $p, 'constructor returns value';
     isa_ok $p, 'Typist::Struct::Pair';
-    isa_ok $p, 'Typist::Struct::Base';
     is $p->fst, 42,   'fst accessor';
     is $p->snd, "hi", 'snd accessor';
 };
@@ -144,12 +142,12 @@ subtest 'generic struct: type_args inferred' => sub {
     is $p->{_type_args}[1]->name, 'Str', 'U = Str';
 };
 
-subtest 'generic struct: with() preserves type_args' => sub {
+subtest 'generic struct: update preserves type_args' => sub {
     my $p1 = Pair(fst => 42, snd => "hello");
-    my $p2 = $p1->with(snd => "world");
+    my $p2 = Pair::update($p1, snd => "world");
     is $p2->fst, 42,      'fst preserved';
     is $p2->snd, "world", 'snd updated';
-    ok $p2->{_type_args}, 'type_args preserved after with()';
+    ok $p2->{_type_args}, 'type_args preserved after update';
     is $p2->{_type_args}[0]->name, 'Int', 'T preserved';
 };
 

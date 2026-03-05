@@ -304,7 +304,7 @@ PERL
     is scalar @$errs, 0, 'Decl is ambient — no EffectMismatch for typedef in pure function';
 };
 
-subtest 'effects: ->base is pure (method call, no effect)' => sub {
+subtest 'effects: UserId::coerce is pure (no effect)' => sub {
     my $errs = diags_of(<<'PERL', 'EffectMismatch');
 package BasePure;
 use v5.40;
@@ -312,11 +312,11 @@ use v5.40;
 newtype UserId => 'Int';
 
 sub extract :sig((UserId) -> Int) ($val) {
-    $val->base;
+    UserId::coerce($val);
 }
 PERL
 
-    is scalar @$errs, 0, '->base in pure function — no effect error';
+    is scalar @$errs, 0, 'UserId::coerce in pure function — no effect error';
 };
 
 # ── New IO/Exn effects on core builtins ───────

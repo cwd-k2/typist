@@ -20,7 +20,7 @@ use Typist::DSL qw(:all Alias);
 # newtype Name => InnerType
 #
 # Creates a constructor (Name($val)) and registers the
-# nominal type. $val->base extracts the inner value.
+# nominal type. Name::coerce($val) extracts the inner value.
 # Boundary enforcement is ALWAYS active, even without -runtime.
 
 BEGIN {
@@ -33,9 +33,9 @@ my $uid = UserId(42);
 my $oid = OrderId(99);
 my $em  = Email('alice@example.com');
 
-say "UserId:  ", $uid->base;     # 42
-say "OrderId: ", $oid->base;     # 99
-say "Email:   ", $em->base;
+say "UserId:  ", UserId::coerce($uid);     # 42
+say "OrderId: ", OrderId::coerce($oid);   # 99
+say "Email:   ", Email::coerce($em);
 
 # Constructor validates inner type
 eval { UserId("hello") };
@@ -58,7 +58,7 @@ say "UserId <- raw Int:  $@" if $@;
 # Functions that accept UserId will reject OrderId and raw Int.
 
 sub find_user :sig((UserId) -> Str) ($id) {
-    "User #" . $id->base;
+    "User #" . UserId::coerce($id);
 }
 
 say find_user(UserId(42));
@@ -138,7 +138,7 @@ my $acct :sig(Account) = +{
     email => Email('alice@example.com'),
     name  => "Alice",
 };
-say "account: $acct->{name} (", $acct->{id}->base, ")";
+say "account: $acct->{name} (", UserId::coerce($acct->{id}), ")";
 
 # Raw values rejected in struct fields
 eval {

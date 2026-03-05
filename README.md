@@ -95,7 +95,7 @@ For the complete type system reference, see [docs/type-system.md](docs/type-syst
 | Maybe | `Maybe[T]` | `Maybe[Str]` = `Str \| Undef` |
 | Literal types | `42`, `"hello"` | Singleton types for specific values |
 | Type aliases | `typedef` | `typedef Price => Int` |
-| Nominal types | `newtype` / `->base` | `newtype UserId => Int` |
+| Nominal types | `newtype` / `Name::coerce` | `newtype UserId => Int` |
 | ADT / GADT | `datatype` | Tagged unions, per-constructor return types |
 | Enumerations | `enum` | `enum Color => qw(Red Green Blue)` |
 | Generics | `<T>`, `<T: Bound>` | `<T: Num>(T, T) -> T` |
@@ -240,7 +240,7 @@ BEGIN {
 
 my $p = Person(name => "Alice", age => 30);
 $p->name;                    # "Alice"
-$p->with(age => 31);         # immutable update
+Person::update($p, age => 31);   # immutable update
 ```
 
 Struct types are **nominal**: `Struct <: Record` (structural compatibility), but `Record </: Struct` (nominal barrier).
@@ -254,7 +254,7 @@ BEGIN {
 }
 
 my $uid = UserId(42);       # Constructor validates inner type
-my $raw = $uid->base;       # Extracts inner value: 42
+my $raw = UserId::coerce($uid);  # Extracts inner value: 42
 ```
 
 ### Algebraic Data Types
@@ -537,7 +537,7 @@ carton exec -- prove -l t/critic/       # Perl::Critic policy
 For detailed analysis internals, see [docs/static-analysis.md](docs/static-analysis.md#known-limitations).
 
 - **Type inference** — Literal types are widened to base atoms for unannotated mutable bindings (`my $x = 0` → `Int`, `my $x = 3.14` → `Double`). Operator precedence does not influence inferred types.
-- **Method checking** — Instance (`$self->method()`), cross-package struct (`$p->name()`), class (`Person->new()`), chained (`$p->with(...)->greet()`), generic, and Record accessor calls are checked. Union receivers and untyped receivers are gradual-skipped.
+- **Method checking** — Instance (`$self->method()`), cross-package struct (`$p->name()`), class (`Person->new()`), chained (`Name::update($p, ...)->greet()`), generic, and Record accessor calls are checked. Union receivers and untyped receivers are gradual-skipped.
 - **Type narrowing** — Supports `defined($x)`, truthiness, `isa`, `ref($x) eq/ne 'TYPE'` (with/without parens, variable comparison, inverse narrowing for Union types), and early return. Full ref type map: `HASH`, `ARRAY`, `SCALAR`, `CODE`, `REF`, `Regexp`, `GLOB`, `IO`, `VSTRING`, plus blessed class names.
 - **Effect system** — Effect inference provides LSP inlay hints for unannotated functions (direct callees only). Protocol checking traces operation sequences with if/else branching convergence, loop idempotency enforcement, and `match`/`handle` body tracking.
 - **Typeclass instances** — Cross-file instance declarations are extracted and registered for workspace resolution. Static analysis records instance existence but does not validate method completeness; completeness checking runs at runtime only. Method implementations (coderefs) are not available to the static path.

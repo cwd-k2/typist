@@ -1661,9 +1661,8 @@ sub _infer_method_access ($receiver_type, $method_word, $env = undef) {
         $resolved = $looked_up if $looked_up;
     }
 
-    # Newtype ->base: extract inner type
+    # Newtype: no instance methods
     if ($resolved->is_newtype) {
-        return $resolved->inner if $method_name eq 'base';
         return undef;
     }
 
@@ -1695,8 +1694,6 @@ sub _infer_method_access ($receiver_type, $method_word, $env = undef) {
             return $field_type;
         }
 
-        # with() returns the same struct type
-        return $resolved if $method_name eq 'with';
     }
 
     # Fallback: look up method in registry if available

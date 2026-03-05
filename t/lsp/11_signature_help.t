@@ -246,21 +246,19 @@ PERL
 
 # ── Signature help for method call ─────────────────
 
-subtest 'signatureHelp context detects method call' => sub {
+subtest 'signatureHelp context detects qualified function call' => sub {
     use Typist::LSP::Document;
 
     my $source = <<'PERL';
 use v5.40;
 my $p :sig(Point) = Point(x => 1, y => 2);
-$p->with(
+Point::update($p,
 PERL
 
     my $doc = Typist::LSP::Document->new(uri => 'file:///test_method.pm', content => $source);
-    my $ctx = $doc->signature_context(2, length('$p->with('));
-    ok $ctx, 'got signature context for method call';
-    ok $ctx->{is_method}, 'is_method flag set';
-    is $ctx->{name}, 'with', 'method name is with';
-    is $ctx->{var}, '$p', 'var is $p';
+    my $ctx = $doc->signature_context(2, length('Point::update($p,'));
+    ok $ctx, 'got signature context for qualified call';
+    is $ctx->{name}, 'update', 'function name is update';
 };
 
 done_testing;

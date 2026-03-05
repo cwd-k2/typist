@@ -52,7 +52,6 @@ my @modules = qw(
     Typist::Prelude
     Typist::Static::Registration
     Typist::Static::Unify
-    Typist::Struct::Base
     Typist::Type::Fold
     Typist::Type::Quantified
     Typist::Type::Struct

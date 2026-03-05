@@ -35,7 +35,7 @@ Shared Infrastructure
 Registry, Parser, Subtype, Transform, Attribute, Prelude, Protocol
 Error (value + Collector), Error::Global (singleton buffer)
 Type::{Atom,Param,Union,Intersection,Func,Record,Struct,Var,Alias,Literal,Newtype,Quantified,Row,Eff,Data}
-Type::Fold (map_type, walk), Struct::Base, Newtype::Base
+Type::Fold (map_type, walk)
 Kind, KindChecker, TypeClass, Effect, Static::Registration
 DSL (Type constructors: Int, Str, Double, Num, Array, Hash, Record, optional, etc.)
 ```

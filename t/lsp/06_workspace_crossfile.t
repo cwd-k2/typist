@@ -380,7 +380,7 @@ PERL
     my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
     ok $ws->registry->lookup_struct('OldStruct'), 'OldStruct present initially';
     ok $ws->registry->lookup_method('Typist::Struct::OldStruct', 'name'), 'accessor name present';
-    ok $ws->registry->lookup_method('Typist::Struct::OldStruct', 'with'), 'with method present';
+    ok $ws->registry->lookup_function('OldStruct', 'update'), 'update function present';
 
     $ws->update_file("$dir/lib/Structs.pm", <<'PERL');
 package Structs;
@@ -391,7 +391,7 @@ PERL
 
     ok !$ws->registry->lookup_struct('OldStruct'), 'OldStruct struct removed';
     ok !$ws->registry->lookup_method('Typist::Struct::OldStruct', 'name'), 'old accessor removed';
-    ok !$ws->registry->lookup_method('Typist::Struct::OldStruct', 'with'), 'old with removed';
+    ok !$ws->registry->lookup_function('OldStruct', 'update'), 'old update removed';
     ok  $ws->registry->lookup_struct('NewStruct'), 'NewStruct registered';
     ok  $ws->registry->lookup_method('Typist::Struct::NewStruct', 'title'), 'new accessor present';
 };

@@ -46,7 +46,7 @@ Union and Intersection constructors normalize their members by flattening nested
 - **struct** -- nominal, blessed immutable objects via `struct Name => (fields...)`.
   - Constructors: `Name(field => val)`
   - Accessors: `$obj->field`
-  - Immutable updates: `$obj->with(field => val)`
+  - Immutable updates: `Name::update($obj, field => val)`
   - `optional(Type)` marks fields that can be omitted.
 - Subtyping: `Struct <: Record` (structural compatibility), but `Record </: Struct` (nominal barrier).
 
@@ -77,7 +77,7 @@ TypeClass dispatch installs into the caller's namespace (`${caller}::${ClassName
 
 Constructor boundary validation is always on, regardless of `-runtime`:
 
-- **newtype**: `$inner->contains($value)` validates the inner type. `$val->base` extracts the inner value.
+- **newtype**: `$inner->contains($value)` validates the inner type. `Name::coerce($val)` extracts the inner value.
 - **datatype**: argument count + `$type->contains($arg)` per argument.
 - **struct**: unknown/missing field checks + per-field type validation.
 - **Effect dispatch**: `Effect::op(@args)` dispatches to the nearest handler on the runtime stack.
@@ -273,7 +273,7 @@ All of the following are type-checked:
 - `$self->method()` -- same-package instance method.
 - `$p->name()` -- cross-package struct accessor.
 - `Person->new()` -- class method.
-- `$p->with(...)->greet()` -- chained calls via return type resolution.
+- `Name::update($p, ...)->greet()` -- chained calls via return type resolution.
 - Generic methods -- delegated to `_check_generic_call`.
 - Record accessor calls.
 

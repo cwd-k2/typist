@@ -7,7 +7,7 @@ use Typist::DSL;
 # ═══════════════════════════════════════════════════════════
 #  12 — Method Chains
 #
-#  Struct accessors, immutable updates, newtype ->base,
+#  Struct accessors, immutable updates, newtype coerce,
 #  and their combinations in chains.
 # ═══════════════════════════════════════════════════════════
 
@@ -39,26 +39,26 @@ my $p = Product(name => "Widget", price => 1200);
 say "name:  ", $p->name;     # Widget
 say "price: ", $p->price;    # 1200
 
-# ── 2. Immutable Update Chain ───────────────────────────
+# ── 2. Immutable Update ───────────────────────────────
 #
-# ->with(field => val) returns a new instance.
+# Name::update($obj, field => val) returns a new instance.
 # The original is unchanged — chain freely.
 
-my $p2 = $p->with(price => 980);
+my $p2 = Product::update($p, price => 980);
 say "updated price: ", $p2->price;   # 980
 say "original:      ", $p->price;    # 1200
 
 # Chain: update then access
-my $name_after_update = $p->with(name => "Gadget")->name;
+my $name_after_update = Product::update($p, name => "Gadget")->name;
 say "chained: ", $name_after_update; # Gadget
 
-# ── 3. Newtype ->base ──────────────────────────────────
+# ── 3. Newtype Coerce ──────────────────────────────────
 #
 # Newtypes wrap a value in a nominal shell.
-# ->base extracts the inner value.
+# Name::coerce($val) extracts the inner value.
 
 my $pid = ProductId(42);
-say "ProductId: ", $pid->base;       # 42
+say "ProductId: ", ProductId::coerce($pid);       # 42
 
 # ── 4. Struct → Newtype Chain ───────────────────────────
 #
@@ -70,7 +70,7 @@ my $order = Order(
     qty     => 3,
 );
 
-say "order id (raw): ", $order->id->base;       # 7
+say "order id (raw): ", ProductId::coerce($order->id);  # 7
 say "order product:  ", $order->product->name;   # Sprocket
 
 # ── 5. Function Return Accessor ────────────────────────

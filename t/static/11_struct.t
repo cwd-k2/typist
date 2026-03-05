@@ -79,10 +79,10 @@ PERL
     ok $age_method->{returns}->is_atom && $age_method->{returns}->name eq 'Int',
         'age accessor returns Int';
 
-    # with() method registered
-    my $with_method = $registry->lookup_method('Typist::Struct::Person', 'with');
-    ok $with_method, 'with method registered';
-    ok $with_method->{returns}->is_struct, 'with returns struct type';
+    # update() function registered
+    my $update_fn = $registry->lookup_function('Person', 'update');
+    ok $update_fn, 'update function registered';
+    ok $update_fn->{returns}->is_struct, 'update returns struct type';
 };
 
 # ── Inference ─────────────────────────────────
@@ -163,13 +163,13 @@ PERL
         registry  => $registry,
     };
 
-    # Test: $p->with(age => 31) infers as Person
-    my $ppi = PPI::Document->new(\q{ $p->with(age => 31) });
-    my $sym = $ppi->find_first('PPI::Token::Symbol');
+    # Test: Person::update($p, age => 31) infers as Person
+    my $ppi = PPI::Document->new(\q{ Person::update($p, age => 31) });
+    my $sym = $ppi->find_first('PPI::Token::Word');
     my $result = Typist::Static::Infer->infer_expr($sym, $env);
-    ok $result, 'with() infers a type';
-    ok $result->is_struct, 'with() infers struct type';
-    is $result->name, 'Person', 'with() returns same struct type';
+    ok $result, 'update infers a type';
+    ok $result->is_struct, 'update infers struct type';
+    is $result->name, 'Person', 'update returns same struct type';
 };
 
 subtest 'infer chained accessor: Person(...)->name' => sub {

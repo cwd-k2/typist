@@ -633,7 +633,7 @@ PERL
 
 # ── Phase 7: Chained Method Calls ────────────────
 
-subtest 'chained method: $p->with(name => "Bob")->greet("hi") OK' => sub {
+subtest 'update + method: PersonChain::update then greet OK' => sub {
     my $errs = type_errors(<<'PERL');
 package PersonChain;
 use v5.40;
@@ -646,14 +646,15 @@ sub greet :sig((Str) -> Str) ($self, $msg) {
 
 sub run :sig(() -> Void) () {
     my $p = PersonChain(name => "Alice", age => 30);
-    $p->with(name => "Bob")->greet("hello");
+    my $q = PersonChain::update($p, name => "Bob");
+    $q->greet("hello");
 }
 PERL
 
-    is scalar @$errs, 0, 'chained method call with correct types produces no error';
+    is scalar @$errs, 0, 'update then method call with correct types produces no error';
 };
 
-subtest 'chained method: type mismatch on chained call' => sub {
+subtest 'update + method: type mismatch on method call' => sub {
     my $errs = type_errors(<<'PERL');
 package PersonChain2;
 use v5.40;
@@ -666,12 +667,13 @@ sub greet :sig((Str) -> Str) ($self, $msg) {
 
 sub run :sig(() -> Void) () {
     my $p = PersonChain2(name => "Alice", age => 30);
-    $p->with(name => "Bob")->greet(42);
+    my $q = PersonChain2::update($p, name => "Bob");
+    $q->greet(42);
 }
 PERL
 
-    is scalar @$errs, 1, 'chained method call type mismatch detected';
-    like $errs->[0]{message}, qr/Argument 1.*greet.*Str/, 'error on chained call';
+    is scalar @$errs, 1, 'type mismatch on method call after update detected';
+    like $errs->[0]{message}, qr/Argument 1.*greet.*Str/, 'error on method call';
 };
 
 subtest 'chained method: non-struct return graceful skip' => sub {

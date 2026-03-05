@@ -436,7 +436,7 @@ The TypeChecker supports method call-site checking for `$self` and struct-typed 
 
 - **Supported**: `$self->method()` (same-package instance methods)
 - **Supported**: `$var->method()` where `$var` has a struct type inferred from env (cross-package via struct name resolution)
-- **Not supported**: class method calls (`Class->method()`), chained calls (`$p->with(...)->method()`), non-struct receiver types, generic methods
+- **Not supported**: class method calls (`Class->method()`), non-struct receiver types, generic methods
 
 ### Algorithm
 
