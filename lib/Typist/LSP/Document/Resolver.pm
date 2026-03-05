@@ -25,7 +25,7 @@ sub resolve_var_type ($self, $var_name, $line = undef) {
     my $symbols = $result->{symbols} // return undef;
 
     my $ppi_line = defined $line ? $line + 1 : undef;  # LSP 0-indexed → PPI 1-indexed
-    my ($best, $best_any);
+    my ($best, $best_span, $best_any);
 
     for my $sym (@$symbols) {
         my $kind = $sym->{kind} // '';
@@ -38,8 +38,13 @@ sub resolve_var_type ($self, $var_name, $line = undef) {
         # Scoped symbol: check if hover line falls within scope
         if ($ppi_line && $sym->{scope_start} && $sym->{scope_end}) {
             if ($ppi_line >= $sym->{scope_start} && $ppi_line <= $sym->{scope_end}) {
-                return $sym->{type} unless $is_any;
-                $best_any //= $sym->{type};
+                my $span = $sym->{scope_end} - $sym->{scope_start};
+                if ($is_any) {
+                    $best_any //= $sym->{type};
+                } elsif (!defined $best_span || $span < $best_span) {
+                    $best = $sym->{type};
+                    $best_span = $span;
+                }
                 next;
             }
             next;  # out of scope — skip

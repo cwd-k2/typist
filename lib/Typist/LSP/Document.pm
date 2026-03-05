@@ -398,13 +398,20 @@ sub _find_best_symbol ($self, $symbols, $name, $line) {
     return undef unless @candidates;
     return $candidates[0] if @candidates == 1;
 
-    # Prefer scoped symbol (parameter) when cursor is within its scope
+    # Prefer the narrowest scoped symbol containing the cursor
+    my ($best_scoped, $best_span);
     for my $sym (@candidates) {
         if ($sym->{scope_start} && $sym->{scope_end}) {
-            return $sym if $ppi_line >= $sym->{scope_start}
-                        && $ppi_line <= $sym->{scope_end};
+            if ($ppi_line >= $sym->{scope_start} && $ppi_line <= $sym->{scope_end}) {
+                my $span = $sym->{scope_end} - $sym->{scope_start};
+                if (!defined $best_span || $span < $best_span) {
+                    $best_scoped = $sym;
+                    $best_span   = $span;
+                }
+            }
         }
     }
+    return $best_scoped if $best_scoped;
 
     # Fallback: first non-scoped symbol, or first candidate
     for my $sym (@candidates) {

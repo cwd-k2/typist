@@ -279,6 +279,26 @@ PERL
     is scalar @$errs, 0, 'isa else-block narrows Union to remaining struct';
 };
 
+# ── isa with blessed-class prefix ─────────────────
+
+subtest 'isa with Typist::Struct:: prefix narrows correctly' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+struct Cat => (name => 'Str');
+struct Dog => (name => 'Str', bark => 'Str');
+
+sub check :sig((Cat | Dog) -> Str) ($pet) {
+    if ($pet isa Typist::Struct::Dog) {
+        return $pet->bark();
+    } else {
+        return $pet->name();
+    }
+}
+PERL
+
+    is scalar @$errs, 0, 'Typist::Struct:: prefix resolves to short name';
+};
+
 # ── defined() accessor narrowing ────────────────────
 
 subtest 'early return defined accessor narrows Option[Str] to Str' => sub {

@@ -3,6 +3,7 @@ use v5.40;
 
 our $VERSION = '0.01';
 
+use Scalar::Util ();
 use Typist::Parser;
 use Typist::Subtype;
 use Typist::Type::Atom;
@@ -16,6 +17,7 @@ sub new ($class, %args) {
         _narrowed_vars      => [],
         _narrowed_accessors => [],
         _last_narrowed_type => +{},
+        _recorded_blocks    => +{},
     }, $class;
 }
 
@@ -279,7 +281,13 @@ sub _narrow_isa ($self, $cond_children, $env) {
 
     my $var_name  = $cond_children->[0]->content;
     my $type_name = $type_token->content;
-    my $resolved  = $self->_resolve_type($type_name) // return +{};
+
+    # Strip blessed-class prefix: `$x isa Typist::Struct::Foo` → resolve as `Foo`
+    my $resolved = $self->_resolve_type($type_name);
+    if (!$resolved && $type_name =~ /\ATypist::(?:Struct|Newtype)::(.+)\z/) {
+        $resolved = $self->_resolve_type($1);
+    }
+    return +{} unless $resolved;
 
     +{ $var_name => $resolved };
 }
@@ -422,17 +430,21 @@ sub narrow_env_for_block ($self, $env, $node) {
 
     return $env unless %applied;
 
-    # Record narrowed variables for LSP visibility
-    my $block_start = $block->line_number;
-    my $block_last  = $block->last_element;
-    my $block_end   = $block_last ? $block_last->line_number : $block_start;
-    for my $var_name (keys %applied) {
-        push $self->{_narrowed_vars}->@*, +{
-            name        => $var_name,
-            type        => $applied{$var_name},
-            scope_start => $block_start,
-            scope_end   => $block_end,
-        };
+    # Record narrowed variables for LSP visibility (once per block)
+    my $block_id = Scalar::Util::refaddr($block);
+    unless ($self->{_recorded_blocks}{$block_id}) {
+        $self->{_recorded_blocks}{$block_id} = 1;
+        my $block_start = $block->line_number;
+        my $block_last  = $block->last_element;
+        my $block_end   = $block_last ? $block_last->line_number : $block_start;
+        for my $var_name (keys %applied) {
+            push $self->{_narrowed_vars}->@*, +{
+                name        => $var_name,
+                type        => $applied{$var_name},
+                scope_start => $block_start,
+                scope_end   => $block_end,
+            };
+        }
     }
 
     my %new_vars = $env->{variables}->%*;
@@ -495,18 +507,31 @@ sub scan_early_returns ($self, $env, $node) {
 
     return $env unless %narrowed_vars || %narrowed_accessors;
 
-    # Record narrowed variables for LSP visibility
-    my $fn_block = $parent_block;
-    my $fn_last  = $fn_block->last_element;
-    my $scope_start = $stmt->line_number;
-    my $scope_end   = $fn_last ? $fn_last->line_number : $scope_start;
-    for my $var_name (keys %narrowed_vars) {
-        push $self->{_narrowed_vars}->@*, +{
-            name        => $var_name,
-            type        => $narrowed_vars{$var_name},
-            scope_start => $scope_start,
-            scope_end   => $scope_end,
-        };
+    # Record narrowed variables/accessors for LSP visibility (once per statement)
+    my $stmt_id = Scalar::Util::refaddr($stmt);
+    unless ($self->{_recorded_blocks}{$stmt_id}) {
+        $self->{_recorded_blocks}{$stmt_id} = 1;
+        my $fn_last     = $parent_block->last_element;
+        my $scope_start = $stmt->line_number;
+        my $scope_end   = $fn_last ? $fn_last->line_number : $scope_start;
+        for my $var_name (keys %narrowed_vars) {
+            push $self->{_narrowed_vars}->@*, +{
+                name        => $var_name,
+                type        => $narrowed_vars{$var_name},
+                scope_start => $scope_start,
+                scope_end   => $scope_end,
+            };
+        }
+        for my $key (keys %narrowed_accessors) {
+            my $info = $narrowed_accessors{$key};
+            push $self->{_narrowed_accessors}->@*, +{
+                var_name    => $info->{var_name},
+                chain       => [$info->{accessor}],
+                type        => $info->{type},
+                scope_start => $scope_start,
+                scope_end   => $scope_end,
+            };
+        }
     }
 
     my %new_vars = $env->{variables}->%*;
@@ -521,18 +546,6 @@ sub scan_early_returns ($self, $env, $node) {
             $acc{$info->{var_name}}{$info->{accessor}} = $info->{type};
         }
         $new_env->{narrowed_accessors} = \%acc;
-
-        # Record for LSP visibility
-        for my $key (keys %narrowed_accessors) {
-            my $info = $narrowed_accessors{$key};
-            push $self->{_narrowed_accessors}->@*, +{
-                var_name    => $info->{var_name},
-                chain       => [$info->{accessor}],
-                type        => $info->{type},
-                scope_start => $scope_start,
-                scope_end   => $scope_end,
-            };
-        }
     }
 
     $new_env;
