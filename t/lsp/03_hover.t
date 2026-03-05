@@ -1786,4 +1786,142 @@ PERL
     like $hover->{contents}{value}, qr/\(T\) -> Str/, 'shows method signature';
 };
 
+# ── Hover on match keyword ──────────────────────
+
+subtest 'match keyword hover shows datatype variants' => sub {
+    require File::Temp;
+    require File::Path;
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib");
+
+    open my $fh, '>', "$dir/lib/Status.pm" or die;
+    print $fh <<'PERL';
+package Status;
+use v5.40;
+use Typist;
+datatype OrderStatus =>
+    Pending   => '()',
+    Shipped   => '(Str)',
+    Delivered => '()';
+1;
+PERL
+    close $fh;
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source = <<'PERL';
+package App;
+use v5.40;
+use Typist;
+use Status;
+sub check :sig((OrderStatus) -> Str) ($status) {
+    match $status,
+        Pending   => sub { "waiting" },
+        Shipped   => sub ($id) { "shipped: $id" },
+        Delivered => sub { "done" };
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///app.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Line 5 (0-indexed): "    match $status,"
+    #                       01234
+    my $sym = $doc->symbol_at(5, 5);
+    ok $sym, 'found symbol for match keyword';
+    is $sym->{kind}, 'match', 'kind is match';
+    like $sym->{target}, qr/\$status/, 'target is $status';
+
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'got hover response';
+    my $value = $hover->{contents}{value};
+    like $value, qr/match\(\$status: OrderStatus\) -> Str/, 'shows match signature with return type';
+};
+
+# ── Hover on handle keyword ─────────────────────
+
+subtest 'handle keyword hover shows effect operations' => sub {
+    require File::Temp;
+    require File::Path;
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib");
+
+    open my $fh, '>', "$dir/lib/Console.pm" or die;
+    print $fh <<'PERL';
+package Console;
+use v5.40;
+use Typist;
+effect Console => +{
+    readLine  => '() -> Str',
+    writeLine => '(Str) -> Void',
+};
+1;
+PERL
+    close $fh;
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source = <<'PERL';
+package App;
+use v5.40;
+use Typist;
+use Console;
+sub run :sig(() -> Void) () {
+    handle {
+        Console::writeLine("hello");
+    } Console => +{
+        readLine  => sub { "input" },
+        writeLine => sub ($s) { print $s },
+    };
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///app.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Line 5 (0-indexed): "    handle {"
+    #                       01234567
+    my $sym = $doc->symbol_at(5, 5);
+    ok $sym, 'found symbol for handle keyword';
+    is $sym->{kind}, 'handle', 'kind is handle';
+
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'got hover response';
+    my $value = $hover->{contents}{value};
+    like $value, qr/handle: Void !\[Console\]/, 'shows handle signature with return type and effect';
+};
+
+# ── match hover without datatype (type only) ────
+
+subtest 'match hover shows type when datatype not found' => sub {
+    require Typist::LSP::Hover;
+
+    my $sym = +{
+        kind        => 'match',
+        target      => '$x',
+        type_str    => 'SomeType',
+        result_type => '_',
+    };
+
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'got hover response';
+    like $hover->{contents}{value}, qr/match\(\$x: SomeType\) -> _/, 'shows match with unknown return type';
+};
+
 done_testing;

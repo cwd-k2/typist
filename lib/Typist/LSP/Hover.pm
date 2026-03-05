@@ -84,6 +84,14 @@ sub _format ($class, $sym) {
         return $class->_format_struct($sym);
     }
 
+    if ($kind eq 'match') {
+        return $class->_format_match($sym);
+    }
+
+    if ($kind eq 'handle') {
+        return $class->_format_handle($sym);
+    }
+
     undef;
 }
 
@@ -167,6 +175,19 @@ sub _format_struct ($class, $sym) {
     }
     $body .= '}';
     _code($body);
+}
+
+sub _format_match ($class, $sym) {
+    my $target = $sym->{target} // '';
+    _code("match($target: $sym->{type_str}) -> $sym->{result_type}");
+}
+
+sub _format_handle ($class, $sym) {
+    my $effects = $sym->{effects} // [];
+    return undef unless @$effects;
+
+    my $names = join(', ', map { $_->{name} } @$effects);
+    _code("handle: $sym->{result_type} ![$names]");
 }
 
 sub _format_field ($class, $sym) {

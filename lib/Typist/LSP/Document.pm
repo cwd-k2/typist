@@ -382,6 +382,165 @@ sub symbol_at ($self, $line, $col) {
         }
     }
 
+    # Keyword hover: match / handle
+    if ($word eq 'match' || $word eq 'handle') {
+        if (my $kw_sym = $self->_resolve_keyword_hover($word, $line, $col)) {
+            return $with_range->($kw_sym);
+        }
+    }
+
+    undef;
+}
+
+# ── Keyword Hover ───────────────────────────────
+
+# Find PPI::Token::Word at the given LSP position (0-indexed).
+sub _ppi_word_at ($self, $line, $col) {
+    my $ppi_doc = ($self->{result} // return undef)->{extracted}{ppi_doc} // return undef;
+    my $ppi_line = $line + 1;  # LSP 0-indexed → PPI 1-indexed
+    my $tokens = $ppi_doc->find('PPI::Token::Word') || [];
+    for my $t (@$tokens) {
+        next unless $t->line_number == $ppi_line;
+        my $t_col = $t->column_number - 1;  # PPI 1-indexed → 0-indexed
+        next unless $col >= $t_col && $col < $t_col + length($t->content);
+        return $t;
+    }
+    undef;
+}
+
+# Dispatch keyword hover for match/handle.
+sub _resolve_keyword_hover ($self, $word, $line, $col) {
+    my $ppi_word = $self->_ppi_word_at($line, $col) // return undef;
+    return undef unless $ppi_word->content eq $word;
+
+    return $self->_resolve_match_hover($ppi_word, $line) if $word eq 'match';
+    return $self->_resolve_handle_hover($ppi_word)       if $word eq 'handle';
+    undef;
+}
+
+# Resolve match keyword: find the matched expression's type and datatype info.
+sub _resolve_match_hover ($self, $ppi_word, $line) {
+    my $result   = $self->{result} // return undef;
+    my $registry = $result->{registry} // return undef;
+    my $resolver = $self->_resolver;
+
+    # Walk siblings after 'match' to find the target expression
+    my $type_str;
+    my $target_name;
+    my $sib = $ppi_word->next_sibling;
+
+    # Skip whitespace
+    $sib = $sib->next_sibling while $sib && $sib->isa('PPI::Token::Whitespace');
+
+    if ($sib && $sib->isa('PPI::Token::Symbol')) {
+        # match $var, ...
+        $target_name = $sib->content;
+        $type_str = $resolver->resolve_var_type($target_name, $line);
+    } elsif ($sib && $sib->isa('PPI::Token::Word')) {
+        # match func_call(...), ...
+        $target_name = $sib->content . '(...)';
+        $type_str = $resolver->resolve_func_return_type($sib->content, $registry);
+    }
+
+    return undef unless $type_str;
+
+    +{
+        kind        => 'match',
+        target      => $target_name,
+        type_str    => $type_str,
+        result_type => $self->_infer_keyword_result_type($ppi_word) // '_',
+    };
+}
+
+# Resolve handle keyword: find the handled effect names and their operations.
+sub _resolve_handle_hover ($self, $ppi_word) {
+    my $result   = $self->{result} // return undef;
+    my $registry = $result->{registry} // return undef;
+
+    # handle { BLOCK } EffectName => +{ ... }, EffectName2 => +{ ... }
+    my $sib = $ppi_word->next_sibling;
+
+    # Skip whitespace
+    $sib = $sib->next_sibling while $sib && $sib->isa('PPI::Token::Whitespace');
+
+    # Must see a block to confirm this is the handle keyword (not a variable name)
+    return undef unless $sib && $sib->isa('PPI::Structure::Block');
+
+    # Walk siblings after the block to collect effect names
+    $sib = $sib->next_sibling;
+    my @effects;
+    while ($sib) {
+        if ($sib->isa('PPI::Token::Word')) {
+            my $name = $sib->content;
+            if ($registry->lookup_effect($name)) {
+                push @effects, +{ name => $name };
+            }
+        }
+        $sib = $sib->next_sibling;
+    }
+
+    return undef unless @effects;
+
+    +{
+        kind        => 'handle',
+        name        => join(', ', map { $_->{name} } @effects),
+        effects     => \@effects,
+        result_type => $self->_infer_keyword_result_type($ppi_word) // '_',
+    };
+}
+
+# Infer the result type of a keyword expression from its surrounding context.
+# Checks: (1) variable assignment, (2) enclosing function return annotation.
+sub _infer_keyword_result_type ($self, $ppi_token) {
+    my $result   = $self->{result} // return undef;
+    my $resolver = $self->_resolver;
+
+    # Walk up to the containing statement
+    my $stmt = $ppi_token->parent;
+    $stmt = $stmt->parent while $stmt && !$stmt->isa('PPI::Statement');
+    return undef unless $stmt;
+
+    # (1) Variable assignment: my $x = match/handle ...
+    if ($stmt->isa('PPI::Statement::Variable')) {
+        my @children = $stmt->children;
+        for my $ch (@children) {
+            next unless $ch->isa('PPI::Token::Symbol');
+            my $var_name = $ch->content;
+            my $line = $ppi_token->line_number - 1;  # PPI 1-indexed → LSP 0-indexed
+            my $type = $resolver->resolve_var_type($var_name, $line);
+            return $type if $type && $type ne 'Any';
+        }
+    }
+
+    # (2) Enclosing function: look for :sig(...) return type annotation
+    my $block = $stmt->parent;
+    $block = $block->parent while $block && !$block->isa('PPI::Structure::Block');
+    return undef unless $block;
+
+    my $sub_word = $block->previous_sibling;
+    # Walk backwards past prototype/signature, attributes, name, to find 'sub'
+    while ($sub_word && !($sub_word->isa('PPI::Token::Word') && $sub_word->content eq 'sub')) {
+        $sub_word = $sub_word->previous_sibling;
+    }
+    return undef unless $sub_word;
+
+    # Find function name
+    my $name_token = $sub_word->next_sibling;
+    $name_token = $name_token->next_sibling while $name_token && $name_token->isa('PPI::Token::Whitespace');
+    return undef unless $name_token && $name_token->isa('PPI::Token::Word');
+    my $fn_name = $name_token->content;
+
+    # Look up from extracted functions (hash keyed by name)
+    my $functions = $result->{extracted}{functions} // +{};
+    if (my $fn = $functions->{$fn_name}) {
+        return $fn->{returns_expr} if $fn->{returns_expr};
+    }
+
+    # (3) Inferred function return type (unannotated functions)
+    if (my $ifr = ($result->{inferred_fn_returns} // +{})->{$fn_name}) {
+        return $ifr->{type} if $ifr->{type};
+    }
+
     undef;
 }
 
