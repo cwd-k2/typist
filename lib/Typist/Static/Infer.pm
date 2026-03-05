@@ -1835,8 +1835,8 @@ sub _infer_map_grep_sort ($word, $env, $expected = undef) {
     my $elem_type = _infer_source_element_type_after($block, $env);
 
     # Record $_ binding as callback param for LSP visibility.
-    # Locate the first $_ token inside the block for accurate positioning.
-    if ($elem_type) {
+    # sort uses $a/$b, not $_ — skip callback param registration for sort.
+    if ($elem_type && $name ne 'sort') {
         my $block_line  = $block->line_number;
         my $block_last  = $block->last_element;
         my $block_end   = $block_last ? $block_last->line_number : $block_line;

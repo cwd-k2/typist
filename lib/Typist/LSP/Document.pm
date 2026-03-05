@@ -1058,7 +1058,18 @@ sub _synthesize_function_symbol ($name, $sig) {
 
     my @generics;
     if ($sig->{generics} && @{$sig->{generics}}) {
-        @generics = map { ref $_ eq 'HASH' ? $_->{name} : $_ } @{$sig->{generics}};
+        @generics = map {
+            if (ref $_ eq 'HASH') {
+                my $g = $_->{name};
+                my @constraints;
+                push @constraints, $_->{bound_expr}          if $_->{bound_expr};
+                push @constraints, $_->{tc_constraints}->@*  if $_->{tc_constraints};
+                $g .= ': ' . join(' + ', @constraints) if @constraints;
+                $g;
+            } else {
+                $_;
+            }
+        } @{$sig->{generics}};
     }
 
     my $eff_expr;

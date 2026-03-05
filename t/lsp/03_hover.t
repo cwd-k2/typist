@@ -1924,4 +1924,60 @@ subtest 'match hover shows type when datatype not found' => sub {
     like $hover->{contents}{value}, qr/match\(\$x: SomeType\) -> _/, 'shows match with unknown return type';
 };
 
+# ── Cross-file generic with typeclass constraint ─
+
+subtest 'cross-file hover preserves typeclass constraint on generics' => sub {
+    require File::Temp;
+    require File::Path;
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib");
+
+    open my $fh, '>', "$dir/lib/Util.pm" or die;
+    print $fh <<'PERL';
+package Util;
+use v5.40;
+use Typist;
+typeclass Ord => 'T', +{ compare => '(T, T) -> Int' };
+sub sort_by :sig(<T: Ord>(ArrayRef[T]) -> ArrayRef[T]) ($items) {
+    [sort { Ord::compare($a, $b) } @$items];
+}
+1;
+PERL
+    close $fh;
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source = <<'PERL';
+package App;
+use v5.40;
+use Typist;
+use Util;
+my $sorted = Util::sort_by([3, 1, 2]);
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///app.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Line 4: "my $sorted = Util::sort_by([3, 1, 2]);"
+    #                        0         1         2
+    #                        0123456789012345678901
+    my $sym = $doc->symbol_at(4, 19);
+    ok $sym, 'found symbol for cross-file sort_by';
+    is $sym->{kind}, 'function', 'kind is function';
+
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'got hover response';
+    my $value = $hover->{contents}{value};
+    like $value, qr/sort_by<T: Ord>/, 'shows T: Ord constraint in generics';
+    like $value, qr/ArrayRef\[T\].*->.*ArrayRef\[T\]/, 'shows parameter and return type';
+};
+
 done_testing;
