@@ -178,6 +178,16 @@ sub _check_impl ($sub, $super, $registry = undef) {
         return _check($sub, $r, $registry) if $r;
     }
 
+    # Expand Handler[E] to Record before comparison
+    if (_is_handler($sub)) {
+        my $rec = _expand_handler($sub, $registry);
+        return _check($rec, $super, $registry) if $rec;
+    }
+    if (_is_handler($super)) {
+        my $rec = _expand_handler($super, $registry);
+        return _check($sub, $rec, $registry) if $rec;
+    }
+
     # ── Union rules ──────────────────────────────
     # T|U <: S  iff  T <: S AND U <: S
     if ($sub->is_union) {
@@ -451,6 +461,32 @@ sub _atom_subtype ($sub_name, $super_name) {
         $current = $parent;
     }
     0;
+}
+
+# Handler[E] detection: Param with base 'Handler' and exactly one type arg.
+sub _is_handler ($type) {
+    $type->is_param && $type->base eq 'Handler' && scalar($type->params) == 1;
+}
+
+# Expand Handler[E] to Record(op1 => Func1, ...) via effect registry lookup.
+sub _expand_handler ($handler, $registry) {
+    my ($effect_ref) = $handler->params;
+    my $effect_name = ref $effect_ref && $effect_ref->isa('Typist::Type')
+        ? ($effect_ref->is_alias ? $effect_ref->alias_name : "$effect_ref")
+        : "$effect_ref";
+
+    my $effect = $registry
+        ? $registry->lookup_effect($effect_name)
+        : Typist::Registry->lookup_effect($effect_name);
+    return undef unless $effect;
+
+    require Typist::Type::Record;
+    my %fields;
+    for my $op ($effect->op_names) {
+        my $type = $effect->get_op_type($op) // return undef;
+        $fields{$op} = $type;
+    }
+    Typist::Type::Record->new(%fields);
 }
 
 1;

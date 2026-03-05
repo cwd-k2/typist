@@ -30,7 +30,7 @@ my %DSL_CONSTRUCTORS = (
     Alias   => \&_parse_dsl_alias,
     # Parametric: ArrayRef(...), HashRef(...), Maybe(...), Tuple(...), Ref(...), CodeRef(...)
     # Array/Hash are aliases for ArrayRef/HashRef
-    (map { $_ => \&_parse_dsl_param } qw(ArrayRef HashRef Array Hash Maybe Tuple Ref CodeRef)),
+    (map { $_ => \&_parse_dsl_param } qw(ArrayRef HashRef Array Hash Maybe Tuple Ref CodeRef Handler)),
 );
 
 # ── Parse Cache (LRU) ────────────────────────────

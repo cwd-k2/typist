@@ -27,7 +27,7 @@ our @EXPORT = qw(
 
 our @EXPORT_OK = qw(
     T U V A B K
-    TVar Alias Row Eff Func
+    TVar Alias Row Eff Func Handler
 );
 
 our %EXPORT_TAGS = (
@@ -100,6 +100,12 @@ sub Ref :prototype($) {
 
 sub Record :prototype(%) {
     Typist::Type::Record->new(@_);
+}
+
+# ── Handler Type ───────────────────────────────
+
+sub Handler :prototype($) {
+    Typist::Type::Param->new('Handler', @_);
 }
 
 # ── Function Type ───────────────────────────────
@@ -313,6 +319,13 @@ See also C<struct> (L<Typist>) for nominal records.
 
 Literal type for a specific value.
 Base type is inferred from the value.
+
+=head2 Handler
+
+    Handler(Console)
+
+Effect handler type. C<Handler[E]> expands to a record of the effect's
+operation signatures. Used to type handler values passed to C<handle>.
 
 =head2 optional
 

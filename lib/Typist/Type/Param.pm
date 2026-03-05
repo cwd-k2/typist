@@ -86,6 +86,22 @@ sub contains ($self, $value) {
         return $params[0]->contains($$value);
     }
 
+    if ($base eq 'Handler' && @params == 1) {
+        return 0 unless defined $value && ref $value && reftype($value) eq 'HASH';
+        my $effect_ref = $params[0];
+        my $effect_name = ref $effect_ref && $effect_ref->isa('Typist::Type')
+            ? ($effect_ref->is_alias ? $effect_ref->alias_name : "$effect_ref")
+            : "$effect_ref";
+        require Typist::Registry;
+        my $effect = Typist::Registry->lookup_effect($effect_name) // return 0;
+        for my $op ($effect->op_names) {
+            return 0 unless exists $value->{$op};
+            my $op_type = $effect->get_op_type($op) // return 0;
+            return 0 unless $op_type->contains($value->{$op});
+        }
+        return 1;
+    }
+
     # Unknown parameterized type — be permissive
     1;
 }
