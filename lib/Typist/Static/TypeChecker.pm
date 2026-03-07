@@ -229,13 +229,11 @@ sub check_function_returns :TIMED_ACC(function_checks.returns) ($self, $name) {
 
     return if $self->_has_type_var_cached($declared);
 
-    # Find return statements within the block
     my $returns = $fn->{return_values} // [];
     for my $entry (@$returns) {
         my $ret = $entry->{return_word};
         my $val = $entry->{value} // next;
 
-        # Use node-aware env for narrowing (control flow + early returns)
         my $ret_env = $self->_env_for_node($ret);
         my $inferred = $self->_infer_expr_cached($val, $ret_env, $declared);
         next unless defined $inferred;
@@ -339,7 +337,6 @@ sub collect_fn_return_types ($self) {
         next unless $fn->{unannotated};
         my @types;
 
-        # Explicit returns
         for my $entry (($fn->{return_values} // [])->@*) {
             my $ret = $entry->{return_word};
             my $val = $entry->{value} // next;
@@ -351,7 +348,6 @@ sub collect_fn_return_types ($self) {
         my $last = $fn->{last_stmt};
         my $first = $fn->{last_first};
         if ($last && $first && !($first->isa('PPI::Token::Word') && $first->content eq 'return')) {
-            # Try statement-level first (ternary/binary), then first-child (match/handle/call)
             my $impl_env = $self->_env_for_node($last);
             my $t = $self->_infer_expr_cached($last, $impl_env)
                  // $self->_infer_expr_cached($first, $impl_env);
