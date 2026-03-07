@@ -39,7 +39,9 @@ sub is_union ($self) { 1 }
 sub name ($self) { $self->to_string }
 
 sub to_string ($self) {
-    join ' | ', map { $_->to_string } $self->{members}->@*;
+    join ' | ', map {
+        $_->is_func ? '(' . $_->to_string . ')' : $_->to_string
+    } $self->{members}->@*;
 }
 
 sub equals ($self, $other) {

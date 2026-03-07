@@ -183,12 +183,13 @@ sub _gen_with_vars ($depth) {
 
 # Generate types that survive parse(to_string()) round-trip.
 # Excludes Literal (to_string is bare value, not parseable as type).
+# Union/Intersection.to_string parenthesizes Func (and Union-in-Intersection)
+# to preserve precedence, so all composites are safe to nest.
 sub gen_parseable_type (%opts) {
     my $max_depth = $opts{max_depth} // 2;
     _gen_parseable($max_depth);
 }
 
-# Generates types without Func inside Union/Intersection (ambiguous to_string).
 sub _gen_parseable ($depth) {
     if ($depth <= 0) {
         return gen_atom();
@@ -200,10 +201,9 @@ sub _gen_parseable ($depth) {
         gen_atom();
     }
     elsif ($r < 0.55) {
-        # Union members must not be Func (-> vs | precedence ambiguity)
         Typist::Type::Union->new(
-            _gen_non_func($depth - 1),
-            _gen_non_func($depth - 1),
+            _gen_parseable($depth - 1),
+            _gen_parseable($depth - 1),
         );
     }
     elsif ($r < 0.70) {
@@ -216,32 +216,9 @@ sub _gen_parseable ($depth) {
         Typist::Type::Param->new('ArrayRef', _gen_parseable($depth - 1));
     }
     else {
-        # Intersection members must not be Func (-> vs & precedence ambiguity)
         Typist::Type::Intersection->new(
-            _gen_non_func($depth - 1),
-            _gen_non_func($depth - 1),
-        );
-    }
-}
-
-# Generate parseable type that is NOT a Func (for Union/Intersection members).
-sub _gen_non_func ($depth) {
-    if ($depth <= 0) {
-        return gen_atom();
-    }
-
-    my $r = rand();
-
-    if ($r < 0.50) {
-        gen_atom();
-    }
-    elsif ($r < 0.75) {
-        Typist::Type::Param->new('ArrayRef', _gen_parseable($depth - 1));
-    }
-    else {
-        Typist::Type::Intersection->new(
-            _gen_non_func($depth - 1),
-            _gen_non_func($depth - 1),
+            _gen_parseable($depth - 1),
+            _gen_parseable($depth - 1),
         );
     }
 }

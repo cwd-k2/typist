@@ -231,10 +231,7 @@ subtest 'LUB: associativity (lub(T, lub(U,V)) = lub(lub(T,U), V))' => sub {
 
 # ── LUB: Identity elements ───────────────────────
 
-# TODO: common_super does not handle Never as bottom element.
-# lub(T, Never) should return T, but currently falls through to Any.
 subtest 'LUB: Never is identity (lub(T, Never) = T)' => sub {
-    local $TODO = 'common_super lacks Never handling';
     for (1 .. $iters) {
         my $t = gen_atom();
         my $l = lub($t, $Never);

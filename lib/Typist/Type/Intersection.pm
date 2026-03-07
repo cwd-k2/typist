@@ -38,7 +38,9 @@ sub is_intersection ($self) { 1 }
 sub name ($self) { $self->to_string }
 
 sub to_string ($self) {
-    join ' & ', map { $_->to_string } $self->{members}->@*;
+    join ' & ', map {
+        ($_->is_func || $_->is_union) ? '(' . $_->to_string . ')' : $_->to_string
+    } $self->{members}->@*;
 }
 
 sub equals ($self, $other) {
