@@ -366,6 +366,7 @@ sub _env_for_loop_list ($self, $node) {
                 if ($fn_name && $self->{extracted}{functions}{$fn_name}) {
                     my $fn = $self->{extracted}{functions}{$fn_name};
                     if ($fn->{block} && $fn->{block} == $ancestor) {
+                        $self->{_fn_scope_start_cache}{$addr} = $fn->{line};
                         return $self->{_fn_env_cache}{$addr} = $self->fn_env($fn);
                     }
                 }

@@ -110,6 +110,19 @@ PERL
     is scalar @$errs, 0, 'later nodes in the same function still see inferred locals';
 };
 
+subtest 'implicit return sees earlier function-local bindings' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub build :sig(() -> ArrayRef[Int]) () {
+    my $min = 1;
+    my $max = $min;
+    [$min, $max];
+}
+PERL
+
+    is scalar @$errs, 0, 'implicit return analysis reuses earlier local inference';
+};
+
 subtest 'loop-scoped locals infer from foreach element types' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
@@ -140,6 +153,19 @@ sub check :sig(() -> Void) () {
 PERL
 
     is scalar @$errs, 0, 'loop inference sees earlier local iterable bindings';
+};
+
+subtest 'env hash lookup infers optional string value' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub takes_maybe :sig((Str | Undef) -> Void) ($x) { }
+sub check :sig(() -> Void) () {
+    my $flag = $ENV{NO_COLOR};
+    takes_maybe($flag);
+}
+PERL
+
+    is scalar @$errs, 0, 'environment hash subscript is inferred as Str | Undef';
 };
 
 subtest 'anon-sub params do not leak over outer locals with same name' => sub {

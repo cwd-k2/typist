@@ -144,6 +144,12 @@ sub infer_expr ($class, $element, $env = undef, $expected = undef) {
         if (!$var_type && $element->content =~ /\A\$(.+)/) {
             my $next = $element->snext_sibling;
             if ($next && $next->isa('PPI::Structure::Subscript') && $next->braces eq '{}') {
+                if ($element->content eq '$ENV') {
+                    return Typist::Type::Union->new(
+                        Typist::Type::Atom->new('Str'),
+                        Typist::Type::Atom->new('Undef'),
+                    );
+                }
                 my $hash_type = $env->{variables}{'%' . $1};
                 if ($hash_type) {
                     return _infer_subscript_access($hash_type, $next);
