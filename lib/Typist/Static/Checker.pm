@@ -188,7 +188,8 @@ sub _check_type_wellformed ($self, $type, $context) {
     Typist::Type::Fold->walk($type, sub ($node) {
         if ($node->is_alias) {
             my $name = $node->alias_name;
-            unless ($self->{registry}->has_alias($name) || $self->{registry}->has_typeclass($name)) {
+            unless ($self->{registry}->has_alias($name) || $self->{registry}->has_typeclass($name)
+                    || $self->{registry}->lookup_effect($name)) {
                 $self->{errors}->collect(
                     kind    => 'UnknownType',
                     message => "Type alias '$name' is not defined (in $context)",
