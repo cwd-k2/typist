@@ -28,6 +28,7 @@ sub new ($class, %args) {
         _fn_env_cache    => +{},
         _node_env_cache  => +{},
         _resolve_cache   => +{},
+        _parsed_generics_cache => +{},
     }, $class;
 }
 
@@ -321,6 +322,11 @@ sub _scoped_env ($self, $base_env, $node) {
 
 # Parse generics_raw strings into structured declarations.
 sub _parse_generics ($self, $generics_raw) {
+    my $cache_key = ref($generics_raw) ? refaddr($generics_raw) : undef;
+    if (defined $cache_key && exists $self->{_parsed_generics_cache}{$cache_key}) {
+        return $self->{_parsed_generics_cache}{$cache_key}->@*;
+    }
+
     my @result;
     my @raw_strings;
     for my $g ($generics_raw->@*) {
@@ -336,6 +342,7 @@ sub _parse_generics ($self, $generics_raw) {
             $spec, registry => $self->{registry},
         );
     }
+    $self->{_parsed_generics_cache}{$cache_key} = \@result if defined $cache_key;
     @result;
 }
 
@@ -346,13 +353,17 @@ sub _env_for_loop_list ($self, $node) {
     my $ancestor = $node->parent;
     while ($ancestor) {
         if ($ancestor->isa('PPI::Structure::Block')) {
+            my $addr = refaddr($ancestor);
+            if (exists $self->{_fn_env_cache}{$addr}) {
+                return $self->{_fn_env_cache}{$addr};
+            }
             my $sub_stmt = $ancestor->parent;
             if ($sub_stmt && $sub_stmt->isa('PPI::Statement::Sub')) {
                 my $fn_name = $sub_stmt->name;
                 if ($fn_name && $self->{extracted}{functions}{$fn_name}) {
                     my $fn = $self->{extracted}{functions}{$fn_name};
                     if ($fn->{block} && $fn->{block} == $ancestor) {
-                        return $self->fn_env($fn);
+                        return $self->{_fn_env_cache}{$addr} = $self->fn_env($fn);
                     }
                 }
             }

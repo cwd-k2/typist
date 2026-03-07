@@ -10,6 +10,7 @@ use Typist::Static::Unify;
 use Typist::Parser;
 use Typist::Subtype;
 use Typist::Transform;
+use Scalar::Util 'refaddr';
 
 # ── Constructor ──────────────────────────────────
 
@@ -24,6 +25,11 @@ sub new ($class, %args) {
         resolve_type  => $args{resolve_type},
         has_type_var  => $args{has_type_var},
         gradual_hints => $args{gradual_hints},
+        _function_sig_cache   => +{},
+        _method_sig_cache     => +{},
+        _normalized_sig_cache => +{},
+        _generic_template_cache => +{},
+        _parsed_generics_cache  => +{},
     }, $class;
 }
 
@@ -55,61 +61,8 @@ sub check_call_sites ($self) {
         # Try local extraction first, then registry for cross-package calls (Pkg::func),
         # then CORE:: fallback for builtin functions.
         my $fn = $self->{extracted}{functions}{$name};
-        my $cross_pkg;
         unless ($fn) {
-            # Check for Pkg::func pattern via registry
-            if ($name =~ /::/) {
-                my ($pkg, $fname) = $name =~ /\A(.+)::(\w+)\z/;
-                if ($pkg && $fname) {
-                    my $sig = $self->{registry}->lookup_function($pkg, $fname);
-                    if ($sig) {
-                        $cross_pkg = +{
-                            params_expr        => [map { $_->to_string } ($sig->{params} // [])->@*],
-                            generics           => $sig->{generics},
-                            variadic           => $sig->{variadic},
-                            default_count      => $sig->{default_count} // 0,
-                            struct_constructor => $sig->{struct_constructor},
-                            returns            => $sig->{returns},
-                        };
-                    }
-                }
-            }
-
-            # Fallback: builtin (CORE::name) from prelude or declare
-            unless ($cross_pkg) {
-                my $core_sig = $self->{registry}->lookup_function('CORE', $name);
-                if ($core_sig) {
-                    $cross_pkg = +{
-                        params_expr        => $core_sig->{params_expr}
-                            // [map { $_->to_string } ($core_sig->{params} // [])->@*],
-                        generics           => $core_sig->{generics},
-                        variadic           => $core_sig->{variadic},
-                        default_count      => $core_sig->{default_count} // 0,
-                        struct_constructor => $core_sig->{struct_constructor},
-                        returns            => $core_sig->{returns},
-                    };
-                }
-            }
-
-            # Current-package function (e.g., ADT constructor registered by Analyzer)
-            unless ($cross_pkg) {
-                my $pkg = $self->{extracted}{package} // 'main';
-                my $pkg_sig = $self->{registry}->lookup_function($pkg, $name);
-                if ($pkg_sig) {
-                    $cross_pkg = +{
-                        params_expr        => $pkg_sig->{params_expr}
-                            // [map { $_->to_string } ($pkg_sig->{params} // [])->@*],
-                        generics           => $pkg_sig->{generics},
-                        variadic           => $pkg_sig->{variadic},
-                        default_count      => $pkg_sig->{default_count} // 0,
-                        struct_constructor => $pkg_sig->{struct_constructor},
-                        returns            => $pkg_sig->{returns},
-                    };
-                }
-            }
-
-            next unless $cross_pkg;
-            $fn = $cross_pkg;
+            $fn = $self->_lookup_cross_package_function($name) // next;
         }
         next unless $fn;
 
@@ -127,6 +80,11 @@ sub check_call_sites ($self) {
         # Struct constructor: named-arg check instead of positional
         if ($fn->{struct_constructor} && $fn->{returns} && $fn->{returns}->is_struct) {
             $self->_check_struct_constructor_call($name, $fn, $next, $self->_env_for_node($word), $word);
+            next;
+        }
+
+        if ($self->_is_struct_derive_call($name, $fn)) {
+            $self->_check_struct_derive_call($name, $fn, $next, $self->_env_for_node($word), $word);
             next;
         }
 
@@ -248,18 +206,7 @@ sub _check_struct_constructor_call ($self, $name, $fn, $list, $env, $word) {
             // $list->find_first('PPI::Statement');
     return unless $expr;
 
-    # Split children into comma-separated groups
-    my @groups;
-    my @current;
-    for my $child ($expr->schildren) {
-        if ($child->isa('PPI::Token::Operator') && $child->content eq ',') {
-            push @groups, [@current] if @current;
-            @current = ();
-        } else {
-            push @current, $child;
-        }
-    }
-    push @groups, [@current] if @current;
+    my @groups = $self->_split_named_arg_groups($expr);
 
     # Pass 1: collect field names, infer value types, collect bindings (generic)
     my %seen;
@@ -398,6 +345,120 @@ sub _check_struct_constructor_call ($self, $name, $fn, $list, $env, $word) {
     }
 }
 
+sub _is_struct_derive_call ($self, $name, $fn) {
+    return 0 unless $fn->{variadic};
+    return 0 unless $fn->{returns} && $fn->{returns}->is_struct;
+    return 0 unless $fn->{params_expr} && $fn->{params_expr}->@*;
+    return 1 if $name eq 'derive' || $name =~ /::derive\z/;
+    return 0;
+}
+
+sub _check_struct_derive_call ($self, $name, $fn, $list, $env, $word) {
+    my $struct_type = $fn->{returns};
+    my $req = $struct_type->required_ref // +{};
+    my $opt = $struct_type->optional_ref // +{};
+    my %all = (%$req, %$opt);
+    my @tp = $struct_type->type_params;
+
+    my @args = $self->_extract_args($list);
+    if (!@args) {
+        $self->{errors}->collect(
+            kind    => 'ArityMismatch',
+            message => "$name() expects at least 1 argument, got 0",
+            file    => $self->{file},
+            line    => $word->line_number,
+            col     => $word->column_number,
+            end_col => $word->column_number + length($word->content),
+        );
+        return;
+    }
+
+    my $base = $args[0];
+    my $base_type = Typist::Static::Infer->infer_expr($base, $env, $struct_type);
+    if (defined $base_type && !_contains_any($base_type)) {
+        unless (Typist::Subtype->is_subtype($base_type, $struct_type, registry => $self->{registry})) {
+            $self->{errors}->collect(
+                kind          => 'TypeMismatch',
+                message       => "Argument 1 of $name(): cannot pass ${\$base_type->to_string} as ${\$struct_type->to_string}",
+                file          => $self->{file},
+                line          => $word->line_number,
+                col           => $word->column_number,
+                end_col       => $word->column_number + length($word->content),
+                expected_type => $struct_type->to_string,
+                actual_type   => $base_type->to_string,
+            );
+            return;
+        }
+    }
+
+    my $expr = $list->schild(0);
+    return unless $expr && $expr->isa('PPI::Statement');
+    my @groups = $self->_split_named_arg_groups($expr);
+    shift @groups if @groups;
+    return unless @groups;
+
+    my %bindings;
+    if (@tp && defined $base_type && !_contains_any($base_type)) {
+        Typist::Static::Unify->collect_bindings($struct_type, $base_type, \%bindings);
+    }
+
+    for my $group (@groups) {
+        my $arrow_idx;
+        for my $j (0 .. $#$group) {
+            if ($group->[$j]->isa('PPI::Token::Operator') && $group->[$j]->content eq '=>') {
+                $arrow_idx = $j;
+                last;
+            }
+        }
+        next unless defined $arrow_idx && $arrow_idx > 0;
+
+        my $key_tok = $group->[0];
+        my $field_name;
+        if ($key_tok->isa('PPI::Token::Word')) {
+            $field_name = $key_tok->content;
+        } elsif ($key_tok->isa('PPI::Token::Quote')) {
+            $field_name = $key_tok->string;
+        }
+        next unless defined $field_name;
+
+        unless (exists $all{$field_name}) {
+            $self->{errors}->collect(
+                kind        => 'TypeMismatch',
+                message     => "${name}(): unknown field '$field_name'",
+                file        => $self->{file},
+                line        => $word->line_number,
+                col         => $word->column_number,
+                end_col     => $word->column_number + length($word->content),
+                suggestions => ["Available fields: " . join(', ', sort keys %all)],
+            );
+            next;
+        }
+
+        my $val_token = $group->[$arrow_idx + 1] // next;
+        my $expected = $all{$field_name};
+        $expected = Typist::Static::Unify->substitute($expected, \%bindings) if @tp && %bindings;
+        next if @tp && $self->_has_type_var($expected);
+
+        my $inferred = Typist::Static::Infer->infer_expr($val_token, $env, $expected);
+        next unless defined $inferred;
+        next if _contains_any($inferred);
+
+        unless (Typist::Subtype->is_subtype($inferred, $expected, registry => $self->{registry})) {
+            $self->{errors}->collect(
+                kind          => 'TypeMismatch',
+                message       => "${name}(): field '$field_name' cannot assign ${\$inferred->to_string} to ${\$expected->to_string}",
+                file          => $self->{file},
+                line          => $word->line_number,
+                col           => $word->column_number,
+                end_col       => $word->column_number + length($word->content),
+                expected_type => $expected->to_string,
+                actual_type   => $inferred->to_string,
+                suggestions   => ["Change field value to ${\$expected->to_string}"],
+            );
+        }
+    }
+}
+
 # ── Method Call Check ────────────────────────────
 
 # Check a method call: $receiver->method(args)
@@ -459,16 +520,16 @@ sub _check_method_call ($self, $word, $arrow) {
     return unless $pkg;
 
     # Look up method: try source package first, then struct blessed package
-    my $method_sig = $self->{registry}->lookup_method($pkg, $name);
+    my $method_sig = $self->_lookup_method($pkg, $name);
     unless ($method_sig) {
         # Struct accessor methods are under the blessed package (Typist::Struct::Name)
         if ($recv_type && $recv_type->is_struct) {
-            $method_sig = $self->{registry}->lookup_method($recv_type->package, $name);
+            $method_sig = $self->_lookup_method($recv_type->package, $name);
         } elsif ($receiver->isa('PPI::Token::Word')) {
             # Class method: try the blessed package pattern
             my $struct_type = $self->{registry}->lookup_type($pkg);
             if ($struct_type && $struct_type->is_struct) {
-                $method_sig = $self->{registry}->lookup_method($struct_type->package, $name);
+                $method_sig = $self->_lookup_method($struct_type->package, $name);
             }
         }
     }
@@ -482,7 +543,7 @@ sub _check_method_call ($self, $word, $arrow) {
     if ($method_sig->{generics} && $method_sig->{generics}->@*) {
         my @args = $self->_extract_args($arg_list);
         my $pseudo_fn = +{
-            params_expr => [map { $_->to_string } ($method_sig->{params} // [])->@*],
+            params_expr => $self->_params_expr($method_sig),
             generics    => $method_sig->{generics},
             variadic    => $method_sig->{variadic},
         };
@@ -490,8 +551,7 @@ sub _check_method_call ($self, $word, $arrow) {
         return;
     }
 
-    my @param_types = ($method_sig->{params} // [])->@*;
-    my @param_exprs = map { $_->to_string } @param_types;
+    my @param_exprs = $self->_params_expr($method_sig)->@*;
 
     my @args = $self->_extract_args($arg_list);
 
@@ -571,9 +631,9 @@ sub _check_chained_method ($self, $return_type, $arrow, $env) {
     my $display = "..." . "->${name}";
 
     # Look up method
-    my $method_sig = $self->{registry}->lookup_method($pkg, $name);
+    my $method_sig = $self->_lookup_method($pkg, $name);
     unless ($method_sig) {
-        $method_sig = $self->{registry}->lookup_method($resolved->package, $name);
+        $method_sig = $self->_lookup_method($resolved->package, $name);
     }
     return unless $method_sig;
 
@@ -584,14 +644,13 @@ sub _check_chained_method ($self, $return_type, $arrow, $env) {
     if ($method_sig->{generics} && $method_sig->{generics}->@*) {
         my @args = $self->_extract_args($arg_list);
         my $pseudo_fn = +{
-            params_expr => [map { $_->to_string } ($method_sig->{params} // [])->@*],
+            params_expr => $self->_params_expr($method_sig),
             generics    => $method_sig->{generics},
             variadic    => $method_sig->{variadic},
         };
         $self->_check_generic_call($display, $pseudo_fn, \@args, $env, $method_word);
     } else {
-        my @param_types = ($method_sig->{params} // [])->@*;
-        my @param_exprs = map { $_->to_string } @param_types;
+        my @param_exprs = $self->_params_expr($method_sig)->@*;
         my @args = $self->_extract_args($arg_list);
 
         # Arity check
@@ -647,6 +706,74 @@ sub _check_chained_method ($self, $return_type, $arrow, $env) {
     }
 }
 
+sub _lookup_cross_package_function ($self, $name) {
+    if ($name =~ /::/) {
+        my ($pkg, $fname) = $name =~ /\A(.+)::(\w+)\z/;
+        if ($pkg && $fname) {
+            my $sig = $self->_lookup_function($pkg, $fname);
+            return $self->_normalize_function_sig($sig) if $sig;
+        }
+    }
+
+    my $core_sig = $self->_lookup_function('CORE', $name);
+    return $self->_normalize_function_sig($core_sig) if $core_sig;
+
+    my $pkg = $self->{extracted}{package} // 'main';
+    my $pkg_sig = $self->_lookup_function($pkg, $name);
+    return $self->_normalize_function_sig($pkg_sig) if $pkg_sig;
+
+    return;
+}
+
+sub _lookup_function ($self, $pkg, $name) {
+    my $key = join "\0", $pkg, $name;
+    my $cache = $self->{_function_sig_cache};
+    return $cache->{$key} if exists $cache->{$key};
+    return $cache->{$key} = $self->{registry}->lookup_function($pkg, $name);
+}
+
+sub _lookup_method ($self, $pkg, $name) {
+    my $key = join "\0", $pkg, $name;
+    my $cache = $self->{_method_sig_cache};
+    return $cache->{$key} if exists $cache->{$key};
+    return $cache->{$key} = $self->{registry}->lookup_method($pkg, $name);
+}
+
+sub _normalize_function_sig ($self, $sig) {
+    return unless $sig;
+    my $cache = $self->{_normalized_sig_cache};
+    my $key = refaddr($sig);
+    return $cache->{$key} if $key && exists $cache->{$key};
+
+    my $normalized = +{
+        params_expr        => $self->_params_expr($sig),
+        generics           => $sig->{generics},
+        variadic           => $sig->{variadic},
+        default_count      => $sig->{default_count} // 0,
+        struct_constructor => $sig->{struct_constructor},
+        returns            => $sig->{returns},
+    };
+
+    $cache->{$key} = $normalized if $key;
+    return $normalized;
+}
+
+sub _params_expr ($self, $sig) {
+    return $sig->{params_expr} if $sig->{params_expr};
+
+    my $cache = $self->{_normalized_sig_cache};
+    my $key = refaddr($sig);
+    if ($key) {
+        my $entry = $cache->{$key};
+        return $entry->{params_expr}
+            if $entry && exists $entry->{params_expr};
+    }
+
+    my $params_expr = [map { $_->to_string } ($sig->{params} // [])->@*];
+    $cache->{$key} = { %{ $cache->{$key} // +{} }, params_expr => $params_expr } if $key;
+    return $params_expr;
+}
+
 # Record accessor method check: Record field as zero-arg accessor.
 sub _check_record_method ($self, $word, $name, $recv_type, $display) {
     # Look up field in Record's required/optional fields
@@ -686,16 +813,9 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
     }
 
     # 2. Parse generic declarations to extract var names and bounds
-    my @generics = $self->_parse_generics($fn->{generics});
-    my %var_names = map { $_->{name} => 1 } @generics;
-
-    # 3. Resolve formal parameter types, converting aliases to type variables
-    my @param_types;
-    for my $expr ($fn->{params_expr}->@*) {
-        my $t = $self->_resolve_type($expr) // return;
-        $t = Typist::Transform->aliases_to_vars($t, \%var_names);
-        push @param_types, $t;
-    }
+    my $template = $self->_generic_template($fn) // return;
+    my @generics = $template->{generics}->@*;
+    my @param_types = $template->{param_types}->@*;
 
     # 4. Unify: pair formal params with actual args to bind type variables
     my $bindings = +{};
@@ -790,6 +910,11 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
 # so that typeclass constraints (T: Show) are properly distinguished from
 # bounded quantification (T: Num).
 sub _parse_generics ($self, $generics_raw) {
+    my $cache_key = ref $generics_raw ? refaddr($generics_raw) : undef;
+    if (defined $cache_key && exists $self->{_parsed_generics_cache}{$cache_key}) {
+        return $self->{_parsed_generics_cache}{$cache_key}->@*;
+    }
+
     my @result;
     my @raw_strings;
     for my $g ($generics_raw->@*) {
@@ -806,7 +931,49 @@ sub _parse_generics ($self, $generics_raw) {
             $spec, registry => $self->{registry},
         );
     }
+    $self->{_parsed_generics_cache}{$cache_key} = \@result if defined $cache_key;
     @result;
+}
+
+sub _split_named_arg_groups ($self, $expr) {
+    my @groups;
+    my @current;
+    for my $child ($expr->schildren) {
+        if ($child->isa('PPI::Token::Operator') && $child->content eq ',') {
+            push @groups, [@current] if @current;
+            @current = ();
+        } else {
+            push @current, $child;
+        }
+    }
+    push @groups, [@current] if @current;
+    return @groups;
+}
+
+sub _generic_template ($self, $fn) {
+    my $generics = $fn->{generics} // return;
+    my $params_expr = $fn->{params_expr} // return;
+    my $cache_key = join "\0",
+        (ref($generics) ? refaddr($generics) : $generics),
+        (ref($params_expr) ? refaddr($params_expr) : $params_expr);
+
+    my $cache = $self->{_generic_template_cache};
+    return $cache->{$cache_key} if exists $cache->{$cache_key};
+
+    my @generics = $self->_parse_generics($generics);
+    my %var_names = map { $_->{name} => 1 } @generics;
+
+    my @param_types;
+    for my $expr ($params_expr->@*) {
+        my $t = $self->_resolve_type($expr) // return;
+        $t = Typist::Transform->aliases_to_vars($t, \%var_names);
+        push @param_types, $t;
+    }
+
+    return $cache->{$cache_key} = +{
+        generics    => \@generics,
+        param_types => \@param_types,
+    };
 }
 
 # ── PPI Argument Helpers ─────────────────────────

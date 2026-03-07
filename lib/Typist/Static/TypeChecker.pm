@@ -11,6 +11,7 @@ use Typist::Static::TypeEnv;
 use Typist::Subtype;
 use Typist::Type::Atom;
 use Typist::Type::Param;
+use Scalar::Util 'refaddr';
 
 # ── Constructor ──────────────────────────────────
 
@@ -26,6 +27,8 @@ sub new ($class, %args) {
         file                 => $args{file} // '(buffer)',
         gradual_hints        => $args{gradual_hints},
         _inferred_fn_returns => +{},
+        _infer_expr_cache    => +{},
+        _has_type_var_cache  => +{},
         timings              => $args{timings},
     }, $class;
 }
@@ -76,7 +79,7 @@ sub check_variables :TIMED(variables) ($self) {
 
         my $declared = $self->_resolve_type($var->{type_expr});
         next unless defined $declared;
-        next if _has_type_var($declared);
+        next if $self->_has_type_var_cached($declared);
 
         # Use function-scoped env if variable is inside a function body
         my $env = $self->_env_for_node($init_node);
@@ -130,7 +133,7 @@ sub check_assignments :TIMED(assignments) ($self) {
         my $env = $self->_env_for_node($op);
         my $declared_type = $env->{variables}{$var_name} // next;
 
-        next if _has_type_var($declared_type);
+        next if $self->_has_type_var_cached($declared_type);
 
         # Infer the RHS expression type
         my $rhs = $op->snext_sibling or next;
@@ -171,7 +174,7 @@ sub check_call_sites :TIMED(call_sites) ($self) {
         ppi_doc       => $te->ppi_doc,
         env_for_node  => sub ($node) { $te->env_for_node($node) },
         resolve_type  => sub ($expr) { $te->resolve_type($expr) },
-        has_type_var  => \&_has_type_var,
+        has_type_var  => sub ($type) { $self->_has_type_var_cached($type) },
         gradual_hints => $self->{gradual_hints},
     )->check_call_sites;
 }
@@ -224,18 +227,17 @@ sub check_function_returns :TIMED_ACC(function_checks.returns) ($self, $name) {
     my $declared = $self->_resolve_type($returns_expr);
     return unless defined $declared;
 
-    return if _has_type_var($declared);
+    return if $self->_has_type_var_cached($declared);
 
     # Find return statements within the block
-    my $returns = $fn->{return_words} // [];
-    for my $ret (@$returns) {
-        my $val = $ret->snext_sibling or next;
-        # skip 'return;' (bare return)
-        next if $val->isa('PPI::Token::Structure') && $val->content eq ';';
+    my $returns = $fn->{return_values} // [];
+    for my $entry (@$returns) {
+        my $ret = $entry->{return_word};
+        my $val = $entry->{value} // next;
 
         # Use node-aware env for narrowing (control flow + early returns)
         my $ret_env = $self->_env_for_node($ret);
-        my $inferred = Typist::Static::Infer->infer_expr($val, $ret_env, $declared);
+        my $inferred = $self->_infer_expr_cached($val, $ret_env, $declared);
         next unless defined $inferred;
         if (_contains_any($inferred)) {
             $self->_emit_gradual_hint($name, $val, $inferred, 'return value');
@@ -338,10 +340,10 @@ sub collect_fn_return_types ($self) {
         my @types;
 
         # Explicit returns
-        for my $ret (($fn->{return_words} // [])->@*) {
-            my $val = $ret->snext_sibling or next;
-            next if $val->isa('PPI::Token::Structure') && $val->content eq ';';
-            my $t = Typist::Static::Infer->infer_expr($val, $self->_env_for_node($ret));
+        for my $entry (($fn->{return_values} // [])->@*) {
+            my $ret = $entry->{return_word};
+            my $val = $entry->{value} // next;
+            my $t = $self->_infer_expr_cached($val, $self->_env_for_node($ret));
             push @types, $t if $t;
         }
 
@@ -351,8 +353,8 @@ sub collect_fn_return_types ($self) {
         if ($last && $first && !($first->isa('PPI::Token::Word') && $first->content eq 'return')) {
             # Try statement-level first (ternary/binary), then first-child (match/handle/call)
             my $impl_env = $self->_env_for_node($last);
-            my $t = Typist::Static::Infer->infer_expr($last, $impl_env)
-                 // Typist::Static::Infer->infer_expr($first, $impl_env);
+            my $t = $self->_infer_expr_cached($last, $impl_env)
+                 // $self->_infer_expr_cached($first, $impl_env);
             push @types, $t if $t;
         }
 
@@ -416,8 +418,8 @@ sub _check_implicit_return_of_stmt ($self, $stmt, $env, $declared, $name) {
     return if $first->isa('PPI::Token::Word') && $first->content eq 'return';
 
     # Try statement-level first (handles mixed-op/ternary), then first-child fallback
-    my $inferred = Typist::Static::Infer->infer_expr($stmt, $env, $declared)
-                // Typist::Static::Infer->infer_expr($first, $env, $declared);
+    my $inferred = $self->_infer_expr_cached($stmt, $env, $declared)
+                // $self->_infer_expr_cached($first, $env, $declared);
     return unless defined $inferred;
     if (_contains_any($inferred)) {
         $self->_emit_gradual_hint($name, $first, $inferred, 'implicit return');
@@ -451,6 +453,21 @@ sub _check_implicit_return_of_stmt ($self, $stmt, $env, $declared, $name) {
 sub _env_for_node ($self, $node) { $self->{type_env}->env_for_node($node) }
 sub _fn_env       ($self, $fn)   { $self->{type_env}->fn_env($fn) }
 sub _resolve_type ($self, $expr) { $self->{type_env}->resolve_type($expr) }
+
+sub _infer_expr_cached ($self, $node, $env, $expected = undef) {
+    my $node_key = ref($node) ? refaddr($node) : "$node";
+    my $env_key = ref($env) ? refaddr($env) : "$env";
+    my $expected_key = defined $expected ? $expected->to_string : '';
+    my $cache_key = join "\0", $node_key, $env_key, $expected_key;
+    return $self->{_infer_expr_cache}{$cache_key} if exists $self->{_infer_expr_cache}{$cache_key};
+    return $self->{_infer_expr_cache}{$cache_key} = Typist::Static::Infer->infer_expr($node, $env, $expected);
+}
+
+sub _has_type_var_cached ($self, $type) {
+    my $key = ref($type) ? refaddr($type) : "$type";
+    return $self->{_has_type_var_cache}{$key} if exists $self->{_has_type_var_cache}{$key};
+    return $self->{_has_type_var_cache}{$key} = _has_type_var($type);
+}
 
 # ── GradualHint Emission ───────────────────────
 

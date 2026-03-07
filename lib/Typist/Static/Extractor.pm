@@ -88,6 +88,7 @@ sub _collect_special_words ($class, $doc, $result) {
     my %wanted = map { $_ => 1 } qw(match handle map grep sort);
     my %found;
     my @call_words;
+    my %known_locals = map { $_ => 1 } keys $result->{functions}->%*;
     my $words = $doc->find('PPI::Token::Word') || [];
     $result->{word_tokens} = $words;
     for my $word (@$words) {
@@ -96,6 +97,7 @@ sub _collect_special_words ($class, $doc, $result) {
         push @{$found{$name} //= []}, $word;
     }
     for my $word (@$words) {
+        my $name = $word->content;
         my $prev = $word->sprevious_sibling;
         if ($prev && ref($prev) && $prev->isa('PPI::Token::Operator') && $prev->content eq '->') {
             push @call_words, $word;
@@ -104,6 +106,10 @@ sub _collect_special_words ($class, $doc, $result) {
 
         my $next = $word->snext_sibling // next;
         next unless ref($next) && $next->isa('PPI::Structure::List');
+        next unless $known_locals{$name}
+            || $wanted{$name}
+            || $name =~ /::/
+            || $name =~ /\A[A-Z]\w*\z/;
         push @call_words, $word;
     }
     $result->{special_words} = \%found;
@@ -922,6 +928,7 @@ sub _extract_functions ($class, $subs, $result) {
                     block         => $block,
                     block_words   => $block_words,
                     return_words  => $class->_collect_return_words($block),
+                    return_values => $class->_collect_return_values($block),
                     last_stmt     => $last_stmt,
                     last_first    => $last_first,
                 };
@@ -946,6 +953,7 @@ sub _extract_functions ($class, $subs, $result) {
                 block         => $block,
                 block_words   => $block_words,
                 return_words  => $class->_collect_return_words($block),
+                return_values => $class->_collect_return_values($block),
                 last_stmt     => $last_stmt,
                 last_first    => $last_first,
             };
@@ -957,6 +965,17 @@ sub _collect_return_words ($class, $block) {
     return [] unless $block;
     my $words = $class->_collect_block_words($block);
     [ grep { $_->content eq 'return' } @$words ];
+}
+
+sub _collect_return_values ($class, $block) {
+    my $returns = $class->_collect_return_words($block);
+    my @values;
+    for my $ret (@$returns) {
+        my $val = $ret->snext_sibling or next;
+        next if $val->isa('PPI::Token::Structure') && $val->content eq ';';
+        push @values, +{ return_word => $ret, value => $val };
+    }
+    return \@values;
 }
 
 sub _collect_block_words ($class, $block) {

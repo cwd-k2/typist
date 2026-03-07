@@ -137,7 +137,7 @@ sub _check_functions :TIMED(functions) ($self) {
 
         $self->_check_type_wellformed($_, $fqn) for @signature_types;
 
-        $self->_check_function_kinds(\@signature_types, $sig, $fqn, $fn_line, $fn_file, $fn_col);
+        $self->_check_function_kinds($sig, $fqn, $fn_line, $fn_file, $fn_col);
         accumulate_timing($timings, 'functions.total', $t_sig);
     }
 }
@@ -169,30 +169,10 @@ sub _unknown_aliases_in_type ($self, $type) {
         return $self->{_type_wf_cache}{$cache_key}->@*;
     }
 
-    if ($type->is_atom || $type->is_literal || $type->is_var) {
-        $self->{_type_wf_cache}{$cache_key} = [];
-        return;
-    }
-
-    if ($type->is_alias) {
-        my $name = $type->alias_name;
-        my @unknown = $self->_alias_like_name_is_defined($name) ? () : ($name);
-        $self->{_type_wf_cache}{$cache_key} = \@unknown;
-        return @unknown;
-    }
-
-    my %seen;
-    my @unknown;
-    Typist::Type::Fold->walk($type, sub ($node) {
-        return unless $node->is_alias;
-        my $name = $node->alias_name;
-        return if $seen{$name}++;
-        return if $self->_alias_like_name_is_defined($name);
-        push @unknown, $name;
-    });
-
+    my $info = $self->_analyze_type($type);
+    my @unknown = $info->{unknown_aliases}->@*;
     $self->{_type_wf_cache}{$cache_key} = \@unknown;
-    @unknown;
+    return @unknown;
 }
 
 sub _free_vars_of :TIMED_ACC(functions.free_vars) ($self, $type) {
@@ -214,7 +194,7 @@ sub _free_vars_of :TIMED_ACC(functions.free_vars) ($self, $type) {
 
     my @free = $type->free_vars;
     $self->{_free_vars_cache}{$cache_key} = \@free;
-    @free;
+    return @free;
 }
 
 sub _alias_like_name_is_defined ($self, $name) {
@@ -228,6 +208,30 @@ sub _alias_like_name_is_defined ($self, $name) {
         ? 1 : 0;
     $self->{_alias_defined_cache}{$name} = $defined;
     return $defined;
+}
+
+sub _analyze_type ($self, $type) {
+    my (%seen_aliases, @unknown_aliases);
+    if ($type->is_alias) {
+        my $name = $type->alias_name;
+        return +{
+            unknown_aliases => $self->_alias_like_name_is_defined($name) ? [] : [$name],
+        };
+    }
+
+    if ($type->is_atom || $type->is_literal || $type->is_var) {
+        return +{ unknown_aliases => [] };
+    }
+
+    Typist::Type::Fold->walk($type, sub ($node) {
+        return unless $node->is_alias;
+        my $name = $node->alias_name;
+        return if $seen_aliases{$name}++;
+        return if $self->_alias_like_name_is_defined($name);
+        push @unknown_aliases, $name;
+    });
+
+    return +{ unknown_aliases => \@unknown_aliases };
 }
 
 # ── Effect Well-formedness ────────────────────────
@@ -422,7 +426,7 @@ sub _check_function_bounds :TIMED_ACC(functions.bounds) ($self, $sig, $fqn, $fn_
     }
 }
 
-sub _check_function_kinds :TIMED_ACC(functions.kinds) ($self, $types, $sig, $fqn, $fn_line, $fn_file, $fn_col) {
+sub _check_function_kinds :TIMED_ACC(functions.kinds) ($self, $sig, $fqn, $fn_line, $fn_file, $fn_col) {
     my %var_kinds;
     for my $g (($sig->{generics} // [])->@*) {
         next unless ref $g eq 'HASH' && $g->{var_kind};
@@ -431,7 +435,9 @@ sub _check_function_kinds :TIMED_ACC(functions.kinds) ($self, $types, $sig, $fqn
 
     return unless %var_kinds;
 
-    for my $ptype ($types->@*) {
+    my %seen;
+    for my $ptype (($sig->{params} // [])->@*) {
+        next unless $self->_mark_seen_type(\%seen, $ptype);
         eval { Typist::KindChecker->infer_kind($ptype, \%var_kinds) };
         if ($@) {
             $self->{errors}->collect(
@@ -444,6 +450,19 @@ sub _check_function_kinds :TIMED_ACC(functions.kinds) ($self, $types, $sig, $fqn
         }
     }
 
+    return unless $sig->{returns};
+    return unless $self->_mark_seen_type(\%seen, $sig->{returns});
+
+    eval { Typist::KindChecker->infer_kind($sig->{returns}, \%var_kinds) };
+    if ($@) {
+        $self->{errors}->collect(
+            kind    => 'KindError',
+            message => "Kind error in return type of $fqn: $@",
+            file    => $fn_file,
+            line    => $fn_line,
+            col     => $fn_col,
+        );
+    }
 }
 
 sub _unique_types ($self, @types) {
@@ -456,6 +475,13 @@ sub _unique_types ($self, @types) {
         push @unique, $type;
     }
     return @unique;
+}
+
+sub _mark_seen_type ($self, $seen, $type) {
+    return 0 unless $type;
+    my $key = ref $type ? refaddr($type) : "$type";
+    return 0 if $seen->{$key}++;
+    return 1;
 }
 
 1;
