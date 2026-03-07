@@ -12,18 +12,47 @@ sub run_perl ($code) {
     $out;
 }
 
-# ── Selective import ────────────────────────────
+# ── Typist::DSL selective import (recommended path) ──
 
-subtest 'use Typist qw(Int Str) — selected DSL names available' => sub {
+subtest 'use Typist::DSL qw(Int Str) — selected DSL names available' => sub {
+    my $out = run_perl(<<'PERL');
+use v5.40;
+use lib 'lib';
+use Typist;
+use Typist::DSL qw(Int Str);
+print ref(Int), "\n";
+print ref(Str), "\n";
+PERL
+
+    like $out, qr/Typist::Type::Atom/, 'Int is available via Typist::DSL';
+    unlike $out, qr/deprecated/, 'no deprecation warning';
+};
+
+subtest 'use Typist::DSL qw(optional Int) — optional is importable' => sub {
+    my $out = run_perl(<<'PERL');
+use v5.40;
+use lib 'lib';
+use Typist;
+use Typist::DSL qw(optional Int);
+my $o = optional(Int);
+print ref($o), "\n";
+PERL
+
+    like $out, qr/Typist::DSL::Optional/, 'optional() available via Typist::DSL';
+};
+
+# ── Deprecated path: use Typist qw(...) ──
+
+subtest 'use Typist qw(Int Str) — still works but emits deprecation warning' => sub {
     my $out = run_perl(<<'PERL');
 use v5.40;
 use lib 'lib';
 use Typist qw(Int Str);
 print ref(Int), "\n";
-print ref(Str), "\n";
 PERL
 
-    like $out, qr/Typist::Type::Atom/, 'Int is available';
+    like $out, qr/Typist::Type::Atom/, 'Int is still available';
+    like $out, qr/deprecated.*Typist::DSL/, 'deprecation warning emitted';
 };
 
 subtest 'use Typist — bare import does not export DSL names' => sub {
@@ -38,18 +67,6 @@ PERL
     like $out, qr/not_found/, 'Int is NOT available with bare use Typist';
 };
 
-subtest 'use Typist qw(optional Int) — optional is importable' => sub {
-    my $out = run_perl(<<'PERL');
-use v5.40;
-use lib 'lib';
-use Typist qw(optional Int);
-my $o = optional(Int);
-print ref($o), "\n";
-PERL
-
-    like $out, qr/Typist::DSL::Optional/, 'optional() available';
-};
-
 subtest 'use Typist qw(NotAType) — dies on unknown name' => sub {
     my $out = run_perl(<<'PERL');
 use v5.40;
@@ -61,17 +78,16 @@ PERL
     like $out, qr/died/, 'unknown DSL name causes die';
 };
 
-subtest 'use Typist -runtime, qw(Int) — runtime flag with DSL' => sub {
+subtest 'use Typist -runtime — runtime flag with bare import' => sub {
     my $out = run_perl(<<'PERL');
 use v5.40;
 use lib 'lib';
-use Typist -runtime, qw(Int);
-print ref(Int), "\n";
+use Typist -runtime;
 print $Typist::RUNTIME ? "runtime\n" : "static\n";
 PERL
 
-    like $out, qr/Typist::Type::Atom/, 'Int is available';
     like $out, qr/runtime/, 'runtime flag is set';
+    unlike $out, qr/deprecated/, 'no deprecation warning for -runtime';
 };
 
 subtest 'core functions always exported' => sub {

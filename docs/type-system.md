@@ -1003,17 +1003,19 @@ Complete reference of all subtyping rules implemented in `Typist::Subtype`:
 ### Atom Constants
 
 ```perl
-use Typist qw(Int Str Double Num Bool Any Void Never Undef);
+use Typist::DSL qw(Int Str Double Num Bool Any Void Never Undef);
 
 Int, Str, Double, Num, Bool, Any, Void, Never, Undef
 ```
 
-These are `use constant` singletons backed by `Typist::Type::Atom` flyweight pool entries. Imported via `use Typist qw(...)` selective import.
+These are `use constant` singletons backed by `Typist::Type::Atom` flyweight pool entries. Imported via `use Typist::DSL qw(...)`.
+
+> **Note:** These DSL values are for building type expressions programmatically (`typedef`, `struct`, etc.). They are **not** needed inside `:sig()` annotations, which resolve type names from strings.
 
 ### Type Variable Constants
 
 ```perl
-use Typist qw(T U V A B K);     # Single-character type variables
+use Typist::DSL qw(T U V A B K);     # Single-character type variables
 
 # For advanced usage (multi-char vars, kind annotations):
 use Typist::DSL qw(TVar);
@@ -1024,7 +1026,7 @@ TVar('F', kind => '* -> *')     # With kind annotation
 ### Parametric Constructors
 
 ```perl
-use Typist qw(ArrayRef Array HashRef Hash Tuple Maybe Record);
+use Typist::DSL qw(ArrayRef Array HashRef Hash Tuple Maybe Record);
 
 ArrayRef(Int)                    # ArrayRef[Int]
 Array(Int)                       # ArrayRef[Int]  (alias)
@@ -1057,10 +1059,11 @@ Typist::Type->coerce('ArrayRef[Str]') # Param(ArrayRef, Atom(Str))
 
 ### Importing DSL Symbols
 
-The recommended way is selective import via `use Typist qw(...)`:
+Import DSL values via `use Typist::DSL qw(...)`:
 
 ```perl
-use Typist qw(Int Str Record optional);       # Import specific names
+use Typist;                                    # Enable type system
+use Typist::DSL qw(Int Str Record optional);   # Import DSL values
 
 BEGIN {
     typedef Name   => Str;                     # DSL form

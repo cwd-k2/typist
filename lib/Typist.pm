@@ -82,8 +82,13 @@ sub import ($class, @args) {
     *{"${caller}::protocol"}  = \&Typist::EffectDef::_make_protocol;
     *{"${caller}::declare"}   = \&Typist::External::_declare;
 
-    # Selective DSL re-export
+    # Selective DSL re-export (deprecated — use Typist::DSL instead)
     if (@dsl_names) {
+        warn "Typist: importing DSL names via 'use Typist qw("
+            . join(' ', @dsl_names)
+            . ")' is deprecated; use 'use Typist::DSL qw("
+            . join(' ', @dsl_names)
+            . ")' instead (at $caller)\n";
         my $map = Typist::DSL->export_map;
         for my $name (@dsl_names) {
             die "Typist: unknown export '$name'\n" unless exists $map->{$name};

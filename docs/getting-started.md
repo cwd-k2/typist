@@ -28,7 +28,7 @@ Create `hello_typist.pl`:
 ```perl
 use v5.40;
 use lib 'lib';
-use Typist qw(Int Str);
+use Typist;
 
 sub greet :sig((Str) -> Str) ($name) {
     "Hello, $name!";
@@ -221,10 +221,10 @@ sub double :sig(<T: Num>(T) -> T) ($x) { $x * 2 }
 **Default (static-only):**
 
 ```perl
-use Typist qw(Int Str);   # or: use Typist;
+use Typist;
 ```
 
-Errors are caught at compile time (CHECK phase) and in the editor (LSP). No runtime overhead.
+Enables the type system. Errors are caught at compile time (CHECK phase) and in the editor (LSP). No runtime overhead. Type names in `:sig()` annotations are resolved automatically — no import needed.
 
 **Runtime mode:**
 
@@ -234,13 +234,13 @@ use Typist -runtime;
 
 Adds `Tie::Scalar`-based monitoring: typed variables are checked on every assignment. Violations `die` instead of `warn`.
 
-**Selective import (recommended):**
+**DSL values for type expressions:**
 
 ```perl
-use Typist qw(Int Str Record optional);
+use Typist::DSL qw(Int Str Record optional);
 ```
 
-Only imports the DSL names you use. Keeps the namespace clean.
+Imports type **values** as Perl constants. Use these when building type expressions programmatically in `typedef`, `newtype`, `struct`, etc. These are **not** needed for `:sig()` annotations (which parse type names from strings).
 
 ---
 

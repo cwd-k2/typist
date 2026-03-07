@@ -131,13 +131,14 @@ The Extractor only captures `PPI::Token::Quote`, so DSL `Func(...)` does not wor
 
 ### Selective DSL Export
 
-The recommended import style names what you use:
+`use Typist` enables the type system and exports core functions (`typedef`, `newtype`, `struct`, etc.). To use type values as Perl expressions (e.g., in `typedef`, `struct`, `instance`), import them separately:
 
 ```perl
-use Typist qw(Int Str Record optional);
+use Typist;                                # Enable type system
+use Typist::DSL qw(Int Str Record optional);  # Import DSL values for Perl expressions
 ```
 
-Bare `use Typist` exports only core functions (typedef, newtype, struct, etc.). DSL names are uppercase-starting or `optional`. `Typist::DSL->export_map` provides the full name-to-coderef mapping.
+DSL values are **not** needed for `:sig()` annotations, which resolve type names from strings automatically. See [Namespace Model](#namespace-model) for details.
 
 ### Unified `:sig()` Annotation
 

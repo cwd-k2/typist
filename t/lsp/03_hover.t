@@ -1758,7 +1758,8 @@ PERL
     my $source = <<'PERL';
 package Impls;
 use v5.40;
-use Typist 'Int';
+use Typist;
+use Typist::DSL qw(Int);
 instance Show => Int, +{
     show => sub ($x) { "$x" },
 };
@@ -1771,10 +1772,10 @@ PERL
     );
     $doc->analyze(workspace_registry => $ws->registry);
 
-    # Line 3 (0-indexed): "instance Show => Int, +{"
+    # Line 4 (0-indexed): "instance Show => Int, +{"
     #                       0         1
     #                       0123456789012345
-    my $sym = $doc->symbol_at(3, 10);
+    my $sym = $doc->symbol_at(4, 10);
     ok $sym, 'found symbol for cross-file typeclass';
     is $sym->{kind}, 'typeclass', 'kind is typeclass';
     ok $sym->{var_spec}, 'has var_spec';

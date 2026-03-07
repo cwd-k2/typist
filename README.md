@@ -29,7 +29,8 @@ Typist brings static type annotations to Perl through standard attribute syntax.
 ## Synopsis
 
 ```perl
-use Typist qw(Int Str Num Bool Double ArrayRef HashRef Record Maybe optional);
+use Typist;
+use Typist::DSL qw(Int Str Num Bool Double ArrayRef HashRef Record Maybe optional);
 
 # Type aliases and records (structural)
 BEGIN {
