@@ -1,59 +1,57 @@
-# Typist Documentation
+# Typist
 
-Navigation hub for all Typist documentation.
+**A pure Perl type system for Perl 5.40+.**
 
-## Reading Paths
+Typist brings static type checking to Perl without source filters or external preprocessors. Annotate your code with `:sig()` attributes, and Typist catches type errors at compile time, in your editor, and optionally at runtime.
 
-**For users** (writing Typist-annotated Perl code):
-1. [README](../README.md) — Installation, synopsis, quick start
-2. [Getting Started](getting-started.md) — First program, `:sig()` cheatsheet, common patterns
-3. [Type System Reference](type-system.md) — All type constructs, subtyping rules
-4. Module POD — `perldoc Typist`, etc.
+```perl
+use v5.40;
+use Typist;
 
-**For contributors** (working on Typist internals):
-1. [Architecture](architecture.md) — System design, module graph, data flow
-2. [Static Analysis](static-analysis.md) — Analyzer pipeline, inference, checking
-3. [Conventions](conventions.md) — Coding conventions, feature reference, Perl gotchas
-4. [LSP Coverage](lsp-coverage.md) — Feature matrix, diagnostic kinds
+BEGIN {
+    struct Person => (name => 'Str', age => 'Int', optional(email => 'Str'));
+}
 
-## Document Map
+sub greet :sig((Person) -> Str) ($person) {
+    "Hello, " . $person->name . "!";
+}
 
-| Document | Content | Audience |
-|----------|---------|----------|
-| [README](../README.md) | Installation, synopsis, examples, editor integration | Users |
-| [getting-started.md](getting-started.md) | First program, annotation cheatsheet, common patterns and pitfalls | Users |
-| [type-system.md](type-system.md) | Type constructs, subtyping, gradual typing, narrowing, prelude | Users, Contributors |
-| [architecture.md](architecture.md) | System lifecycle, module dependency graph, error system, LSP | Contributors |
-| [static-analysis.md](static-analysis.md) | Extractor, inference, type checking, effect checking, protocols | Contributors |
-| [conventions.md](conventions.md) | Language conventions, type system patterns, Perl gotchas | Contributors |
-| [lsp-coverage.md](lsp-coverage.md) | LSP feature matrix, diagnostic kinds, coverage tracking | Contributors |
-| [CLAUDE.md](../CLAUDE.md) | AI assistance context (compact summary) | AI Tools |
+my $alice = Person(name => "Alice", age => 30);
+say greet($alice);   # Hello, Alice!
+```
 
-## Topic Index
+!!! warning "Not on CPAN"
+    There is an unrelated module named `Typist` on CPAN — it is **not** this project. This Typist is distributed exclusively via its [GitHub repository](https://github.com/cwd-k2/typist).
 
-### Type System
-- Primitive types, atoms, hierarchy — [type-system.md](type-system.md#primitive-types)
-- Parameterized types (Array, Hash, Maybe, Tuple) — [type-system.md](type-system.md#parameterized-types)
-- Union, Intersection — [type-system.md](type-system.md#union-types)
-- Record (structural) vs Struct (nominal) — [type-system.md](type-system.md#record-types), [conventions.md](conventions.md#type-system-conventions)
-- Generics and bounded quantification — [type-system.md](type-system.md#generics)
-- Algebraic data types, GADT, enum, match — [type-system.md](type-system.md#algebraic-data-types)
-- Type classes and HKT — [type-system.md](type-system.md#type-classes)
-- Algebraic effects and protocols — [type-system.md](type-system.md#algebraic-effects)
-- Gradual typing — [type-system.md](type-system.md#gradual-typing)
-- Type narrowing — [type-system.md](type-system.md#type-narrowing)
-- Builtin prelude — [type-system.md](type-system.md#builtin-prelude)
+## What Typist Offers
 
-### Architecture
-- Three validation layers — [architecture.md](architecture.md), [CLAUDE.md](../CLAUDE.md#validation-architecture)
-- Static analysis pipeline — [static-analysis.md](static-analysis.md)
-- Module dependency graph — [architecture.md](architecture.md#module-dependency-graph)
-- Error system — [architecture.md](architecture.md#error-system)
-- LSP server architecture — [architecture.md](architecture.md#lsp-architecture)
+**Static-first architecture.** Errors are caught during the CHECK phase and via the LSP server — before your program runs. Runtime enforcement is opt-in for when you need it.
 
-### Development
-- Coding conventions — [conventions.md](conventions.md#language-and-module-conventions)
-- Perl gotchas — [conventions.md](conventions.md#perl-gotchas)
-- Commands (mise) — [CLAUDE.md](../CLAUDE.md#commands)
-- Test structure — [CLAUDE.md](../CLAUDE.md#test-structure)
-- LSP coverage tracking — [lsp-coverage.md](lsp-coverage.md)
+**Zero runtime overhead by default.** `use Typist;` adds no performance cost to your running program. Type annotations are checked statically and then get out of the way.
+
+**Gradual adoption.** You don't have to annotate everything at once. Typist checks what you annotate and leaves the rest alone. Start with module boundaries and work inward.
+
+**Rich type system.** Generics with bounded quantification, algebraic data types with pattern matching, type classes with multi-dispatch, algebraic effects with row polymorphism — all in standard Perl.
+
+## Feature Overview
+
+| Feature | Description |
+|---------|-------------|
+| [Type Annotations](guide/type-annotations.md) | `:sig()` on variables and functions |
+| [Structs](guide/struct.md) | Nominal, immutable, blessed record types |
+| [ADTs & Pattern Matching](guide/adt.md) | Tagged unions with exhaustive `match` |
+| [Generics](guide/generics.md) | Parametric polymorphism with bounds and constraints |
+| [Type Classes](guide/typeclass.md) | Ad-hoc polymorphism with instance dispatch |
+| [Algebraic Effects](guide/effects.md) | Tracked side effects with scoped handlers |
+| [Effect Protocols](guide/effect-protocols.md) | State machine verification for effect operations |
+| [Gradual Typing](guide/gradual-typing.md) | Incremental adoption — annotate at your own pace |
+| [Type Narrowing](advanced/narrowing.md) | Control-flow-sensitive type refinement |
+| [LSP Server](tooling/lsp.md) | Hover, completion, diagnostics, go-to-definition, and more |
+
+## Quick Links
+
+- **[Getting Started](getting-started/index.md)** — Install and write your first typed program
+- **[Guide](guide/index.md)** — Learn the type system from the ground up
+- **[Cookbook](cookbook/index.md)** — Patterns and recipes for real projects
+- **[Reference](reference/index.md)** — Complete type syntax and diagnostics
+- **[Internals](internal/index.md)** — Architecture, static analysis pipeline, conventions (for contributors)

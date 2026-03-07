@@ -1,0 +1,112 @@
+site_name: Typist
+site_description: A pure Perl type system for Perl 5.40+
+site_url: https://cwd-k2.github.io/typist/
+
+repo_url: https://github.com/cwd-k2/typist
+repo_name: cwd-k2/typist
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.indexes
+    - navigation.top
+    - content.code.copy
+    - content.code.annotate
+    - search.suggest
+    - search.highlight
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.snippets
+  - tables
+  - attr_list
+  - md_in_html
+  - def_list
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - getting-started/index.md
+    - Installation: getting-started/installation.md
+    - First Program: getting-started/first-program.md
+    - Editor Setup: getting-started/editor-setup.md
+  - Guide:
+    - guide/index.md
+    - Type Annotations: guide/type-annotations.md
+    - Type Hierarchy: guide/type-hierarchy.md
+    - Type Aliases & Newtypes: guide/typedef-newtype.md
+    - Structs: guide/struct.md
+    - Algebraic Data Types: guide/adt.md
+    - Generics: guide/generics.md
+    - Type Classes: guide/typeclass.md
+    - Algebraic Effects: guide/effects.md
+    - Effect Protocols: guide/effect-protocols.md
+    - Gradual Typing: guide/gradual-typing.md
+    - Static vs Runtime: guide/static-vs-runtime.md
+  - Advanced:
+    - advanced/index.md
+    - Rank-2 Polymorphism: advanced/rank2.md
+    - Higher-Kinded Types: advanced/hkt.md
+    - Type Narrowing: advanced/narrowing.md
+    - Subtyping Rules: advanced/subtyping.md
+    - Recursive Types: advanced/recursive-types.md
+  - Cookbook:
+    - cookbook/index.md
+    - Domain Modeling: cookbook/domain-modeling.md
+    - Error Handling: cookbook/error-handling.md
+    - Multi-File Projects: cookbook/multifile.md
+    - Gradual Migration: cookbook/migration.md
+  - Tooling:
+    - tooling/index.md
+    - typist-check CLI: tooling/typist-check.md
+    - LSP Server: tooling/lsp.md
+    - "Perl::Critic Policies": tooling/critic.md
+    - Debug Tools: tooling/debug-tools.md
+  - Reference:
+    - reference/index.md
+    - Type Syntax: reference/type-syntax.md
+    - Prelude: reference/prelude.md
+    - Diagnostics: reference/diagnostics.md
+    - Environment Variables: reference/env-vars.md
+  - Internals:
+    - internal/index.md
+    - Architecture: internal/architecture.md
+    - Static Analysis: internal/static-analysis.md
+    - Conventions: internal/conventions.md
+    - LSP Coverage: internal/lsp-coverage.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/cwd-k2/typist
