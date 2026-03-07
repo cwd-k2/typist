@@ -300,18 +300,21 @@ sub symbol_at ($self, $line, $col) {
         }
 
         # Type-level symbols: newtype, typedef, datatype, effect, typeclass
+        my $provenance = $registry->defined_in($lookup_name);
         if (my $nt = $registry->lookup_newtype($lookup_name)) {
             return $with_range->(sym_newtype(
-                name => $lookup_name,
-                type => $nt->inner->to_string,
+                name       => $lookup_name,
+                type       => $nt->inner->to_string,
+                defined_in => $provenance,
             ));
         }
         if ($registry->has_alias($lookup_name)) {
             my $resolved = $registry->lookup_type($lookup_name);
             if ($resolved) {
                 return $with_range->(sym_typedef(
-                    name => $lookup_name,
-                    type => $resolved->to_string,
+                    name       => $lookup_name,
+                    type       => $resolved->to_string,
+                    defined_in => $provenance,
                 ));
             }
         }
@@ -333,6 +336,7 @@ sub symbol_at ($self, $line, $col) {
                 type        => $dt->to_string,
                 type_params => \@tp,
                 variants    => \@variants,
+                defined_in  => $provenance,
             ));
         }
         if (my $st = $registry->lookup_struct($lookup_name)) {
@@ -346,8 +350,9 @@ sub symbol_at ($self, $line, $col) {
                 push @field_descs, "$f?: " . $opt{$f}->to_string;
             }
             return $with_range->(sym_struct(
-                name   => $lookup_name,
-                fields => \@field_descs,
+                name       => $lookup_name,
+                fields     => \@field_descs,
+                defined_in => $provenance,
             ));
         }
         if (my $eff = $registry->lookup_effect($lookup_name)) {
@@ -362,6 +367,7 @@ sub symbol_at ($self, $line, $col) {
                 name       => $lookup_name,
                 op_names   => \@op_names,
                 operations => \%operations,
+                defined_in => $provenance,
             ));
         }
         if ($registry->has_typeclass($lookup_name)) {
@@ -378,6 +384,7 @@ sub symbol_at ($self, $line, $col) {
                 var_spec     => $tc ? $tc->var : undef,
                 method_names => \@method_names,
                 methods      => \%methods,
+                defined_in   => $provenance,
             ));
         }
     }

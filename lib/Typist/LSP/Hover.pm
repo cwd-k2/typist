@@ -61,11 +61,11 @@ sub _format ($class, $sym) {
     }
 
     if ($kind eq 'typedef') {
-        return _code("type $sym->{name} = $sym->{type}");
+        return _code("type $sym->{name} = $sym->{type}") . _provenance($sym);
     }
 
     if ($kind eq 'newtype') {
-        return _code("newtype $sym->{name} = $sym->{type}");
+        return _code("newtype $sym->{name} = $sym->{type}") . _provenance($sym);
     }
 
     if ($kind eq 'effect') {
@@ -166,7 +166,7 @@ sub _format_struct ($class, $sym) {
     # Single-line for 0-2 fields, multi-line for 3+
     if (@$fields <= 2) {
         my $body = @$fields ? ' { ' . join(', ', @$fields) . ' }' : '';
-        return _code("struct $sym->{name}$body");
+        return _code("struct $sym->{name}$body") . _provenance($sym);
     }
 
     my $body = "struct $sym->{name} {\n";
@@ -174,7 +174,7 @@ sub _format_struct ($class, $sym) {
         $body .= "    $f,\n";
     }
     $body .= '}';
-    _code($body);
+    _code($body) . _provenance($sym);
 }
 
 sub _format_match ($class, $sym) {
@@ -224,7 +224,7 @@ sub _format_datatype ($class, $sym) {
     if (@variants <= 2) {
         my $display = "datatype $name";
         $display .= ' = ' . join(' | ', @variants) if @variants;
-        return _code($display);
+        return _code($display) . _provenance($sym);
     }
 
     my $body = "datatype $name\n";
@@ -233,7 +233,7 @@ sub _format_datatype ($class, $sym) {
         $body .= "$prefix$variants[$i]\n";
     }
     chomp $body;
-    _code($body);
+    _code($body) . _provenance($sym);
 }
 
 sub _format_effect ($class, $sym) {
@@ -281,7 +281,7 @@ sub _format_effect ($class, $sym) {
     }
     $body .= '}';
 
-    _code($body);
+    _code($body) . _provenance($sym);
 }
 
 sub _format_typeclass ($class, $sym) {
@@ -297,7 +297,7 @@ sub _format_typeclass ($class, $sym) {
         if (@$method_names) {
             $header .= ' { ' . join(', ', @$method_names) . ' }';
         }
-        return _code($header);
+        return _code($header) . _provenance($sym);
     }
 
     my $body = "$header {\n";
@@ -306,7 +306,7 @@ sub _format_typeclass ($class, $sym) {
         $body .= "    $m: $sig,\n";
     }
     $body .= '}';
-    _code($body);
+    _code($body) . _provenance($sym);
 }
 
 # ── Helpers ──────────────────────────────────────
@@ -314,6 +314,7 @@ sub _format_typeclass ($class, $sym) {
 sub _code ($text) { "```typist\n$text\n```" }
 
 sub _note ($text) { "\n\n*$text*" }
+sub _provenance ($sym) { $sym->{defined_in} ? _note("defined in `$sym->{defined_in}`") : '' }
 
 # Array and Hash are now first-class list types — no display rewriting needed.
 sub _display_type ($type_str, $) { $type_str }

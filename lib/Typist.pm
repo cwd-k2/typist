@@ -69,15 +69,38 @@ sub import ($class, @args) {
     # Export core functions into caller's namespace.
     # Functions that install symbols into caller receive $caller explicitly.
     no strict 'refs';
-    *{"${caller}::typedef"}   = \&Typist::Registry::typedef;
-    *{"${caller}::newtype"}   = sub ($name, $expr) { Typist::Definition::_newtype($caller, $name, $expr) };
-    *{"${caller}::typeclass"} = sub ($name, $var, $methods) { Typist::Definition::_typeclass($caller, $name, $var, $methods) };
+    *{"${caller}::typedef"}   = sub ($name, $expr) {
+        Typist::Registry::typedef($name, $expr);
+        Typist::Registry->set_defined_in($name, $caller);
+    };
+    *{"${caller}::newtype"}   = sub ($name, $expr) {
+        Typist::Definition::_newtype($caller, $name, $expr);
+        Typist::Registry->set_defined_in($name, $caller);
+    };
+    *{"${caller}::typeclass"} = sub ($name, $var, $methods) {
+        Typist::Definition::_typeclass($caller, $name, $var, $methods);
+        Typist::Registry->set_defined_in($name, $caller);
+    };
     *{"${caller}::instance"}  = \&Typist::Definition::_instance;
-    *{"${caller}::datatype"}  = sub ($name_spec, %variants) { Typist::Algebra::_datatype($caller, $name_spec, %variants) };
-    *{"${caller}::enum"}      = sub ($name, @tags) { Typist::Algebra::_enum($caller, $name, @tags) };
+    *{"${caller}::datatype"}  = sub ($name_spec, %variants) {
+        Typist::Algebra::_datatype($caller, $name_spec, %variants);
+        my ($base_name) = $name_spec =~ /\A(\w+)/;
+        Typist::Registry->set_defined_in($base_name, $caller) if $base_name;
+    };
+    *{"${caller}::enum"}      = sub ($name, @tags) {
+        Typist::Algebra::_enum($caller, $name, @tags);
+        Typist::Registry->set_defined_in($name, $caller);
+    };
     *{"${caller}::match"}     = \&Typist::Algebra::_match;
-    *{"${caller}::struct"}    = sub ($name, @fields) { Typist::StructDef::_struct($name, $caller, @fields) };
-    *{"${caller}::effect"}    = \&Typist::EffectDef::_effect;
+    *{"${caller}::struct"}    = sub ($name, @fields) {
+        Typist::StructDef::_struct($name, $caller, @fields);
+        my ($base_name) = $name =~ /\A(\w+)/;
+        Typist::Registry->set_defined_in($base_name, $caller) if $base_name;
+    };
+    *{"${caller}::effect"}    = sub ($name, @rest) {
+        Typist::EffectDef::_effect($name, @rest);
+        Typist::Registry->set_defined_in($name, $caller);
+    };
     *{"${caller}::handle"}    = \&Typist::EffectDef::_handle;
     *{"${caller}::protocol"}  = \&Typist::EffectDef::_make_protocol;
     *{"${caller}::declare"}   = \&Typist::External::_declare;

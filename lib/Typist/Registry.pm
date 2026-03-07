@@ -30,6 +30,7 @@ sub new ($class, %args) {
         effects        => +{},
         name_index     => +{},
         instance_index => +{},
+        defined_in     => +{},
     }, $class;
 }
 
@@ -270,6 +271,24 @@ sub all_packages ($invocant) {
     keys $self->{packages}->%*;
 }
 
+# ── Type Provenance ────────────────────────────────
+# Track which package defined each type name.
+
+sub set_defined_in ($invocant, $name, $pkg) {
+    my $self = _self($invocant);
+    $self->{defined_in}{$name} = $pkg;
+}
+
+sub defined_in ($invocant, $name) {
+    my $self = _self($invocant);
+    $self->{defined_in}{$name};
+}
+
+sub types_defined_by ($invocant, $pkg) {
+    my $self = _self($invocant);
+    grep { ($self->{defined_in}{$_} // '') eq $pkg } keys $self->{defined_in}->%*;
+}
+
 # ── TypeClass Management ──────────────────────────
 
 sub register_typeclass ($invocant, $name, $def) {
@@ -391,6 +410,9 @@ sub merge ($self, $other) {
             }
         }
     }
+    for my $name (keys(($other->{defined_in} // +{})->%*)) {
+        $self->{defined_in}{$name} //= $other->{defined_in}{$name};
+    }
     # Clear resolved cache since new aliases may change resolution
     $self->{resolved} = +{};
     $self;
@@ -414,6 +436,7 @@ sub reset ($invocant) {
         $invocant->{effects}        = +{};
         $invocant->{name_index}     = +{};
         $invocant->{instance_index} = +{};
+        $invocant->{defined_in}     = +{};
     } else {
         $DEFAULT = undef;
     }

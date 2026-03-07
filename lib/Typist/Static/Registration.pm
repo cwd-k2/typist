@@ -67,6 +67,8 @@ sub register_aliases ($class, $extracted, $registry, %opts) {
         }
         next unless $parsed;
         $registry->define_alias($name, $info->{expr});
+        my $pkg = $extracted->{package} // 'main';
+        $registry->set_defined_in($name, $pkg);
     }
 }
 
@@ -92,6 +94,7 @@ sub register_newtypes ($class, $extracted, $registry, %opts) {
 
         my $type = Typist::Type::Newtype->new($name, $inner);
         $registry->register_newtype($name, $type);
+        $registry->set_defined_in($name, $pkg);
 
         # Constructor: Name(Inner) -> Name
         $registry->register_function($pkg, $name, +{
@@ -183,6 +186,7 @@ sub register_structs ($class, $extracted, $registry, %opts) {
             type_bounds => \%type_bounds,
         );
         $registry->register_type($name, $struct_type);
+        $registry->set_defined_in($name, $pkg);
 
         # Constructor: variadic to accept named args, returns struct type
         my @ctor_params_expr;
@@ -269,6 +273,7 @@ sub register_datatypes ($class, $extracted, $registry, %opts) {
             return_types => (%return_types ? \%return_types : +{}),
         );
         $registry->register_datatype($name, $dt);
+        $registry->set_defined_in($name, $pkg);
 
         # Constructors
         for my $tag (keys %parsed_variants) {
@@ -317,6 +322,8 @@ sub register_effects ($class, $extracted, $registry, %opts) {
         $registry->register_effect($name,
             Typist::Effect->new(name => $name, operations => $ops, protocol => $protocol),
         );
+        my $pkg = $extracted->{package} // 'main';
+        $registry->set_defined_in($name, $pkg);
 
         # Build per-op protocol transitions for ProtocolChecker
         my %op_transitions;
@@ -385,6 +392,8 @@ sub register_typeclasses ($class, $extracted, $registry, %opts) {
             );
         };
         $registry->register_typeclass($name, $def // undef);
+        my $pkg = $extracted->{package} // 'main';
+        $registry->set_defined_in($name, $pkg);
     }
 
     # Register typeclass methods as functions

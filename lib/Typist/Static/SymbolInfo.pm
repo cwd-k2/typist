@@ -71,6 +71,7 @@ sub sym_typedef (%args) {
         type => $args{type},
         line => $args{line},
         col  => $args{col},
+        (defined $args{defined_in} ? (defined_in => $args{defined_in}) : ()),
     };
 }
 
@@ -81,6 +82,7 @@ sub sym_newtype (%args) {
         type => $args{type},
         line => $args{line},
         col  => $args{col},
+        (defined $args{defined_in} ? (defined_in => $args{defined_in}) : ()),
     };
 }
 
@@ -94,6 +96,7 @@ sub sym_effect (%args) {
         col        => $args{col},
         (defined $args{protocol} ? (protocol => $args{protocol}) : ()),
         (defined $args{states}   ? (states   => $args{states})   : ()),
+        (defined $args{defined_in} ? (defined_in => $args{defined_in}) : ()),
     };
 }
 
@@ -106,6 +109,7 @@ sub sym_typeclass (%args) {
         methods      => $args{methods}      // +{},
         line         => $args{line},
         col          => $args{col},
+        (defined $args{defined_in} ? (defined_in => $args{defined_in}) : ()),
     };
 }
 
@@ -118,6 +122,7 @@ sub sym_datatype (%args) {
         type_params => $args{type_params} // [],
         line        => $args{line},
         col         => $args{col},
+        (defined $args{defined_in} ? (defined_in => $args{defined_in}) : ()),
     };
 }
 
@@ -128,6 +133,7 @@ sub sym_struct (%args) {
         fields => $args{fields} // [],
         line   => $args{line},
         col    => $args{col},
+        (defined $args{defined_in} ? (defined_in => $args{defined_in}) : ()),
     };
 }
 
