@@ -17,6 +17,32 @@ use Typist::Static::SymbolInfo qw(
 
 my %BUILTINS = map { $_ => 1 } Typist::Prelude->builtin_names;
 
+# ── Built-in Type Descriptions ─────────────────
+
+my %BUILTIN_TYPES = (
+    # Primitives
+    Int    => { detail => 'Integer type',                           hierarchy => 'Bool <: Int <: Double <: Num <: Any' },
+    Str    => { detail => 'String type',                            hierarchy => 'Str <: Any' },
+    Double => { detail => 'Floating-point type',                    hierarchy => 'Int <: Double <: Num <: Any' },
+    Num    => { detail => 'Numeric supertype (Int, Double)',        hierarchy => 'Int <: Double <: Num <: Any' },
+    Bool   => { detail => 'Boolean type',                           hierarchy => 'Bool <: Int <: Double <: Num <: Any' },
+    Any    => { detail => 'Top type — compatible with all types' },
+    Void   => { detail => 'Unit return type' },
+    Never  => { detail => 'Bottom type — subtype of all types' },
+    Undef  => { detail => 'Undefined value type. Maybe[T] = T | Undef', hierarchy => 'Undef <: Any' },
+    # Parametric constructors
+    ArrayRef => { detail => 'Scalar reference to array. What [LIST] produces',        params => 'T' },
+    HashRef  => { detail => 'Scalar reference to hash. What +{LIST} produces',        params => 'K, V' },
+    Array    => { detail => 'List type. What grep/map/sort/@deref produce',            params => 'T' },
+    Hash     => { detail => 'List type for hash entries',                               params => 'K, V' },
+    Maybe    => { detail => 'Nullable type. Maybe[T] = T | Undef',                     params => 'T' },
+    Tuple    => { detail => 'Fixed-length heterogeneous array reference',               params => 'T, U, ...' },
+    Ref      => { detail => 'Generic scalar reference',                                 params => 'T' },
+    CodeRef  => { detail => 'Function reference type. CodeRef[A -> R ! E]',             params => 'A -> R' },
+    Handler  => { detail => 'Effect handler record type',                               params => 'E' },
+    Record   => { detail => 'Structural record type (plain hashrefs)',                   params => 'k => V, ...' },
+);
+
 # ── Constructor ──────────────────────────────────
 
 sub new ($class, %args) {
@@ -386,6 +412,18 @@ sub symbol_at ($self, $line, $col) {
                 methods      => \%methods,
                 defined_in   => $provenance,
             ));
+        }
+    }
+
+    # Built-in type hover (primitives and parametric constructors)
+    {
+        my $type_name = $bare // $word;
+        if (my $bt = $BUILTIN_TYPES{$type_name}) {
+            return $with_range->(+{
+                kind => 'builtin_type',
+                name => $type_name,
+                %$bt,
+            });
         }
     }
 

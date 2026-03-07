@@ -103,6 +103,7 @@ The server tries annotation context first, then falls back to code context (see 
 | `struct` | `struct Name { fields }` | Done |
 | `field` | `(struct) field?: type` | Done |
 | `method` | `(struct) name(...) -> returns` | Done |
+| `builtin_type` | `type Int` / `type ArrayRef[T]` + description + hierarchy | Done |
 
 ### Cross-Package Resolution
 

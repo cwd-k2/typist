@@ -84,6 +84,10 @@ sub _format ($class, $sym) {
         return $class->_format_struct($sym);
     }
 
+    if ($kind eq 'builtin_type') {
+        return $class->_format_builtin_type($sym);
+    }
+
     if ($kind eq 'match') {
         return $class->_format_match($sym);
     }
@@ -188,6 +192,15 @@ sub _format_handle ($class, $sym) {
 
     my $names = join(', ', map { $_->{name} } @$effects);
     _code("handle: $sym->{result_type} ![$names]");
+}
+
+sub _format_builtin_type ($class, $sym) {
+    my $name = $sym->{name};
+    $name .= "[$sym->{params}]" if $sym->{params};
+    my $md = _code("type $name") . _note('builtin');
+    $md .= "\n\n$sym->{detail}" if $sym->{detail};
+    $md .= "\n\n`$sym->{hierarchy}`" if $sym->{hierarchy};
+    $md;
 }
 
 sub _format_field ($class, $sym) {

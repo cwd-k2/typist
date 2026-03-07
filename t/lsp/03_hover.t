@@ -1981,4 +1981,99 @@ PERL
     like $value, qr/ArrayRef\[T\].*->.*ArrayRef\[T\]/, 'shows parameter and return type';
 };
 
+# ── Hover on built-in type names ─────────────────
+
+subtest 'hover on primitive type in :sig()' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 1, character => 16 },  # on 'Int' in :sig()
+        }),
+    ));
+
+    my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $hover, 'got hover response';
+    ok $hover->{result}, 'hover has result for Int';
+    like $hover->{result}{contents}{value}, qr/type Int/, 'shows type Int';
+    like $hover->{result}{contents}{value}, qr/builtin/, 'marked as builtin';
+    like $hover->{result}{contents}{value}, qr/Integer type/, 'shows description';
+    like $hover->{result}{contents}{value}, qr/Bool <: Int <: Double/, 'shows hierarchy';
+};
+
+subtest 'hover on parametric type in :sig()' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub first :sig((ArrayRef[Int]) -> Int) ($arr) { $arr->[0] }
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 1, character => 18 },  # on 'ArrayRef'
+        }),
+    ));
+
+    my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $hover, 'got hover response';
+    ok $hover->{result}, 'hover has result for ArrayRef';
+    like $hover->{result}{contents}{value}, qr/type ArrayRef\[T\]/, 'shows type ArrayRef[T]';
+    like $hover->{result}{contents}{value}, qr/builtin/, 'marked as builtin';
+};
+
+subtest 'hover on Str type' => sub {
+    my $source = <<'PERL';
+use v5.40;
+my $name :sig(Str) = "Alice";
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 1, character => 15 },  # on 'Str'
+        }),
+    ));
+
+    my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $hover, 'got hover response';
+    ok $hover->{result}, 'hover has result for Str';
+    like $hover->{result}{contents}{value}, qr/type Str/, 'shows type Str';
+};
+
+subtest 'user-defined type takes priority over builtin' => sub {
+    my $source = <<'PERL';
+use v5.40;
+typedef Int => 'Str';
+my $x :sig(Int) = "hello";
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 2, character => 12 },  # on 'Int' in :sig()
+        }),
+    ));
+
+    my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $hover, 'got hover response';
+    ok $hover->{result}, 'hover has result';
+    like $hover->{result}{contents}{value}, qr/type Int = Str/, 'shows user typedef, not builtin';
+};
+
 done_testing;
