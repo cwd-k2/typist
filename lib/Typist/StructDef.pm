@@ -126,8 +126,8 @@ sub _struct ($name_spec, $caller, @field_pairs) {
                     unless exists $given{$k};
             }
 
-            if (@tp) {
-                # Parameterized: infer type args from field values, then validate
+            if (@tp && $Typist::RUNTIME) {
+                # Parameterized + runtime: infer type args, validate fields
                 my %bindings;
                 for my $k (keys %given) {
                     my $formal = $all{$k};
@@ -174,15 +174,16 @@ sub _struct ($name_spec, $caller, @field_pairs) {
 
                 bless +{%given, _type_args => \@type_args}, $pkg;
             } else {
-                # Non-parameterized: validate directly
-                for my $k (keys %given) {
-                    my $expected = $all{$k};
-                    unless ($expected->contains($given{$k})) {
-                        die "Typist: ${name}() — field '$k' expected "
-                            . $expected->to_string . ", got $given{$k}\n";
+                # Non-parameterized: validate only with runtime
+                if ($Typist::RUNTIME) {
+                    for my $k (keys %given) {
+                        my $expected = $all{$k};
+                        unless ($expected->contains($given{$k})) {
+                            die "Typist: ${name}() — field '$k' expected "
+                                . $expected->to_string . ", got $given{$k}\n";
+                        }
                     }
                 }
-
                 bless +{%given}, $pkg;
             }
         };

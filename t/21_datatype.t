@@ -663,11 +663,10 @@ subtest 'match dies on missing arm' => sub {
     like $@, qr/no arm for tag 'Circle'/, 'dies when no matching arm and no fallback';
 };
 
-subtest 'match exhaustiveness warning' => sub {
+subtest 'match dispatches correctly' => sub {
     require Typist;
     Typist::Registry->reset;
 
-    # Register a datatype so exhaustiveness check can find it
     my $int = Typist::Type::Atom->new('Int');
     my $dt = Typist::Type::Data->new('Shape', +{
         Circle    => [$int],
@@ -678,32 +677,29 @@ subtest 'match exhaustiveness warning' => sub {
 
     my $circle = bless +{ _tag => 'Circle', _values => [5] }, 'Typist::Data::Shape';
 
-    # Non-exhaustive match should warn
-    my @warnings;
-    local $SIG{__WARN__} = sub { push @warnings, $_[0] };
-    Typist::Algebra::_match($circle,
-        Circle => sub ($r) { $r },
-    );
-    ok @warnings == 1, 'one warning for non-exhaustive match';
-    like $warnings[0], qr/non-exhaustive.*missing Point, Rectangle/,
-        'warning lists missing variants';
-
-    # Exhaustive match should not warn
-    @warnings = ();
-    Typist::Algebra::_match($circle,
-        Circle    => sub ($r)     { $r },
-        Rectangle => sub ($w, $h) { $w * $h },
-        Point     => sub          { 0 },
-    );
-    is scalar @warnings, 0, 'no warning for exhaustive match';
-
-    # Match with fallback _ should not warn even if not exhaustive
-    @warnings = ();
-    Typist::Algebra::_match($circle,
+    # Partial match with fallback — dispatches correctly
+    my $result = Typist::Algebra::_match($circle,
         Circle => sub ($r) { $r },
         _      => sub      { 0 },
     );
-    is scalar @warnings, 0, 'no warning with fallback arm';
+    is $result, 5, 'partial match with fallback dispatches';
+
+    # Exhaustive match
+    $result = Typist::Algebra::_match($circle,
+        Circle    => sub ($r)     { $r * 2 },
+        Rectangle => sub ($w, $h) { $w * $h },
+        Point     => sub          { 0 },
+    );
+    is $result, 10, 'exhaustive match dispatches';
+
+    # Missing arm without fallback — dies (runtime safety net)
+    eval {
+        Typist::Algebra::_match(
+            bless(+{ _tag => 'Point', _values => [] }, 'Typist::Data::Shape'),
+            Circle => sub ($r) { $r },
+        );
+    };
+    like $@, qr/no arm for tag 'Point'/, 'missing arm without fallback dies';
 };
 
 subtest 'match dies on non-tagged value' => sub {
@@ -760,7 +756,7 @@ subtest 'enum constructors work' => sub {
     ok $dt->contains($r), 'data type contains enum value';
 };
 
-subtest 'enum match with exhaustiveness' => sub {
+subtest 'enum match dispatches' => sub {
     require Typist;
     Typist::Registry->reset;
 
@@ -774,15 +770,24 @@ subtest 'enum match with exhaustiveness' => sub {
 
     my $hearts = bless +{ _tag => 'Hearts', _values => [] }, $data_class;
 
-    # Non-exhaustive — should warn
-    my @w;
-    local $SIG{__WARN__} = sub { push @w, $_[0] };
-    Typist::Algebra::_match($hearts,
-        Hearts   => sub { 'red' },
-        Diamonds => sub { 'red' },
-    );
-    ok @w == 1, 'warns on non-exhaustive enum match';
-    like $w[0], qr/missing Clubs, Spades/, 'lists missing enum variants';
+    # Partial match — dies without fallback
+    eval {
+        Typist::Algebra::_match($hearts,
+            Hearts   => sub { 'red' },
+            Diamonds => sub { 'red' },
+        );
+    };
+    is $@, '', 'matching arm found — no error';
+
+    # Missing arm — dies
+    eval {
+        Typist::Algebra::_match(
+            bless(+{ _tag => 'Clubs', _values => [] }, $data_class),
+            Hearts   => sub { 'red' },
+            Diamonds => sub { 'red' },
+        );
+    };
+    like $@, qr/no arm for tag 'Clubs'/, 'missing arm dies';
 };
 
 subtest 'extractor recognizes enum' => sub {

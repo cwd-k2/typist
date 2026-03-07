@@ -4,15 +4,23 @@ use v5.40;
 our $VERSION = '0.01';
 
 use B;
-use Typist::Parser;
-use Typist::Registry;
-use Typist::Inference;
-use Typist::Subtype;
-use Typist::Tie::Scalar;
-use Typist::Transform;
-use Typist::Type::Eff;
-use Typist::Kind;
-use Typist::KindChecker;
+
+# Heavy dependencies loaded on-demand in _handle_scalar_attrs / _handle_code_attrs.
+# This avoids ~40ms load penalty when no :sig() attributes are used.
+my $_DEPS_LOADED;
+sub _ensure_deps {
+    return if $_DEPS_LOADED;
+    require Typist::Parser;
+    require Typist::Registry;
+    require Typist::Inference;
+    require Typist::Subtype;
+    require Typist::Tie::Scalar;
+    require Typist::Transform;
+    require Typist::Type::Eff;
+    require Typist::Kind;
+    require Typist::KindChecker;
+    $_DEPS_LOADED = 1;
+}
 
 # ── Public API ────────────────────────────────────
 
@@ -35,6 +43,7 @@ sub _handle_scalar_attrs ($pkg, $ref, @attrs) {
 
     for my $attr (@attrs) {
         if ($attr =~ /\Asig\((.+)\)\z/s) {
+            _ensure_deps();
             my $type = Typist::Parser->parse($1);
 
             Typist::Registry->register_variable(+{
@@ -66,6 +75,7 @@ sub _handle_scalar_attrs ($pkg, $ref, @attrs) {
 #   %opts: registry => $registry (defaults to Typist::Registry singleton)
 # Returns: list of hashrefs with keys: name, bound_expr, is_row_var, var_kind, tc_constraints
 sub parse_generic_decl ($class, $spec, %opts) {
+    _ensure_deps();
     my @decls = Typist::Parser->parse_param_decls($spec);
     $class->classify_constraints(\@decls, %opts);
     @decls;
@@ -106,6 +116,7 @@ sub _handle_code_attrs ($pkg, $coderef, @attrs) {
 
     for my $attr (@attrs) {
         if ($attr =~ /\Asig\((.+)\)\z/s) {
+            _ensure_deps();
             my $ann = Typist::Parser->parse_annotation($1);
             my $type = $ann->{type};
 

@@ -1,8 +1,6 @@
 package Typist::Algebra;
 use v5.40;
 
-use Scalar::Util 'blessed';
-
 our $VERSION = '0.01';
 
 # Algebraic data types: datatype, enum, match.
@@ -50,8 +48,8 @@ sub _datatype ($caller, $name_spec, %variants) {
                 . scalar(@args) . "\n")
                 unless @args == @captured_types;
 
-            if (@tp) {
-                # Parameterized: infer type args, then validate
+            if (@tp && $Typist::RUNTIME) {
+                # Parameterized + runtime: infer type args, validate
                 my %bindings;
                 for my $i (0 .. $#captured_types) {
                     my $formal = $captured_types[$i];
@@ -100,13 +98,15 @@ sub _datatype ($caller, $name_spec, %variants) {
                     _type_args => \@type_args,
                 }, $data_class;
             } else {
-                # Non-parameterized: validate directly
-                for my $i (0 .. $#captured_types) {
-                    unless ($captured_types[$i]->contains($args[$i])) {
-                        die("${tag_copy}(): argument "
-                            . ($i + 1) . " expected "
-                            . $captured_types[$i]->to_string
-                            . ", got $args[$i]\n");
+                # Non-parameterized: validate only with runtime
+                if ($Typist::RUNTIME) {
+                    for my $i (0 .. $#captured_types) {
+                        unless ($captured_types[$i]->contains($args[$i])) {
+                            die("${tag_copy}(): argument "
+                                . ($i + 1) . " expected "
+                                . $captured_types[$i]->to_string
+                                . ", got $args[$i]\n");
+                        }
                     }
                 }
                 bless +{ _tag => $tag_copy, _values => \@args }, $data_class;
@@ -175,21 +175,6 @@ sub _enum ($caller, $name, @tags) {
 sub _match ($value, %arms) {
     my $tag = $value->{_tag}
         // die "Typist: match — value has no _tag\n";
-
-    # Exhaustiveness: warn if known ADT has uncovered variants (no fallback _)
-    if (!exists $arms{_} && blessed($value)) {
-        my $class = blessed($value);
-        if ($class =~ /\ATypist::Data::(\w+)\z/) {
-            my $dt = Typist::Registry->lookup_datatype($1);
-            if ($dt) {
-                my @missing = grep { !exists $arms{$_} }
-                    sort keys $dt->variants->%*;
-                warn "Typist: match — non-exhaustive pattern: missing "
-                    . join(', ', @missing) . "\n"
-                    if @missing;
-            }
-        }
-    }
 
     my $handler = $arms{$tag} // $arms{_}
         // die "Typist: match — no arm for tag '$tag' and no fallback '_'\n";

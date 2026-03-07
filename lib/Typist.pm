@@ -5,6 +5,7 @@ our $VERSION = '0.01';
 our $RUNTIME     = $ENV{TYPIST_RUNTIME}     ? 1 : 0;
 our $CHECK_QUIET = $ENV{TYPIST_CHECK_QUIET} ? 1 : 0;
 
+# Core runtime — always needed
 use Typist::Type;
 use Typist::Type::Atom;
 use Typist::Type::Param;
@@ -22,18 +23,18 @@ use Typist::Type::Data;
 use Typist::Type::Struct;
 use Typist::Effect;
 use Typist::TypeClass;
-use Typist::Kind;
-use Typist::KindChecker;
 use Typist::Parser;
 use Typist::Registry;
-use Typist::Subtype;
-use Typist::Inference;
-use Typist::Attribute;
 use Typist::Handler;
-use Typist::Static::Checker;
 use Typist::Error;
 use Typist::Error::Global;
 use Typist::DSL;
+
+# Deferred — loaded on first :sig() or in CHECK phase
+# Typist::Kind, Typist::KindChecker, Typist::Subtype, Typist::Inference
+# Typist::Attribute (has its own internal require chain)
+# Typist::Static::Checker (CHECK only)
+require Typist::Attribute;
 
 # Submodules — decomposed from Typist.pm for maintainability.
 # Each receives $caller explicitly where symbol installation is needed.
@@ -47,12 +48,16 @@ sub import ($class, @args) {
     my $caller = caller;
 
     # Suppress "attribute may clash with future reserved word" for :sig
-    my $prev_warn = $SIG{__WARN__};
-    $SIG{__WARN__} = sub {
-        return if $_[0] =~ /attribute may clash with future reserved word/;
-        if ($prev_warn) { $prev_warn->(@_) }
-        else            { warn $_[0] }
-    };
+    # Install only once; restored in CHECK after all attributes are processed.
+    unless ($Typist::_WARN_INSTALLED) {
+        $Typist::_WARN_ORIG = $SIG{__WARN__};
+        $SIG{__WARN__} = sub {
+            return if $_[0] =~ /attribute may clash with future reserved word/;
+            if ($Typist::_WARN_ORIG) { $Typist::_WARN_ORIG->(@_) }
+            else                     { warn $_[0] }
+        };
+        $Typist::_WARN_INSTALLED = 1;
+    }
 
     for my $arg (@args) {
         if    ($arg eq '-runtime') { $Typist::RUNTIME = 1 }
@@ -60,6 +65,12 @@ sub import ($class, @args) {
             die "Typist: DSL names cannot be imported via 'use Typist'. "
               . "Use 'use Typist::DSL qw($arg)' instead (at $caller)\n";
         }
+    }
+
+    # Runtime enforcement needs Inference/Subtype for constructor validation
+    if ($Typist::RUNTIME) {
+        require Typist::Inference;
+        require Typist::Subtype;
     }
 
     # Track this package
@@ -119,6 +130,7 @@ CHECK {
     Typist::Prelude->install(Typist::Registry->_default);
 
     # 1. Structural checks on global Registry (alias cycles, free vars, bounds, kinds)
+    require Typist::Static::Checker;
     Typist::Static::Checker->new->analyze;
 
     # 2. Full static analysis per loaded file (TypeChecker + EffectChecker)
@@ -127,6 +139,13 @@ CHECK {
 
     if (Typist::Error::Global->has_errors && !$CHECK_QUIET) {
         warn Typist::Error::Global->report;
+    }
+
+    # Restore original warn handler — attribute processing is complete.
+    if ($Typist::_WARN_INSTALLED) {
+        if ($Typist::_WARN_ORIG) { $SIG{__WARN__} = $Typist::_WARN_ORIG }
+        else                     { delete $SIG{__WARN__} }
+        $Typist::_WARN_INSTALLED = 0;
     }
 }
 

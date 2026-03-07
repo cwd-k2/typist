@@ -18,8 +18,10 @@ sub _newtype ($caller, $name, $expr) {
     my $expr_str = $inner->to_string;
     no strict 'refs';
     *{"${caller}::${name}"} = sub ($value) {
-        die "Typist: $name — value does not satisfy $expr_str\n"
-            unless $inner->contains($value);
+        if ($Typist::RUNTIME) {
+            die "Typist: $name — value does not satisfy $expr_str\n"
+                unless $inner->contains($value);
+        }
         bless \$value, $class_name;
     };
 

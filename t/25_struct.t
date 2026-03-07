@@ -116,10 +116,17 @@ subtest 'struct contains checks blessed type' => sub {
 
 # ── Runtime type validation ──────────────────
 
-subtest 'boundary type validation (always-on)' => sub {
+subtest 'boundary type validation (runtime)' => sub {
+    local $Typist::RUNTIME = 1;
     my $died = !eval { Person(name => "Alice", age => "not_a_number"); 1 };
-    ok $died, 'constructor rejects invalid type without -runtime';
+    ok $died, 'constructor rejects invalid type with runtime';
     like $@, qr/field 'age' expected Int/, 'error names the field and expected type';
+};
+
+subtest 'constructor skips type validation without runtime' => sub {
+    local $Typist::RUNTIME = 0;
+    my $p = eval { Person(name => "Alice", age => "not_a_number"); };
+    ok defined $p, 'constructor succeeds without runtime (type check skipped)';
 };
 
 # ── Generic struct ──────────────────────────────
@@ -134,7 +141,8 @@ subtest 'generic struct: construction' => sub {
     is $p->snd, "hi", 'snd accessor';
 };
 
-subtest 'generic struct: type_args inferred' => sub {
+subtest 'generic struct: type_args inferred (runtime)' => sub {
+    local $Typist::RUNTIME = 1;
     my $p = Pair(fst => 42, snd => "hi");
     ok $p->{_type_args}, 'type_args recorded';
     is scalar @{$p->{_type_args}}, 2, 'two type args';
@@ -142,7 +150,14 @@ subtest 'generic struct: type_args inferred' => sub {
     is $p->{_type_args}[1]->name, 'Str', 'U = Str';
 };
 
-subtest 'generic struct: derive preserves type_args' => sub {
+subtest 'generic struct: no type_args without runtime' => sub {
+    local $Typist::RUNTIME = 0;
+    my $p = Pair(fst => 42, snd => "hi");
+    ok !$p->{_type_args}, 'no type_args in static-only mode';
+};
+
+subtest 'generic struct: derive preserves type_args (runtime)' => sub {
+    local $Typist::RUNTIME = 1;
     my $p1 = Pair(fst => 42, snd => "hello");
     my $p2 = Pair::derive($p1, snd => "world");
     is $p2->fst, 42,      'fst preserved';
@@ -235,7 +250,8 @@ subtest 'bounded struct: Double satisfies Num bound' => sub {
     ok defined $nb, 'NumBox(val => 3.14) succeeds';
 };
 
-subtest 'bounded struct: Str violates Num bound' => sub {
+subtest 'bounded struct: Str violates Num bound (runtime)' => sub {
+    local $Typist::RUNTIME = 1;
     my $died = !eval { NumBox(val => "hello"); 1 };
     ok $died, 'dies when bound violated';
     like $@, qr/does not satisfy bound Num for T/, 'error message';
@@ -258,7 +274,8 @@ subtest 'typeclass struct: Int has Show instance' => sub {
     ok defined $sb, 'ShowBox(val => 42) succeeds';
 };
 
-subtest 'typeclass struct: Str has no Show instance' => sub {
+subtest 'typeclass struct: Str has no Show instance (runtime)' => sub {
+    local $Typist::RUNTIME = 1;
     my $died = !eval { ShowBox(val => "hello"); 1 };
     ok $died, 'dies when typeclass constraint violated';
     like $@, qr/no instance of Show for Str/, 'error message';
@@ -275,7 +292,8 @@ subtest 'mixed params: bounded satisfied' => sub {
     is $m->extra, "anything", 'extra accessor';
 };
 
-subtest 'mixed params: bounded violated' => sub {
+subtest 'mixed params: bounded violated (runtime)' => sub {
+    local $Typist::RUNTIME = 1;
     my $died = !eval { Mixed(val => "hello", extra => 1); 1 };
     ok $died, 'dies when bounded param violated';
     like $@, qr/does not satisfy bound Num for T/, 'error message';
