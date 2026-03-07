@@ -1,2 +1,0 @@
-[pygments.lexers]
-typist = pygments_typist:TypistLexer

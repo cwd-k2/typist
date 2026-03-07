@@ -1,8 +1,0 @@
-pygments_typist.py
-pyproject.toml
-pygments_typist.egg-info/PKG-INFO
-pygments_typist.egg-info/SOURCES.txt
-pygments_typist.egg-info/dependency_links.txt
-pygments_typist.egg-info/entry_points.txt
-pygments_typist.egg-info/requires.txt
-pygments_typist.egg-info/top_level.txt

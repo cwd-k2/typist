@@ -9,6 +9,14 @@ editors/vscode/node_modules/
 editors/vscode/out/
 editors/vscode/*.vsix
 
+# Python / Pygments build artifacts
+*.egg-info/
+build/
+__pycache__/
+
+# MkDocs build output
+site/
+
 # ExtUtils::MakeMaker build artifacts
 Makefile
 Makefile.old
