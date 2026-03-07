@@ -48,7 +48,8 @@ my %SEVERITY = (
 #   workspace_registry => Typist::Registry instance with external typedefs
 #   file               => filename for diagnostics
 sub analyze ($class, $source, %opts) {
-    Typist::Subtype->clear_cache;
+    # Subtype cache is cleared by Workspace on type definition changes.
+    # No need to clear per-analysis — refaddr-based keys prevent stale hits.
 
     my $extracted = $opts{extracted} // Typist::Static::Extractor->extract($source);
     my $registry  = Typist::Registry->new;
