@@ -88,7 +88,7 @@ description = "Run a single benchmark (e.g. mise run bench:quick bench/01_parser
 run = "carton exec -- perl"
 
 [tasks."bench:phases"]
-description = "Run analyzer phase breakdown benchmark"
+description = "Run analyzer phase breakdown benchmark across corpus profiles"
 run = "carton exec -- perl bench/09_analyzer_phases.pl"
 
 [tasks."vscode:deps"]
