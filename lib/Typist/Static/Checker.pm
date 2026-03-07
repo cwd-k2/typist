@@ -114,9 +114,13 @@ sub _check_functions :TIMED(functions) ($self) {
             ($sig->{returns} ? ($sig->{returns}) : ()),
         );
 
-        my %seen_free = $self->_collect_signature_free_vars(@signature_types);
+        my %seen_free;
+        for my $type (@signature_types) {
+            $seen_free{$_} = 1 for $self->_free_vars_of($type);
+            my @unknown_aliases = $self->_unknown_aliases_in_type($type);
+            $self->_report_unknown_aliases(\@unknown_aliases, $fqn, $fn_line, $fn_file, $fn_col);
+        }
 
-        # Check each free variable is declared
         for my $var (sort keys %seen_free) {
             unless ($declared{$var}) {
                 $self->{errors}->collect(
@@ -135,8 +139,6 @@ sub _check_functions :TIMED(functions) ($self) {
 
         $self->_check_function_bounds($sig, $fqn, $fn_line, $fn_file, $fn_col);
 
-        $self->_check_type_wellformed($_, $fqn) for @signature_types;
-
         $self->_check_function_kinds($sig, $fqn, $fn_line, $fn_file, $fn_col);
         accumulate_timing($timings, 'functions.total', $t_sig);
     }
@@ -144,26 +146,8 @@ sub _check_functions :TIMED(functions) ($self) {
 
 # ── Type Well-formedness ────────────────────────
 
-sub _check_type_wellformed :TIMED_ACC(functions.type_wellformed) ($self, $type, $context) {
+sub _unknown_aliases_in_type :TIMED_ACC(functions.type_wellformed) ($self, $type) {
     return unless $type;
-
-    my @unknown_aliases = $self->_unknown_aliases_in_type($type);
-    return unless @unknown_aliases;
-
-    my ($ctx_line, $ctx_file, $ctx_col) = $self->_fn_line($context);
-
-    for my $name (@unknown_aliases) {
-        $self->{errors}->collect(
-            kind    => 'UnknownType',
-            message => "Type alias '$name' is not defined (in $context)",
-            file    => $ctx_file,
-            line    => $ctx_line,
-            col     => $ctx_col,
-        );
-    }
-}
-
-sub _unknown_aliases_in_type ($self, $type) {
     my $cache_key = ref $type ? refaddr($type) : "$type";
     if (exists $self->{_type_wf_cache}{$cache_key}) {
         return $self->{_type_wf_cache}{$cache_key}->@*;
@@ -173,6 +157,19 @@ sub _unknown_aliases_in_type ($self, $type) {
     my @unknown = $info->{unknown_aliases}->@*;
     $self->{_type_wf_cache}{$cache_key} = \@unknown;
     return @unknown;
+}
+
+sub _report_unknown_aliases ($self, $unknown_aliases, $context, $ctx_line, $ctx_file, $ctx_col) {
+    return unless $unknown_aliases->@*;
+    for my $name ($unknown_aliases->@*) {
+        $self->{errors}->collect(
+            kind    => 'UnknownType',
+            message => "Type alias '$name' is not defined (in $context)",
+            file    => $ctx_file,
+            line    => $ctx_line,
+            col     => $ctx_col,
+        );
+    }
 }
 
 sub _free_vars_of :TIMED_ACC(functions.free_vars) ($self, $type) {
@@ -399,15 +396,6 @@ sub _check_protocols :TIMED(protocols) ($self) {
     }
 }
 
-sub _collect_signature_free_vars ($self, @types) {
-    my %seen_free;
-    for my $ptype (@types) {
-        $seen_free{$_} = 1 for $self->_free_vars_of($ptype);
-    }
-
-    return %seen_free;
-}
-
 sub _check_function_bounds :TIMED_ACC(functions.bounds) ($self, $sig, $fqn, $fn_line, $fn_file, $fn_col) {
     for my $g (($sig->{generics} // [])->@*) {
         next unless ref $g eq 'HASH' && $g->{bound_expr};
@@ -421,7 +409,8 @@ sub _check_function_bounds :TIMED_ACC(functions.bounds) ($self, $sig, $fqn, $fn_
                 col     => $fn_col,
             );
         } elsif ($bound_type) {
-            $self->_check_type_wellformed($bound_type, $fqn);
+            my @unknown_aliases = $self->_unknown_aliases_in_type($bound_type);
+            $self->_report_unknown_aliases(\@unknown_aliases, $fqn, $fn_line, $fn_file, $fn_col);
         }
     }
 }
