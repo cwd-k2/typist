@@ -206,6 +206,15 @@ sub _word_range_at ($self, $line, $col) {
         }
     }
 
+    # Handle cursor positioned on sigil ($, @, %)
+    if ($start == $end && $col < $len && substr($text, $col, 1) =~ /[\$\@%]/) {
+        $end = $col + 1;
+        while ($end < $len && substr($text, $end, 1) =~ /\w/) {
+            $end++;
+        }
+        $start = $col;
+    }
+
     return undef if $start == $end;
 
     my $word = substr($text, $start, $end - $start);

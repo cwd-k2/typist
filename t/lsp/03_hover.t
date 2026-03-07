@@ -229,6 +229,31 @@ PERL
     like $hover->{result}{contents}{value}, qr/\*inferred\*/, 'shows inferred annotation';
 };
 
+# ── Hover on variable at sigil position ──────────
+
+subtest 'hover works when cursor is on sigil ($)' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub greet :sig((Str) -> Str) ($name) { "Hello, $name" }
+my $result = greet("Alice");
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 2, character => 3 },  # on '$' of '$result'
+        }),
+    ));
+
+    my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $hover, 'got hover response';
+    ok $hover->{result}, 'hover has result for sigil position';
+    like $hover->{result}{contents}{value}, qr/\$result: Str/, 'shows variable type from sigil';
+};
+
 # ── Hover on typeclass with superclass ──────────
 
 subtest 'hover shows typeclass with var_spec and methods' => sub {
