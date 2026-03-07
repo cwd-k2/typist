@@ -137,7 +137,7 @@ for my $file (@files) {
             next if ($d->{severity} // 4) >= 4;  # skip hints
             push @all_diag_issues, {
                 file     => $short,
-                line     => $d->{range}{start}{line} + 1,
+                line     => ($d->{range}{start}{line} // 0) + 1,
                 severity => $d->{severity},
                 kind     => ($d->{code} // '?'),
                 message  => $d->{message},
