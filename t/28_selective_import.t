@@ -28,17 +28,16 @@ PERL
     unlike $out, qr/deprecated/, 'no deprecation warning';
 };
 
-subtest 'use Typist::DSL qw(optional Int) — optional is importable' => sub {
+subtest 'optional is exported from Typist' => sub {
     my $out = run_perl(<<'PERL');
 use v5.40;
 use lib 'lib';
 use Typist;
-use Typist::DSL qw(optional Int);
-my $o = optional(Int);
-print ref($o), "\n";
+my @pair = optional(name => 'Str');
+print "$pair[0]\n";
 PERL
 
-    like $out, qr/Typist::DSL::Optional/, 'optional() available via Typist::DSL';
+    like $out, qr/name\?/, 'optional returns key with ? suffix';
 };
 
 # ── Rejected path: use Typist qw(...) ──

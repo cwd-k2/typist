@@ -207,14 +207,14 @@ subtest 'Func with DSL types' => sub {
 
 # ── optional() ─────────────────────────────────
 
-subtest 'optional marker class' => sub {
-    my $opt = optional(Str);
-    isa_ok $opt, 'Typist::DSL::Optional';
-    ok $opt->inner->equals(Str), 'inner type is Str';
+subtest 'optional returns key? pair' => sub {
+    my @pair = optional(email => Str);
+    is $pair[0], 'email?', 'key gets ? suffix';
+    ok $pair[1]->equals(Str), 'value is the type';
 };
 
 subtest 'optional in Record constructor' => sub {
-    my $t = Record(name => Str, email => optional(Str), age => Int);
+    my $t = Record(name => Str, optional(email => Str), age => Int);
     my %r = $t->required_fields;
     my %o = $t->optional_fields;
     ok exists $r{name}, 'name is required';
@@ -224,11 +224,10 @@ subtest 'optional in Record constructor' => sub {
     ok !exists $r{email}, 'email not in required';
 };
 
-subtest 'optional with string coerce' => sub {
-    my $opt = optional('Int');
-    isa_ok $opt, 'Typist::DSL::Optional';
-    ok $opt->inner->is_atom, 'coerced string to atom type';
-    is $opt->inner->name, 'Int', 'inner is Int';
+subtest 'optional with string type' => sub {
+    my @pair = optional(age => 'Int');
+    is $pair[0], 'age?', 'key gets ? suffix';
+    is $pair[1], 'Int',  'string type preserved';
 };
 
 # ── Array / Hash list types ───────────────────────

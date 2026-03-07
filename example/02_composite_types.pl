@@ -65,7 +65,7 @@ say "Config debug=Str:  $@" if $@;
 # struct Name => (fields...) declares a nominal type.
 # Values are blessed immutable objects with constructors and accessors.
 
-struct Person2 => (name => Str, age => Int, email => optional(Str));
+struct Person2 => (name => 'Str', age => 'Int', optional(email => 'Str'));
 
 my $bob = Person2(name => "Bob", age => 25);
 say "struct: ${\$bob->name}, age ${\$bob->age}";

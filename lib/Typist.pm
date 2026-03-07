@@ -106,6 +106,7 @@ sub import ($class, @args) {
     *{"${caller}::handle"}    = \&Typist::EffectDef::_handle;
     *{"${caller}::protocol"}  = \&Typist::EffectDef::_make_protocol;
     *{"${caller}::declare"}   = \&Typist::External::_declare;
+    *{"${caller}::optional"}  = sub ($name, $type) { ("${name}?", $type) };
 
 }
 

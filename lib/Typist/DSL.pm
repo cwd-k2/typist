@@ -153,10 +153,7 @@ sub Alias :prototype($) {
 
 # ── Optional Field Marker ──────────────────────
 
-sub optional :prototype($) ($type) {
-    $type = Typist::Type->coerce($type) unless ref $type && $type->isa('Typist::Type');
-    Typist::DSL::Optional->new($type);
-}
+sub optional :prototype($$) ($name, $type) { ("${name}?", $type) }
 
 # ── Effect Types ────────────────────────────────
 
@@ -168,16 +165,6 @@ sub Eff :prototype($) {
     my ($row) = @_;
     Typist::Type::Eff->new($row);
 }
-
-# ── Optional Marker Class ──────────────────────
-
-package Typist::DSL::Optional;
-use v5.40;
-use Scalar::Util 'blessed';
-
-sub new ($class, $inner) { bless +{ inner => $inner }, $class }
-sub inner ($self) { $self->{inner} }
-sub is_optional { 1 }
 
 1;
 

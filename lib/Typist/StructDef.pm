@@ -1,8 +1,6 @@
 package Typist::StructDef;
 use v5.40;
 
-use Scalar::Util 'blessed';
-
 our $VERSION = '0.01';
 
 # Nominal struct type definitions.
@@ -39,11 +37,10 @@ sub _struct ($name_spec, $caller, @field_pairs) {
 
     for my $key (keys %field_spec) {
         my $val = $field_spec{$key};
-        if (blessed($val) && $val->isa('Typist::DSL::Optional')) {
-            $optional_types{$key} = $val->inner;
+        if ($key =~ /\A(.+)\?\z/) {
+            $optional_types{$1} = Typist::Type->coerce($val);
         } else {
-            my $type = Typist::Type->coerce($val);
-            $required_types{$key} = $type;
+            $required_types{$key} = Typist::Type->coerce($val);
         }
     }
 

@@ -250,7 +250,7 @@ sub _extract_enums ($class, $stmts, $result) {
 
 # ── Struct Extraction ─────────────────────────
 #
-# struct Name => (field => Type, field2 => optional(Type), ...);
+# struct Name => (field => 'Type', optional(field2 => 'Type'), ...);
 
 sub _extract_structs ($class, $stmts, $result) {
     for my $stmt (@$stmts) {
@@ -306,6 +306,22 @@ sub _extract_struct_fields ($class, $list, $fields, $optional_fields) {
             }
             last if $sc[$i]->isa('PPI::Token::Structure') && $sc[$i]->content eq ';';
 
+            # Check for optional(field => 'Type')
+            if ($sc[$i]->isa('PPI::Token::Word') && $sc[$i]->content eq 'optional'
+                && $i + 1 <= $#sc && $sc[$i + 1]->isa('PPI::Structure::List'))
+            {
+                my $list_content = $class->_list_content($sc[$i + 1]);
+                if (defined $list_content && $list_content =~ /\A(\w+)\s*(?:=>|,)\s*(.*)\z/s) {
+                    my ($fname, $ftype) = ($1, $2);
+                    $ftype =~ s/\A'(.*)'\z/$1/s;   # strip quotes
+                    $ftype =~ s/\A"(.*)"\z/$1/s;
+                    $fields->{$fname} = length($ftype) ? $ftype : 'Any';
+                    push @$optional_fields, $fname;
+                }
+                $i += 2;
+                next;
+            }
+
             # Expect field name (Word)
             last unless $sc[$i]->isa('PPI::Token::Word');
             my $field_name = $sc[$i]->content;
@@ -318,16 +334,8 @@ sub _extract_struct_fields ($class, $list, $fields, $optional_fields) {
             $i++;
             last unless $i <= $#sc;
 
-            # Check for optional(Type)
-            if ($sc[$i]->isa('PPI::Token::Word') && $sc[$i]->content eq 'optional'
-                && $i + 1 <= $#sc && $sc[$i + 1]->isa('PPI::Structure::List'))
+            # Collect type expression tokens until comma or end
             {
-                my $inner = $class->_list_content($sc[$i + 1]);
-                $fields->{$field_name} = $inner // 'Any';
-                push @$optional_fields, $field_name;
-                $i += 2;
-            } else {
-                # Collect type expression tokens until comma or end
                 my @type_tokens;
                 while ($i <= $#sc) {
                     last if $sc[$i]->isa('PPI::Token::Operator') && $sc[$i]->content eq ',';

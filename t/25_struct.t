@@ -58,7 +58,7 @@ subtest 'struct rejects unknown fields' => sub {
 
 # ── Optional fields ──────────────────────────
 
-struct Config => (host => Str, port => Int, debug => optional(Bool));
+struct Config => (host => Str, port => Int, optional(debug => Bool));
 
 subtest 'struct with optional field' => sub {
     my $c1 = Config(host => "localhost", port => 8080);

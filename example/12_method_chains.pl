@@ -14,20 +14,20 @@ use Typist::DSL;
 # ── Setup: types ─────────────────────────────────────────
 
 BEGIN {
-    newtype ProductId => Int;
+    newtype ProductId => 'Int';
 
-    struct Product => (name => Str, price => Int);
+    struct Product => (name => 'Str', price => 'Int');
 
     struct Order => (
         id      => 'ProductId',
         product => 'Product',
-        qty     => Int,
+        qty     => 'Int',
     );
 
     struct Customer => (
-        name  => Str,
-        age   => Int,
-        email => optional(Str),
+        name  => 'Str',
+        age   => 'Int',
+        optional(email => 'Str'),
     );
 }
 

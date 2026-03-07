@@ -31,7 +31,7 @@ subtest 'extractor handles optional fields' => sub {
     my $source = <<'PERL';
 use Typist;
 use Typist::DSL;
-struct Config => (host => Str, port => Int, debug => optional(Bool));
+struct Config => (host => 'Str', port => 'Int', optional(debug => 'Bool'));
 PERL
     my $extracted = Typist::Static::Extractor->extract($source);
     ok exists $extracted->{structs}{Config}, 'Config struct extracted';
@@ -329,7 +329,7 @@ subtest 'struct constructor: optional field omission OK' => sub {
 package main;
 use Typist;
 use Typist::DSL;
-struct Config => (host => Str, port => Int, debug => optional(Bool));
+struct Config => (host => 'Str', port => 'Int', optional(debug => 'Bool'));
 sub test :sig(() -> Void) () {
     my $c = Config(host => "localhost", port => 8080);
 }
@@ -342,7 +342,7 @@ subtest 'struct constructor: optional field type mismatch' => sub {
 package main;
 use Typist;
 use Typist::DSL;
-struct Config => (host => Str, port => Int, debug => optional(Bool));
+struct Config => (host => 'Str', port => 'Int', optional(debug => 'Bool'));
 sub test :sig(() -> Void) () {
     my $c = Config(host => "localhost", port => 8080, debug => "yes");
 }

@@ -835,7 +835,7 @@ subtest 'hover shows optional struct field type' => sub {
 package Contact;
 use v5.40;
 use Typist;
-struct Customer => (name => Str, phone => optional(Str));
+struct Customer => (name => 'Str', optional(phone => 'Str'));
 1;
 PERL
     close $fh;
@@ -1411,7 +1411,7 @@ subtest 'hover narrows optional accessor inside defined() guard' => sub {
 package Customer;
 use v5.40;
 use Typist;
-struct Customer => (name => Str, phone => optional(Str));
+struct Customer => (name => 'Str', optional(phone => 'Str'));
 1;
 PERL
     close $fh;
