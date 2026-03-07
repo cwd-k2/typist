@@ -9,7 +9,11 @@ use v5.40;
 use Typist;
 
 BEGIN {
-    struct Person => (name => 'Str', age => 'Int', optional(email => 'Str'));
+    struct Person => (
+        name => 'Str',
+        age  => 'Int',
+        optional(email => 'Str'),
+    );
 }
 
 sub greet :sig((Person) -> Str) ($person) {
