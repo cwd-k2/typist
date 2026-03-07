@@ -6,6 +6,12 @@ our $VERSION = '0.01';
 use Typist::Error;
 
 # Global singleton error buffer for CHECK-phase validation.
+#
+# DESIGN NOTE: The global state here is intentional. This module is used
+# exclusively in the CHECK phase (Typist.pm), which is inherently a
+# singleton execution context. For LSP/parallel use, Checker already
+# supports dependency injection via the `errors` parameter (accepting
+# an Error::Collector instance instead of this global). See Checker.pm:19.
 
 my @ERRORS;
 

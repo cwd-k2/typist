@@ -54,7 +54,7 @@ sub analyze ($self) {
         );
         $self->{type_env}->build;
     }
-    Typist::Static::Infer->clear_callback_params;
+    local $Typist::Static::Infer::_CALLBACK_CTX = { params => [], seen => {} };
     $self->check_variables;
     $self->check_assignments;
     $self->check_call_sites;

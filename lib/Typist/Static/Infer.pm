@@ -32,16 +32,12 @@ my %NUMERIC_ATOM = map { $_ => 1 } qw(Bool Int Double Num);
 # During inference, _enrich_env_with_params records callback parameter
 # bindings here.  TypeChecker drains this after analysis for symbol index.
 #
-# NOTE: These are global (class-level) state, cleared at the start of each
-# analysis pass via clear_callback_params(). This is safe because:
-#   - Perl LSP server is single-threaded (sequential message dispatch)
-#   - Analyzer->analyze() calls clear_callback_params() before analysis
+# Callback parameter context: scoped via `local` in Analyzer->analyze().
+# Reentrant-safe — each analysis pass gets its own context.
+our $_CALLBACK_CTX = { params => [], seen => {} };
 
-my @_CALLBACK_PARAMS;
-my %_CALLBACK_PARAMS_SEEN;
-
-sub clear_callback_params ($class) { @_CALLBACK_PARAMS = (); %_CALLBACK_PARAMS_SEEN = () }
-sub callback_params       ($class) { [@_CALLBACK_PARAMS] }
+sub clear_callback_params ($class) { $_CALLBACK_CTX = { params => [], seen => {} } }
+sub callback_params       ($class) { [@{$_CALLBACK_CTX->{params}}] }
 
 # ── Public API ───────────────────────────────────
 
@@ -1841,7 +1837,7 @@ sub _infer_map_grep_sort ($word, $env, $expected = undef) {
         my $block_last  = $block->last_element;
         my $block_end   = $block_last ? $block_last->line_number : $block_line;
         my $dedup_key   = '$_:' . $block_line;
-        unless ($_CALLBACK_PARAMS_SEEN{$dedup_key}++) {
+        unless ($_CALLBACK_CTX->{seen}{$dedup_key}++) {
             my ($topic_line, $topic_col) = ($block_line, $block->column_number + 2);
             my $magics = $block->find('PPI::Token::Magic');
             if ($magics) {
@@ -1852,7 +1848,7 @@ sub _infer_map_grep_sort ($word, $env, $expected = undef) {
                     }
                 }
             }
-            push @_CALLBACK_PARAMS, +{
+            push $_CALLBACK_CTX->{params}->@*, +{
                 name        => '$_',
                 type        => $elem_type,
                 line        => $topic_line,
@@ -2065,8 +2061,8 @@ sub _enrich_env_with_params ($env, $sig_node, $expected_types, $block = undef) {
         # Record for LSP hover/inlay hints (skip Any params — no useful info)
         if ($block && !($type->is_atom && $type->name eq 'Any')) {
             my $dedup_key = $names->[$i] . ':' . $sig_node->line_number;
-            next if $_CALLBACK_PARAMS_SEEN{$dedup_key}++;
-            push @_CALLBACK_PARAMS, +{
+            next if $_CALLBACK_CTX->{seen}{$dedup_key}++;
+            push $_CALLBACK_CTX->{params}->@*, +{
                 name        => $names->[$i],
                 type        => $type,
                 line        => $sig_node->line_number,

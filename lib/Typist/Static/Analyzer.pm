@@ -86,7 +86,8 @@ sub analyze ($class, $source, %opts) {
     $type_env->build;
 
     # Phase 4: File-level checks
-    Typist::Static::Infer->clear_callback_params;
+    # Scope callback param collector — reentrant-safe via local
+    local $Typist::Static::Infer::_CALLBACK_CTX = { params => [], seen => {} };
     my $type_checker = Typist::Static::TypeChecker->new(
         type_env      => $type_env,
         errors        => $errors,
