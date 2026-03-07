@@ -1696,10 +1696,10 @@ sub _chase_subscript_chain ($type, $start_node, $env = undef) {
             } else {
                 $type = $type->returns;
             }
-            # Naked type vars (e.g. B from HKT foldr) can't be resolved → bail out.
-            # But parameterized types with free vars (e.g. Result[B]) are kept:
+            # Parameterized types with free vars (e.g. Result[B]) are kept:
             # their outer structure is concrete and useful for inference.
-            return undef if $type->is_var;
+            # Naked type vars (e.g. A from generic callbacks) are also kept —
+            # TypeChecker skips type-var checks via _has_type_var.
             $node = $next->snext_sibling;
             next;
         }
