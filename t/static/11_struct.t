@@ -14,8 +14,7 @@ use Typist::Error;
 subtest 'extractor recognizes struct declarations' => sub {
     my $source = <<'PERL';
 use Typist;
-use Typist::DSL;
-struct Person => (name => Str, age => Int);
+struct Person => (name => 'Str', age => 'Int');
 PERL
     my $extracted = Typist::Static::Extractor->extract($source);
     ok exists $extracted->{structs}{Person}, 'Person struct extracted';
@@ -30,7 +29,6 @@ PERL
 subtest 'extractor handles optional fields' => sub {
     my $source = <<'PERL';
 use Typist;
-use Typist::DSL;
 struct Config => (host => 'Str', port => 'Int', optional(debug => 'Bool'));
 PERL
     my $extracted = Typist::Static::Extractor->extract($source);
@@ -48,8 +46,7 @@ PERL
 subtest 'registration creates struct type and constructor' => sub {
     my $source = <<'PERL';
 use Typist;
-use Typist::DSL;
-struct Person => (name => Str, age => Int);
+struct Person => (name => 'Str', age => 'Int');
 PERL
     my $extracted = Typist::Static::Extractor->extract($source);
     my $registry  = Typist::Registry->new;
@@ -91,8 +88,7 @@ subtest 'infer struct constructor return type' => sub {
     my $source = <<'PERL';
 package main;
 use Typist;
-use Typist::DSL;
-struct Person => (name => Str, age => Int);
+struct Person => (name => 'Str', age => 'Int');
 sub test :sig((Person) -> Void) ($p) {
     my $x = $p;
 }
@@ -122,8 +118,7 @@ subtest 'infer struct accessor type' => sub {
     my $source = <<'PERL';
 package main;
 use Typist;
-use Typist::DSL;
-struct Person => (name => Str, age => Int);
+struct Person => (name => 'Str', age => 'Int');
 PERL
     my $extracted = Typist::Static::Extractor->extract($source);
     my $registry  = Typist::Registry->new;
@@ -149,8 +144,7 @@ subtest 'infer struct with() return type' => sub {
     my $source = <<'PERL';
 package main;
 use Typist;
-use Typist::DSL;
-struct Person => (name => Str, age => Int);
+struct Person => (name => 'Str', age => 'Int');
 PERL
     my $extracted = Typist::Static::Extractor->extract($source);
     my $registry  = Typist::Registry->new;
@@ -176,8 +170,7 @@ subtest 'infer chained accessor: Person(...)->name' => sub {
     my $source = <<'PERL';
 package main;
 use Typist;
-use Typist::DSL;
-struct Person => (name => Str, age => Int);
+struct Person => (name => 'Str', age => 'Int');
 PERL
     my $extracted = Typist::Static::Extractor->extract($source);
     my $registry  = Typist::Registry->new;
@@ -203,8 +196,7 @@ subtest 'infer accessor on cross-package function returning alias' => sub {
     my $source = <<'PERL';
 package TestPkg;
 use Typist;
-use Typist::DSL;
-struct Person => (name => Str, age => Int);
+struct Person => (name => 'Str', age => 'Int');
 sub find :sig((Int) -> Person) ($id) { Person(name => "x", age => $id) }
 PERL
     my $extracted = Typist::Static::Extractor->extract($source);
@@ -234,8 +226,7 @@ subtest 'infer accessor on alias-typed variable' => sub {
     my $source = <<'PERL';
 package TestPkg;
 use Typist;
-use Typist::DSL;
-struct Person => (name => Str, age => Int);
+struct Person => (name => 'Str', age => 'Int');
 sub find :sig((Int) -> Person) ($id) { Person(name => "x", age => $id) }
 PERL
     my $extracted = Typist::Static::Extractor->extract($source);
@@ -273,8 +264,7 @@ subtest 'struct constructor: correct usage — no errors' => sub {
     my $errs = _struct_type_errors(<<'PERL');
 package main;
 use Typist;
-use Typist::DSL;
-struct Person => (name => Str, age => Int);
+struct Person => (name => 'Str', age => 'Int');
 sub test :sig(() -> Void) () {
     my $p = Person(name => "Alice", age => 30);
 }
@@ -286,8 +276,7 @@ subtest 'struct constructor: field type mismatch' => sub {
     my $errs = _struct_type_errors(<<'PERL');
 package main;
 use Typist;
-use Typist::DSL;
-struct Person => (name => Str, age => Int);
+struct Person => (name => 'Str', age => 'Int');
 sub test :sig(() -> Void) () {
     my $p = Person(name => 42, age => 30);
 }
@@ -300,8 +289,7 @@ subtest 'struct constructor: missing required field' => sub {
     my $errs = _struct_type_errors(<<'PERL');
 package main;
 use Typist;
-use Typist::DSL;
-struct Person => (name => Str, age => Int);
+struct Person => (name => 'Str', age => 'Int');
 sub test :sig(() -> Void) () {
     my $p = Person(name => "Alice");
 }
@@ -314,8 +302,7 @@ subtest 'struct constructor: unknown field' => sub {
     my $errs = _struct_type_errors(<<'PERL');
 package main;
 use Typist;
-use Typist::DSL;
-struct Person => (name => Str, age => Int);
+struct Person => (name => 'Str', age => 'Int');
 sub test :sig(() -> Void) () {
     my $p = Person(name => "Alice", age => 30, hair => "brown");
 }
@@ -328,7 +315,6 @@ subtest 'struct constructor: optional field omission OK' => sub {
     my $errs = _struct_type_errors(<<'PERL');
 package main;
 use Typist;
-use Typist::DSL;
 struct Config => (host => 'Str', port => 'Int', optional(debug => 'Bool'));
 sub test :sig(() -> Void) () {
     my $c = Config(host => "localhost", port => 8080);
@@ -341,7 +327,6 @@ subtest 'struct constructor: optional field type mismatch' => sub {
     my $errs = _struct_type_errors(<<'PERL');
 package main;
 use Typist;
-use Typist::DSL;
 struct Config => (host => 'Str', port => 'Int', optional(debug => 'Bool'));
 sub test :sig(() -> Void) () {
     my $c = Config(host => "localhost", port => 8080, debug => "yes");
@@ -355,8 +340,7 @@ subtest 'struct constructor: expression value inference' => sub {
     my $errs = _struct_type_errors(<<'PERL');
 package main;
 use Typist;
-use Typist::DSL;
-struct Person => (name => Str, age => Int);
+struct Person => (name => 'Str', age => 'Int');
 sub test :sig(() -> Void) () {
     my $p = Person(name => "Alice", age => 1 + 2);
 }
@@ -369,7 +353,6 @@ PERL
 subtest 'extractor recognizes generic struct' => sub {
     my $source = <<'PERL';
 use Typist;
-use Typist::DSL;
 struct 'Pair[T, U]' => (fst => T, snd => U);
 PERL
     my $extracted = Typist::Static::Extractor->extract($source);
@@ -386,7 +369,6 @@ PERL
 subtest 'registration creates generic struct type' => sub {
     my $source = <<'PERL';
 use Typist;
-use Typist::DSL;
 struct 'Pair[T, U]' => (fst => T, snd => U);
 PERL
     my $extracted = Typist::Static::Extractor->extract($source);
@@ -414,7 +396,6 @@ subtest 'infer generic struct constructor return type' => sub {
     my $source = <<'PERL';
 package main;
 use Typist;
-use Typist::DSL;
 struct 'Pair[T, U]' => (fst => T, snd => U);
 PERL
     my $extracted = Typist::Static::Extractor->extract($source);
@@ -444,7 +425,6 @@ subtest 'infer generic struct accessor: Pair(fst => 42, snd => "hi")->fst' => su
     my $source = <<'PERL';
 package main;
 use Typist;
-use Typist::DSL;
 struct 'Pair[T, U]' => (fst => T, snd => U);
 PERL
     my $extracted = Typist::Static::Extractor->extract($source);
@@ -469,7 +449,6 @@ subtest 'infer generic struct accessor on variable' => sub {
     my $source = <<'PERL';
 package main;
 use Typist;
-use Typist::DSL;
 struct 'Pair[T, U]' => (fst => T, snd => U);
 PERL
     my $extracted = Typist::Static::Extractor->extract($source);
@@ -501,7 +480,6 @@ subtest 'generic struct constructor: no errors for correct usage' => sub {
     my $errs = _struct_type_errors(<<'PERL');
 package main;
 use Typist;
-use Typist::DSL;
 struct 'Pair[T, U]' => (fst => T, snd => U);
 sub test :sig(() -> Void) () {
     my $p = Pair(fst => 42, snd => "hello");
@@ -514,7 +492,6 @@ subtest 'generic struct constructor: missing required field' => sub {
     my $errs = _struct_type_errors(<<'PERL');
 package main;
 use Typist;
-use Typist::DSL;
 struct 'Pair[T, U]' => (fst => T, snd => U);
 sub test :sig(() -> Void) () {
     my $p = Pair(fst => 42);
@@ -528,7 +505,6 @@ subtest 'generic struct constructor: unknown field' => sub {
     my $errs = _struct_type_errors(<<'PERL');
 package main;
 use Typist;
-use Typist::DSL;
 struct 'Pair[T, U]' => (fst => T, snd => U);
 sub test :sig(() -> Void) () {
     my $p = Pair(fst => 42, snd => "hi", extra => 1);
@@ -543,7 +519,6 @@ PERL
 subtest 'generic struct subtype: Pair[Int, Str] <: Pair[Int, Str]' => sub {
     my $source = <<'PERL';
 use Typist;
-use Typist::DSL;
 struct 'Pair[T, U]' => (fst => T, snd => U);
 PERL
     my $extracted = Typist::Static::Extractor->extract($source);
@@ -560,7 +535,6 @@ PERL
 subtest 'generic struct subtype: Pair[Int, Str] </: Pair[Int, Int]' => sub {
     my $source = <<'PERL';
 use Typist;
-use Typist::DSL;
 struct 'Pair[T, U]' => (fst => T, snd => U);
 PERL
     my $extracted = Typist::Static::Extractor->extract($source);
@@ -579,7 +553,6 @@ use Typist::Type::Atom;
 subtest 'generic struct subtype: covariance (Bool <: Int)' => sub {
     my $source = <<'PERL';
 use Typist;
-use Typist::DSL;
 struct 'Box[T]' => (val => T);
 PERL
     my $extracted = Typist::Static::Extractor->extract($source);
@@ -599,7 +572,6 @@ subtest 'generic struct: return type annotation matches constructor' => sub {
     my $errs = _struct_type_errors(<<'PERL');
 package main;
 use Typist;
-use Typist::DSL;
 struct 'Box[T]' => (val => T);
 sub make_box :sig(() -> Box[Int]) () {
     Box(val => 42);
@@ -613,7 +585,6 @@ subtest 'generic struct: return type mismatch detected' => sub {
     my $errs = _struct_type_errors(<<'PERL');
 package main;
 use Typist;
-use Typist::DSL;
 struct 'Box[T]' => (val => T);
 sub make_box :sig(() -> Box[Str]) () {
     Box(val => 42);
@@ -626,7 +597,6 @@ subtest 'generic struct: param type annotation matches argument' => sub {
     my $errs = _struct_type_errors(<<'PERL');
 package main;
 use Typist;
-use Typist::DSL;
 struct 'Box[T]' => (val => T);
 sub unbox :sig((Box[Int]) -> Int) ($b) {
     $b->val;
@@ -641,7 +611,6 @@ PERL
 subtest 'extractor preserves type_param_specs with bounds' => sub {
     my $source = <<'PERL';
 use Typist;
-use Typist::DSL;
 struct 'NumBox[T: Num]' => (val => T);
 PERL
     my $extracted = Typist::Static::Extractor->extract($source);
@@ -655,7 +624,6 @@ PERL
 subtest 'extractor preserves mixed bounded/unbounded specs' => sub {
     my $source = <<'PERL';
 use Typist;
-use Typist::DSL;
 struct 'Mixed[T: Num, U]' => (val => T, extra => U);
 PERL
     my $extracted = Typist::Static::Extractor->extract($source);
@@ -669,7 +637,6 @@ PERL
 subtest 'registration creates bounded generics for constructor' => sub {
     my $source = <<'PERL';
 use Typist;
-use Typist::DSL;
 struct 'NumBox[T: Num]' => (val => T);
 PERL
     my $extracted = Typist::Static::Extractor->extract($source);
@@ -687,7 +654,6 @@ PERL
 subtest 'registration: bounded struct to_string shows bounds' => sub {
     my $source = <<'PERL';
 use Typist;
-use Typist::DSL;
 struct 'NumBox[T: Num]' => (val => T);
 PERL
     my $extracted = Typist::Static::Extractor->extract($source);
@@ -704,7 +670,6 @@ subtest 'bounded struct: Int satisfies Num — no errors' => sub {
     my $errs = _struct_type_errors(<<'PERL');
 package main;
 use Typist;
-use Typist::DSL;
 struct 'NumBox[T: Num]' => (val => T);
 sub test :sig(() -> Void) () {
     my $nb = NumBox(val => 42);
@@ -717,7 +682,6 @@ subtest 'bounded struct: Str violates Num bound' => sub {
     my $errs = _struct_type_errors(<<'PERL');
 package main;
 use Typist;
-use Typist::DSL;
 struct 'NumBox[T: Num]' => (val => T);
 sub test :sig(() -> Void) () {
     my $nb = NumBox(val => "hello");
@@ -731,9 +695,8 @@ subtest 'bounded struct: typeclass constraint violation' => sub {
     my $errs = _struct_type_errors(<<'PERL');
 package main;
 use Typist;
-use Typist::DSL;
 typeclass Show2 => (show2 => '(T) -> Str');
-instance Show2 => Int, (show2 => sub ($x) { "$x" });
+instance Show2 => 'Int', (show2 => sub ($x) { "$x" });
 struct 'ShowBox2[T: Show2]' => (val => T);
 sub test :sig(() -> Void) () {
     my $sb = ShowBox2(val => "hello");
@@ -747,9 +710,8 @@ subtest 'bounded struct: typeclass constraint satisfied' => sub {
     my $errs = _struct_type_errors(<<'PERL');
 package main;
 use Typist;
-use Typist::DSL;
 typeclass Show3 => (show3 => '(T) -> Str');
-instance Show3 => Int, (show3 => sub ($x) { "$x" });
+instance Show3 => 'Int', (show3 => sub ($x) { "$x" });
 struct 'ShowBox3[T: Show3]' => (val => T);
 sub test :sig(() -> Void) () {
     my $sb = ShowBox3(val => 42);

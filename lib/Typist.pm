@@ -28,7 +28,6 @@ use Typist::Registry;
 use Typist::Handler;
 use Typist::Error;
 use Typist::Error::Global;
-use Typist::DSL;
 
 # Deferred — loaded on first :sig() or in CHECK phase
 # Typist::Kind, Typist::KindChecker, Typist::Subtype, Typist::Inference
@@ -62,8 +61,8 @@ sub import ($class, @args) {
     for my $arg (@args) {
         if    ($arg eq '-runtime') { $Typist::RUNTIME = 1 }
         elsif ($arg =~ /\A[A-Z]/) {
-            die "Typist: DSL names cannot be imported via 'use Typist'. "
-              . "Use 'use Typist::DSL qw($arg)' instead (at $caller)\n";
+            die "Typist: unknown import argument '$arg'. "
+              . "Use :sig($arg) for type annotations (at $caller)\n";
         }
     }
 
@@ -117,7 +116,7 @@ sub import ($class, @args) {
     *{"${caller}::handle"}    = \&Typist::EffectDef::_handle;
     *{"${caller}::protocol"}  = \&Typist::EffectDef::_make_protocol;
     *{"${caller}::declare"}   = \&Typist::External::_declare;
-    *{"${caller}::optional"}  = \&Typist::DSL::optional;
+    *{"${caller}::optional"}  = sub :prototype($$) ($name, $type) { ("${name}?", $type) };
 
 }
 
@@ -202,11 +201,10 @@ Typist - A static-first type system for Perl 5
 =head1 SYNOPSIS
 
     use Typist;
-    use Typist::DSL;
 
     # Type aliases
     BEGIN {
-        typedef Name => Str;
+        typedef Name => 'Str';
     }
 
     # Typed variables
@@ -237,10 +235,10 @@ The following are exported into the caller's namespace:
 
 =head2 typedef
 
-    typedef Name => Str;
+    typedef Name => 'Str';
 
 Define a type alias. The right-hand side is a type expression string
-or a L<Typist::Type> object.
+(parsed via C<< Typist::Type->coerce >>).
 
 =head2 newtype
 
@@ -295,7 +293,7 @@ qualified dispatch subs into the caller's namespace.
 
 =head2 instance
 
-    instance Show => Int, +{ show => sub ($x) { "$x" } };
+    instance Show => 'Int', +{ show => sub ($x) { "$x" } };
 
 Provide a type class instance. Validates method completeness
 against the class definition and checks superclass instances.
@@ -344,8 +342,6 @@ provides diagnostics).
 =back
 
 =head1 SEE ALSO
-
-L<Typist::DSL> for type constructors and DSL syntax.
 
 See F<docs/type-system.md> and F<docs/architecture.md> for detailed reference.
 

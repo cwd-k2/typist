@@ -37,14 +37,6 @@ our %EXPORT_TAGS = (
     internal => [qw(TVar Alias Row Eff Func)],
 );
 
-sub export_map ($class) {
-    state $map = do {
-        no strict 'refs';
-        +{ map { $_ => \&{"Typist::DSL::$_"} } @EXPORT, @EXPORT_OK };
-    };
-    $map;
-}
-
 # ── Atom Constants ──────────────────────────────
 
 use constant Int    => Typist::Type::Atom->new('Int');
@@ -172,7 +164,7 @@ __END__
 
 =head1 NAME
 
-Typist::DSL - Type constructors and operator overloading for Typist
+Typist::DSL - Type constructors for tests (internal, not user-facing)
 
 =head1 SYNOPSIS
 

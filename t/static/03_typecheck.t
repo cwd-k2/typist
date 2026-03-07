@@ -1703,7 +1703,6 @@ subtest 'typeclass constraint: satisfied' => sub {
 package main;
 use v5.40;
 use Typist;
-use Typist::DSL;
 typeclass Show => (T => +{ show => '(T) -> Str' });
 instance Show => 'Int', +{ show => sub ($x) { "$x" } };
 sub show_it :sig(<T: Show>(T) -> Str) ($x) { show($x) }
@@ -1719,7 +1718,6 @@ subtest 'typeclass constraint: violation' => sub {
 package main;
 use v5.40;
 use Typist;
-use Typist::DSL;
 typeclass Show => (T => +{ show => '(T) -> Str' });
 instance Show => 'Int', +{ show => sub ($x) { "$x" } };
 sub show_it :sig(<T: Show>(T) -> Str) ($x) { show($x) }
@@ -1737,7 +1735,6 @@ subtest 'typeclass constraint: multiple constraints' => sub {
 package main;
 use v5.40;
 use Typist;
-use Typist::DSL;
 typeclass Show => (T => +{ show => '(T) -> Str' });
 typeclass Eq   => (T => +{ eq   => '(T, T) -> Bool' });
 instance Show => 'Int', +{ show => sub ($x) { "$x" } };
@@ -1755,7 +1752,6 @@ subtest 'typeclass constraint: one of multiple missing' => sub {
 package main;
 use v5.40;
 use Typist;
-use Typist::DSL;
 typeclass Show => (T => +{ show => '(T) -> Str' });
 typeclass Eq   => (T => +{ eq   => '(T, T) -> Bool' });
 instance Eq   => 'Int', +{ eq   => sub ($a, $b) { $a == $b } };

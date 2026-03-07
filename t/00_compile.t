@@ -32,7 +32,6 @@ my @modules = qw(
     Typist::Static::Checker
     Typist::Error
     Typist::Error::Global
-    Typist::DSL
     Typist::Tie::Scalar
     Typist::Static::Infer
     Typist::Static::Extractor

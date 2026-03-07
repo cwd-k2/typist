@@ -1,6 +1,6 @@
 use v5.40;
 use Test::More;
-use lib 'lib';
+use lib 'lib', 't/lib';
 
 use Typist::Parser;
 use Typist::Subtype;

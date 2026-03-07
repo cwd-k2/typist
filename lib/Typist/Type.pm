@@ -74,10 +74,8 @@ Typist::Type - Abstract base class for all type objects
     # Coerce a string into a type object
     my $type = Typist::Type->coerce('Int | Str');
 
-    # Operator overloading (via Typist::DSL)
-    use Typist::DSL;
-    my $union = Int | Str;          # Union type
-    my $inter = Readable & Writable; # Intersection type
+    # Operator overloading (on type objects)
+    my $union = Typist::Type->coerce('Int | Str');
     say "$union";                    # Stringify: "Int | Str"
 
 =head1 DESCRIPTION
@@ -130,6 +128,6 @@ through unchanged; strings are parsed via L<Typist::Parser>.
 
 =head1 SEE ALSO
 
-L<Typist::Parser>, L<Typist::DSL>, L<Typist::Subtype>
+L<Typist::Parser>, L<Typist::Subtype>
 
 =cut

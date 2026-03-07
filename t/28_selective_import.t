@@ -12,21 +12,7 @@ sub run_perl ($code) {
     $out;
 }
 
-# ── Typist::DSL selective import (recommended path) ──
-
-subtest 'use Typist::DSL qw(Int Str) — selected DSL names available' => sub {
-    my $out = run_perl(<<'PERL');
-use v5.40;
-use lib 'lib';
-use Typist;
-use Typist::DSL qw(Int Str);
-print ref(Int), "\n";
-print ref(Str), "\n";
-PERL
-
-    like $out, qr/Typist::Type::Atom/, 'Int is available via Typist::DSL';
-    unlike $out, qr/deprecated/, 'no deprecation warning';
-};
+# ── optional is exported from Typist ──
 
 subtest 'optional is exported from Typist' => sub {
     my $out = run_perl(<<'PERL');
@@ -51,7 +37,7 @@ print $@ ? "died: $@" : "ok\n";
 PERL
 
     like $out, qr/died/, 'use Typist qw(Int) dies';
-    like $out, qr/Typist::DSL/, 'error message mentions Typist::DSL';
+    like $out, qr/unknown import argument/, 'error message is clear';
 };
 
 subtest 'use Typist — bare import does not export DSL names' => sub {
@@ -66,7 +52,7 @@ PERL
     like $out, qr/not_found/, 'Int is NOT available with bare use Typist';
 };
 
-subtest 'use Typist qw(NotAType) — dies on any DSL-like name' => sub {
+subtest 'use Typist qw(NotAType) — dies on any uppercase arg' => sub {
     my $out = run_perl(<<'PERL');
 use v5.40;
 use lib 'lib';
