@@ -80,9 +80,9 @@ Skipped entirely by all checkers. The function is treated as `(Any...) -> Any` w
 `Any` is the universal compatibility type. When inference produces `Any`, checks are skipped for that expression:
 
 - `T <: Any` for all types T (every type is a subtype of `Any`)
-- `Any <: T` for all types T (Any is also a supertype -- bidirectional compatibility)
+- When inference produces `Any`, the type checker **skips the check entirely** rather than testing a subtype relation. This achieves bidirectional compatibility in practice -- `Any` never produces errors.
 
-This makes `Any` the "I don't know" type. It never produces errors, which is exactly what you want for unannotated code.
+The mechanism is check-skipping, not a subtype relation: `Subtype->is_subtype(Any, Int)` returns false. But the checker never reaches the subtype engine because it short-circuits on `Any` first. This is exactly what you want for unannotated code.
 
 ### Unannotated functions as callers
 

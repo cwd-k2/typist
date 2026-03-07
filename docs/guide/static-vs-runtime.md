@@ -179,10 +179,9 @@ Config(host => "localhost", port => 8080, foo => 1); # dies: unknown field 'foo'
 
 ```perl
 BEGIN {
-    datatype 'Tree[T]' => (
-        Leaf => ['T'],
-        Node => ['Tree[T]', 'T', 'Tree[T]'],
-    );
+    datatype 'Tree[T]' =>
+        Leaf => '(T)',
+        Node => '(Tree[T], T, Tree[T])';
 }
 
 Leaf(1);              # OK
