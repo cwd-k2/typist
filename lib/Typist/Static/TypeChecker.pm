@@ -58,6 +58,7 @@ sub analyze ($self) {
     $self->check_variables;
     $self->check_assignments;
     $self->check_call_sites;
+    $self->check_match_exhaustiveness;
     for my $name (sort keys $self->{extracted}{functions}->%*) {
         $self->check_function_returns($name);
     }
@@ -91,6 +92,11 @@ sub check_variables ($self) {
                 end_col       => ($var->{col} // 0) + length($var->{name}),
                 expected_type => $declared->to_string,
                 actual_type   => $inferred->to_string,
+                explanation   => [
+                    "Declared type: ${\$declared->to_string}",
+                    "Inferred initializer type: ${\$inferred->to_string}",
+                    "Initializer is not a subtype of the declared annotation",
+                ],
                 suggestions   => ["Change annotation to :sig(${\$inferred->to_string})"],
                 related       => [+{ line => $var->{line}, col => $var->{col} // 1, message => 'declared here' }],
             );
@@ -148,6 +154,11 @@ sub check_assignments ($self) {
                 end_col       => $lhs->column_number + length($lhs->content),
                 expected_type => $declared_type->to_string,
                 actual_type   => $inferred->to_string,
+                explanation   => [
+                    "Declared type: ${\$declared_type->to_string}",
+                    "Assigned expression type: ${\$inferred->to_string}",
+                    "Assigned value is not a subtype of the declared annotation",
+                ],
                 suggestions   => ["Change annotation to :sig(${\$inferred->to_string})"],
                 ($vi ? (related => [+{ line => $vi->{line}, col => $vi->{col} // 1, message => 'declared here' }]) : ()),
             );
@@ -168,6 +179,45 @@ sub check_call_sites ($self) {
         has_type_var  => \&_has_type_var,
         gradual_hints => $self->{gradual_hints},
     )->check_call_sites;
+}
+
+sub check_match_exhaustiveness ($self) {
+    my $ppi_doc = $self->{type_env}->ppi_doc // return;
+    my $words = $ppi_doc->find('PPI::Token::Word') || [];
+
+    for my $word (@$words) {
+        next unless $word->content eq 'match';
+
+        my $env = $self->_env_for_node($word);
+        my $target = $word->snext_sibling // next;
+        my $target_type = Typist::Static::Infer->infer_expr($target, $env);
+        my $data_def = $self->_resolve_match_data_type($target_type) // next;
+
+        my ($seen, $has_fallback) = $self->_collect_match_arms($word);
+        next if $has_fallback;
+
+        my $variants = $data_def->variants // next;
+        my @missing = grep { !$seen->{$_} } sort keys %$variants;
+        next unless @missing;
+
+        $self->{errors}->collect(
+            kind        => 'NonExhaustiveMatch',
+            message     => "Non-exhaustive match: missing arm(s) for " . join(', ', @missing),
+            file        => $self->{file},
+            line        => $word->line_number,
+            col         => $word->column_number,
+            end_col     => $word->column_number + length($word->content),
+            explanation => [
+                "Matched type: " . $data_def->name,
+                "Covered arms: " . (keys(%$seen) ? join(', ', sort keys %$seen) : '(none)'),
+                "Missing variants: " . join(', ', @missing),
+            ],
+            suggestions => [
+                (map { "Add match arm '$_ => sub { ... }'" } @missing),
+                "Add fallback arm '_ => sub { ... }'",
+            ],
+        );
+    }
 }
 
 # ── Phase 5: Function-Level Checks ──────────────
@@ -212,6 +262,11 @@ sub check_function_returns ($self, $name) {
                 end_col       => $val->column_number + length($val->content),
                 expected_type => $declared->to_string,
                 actual_type   => $inferred->to_string,
+                explanation   => [
+                    "Function return type: ${\$declared->to_string}",
+                    "Returned expression type: ${\$inferred->to_string}",
+                    "Returned value is not a subtype of the declared return type",
+                ],
                 suggestions   => ["Change return type to ${\$inferred->to_string}"],
                 related       => [+{ line => $fn->{line}, col => $fn->{col} // 1, message => "$name() declared here" }],
             );
@@ -230,6 +285,60 @@ sub check_function_returns ($self, $name) {
     my $last_first = $last_stmt->schild(0) // $last_stmt;
     my $impl_env = $self->_env_for_node($last_first);
     $self->_check_implicit_return_of_stmt($last_stmt, $impl_env, $declared, $name);
+}
+
+sub _resolve_match_data_type ($self, $type, $depth = 0) {
+    return undef unless $type;
+    return undef if $depth > 4;
+
+    my $registry = $self->{type_env}->registry // return undef;
+
+    return $type if $type->is_data;
+
+    if ($type->is_param) {
+        my $dt = $registry->lookup_datatype("$type->base");
+        return $dt if $dt;
+    }
+
+    if ($type->is_alias) {
+        my $resolved = eval { $registry->lookup_type($type->alias_name) };
+        return undef if $@;
+        return $self->_resolve_match_data_type($resolved, $depth + 1);
+    }
+
+    if ($type->is_atom) {
+        my $dt = $registry->lookup_datatype($type->name);
+        return $dt if $dt;
+    }
+
+    undef;
+}
+
+sub _collect_match_arms ($self, $match_word) {
+    my %seen;
+    my $has_fallback = 0;
+    my $sib = $match_word->snext_sibling;
+
+    while ($sib) {
+        last if $sib->isa('PPI::Token::Structure') && $sib->content eq ';';
+
+        if (($sib->isa('PPI::Token::Word') && $sib->content ne 'sub')
+            || ($sib->isa('PPI::Token::Magic') && $sib->content eq '_'))
+        {
+            my $after = $sib->snext_sibling;
+            if ($after && $after->isa('PPI::Token::Operator') && $after->content eq '=>') {
+                if ($sib->content eq '_') {
+                    $has_fallback = 1;
+                } else {
+                    $seen{$sib->content} = 1;
+                }
+            }
+        }
+
+        $sib = $sib->snext_sibling;
+    }
+
+    (\%seen, $has_fallback);
 }
 
 # ── Phase 6: Collection ─────────────────────────
@@ -349,6 +458,11 @@ sub _check_implicit_return_of_stmt ($self, $stmt, $env, $declared, $name) {
             end_col       => $first->column_number + length($first->content),
             expected_type => $declared->to_string,
             actual_type   => $inferred->to_string,
+            explanation   => [
+                "Function return type: ${\$declared->to_string}",
+                "Implicit return expression type: ${\$inferred->to_string}",
+                "Implicit result is not a subtype of the declared return type",
+            ],
             suggestions   => ["Change return type to ${\$inferred->to_string}"],
             ($fn_info ? (related => [+{ line => $fn_info->{line}, col => $fn_info->{col} // 1, message => "$name() declared here" }]) : ()),
         );

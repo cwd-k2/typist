@@ -17,6 +17,7 @@ use Typist::Error;
 use Typist::Prelude;
 use Typist::Subtype;
 use Typist::Type::Data;
+use Time::HiRes qw(time);
 use Typist::Static::SymbolInfo qw(
     sym_function sym_parameter sym_variable sym_typedef sym_newtype
     sym_effect sym_typeclass sym_datatype sym_struct
@@ -37,6 +38,7 @@ my %SEVERITY = (
     UnknownTypeClass => 2,
     UnknownType      => 4,
     ImportHint       => 4,  # hint — type used in :sig() but defining package not imported
+    NonExhaustiveMatch => 3,
     ProtocolMismatch => 2,
     GradualHint      => 5,  # opt-in hint — blame tracking for Any
 );
@@ -50,13 +52,17 @@ my %SEVERITY = (
 sub analyze ($class, $source, %opts) {
     # Subtype cache is cleared by Workspace on type definition changes.
     # No need to clear per-analysis — refaddr-based keys prevent stale hits.
+    my $timings = $opts{collect_timing} ? +{} : undef;
+    my $t0 = $timings ? time() : undef;
 
     my $extracted = $opts{extracted} // Typist::Static::Extractor->extract($source);
+    _record_timing($timings, extract => $t0) if $timings;
     my $registry  = Typist::Registry->new;
     my $errors    = Typist::Error->collector;
     my $file      = $opts{file} // '(buffer)';
 
     # Phase 1: Import + Registration
+    my $t_phase = $timings ? time() : undef;
     if ($opts{workspace_registry}) {
         $registry->merge($opts{workspace_registry});
     }
@@ -66,28 +72,36 @@ sub analyze ($class, $source, %opts) {
         errors => $errors,
         file   => $file,
     );
+    _record_timing($timings, registration => $t_phase) if $timings;
 
     # Phase 1b: Type visibility check (lint level)
+    $t_phase = $timings ? time() : undef;
     _check_type_visibility($extracted, $registry, $errors, $file);
+    _record_timing($timings, visibility => $t_phase) if $timings;
 
     # Phase 2: Structural verification
+    $t_phase = $timings ? time() : undef;
     Typist::Static::Checker->new(
         registry  => $registry,
         errors    => $errors,
         extracted => $extracted,
         file      => $file,
     )->analyze;
+    _record_timing($timings, structural => $t_phase) if $timings;
 
     # Phase 3: Type environment construction
+    $t_phase = $timings ? time() : undef;
     my $type_env = Typist::Static::TypeEnv->new(
         registry  => $registry,
         extracted => $extracted,
         ppi_doc   => $extracted->{ppi_doc},
     );
     $type_env->build;
+    _record_timing($timings, type_env => $t_phase) if $timings;
 
     # Phase 4: File-level checks
     # Scope callback param collector — reentrant-safe via local
+    $t_phase = $timings ? time() : undef;
     local $Typist::Static::Infer::_CALLBACK_CTX = { params => [], seen => {} };
     my $type_checker = Typist::Static::TypeChecker->new(
         type_env      => $type_env,
@@ -99,8 +113,11 @@ sub analyze ($class, $source, %opts) {
     $type_checker->check_variables;
     $type_checker->check_assignments;
     $type_checker->check_call_sites;
+    $type_checker->check_match_exhaustiveness;
+    _record_timing($timings, file_checks => $t_phase) if $timings;
 
     # Phase 5: Function-level checks (unified loop)
+    $t_phase = $timings ? time() : undef;
     my $effect_checker = Typist::Static::EffectChecker->new(
         registry  => $registry,
         errors    => $errors,
@@ -124,16 +141,26 @@ sub analyze ($class, $source, %opts) {
         $protocol_checker->check_function($name);
     }
     $protocol_checker->check_handle_blocks;
+    _record_timing($timings, function_checks => $t_phase) if $timings;
 
     # Phase 6: Collection (LSP hints)
+    $t_phase = $timings ? time() : undef;
     $type_checker->collect_fn_return_types;
     $type_checker->collect_callback_params;
     my $inferred_effects = Typist::Static::EffectChecker->infer_effects($extracted, $registry);
+    _record_timing($timings, collection => $t_phase) if $timings;
 
     # Phase 7: Results
+    $t_phase = $timings ? time() : undef;
+    my $diagnostics = _to_diagnostics($errors, $file, $extracted);
+    _record_timing($timings, diagnostics => $t_phase) if $timings;
+    $t_phase = $timings ? time() : undef;
+    my $symbols = _build_symbol_index($extracted, $type_checker->env, $type_checker);
+    _record_timing($timings, symbols => $t_phase) if $timings;
+    $timings->{total} = time() - $t0 if $timings;
     return +{
-        diagnostics         => _to_diagnostics($errors, $file, $extracted),
-        symbols             => _build_symbol_index($extracted, $type_checker->env, $type_checker),
+        diagnostics         => $diagnostics,
+        symbols             => $symbols,
         extracted           => $extracted,
         registry            => $registry,
         protocol_hints      => $protocol_checker->hints,
@@ -141,7 +168,13 @@ sub analyze ($class, $source, %opts) {
         inferred_effects    => $inferred_effects,
         inferred_fn_returns => $type_checker->inferred_fn_returns,
         infer_log           => $type_checker->infer_log,
+        ($timings ? (timings => $timings) : ()),
     };
+}
+
+sub _record_timing ($timings, $name, $started_at) {
+    return unless $timings && defined $started_at;
+    $timings->{$name} = time() - $started_at;
 }
 
 # ── Diagnostic Conversion ───────────────────────
@@ -218,6 +251,7 @@ sub _to_diagnostics ($errors, $default_file, $extracted) {
         $diag{actual_type}   = $err->actual_type     if defined $err->actual_type;
         $diag{related}       = $err->related         if defined $err->related;
         $diag{suggestions}   = $err->suggestions     if defined $err->suggestions;
+        $diag{explanation}   = $err->explanation     if defined $err->explanation;
 
         push @diags, \%diag;
     }

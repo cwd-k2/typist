@@ -68,6 +68,11 @@ sub check_function ($self, $name) {
                 line    => $call->{line},
                 col     => $call->{col} // 0,
                 end_col => ($call->{col} // 0) + length($call->{name}),
+                explanation => [
+                    "Caller: $name() has no declared effect row",
+                    "Callee: $call->{name}() requires " . $callee_eff->to_string,
+                    "Add the callee effects to the caller annotation or route the call through a handler",
+                ],
             );
             next;
         }
@@ -224,6 +229,11 @@ sub _check_effect_inclusion ($self, $caller_eff, $callee_eff, $caller_name, $cal
                 line    => $line,
                 col     => $col,
                 end_col => $col + length($callee_name),
+                explanation => [
+                    "Caller effects: " . $caller_eff->to_string,
+                    "Callee effects: " . $callee_eff->to_string,
+                    "Missing effect label: $label",
+                ],
             );
         }
     }

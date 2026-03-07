@@ -16,9 +16,11 @@ use JSON::PP ();
 
 sub new ($class, %args) {
     my $self = bless +{
-        root     => $args{root},
-        registry => Typist::Registry->new,
-        files    => +{},  # path -> +{ aliases, functions, newtypes, effects, typeclasses, package }
+        root         => $args{root},
+        registry     => Typist::Registry->new,
+        files        => +{},  # path -> +{ aliases, functions, newtypes, effects, typeclasses, package }
+        package_path => +{},  # package -> path
+        reverse_deps => +{},  # used package -> { dependent path => 1 }
     }, $class;
 
     # Install builtin type prelude (CORE:: defaults)
@@ -68,19 +70,7 @@ sub _extract_file ($self, $path) {
     my $extracted = eval { Typist::Static::Extractor->extract($source) };
     return if $@;
 
-    $self->{files}{$path} = +{
-        aliases     => $extracted->{aliases},
-        functions   => $extracted->{functions},
-        newtypes    => $extracted->{newtypes},
-        datatypes   => $extracted->{datatypes},
-        structs     => $extracted->{structs},
-        effects     => $extracted->{effects},
-        typeclasses => $extracted->{typeclasses},
-        instances   => $extracted->{instances},
-        declares    => $extracted->{declares},
-        package     => $extracted->{package},
-        fingerprint => $self->_compute_fingerprint($extracted),
-    };
+    $self->_set_file_info($path, $extracted, $self->_build_file_info($extracted, $source));
 
     $extracted;
 }
@@ -106,28 +96,21 @@ sub update_file ($self, $path, $source) {
     my $exports_changed = !defined $old_fingerprint
                        || $old_fingerprint ne $new_fingerprint;
 
+    my $new_info = $self->_build_file_info($extracted, $source);
+    my @affected_paths = $exports_changed
+        ? $self->_affected_paths_for_export_change($path, $old_info, $new_info)
+        : ($path);
+
     # Differential update: unregister old, register new
     if ($old_info) {
         $self->_unregister_file_types($old_info);
     }
 
-    $self->{files}{$path} = +{
-        aliases     => $extracted->{aliases},
-        functions   => $extracted->{functions},
-        newtypes    => $extracted->{newtypes},
-        datatypes   => $extracted->{datatypes},
-        structs     => $extracted->{structs},
-        effects     => $extracted->{effects},
-        typeclasses => $extracted->{typeclasses},
-        instances   => $extracted->{instances},
-        declares    => $extracted->{declares},
-        package     => $extracted->{package},
-        fingerprint => $new_fingerprint,
-    };
+    $self->_set_file_info($path, $extracted, $new_info);
 
     $self->_register_file_types($extracted);
 
-    ($extracted, $exports_changed);
+    ($extracted, $exports_changed, \@affected_paths);
 }
 
 sub _unregister_file_types ($self, $old_info) {
@@ -240,6 +223,8 @@ sub _register_file_types ($self, $extracted) {
 
 sub _rebuild_registry ($self) {
     $self->{registry} = Typist::Registry->new;
+    $self->{package_path} = +{};
+    $self->{reverse_deps} = +{};
 
     # Re-install builtin type prelude (CORE:: defaults)
     Typist::Prelude->install($self->{registry});
@@ -258,14 +243,88 @@ sub _rebuild_registry ($self) {
             typeclasses => $info->{typeclasses} // +{},
             instances   => $info->{instances}   // [],
             declares    => $info->{declares}    // +{},
+            use_modules => $info->{use_modules} // [],
             package     => $info->{package}     // 'main',
         };
+        $self->_refresh_dependency_index($path, undef, $info);
         Typist::Static::Registration->register_types($ext, $self->{registry});
         push @all_extracted, $ext;
     }
     for my $ext (@all_extracted) {
         Typist::Static::Registration->register_signatures($ext, $self->{registry});
     }
+}
+
+sub _build_file_info ($self, $extracted, $source = '') {
+    +{
+        aliases     => $extracted->{aliases},
+        functions   => $extracted->{functions},
+        newtypes    => $extracted->{newtypes},
+        datatypes   => $extracted->{datatypes},
+        structs     => $extracted->{structs},
+        effects     => $extracted->{effects},
+        typeclasses => $extracted->{typeclasses},
+        instances   => $extracted->{instances},
+        declares    => $extracted->{declares},
+        use_modules => [@{$extracted->{use_modules} // []}],
+        package     => $extracted->{package},
+        fingerprint => $self->_compute_fingerprint($extracted),
+        occurrences => _build_occurrence_index($source),
+    };
+}
+
+sub _set_file_info ($self, $path, $extracted, $info = undef) {
+    my $old_info = $self->{files}{$path};
+    my $new_info = $info // $self->_build_file_info($extracted);
+    $self->{files}{$path} = $new_info;
+    $self->_refresh_dependency_index($path, $old_info, $new_info);
+    $new_info;
+}
+
+sub _refresh_dependency_index ($self, $path, $old_info, $new_info) {
+    if ($old_info) {
+        my $old_pkg = $old_info->{package};
+        if (defined $old_pkg && ($self->{package_path}{$old_pkg} // '') eq $path) {
+            delete $self->{package_path}{$old_pkg};
+        }
+        for my $used (@{$old_info->{use_modules} // []}) {
+            my $deps = $self->{reverse_deps}{$used} // next;
+            delete $deps->{$path};
+            delete $self->{reverse_deps}{$used} unless %$deps;
+        }
+    }
+
+    return unless $new_info;
+
+    my $pkg = $new_info->{package} // 'main';
+    $self->{package_path}{$pkg} = $path;
+    for my $used (@{$new_info->{use_modules} // []}) {
+        $self->{reverse_deps}{$used}{$path} = 1;
+    }
+}
+
+sub _affected_paths_for_export_change ($self, $path, $old_info, $new_info) {
+    my %affected = ($path => 1);
+    my %seen_pkg;
+    my @queue = grep {
+        defined $_ && length $_ && !$seen_pkg{$_}++
+    } (
+        $old_info ? ($old_info->{package}) : (),
+        $new_info ? ($new_info->{package}) : (),
+    );
+
+    while (@queue) {
+        my $pkg = shift @queue;
+        for my $dep_path (keys(($self->{reverse_deps}{$pkg} // +{})->%*)) {
+            next if $affected{$dep_path}++;
+            my $dep_pkg = $self->{files}{$dep_path}{package};
+            next unless defined $dep_pkg && length $dep_pkg;
+            next if $seen_pkg{$dep_pkg}++;
+            push @queue, $dep_pkg;
+        }
+    }
+
+    sort keys %affected;
 }
 
 # ── Export Fingerprint ──────────────────────────
@@ -382,6 +441,25 @@ sub _compute_fingerprint ($self, $extracted) {
     $_json_encoder->encode(_export_surface($extracted));
 }
 
+sub _build_occurrence_index ($source) {
+    my %index;
+    my @lines = split /\n/, ($source // ''), -1;
+
+    for my $line_no (0 .. $#lines) {
+        my $text = $lines[$line_no];
+        while ($text =~ /(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9_])/g) {
+            my $word = $1;
+            push @{$index{$word} //= []}, +{
+                line => $line_no,
+                col  => $-[1],
+                len  => length($word),
+            };
+        }
+    }
+
+    \%index;
+}
+
 # ── Query ────────────────────────────────────────
 
 sub find_definition ($self, $name) {
@@ -475,19 +553,11 @@ sub find_all_references ($self, $name, $open_documents = +{}) {
         my $uri = "file://$path";
         next if $open_documents->{$uri};  # already searched above
 
-        my $content = eval { _read_file($path) } // next;
-        my @lines = split /\n/, $content, -1;
-        my $hits = Typist::LSP::Document->_find_word_occurrences(\@lines, $name);
+        my $hits = ($self->{files}{$path}{occurrences} // +{})->{$name} // [];
         push @all_refs, map { +{ %$_, uri => $uri } } @$hits;
     }
 
     \@all_refs;
-}
-
-sub _read_file ($path) {
-    open my $fh, '<:encoding(UTF-8)', $path or die "Cannot read $path: $!";
-    local $/;
-    <$fh>;
 }
 
 # ── Query (names) ────────────────────────────────

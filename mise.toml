@@ -87,6 +87,10 @@ done
 description = "Run a single benchmark (e.g. mise run bench:quick bench/01_parser.pl)"
 run = "carton exec -- perl"
 
+[tasks."bench:phases"]
+description = "Run analyzer phase breakdown benchmark"
+run = "carton exec -- perl bench/09_analyzer_phases.pl"
+
 [tasks."vscode:deps"]
 description = "Install VSCode extension dependencies"
 dir = "editors/vscode"

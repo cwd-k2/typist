@@ -247,6 +247,60 @@ PERL
     like $d->{data}{_typist_kind}, qr/\w+/, 'kind is a non-empty string';
 };
 
+subtest 'code action exposes suggestions for non-exhaustive match' => sub {
+    my $source = <<'PERL';
+use v5.40;
+datatype State => Ready => '()', Busy => '()';
+my $s = Ready();
+my $x :sig(Int) = match $s,
+    Ready => sub { 1 };
+PERL
+
+    my @step1 = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{
+                uri     => 'file:///test/non_exhaustive_code_action.pm',
+                text    => $source,
+                version => 1,
+            },
+        }),
+    ));
+
+    my ($diag_notif) = grep { ($_->{method} // '') eq 'textDocument/publishDiagnostics' } @step1;
+    ok $diag_notif, 'got publishDiagnostics';
+
+    my ($diag) = grep { ($_->{data}{_typist_kind} // '') eq 'NonExhaustiveMatch' }
+                 @{$diag_notif->{params}{diagnostics}};
+    ok $diag, 'found NonExhaustiveMatch diagnostic';
+
+    my @step2 = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{
+                uri     => 'file:///test/non_exhaustive_code_action.pm',
+                text    => $source,
+                version => 1,
+            },
+        }),
+        lsp_request(2, 'textDocument/codeAction', +{
+            textDocument => +{ uri => 'file:///test/non_exhaustive_code_action.pm' },
+            range => $diag->{range},
+            context => +{
+                diagnostics => [$diag],
+            },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @step2;
+    ok $resp, 'got codeAction response';
+    my $actions = $resp->{result};
+    ok ref $actions eq 'ARRAY', 'result is array';
+    ok @$actions >= 2, 'suggestion actions returned';
+
+    my %titles = map { $_->{title} => 1 } @$actions;
+    ok $titles{"Add match arm 'Busy => sub { ... }'"}, 'missing variant suggestion present';
+    ok $titles{"Add fallback arm '_ => sub { ... }'"}, 'fallback suggestion present';
+};
+
 # ── Code action with suggestions ──────────────────
 
 subtest 'code action with suggestions from TypeMismatch' => sub {

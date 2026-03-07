@@ -2,6 +2,9 @@ use v5.40;
 use Test::More;
 use lib 'lib', 't/lib';
 
+use File::Path qw(make_path);
+use File::Temp qw(tempdir);
+
 use Test::Typist::LSP qw(run_session lsp_request lsp_notification init_shutdown_wrap);
 
 # ── Rename a function ───────────────────────────
@@ -88,6 +91,49 @@ PERL
             is $e->{newText}, 'assist', "newText is assist in $uri";
         }
     }
+};
+
+subtest 'rename includes closed workspace files via index' => sub {
+    my $dir = tempdir(CLEANUP => 1);
+    make_path("$dir/lib");
+
+    open my $fh, '>', "$dir/lib/Helper.pm" or die;
+    print $fh <<'PERL';
+package Helper;
+use v5.40;
+sub helper :sig((Int) -> Int) ($n) { $n + 1 }
+1;
+PERL
+    close $fh;
+
+    my $source = <<'PERL';
+package App;
+use v5.40;
+use Helper;
+my $y = helper(10);
+PERL
+
+    my @results = run_session(
+        lsp_request(1, 'initialize', +{ rootUri => "file://$dir" }),
+        lsp_notification('initialized'),
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///app.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/rename', +{
+            textDocument => +{ uri => 'file:///app.pm' },
+            position => +{ line => 3, character => 8 },
+            newName  => 'assist',
+        }),
+        lsp_request(99, 'shutdown'),
+        lsp_notification('exit'),
+    );
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got rename response';
+    my $edit = $resp->{result};
+    ok $edit && $edit->{changes}, 'has changes';
+    ok $edit->{changes}{'file:///app.pm'}, 'has open-file edit';
+    ok $edit->{changes}{"file://$dir/lib/Helper.pm"}, 'has closed workspace file edit';
 };
 
 # ── Rename returns null for unknown position ─────

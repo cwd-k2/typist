@@ -14,22 +14,36 @@ sub actions_for_diagnostics ($class, $diagnostics, $doc, $registry) {
     for my $diag (@$diagnostics) {
         my $data = $diag->{data} // next;
         my $kind = $data->{_typist_kind} // next;
+        my %seen_titles;
 
         if ($kind eq 'EffectMismatch') {
             my $action = $class->_suggest_add_effect($diag, $doc);
-            push @actions, $action if $action;
+            if ($action) {
+                push @actions, $action;
+                $seen_titles{$action->{title}} = 1;
+            }
         }
 
         if ($kind eq 'TypeMismatch') {
             my $auto_fix = $class->_suggest_type_fix($diag, $doc);
             if ($data->{_suggestions}) {
                 for my $suggestion (@{$data->{_suggestions}}) {
-                    # Skip if auto-fix already covers this suggestion
+                    next if $seen_titles{$suggestion};
                     next if $auto_fix && $auto_fix->{title} eq $suggestion;
                     push @actions, $class->_make_suggestion_action($diag, $suggestion, $doc);
+                    $seen_titles{$suggestion} = 1;
                 }
             }
-            push @actions, $auto_fix if $auto_fix;
+            if ($auto_fix) {
+                push @actions, $auto_fix;
+                $seen_titles{$auto_fix->{title}} = 1;
+            }
+        } elsif ($data->{_suggestions}) {
+            for my $suggestion (@{$data->{_suggestions}}) {
+                next if $seen_titles{$suggestion};
+                push @actions, $class->_make_suggestion_action($diag, $suggestion, $doc);
+                $seen_titles{$suggestion} = 1;
+            }
         }
     }
 

@@ -149,6 +149,8 @@ PERL
     my ($missing) = grep { $_->{message} =~ /State/ } @eff_diags;
     ok $missing, 'missing State effect reported';
     like $missing->{message}, qr/caller_fn.*stateful/, 'identifies caller and callee';
+    ok $missing->{data}{_explanation}, 'effect mismatch has explanation chain';
+    like $missing->{data}{_explanation}[0], qr/Caller effects:/, 'effect explanation includes caller effects';
 
     # Case 2: pure caller calls effectful
     my ($pure) = grep { $_->{message} =~ /no effect annotation/ } @eff_diags;
@@ -187,6 +189,8 @@ PERL
     my $d = $diags[0];
     my $range = $d->{range};
     ok $range, 'diagnostic has range';
+    ok $d->{data}{_explanation}, 'type mismatch has explanation chain';
+    like $d->{data}{_explanation}[0], qr/Function return type:/, 'type explanation includes declared return type';
 
     # With column precision, start character should not be 0 for errors
     # that occur mid-line, and end character should not be 999
@@ -225,6 +229,34 @@ PERL
     # Range should be well-formed even without precise col info
     ok $range->{start}{character} >= 0, 'start character >= 0';
     ok $range->{end}{character} > $range->{start}{character}, 'end character > start character';
+};
+
+subtest 'didOpen publishes non-exhaustive match diagnostic' => sub {
+    my $source = <<'PERL';
+use v5.40;
+datatype State => Ready => '()', Busy => '()';
+my $s = Ready();
+my $x :sig(Int) = match $s,
+    Ready => sub { 1 };
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{
+                uri     => 'file:///test/non_exhaustive.pm',
+                text    => $source,
+                version => 1,
+            },
+        }),
+    ));
+
+    my ($diag_notif) = grep { ($_->{method} // '') eq 'textDocument/publishDiagnostics' } @results;
+    ok $diag_notif, 'got publishDiagnostics';
+
+    my ($diag) = grep { ($_->{data}{_typist_kind} // '') eq 'NonExhaustiveMatch' }
+                 @{$diag_notif->{params}{diagnostics}};
+    ok $diag, 'non-exhaustive match diagnostic published';
+    like $diag->{message}, qr/Busy/, 'diagnostic mentions missing variant';
 };
 
 done_testing;

@@ -225,14 +225,17 @@ sub _handle_did_save ($self, $params) {
 
     # Update workspace index — returns (extracted, exports_changed)
     my $path = _uri_to_path($uri);
-    my ($extracted, $exports_changed) = $self->{workspace}
+    my ($extracted, $exports_changed, $affected_paths) = $self->{workspace}
         ? $self->{workspace}->update_file($path, $doc->content)
-        : (undef, 1);
+        : (undef, 1, [$path]);
     $self->{log}->debug("didSave $uri -> workspace updated (exports_changed=$exports_changed)");
 
     if ($exports_changed) {
-        # Export surface changed — invalidate and re-diagnose all open documents
+        my %affected = map { $_ => 1 } @{ $affected_paths // [$path] };
+        # Export surface changed — invalidate and re-diagnose only downstream documents.
         for my $other_doc (values $self->{documents}->%*) {
+            my $other_path = _uri_to_path($other_doc->uri);
+            next unless $affected{$other_path};
             $other_doc->invalidate;
             if ($other_doc->uri eq $uri && $extracted) {
                 $self->_publish_diagnostics($other_doc, $extracted);
@@ -679,6 +682,7 @@ sub _emit_diagnostics ($self, $doc, $result) {
                 ($d->{suggestions}   ? (_suggestions   => $d->{suggestions})   : ()),
                 ($d->{expected_type} ? (_expected_type => $d->{expected_type}) : ()),
                 ($d->{actual_type}   ? (_actual_type   => $d->{actual_type})   : ()),
+                ($d->{explanation}   ? (_explanation   => $d->{explanation})   : ()),
             },
         };
 

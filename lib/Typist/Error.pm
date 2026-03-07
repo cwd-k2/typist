@@ -18,6 +18,7 @@ sub new ($class, %args) {
         actual_type   => $args{actual_type},
         related       => $args{related},
         suggestions   => $args{suggestions},
+        explanation   => $args{explanation},
     }, $class;
 }
 
@@ -32,6 +33,7 @@ sub expected_type ($self) { $self->{expected_type} }
 sub actual_type   ($self) { $self->{actual_type} }
 sub related       ($self) { $self->{related} }
 sub suggestions   ($self) { $self->{suggestions} }
+sub explanation   ($self) { $self->{explanation} }
 
 sub to_string ($self) {
     my $loc = $self->{col} > 0

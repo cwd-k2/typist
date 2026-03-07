@@ -26,6 +26,7 @@ Every field returned by `Analyzer->analyze()` and its LSP consumers.
 | `inferred_fn_returns` | InlayHints (unannotated function return type labels) | Complete |
 | `narrowed_accessors` | Hover (accessor chain type narrowing in defined() guards) | Complete |
 | `infer_log` | Debug tools (`typist-infer-dump`) | N/A (internal) |
+| `timings` | Bench/debug only (`bench/09_analyzer_phases.pl`) | N/A (internal) |
 
 ---
 
