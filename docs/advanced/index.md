@@ -23,7 +23,7 @@ You should be comfortable with:
 
 All code examples assume:
 
-```perl
+```typist
 use v5.40;
 use Typist;
 ```

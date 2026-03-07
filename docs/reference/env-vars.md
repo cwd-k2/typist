@@ -168,6 +168,6 @@ TYPIST_LSP_TRACE=/tmp/trace.jsonl typist-lsp  # Full message trace
 
 In production, use Typist in its default static-only mode. No environment variables are needed. The CHECK phase runs at compile time and adds zero runtime overhead:
 
-```perl
+```typist
 use Typist;  # Static checks only, no runtime cost
 ```

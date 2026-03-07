@@ -8,7 +8,7 @@ Algebraic data types (ADTs) let you define tagged unions -- types where a value 
 
 Use `datatype` inside a `BEGIN` block to define a sum type:
 
-```perl
+```typist
 use v5.40;
 use Typist;
 
@@ -39,7 +39,7 @@ Each variant's type spec is a string of comma-separated types in parentheses:
 
 ### Constructing Values
 
-```perl
+```typist
 my $c = Circle(5);
 my $r = Rectangle(3, 4);
 my $p = Point();
@@ -54,7 +54,7 @@ Each constructed value is a blessed hashref with two internal fields:
 
 Arity is always checked, regardless of runtime mode:
 
-```perl
+```typist
 eval { Circle(1, 2) };
 # Dies: Circle(): expected 1 arguments, got 2
 
@@ -66,7 +66,7 @@ eval { Rectangle(3) };
 
 With `use Typist -runtime`, each argument is checked against its declared type:
 
-```perl
+```typist
 use Typist -runtime;
 
 eval { Circle("big") };
@@ -79,7 +79,7 @@ eval { Circle("big") };
 
 ADTs can be generic. Quote the name when it has type parameters:
 
-```perl
+```typist
 BEGIN {
     datatype 'Option[T]' =>
         Some => '(T)',
@@ -99,7 +99,7 @@ BEGIN {
 
 Type arguments are inferred from the constructor arguments at runtime (with `-runtime`) or statically at the call site:
 
-```perl
+```typist
 my $x = Some(42);          # Option[Int]
 my $y = Some("hello");     # Option[Str]
 my $n = None();            # Option[?] (no inference possible)
@@ -117,7 +117,7 @@ For nullary constructors like `None()`, no type argument can be inferred from th
 
 Multiple type parameters work independently:
 
-```perl
+```typist
 BEGIN {
     datatype 'Either[L, R]' =>
         Left  => '(L)',
@@ -134,7 +134,7 @@ my $err = Left("not found");
 
 Generalized algebraic data types (GADTs) extend plain ADTs by letting each constructor specify its own return type. This constrains the type parameter to a specific type per variant:
 
-```perl
+```typist
 BEGIN {
     datatype 'Expr[A]' =>
         IntLit  => '(Int) -> Expr[Int]',
@@ -146,7 +146,7 @@ BEGIN {
 
 The `->` in the variant specification forces the type argument. Without it, type arguments are inferred from the constructor arguments; with it, the declared return type overrides inference:
 
-```perl
+```typist
 my $lit = IntLit(42);
 # $lit->{_type_args}[0] is Int (forced by -> Expr[Int])
 
@@ -165,7 +165,7 @@ GADTs are useful for building type-safe interpreters, expression trees, and simi
 
 When all variants take zero arguments, use `enum` for concise syntax:
 
-```perl
+```typist
 BEGIN {
     enum Color     => qw(Red Green Blue);
     enum Direction => qw(North South East West);
@@ -174,7 +174,7 @@ BEGIN {
 
 This is equivalent to:
 
-```perl
+```typist
 BEGIN {
     datatype Color =>
         Red   => '()',
@@ -187,7 +187,7 @@ BEGIN {
 
 Enum constructors take no arguments. Call them with empty parens:
 
-```perl
+```typist
 my $c = Red();
 my $d = North();
 ```
@@ -200,7 +200,7 @@ Enum values carry a `_tag` but no `_values` payload (empty arrayref).
 
 `match` dispatches on the `_tag` of an ADT value and passes the `_values` as arguments to the matching handler:
 
-```perl
+```typist
 my $area = match $shape,
     Circle    => sub ($r)      { 3.14159 * $r ** 2 },
     Rectangle => sub ($w, $h)  { $w * $h },
@@ -209,7 +209,7 @@ my $area = match $shape,
 
 ### Syntax
 
-```perl
+```typist
 match $value,
     Tag1 => sub (...) { ... },
     Tag2 => sub (...) { ... },
@@ -229,7 +229,7 @@ match $value,
 
 Use `_` as a catch-all for unmatched variants:
 
-```perl
+```typist
 sub describe ($shape) {
     match $shape,
         Circle => sub ($r) { "circle with radius $r" },
@@ -241,7 +241,7 @@ sub describe ($shape) {
 
 If no handler matches and there is no `_` fallback, `match` dies at runtime:
 
-```perl
+```typist
 eval {
     match Rectangle(3, 4),
         Circle => sub ($r) { $r };
@@ -262,7 +262,7 @@ This design keeps runtime `match` fast while catching missing arms during develo
 
 `match` returns the result of the matched handler. It works in both scalar and list context:
 
-```perl
+```typist
 my $area = match $shape,
     Circle    => sub ($r)     { 3.14 * $r ** 2 },
     Rectangle => sub ($w, $h) { $w * $h },
@@ -277,7 +277,7 @@ say "Area: $area";
 
 Combine `match` with `:sig()` annotations for fully typed pattern matching:
 
-```perl
+```typist
 sub describe_result :sig((Result[Str]) -> Str) ($res) {
     match $res,
         Ok  => sub ($val) { "Success: $val" },
@@ -304,7 +304,7 @@ The static analyzer checks that:
 
 ADT variants can reference the ADT's own type, enabling recursive data structures:
 
-```perl
+```typist
 BEGIN {
     datatype Expr =>
         Lit => '(Int)',
@@ -343,7 +343,7 @@ Values are blessed into `Typist::Data::$TypeName` (e.g., `Typist::Data::Shape`).
 
 ## Complete Example
 
-```perl
+```typist
 use v5.40;
 use Typist;
 

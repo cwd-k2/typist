@@ -4,7 +4,7 @@
 
 Typist brings static type checking to Perl without source filters or external preprocessors. Annotate your code with `:sig()` attributes, and Typist catches type errors at compile time, in your editor, and optionally at runtime.
 
-```perl
+```typist
 use v5.40;
 use Typist;
 

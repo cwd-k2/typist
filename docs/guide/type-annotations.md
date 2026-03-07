@@ -8,7 +8,7 @@ Typist uses a single annotation syntax for everything: the `:sig()` attribute. I
 
 Attach `:sig(Type)` to a `my` declaration to annotate a variable's type.
 
-```perl
+```typist
 my $count :sig(Int)       = 0;
 my $label :sig(Str)       = "hello";
 my $ratio :sig(Double)    = 3.14;
@@ -17,7 +17,7 @@ my $flag  :sig(Bool)      = 1;
 
 Compound types work the same way:
 
-```perl
+```typist
 my $maybe :sig(Maybe[Str])              = undef;
 my $nums  :sig(ArrayRef[Int])           = [1, 2, 3];
 my $map   :sig(HashRef[Str, Int])       = +{ a => 1, b => 2 };
@@ -27,7 +27,7 @@ my $data  :sig({ name => Str, age => Int }) = { name => "A", age => 1 };
 
 Union and intersection types:
 
-```perl
+```typist
 my $id     :sig(Int | Str)  = 42;
 my $status :sig("ok" | "error") = "ok";
 ```
@@ -40,7 +40,7 @@ Variables declared without `:sig()` are not unchecked -- Typist still infers the
 
 Function annotations go **between the subroutine name and the parameter list**:
 
-```perl
+```typist
 sub name :sig(annotation) ($params) { body }
 ```
 
@@ -48,7 +48,7 @@ This placement is required by Perl's attribute syntax. The `:sig()` attribute is
 
 ### Basic functions
 
-```perl
+```typist
 sub add :sig((Int, Int) -> Int) ($a, $b) {
     $a + $b;
 }
@@ -66,7 +66,7 @@ sub is_positive :sig((Int) -> Bool) ($n) {
 
 Effects are declared after the return type with `![ ]`:
 
-```perl
+```typist
 sub greet :sig((Str) -> Void ![Console]) ($name) {
     Console::writeLine("Hello, $name!");
 }
@@ -82,7 +82,7 @@ sub fetch_and_log :sig((Str) -> Any ![DB, Console]) ($query) {
 
 Type parameters go in `<>` before the parameter list:
 
-```perl
+```typist
 sub identity :sig(<T>(T) -> T) ($x) {
     $x;
 }
@@ -100,7 +100,7 @@ sub pair :sig(<T, U>(T, U) -> Tuple[T, U]) ($a, $b) {
 
 Constrain a type parameter with an upper bound using `T: Bound`:
 
-```perl
+```typist
 sub max_of :sig(<T: Num>(T, T) -> T) ($a, $b) {
     $a > $b ? $a : $b;
 }
@@ -112,7 +112,7 @@ Here `T` must be a subtype of `Num`, so calling `max_of("a", "b")` is a type err
 
 When the bound name is a registered typeclass rather than a type, it becomes a typeclass constraint:
 
-```perl
+```typist
 sub show_it :sig(<T: Show>(T) -> Str) ($x) {
     Show::show($x);
 }
@@ -124,7 +124,7 @@ The static checker verifies that the inferred type argument has a registered `Sh
 
 Combine multiple typeclass constraints with `+`:
 
-```perl
+```typist
 sub display_max :sig(<T: Num + Show>(T, T) -> Str) ($a, $b) {
     Show::show($a > $b ? $a : $b);
 }
@@ -136,7 +136,7 @@ Both `Num` (type bound) and `Show` (typeclass constraint) are checked independen
 
 Use `...Type` for a rest parameter:
 
-```perl
+```typist
 sub log_all :sig((Str, ...Any) -> Void) ($fmt, @args) {
     say sprintf($fmt, @args);
 }
@@ -148,7 +148,7 @@ The minimum arity is determined by the fixed parameters. `log_all("hello")` is v
 
 Default values in the Perl signature reduce the minimum arity:
 
-```perl
+```typist
 sub connect :sig((Str, Int) -> Void) ($host, $port = 8080) {
     # $port defaults to 8080 if omitted
 }
@@ -163,7 +163,7 @@ The type annotation declares the full parameter list. The static checker counts 
 
 All pieces compose:
 
-```perl
+```typist
 sub logged_first :sig(<T>(ArrayRef[T]) -> T ![Console]) ($arr) {
     Console::writeLine("taking first element");
     $arr->[0];
@@ -193,7 +193,7 @@ sub logged_first :sig(<T>(ArrayRef[T]) -> T ![Console]) ($arr) {
 
 The `:sig()` attribute must appear between the function name and the parameter signature. This is not a style choice -- it is dictated by Perl's attribute grammar:
 
-```perl
+```typist
 # Correct
 sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 
@@ -205,7 +205,7 @@ sub add ($a, $b) :sig((Int, Int) -> Int) { $a + $b }
 
 Type names inside `:sig()` are resolved via the Typist Registry. You do not need to import `Int`, `Str`, or any user-defined type name. As long as the type is registered (via `typedef`, `newtype`, `struct`, `datatype`, etc. in a `BEGIN` block, or via the Prelude), it is available in annotations:
 
-```perl
+```typist
 use Typist;
 
 BEGIN {
@@ -221,7 +221,7 @@ sub find_user :sig((UserId) -> Name) ($id) { ... }
 
 Variables without `:sig()` are not ignored. Typist infers their type from the initializer expression:
 
-```perl
+```typist
 my $x = 42;        # inferred as Int (widened from Literal(42, Int))
 my $s = "hello";   # inferred as Str
 my $a = [1, 2, 3]; # inferred as ArrayRef[Int]
@@ -233,14 +233,14 @@ The inferred type is used for downstream type checking (e.g., passing `$x` to a 
 
 The `!` before the bracket is part of the effect syntax, not a negation. It reads as "may perform these effects":
 
-```perl
+```typist
 :sig((Str) -> Void ![Console])
 #                  ^^^^^^^^^^ effect annotation
 ```
 
 Multiple effects are comma-separated inside the brackets:
 
-```perl
+```typist
 :sig((Str) -> Any ![DB, Console, Exn])
 ```
 
@@ -250,7 +250,7 @@ A function with no `![ ]` clause is treated as pure (no effects). See [Algebraic
 
 All type declarations use strings for their type expressions:
 
-```perl
+```typist
 BEGIN {
     typedef Name   => 'Str';               # string
     newtype UserId => 'Int';               # string

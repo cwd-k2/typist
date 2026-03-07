@@ -8,7 +8,7 @@ A recursive type is a type alias that refers to itself in its own definition. Th
 
 A type alias can reference itself as long as the recursion passes through a *type constructor* like `ArrayRef`, `HashRef`, or a record type. The type constructor provides a base case (an empty container) that makes the recursion well-founded:
 
-```perl
+```typist
 BEGIN {
     typedef IntList => 'Int | ArrayRef[IntList]';
 }
@@ -16,7 +16,7 @@ BEGIN {
 
 `IntList` is either a plain `Int` or an `ArrayRef` whose elements are themselves `IntList` values. This allows arbitrarily nested structures:
 
-```perl
+```typist
 my $flat   :sig(IntList) = 42;
 my $nested :sig(IntList) = [1, [2, [3, 4]]];
 my $empty  :sig(IntList) = [];
@@ -26,7 +26,7 @@ my $empty  :sig(IntList) = [];
 
 A common practical example is modeling JSON values:
 
-```perl
+```typist
 BEGIN {
     typedef JsonValue => 'Str | Num | Bool | Undef | ArrayRef[JsonValue] | HashRef[Str, JsonValue]';
 }
@@ -34,7 +34,7 @@ BEGIN {
 
 This type captures the full structure of JSON: strings, numbers, booleans, null, arrays of JSON values, and objects (string-keyed hashes of JSON values):
 
-```perl
+```typist
 my $json :sig(JsonValue) = +{
     name   => "Alice",
     scores => [95, 87, 92],
@@ -47,7 +47,7 @@ my $json :sig(JsonValue) = +{
 
 Recursion can also go through record types:
 
-```perl
+```typist
 BEGIN {
     typedef Tree => '{ value => Int, children => ArrayRef[Tree] }';
 }
@@ -69,7 +69,7 @@ my $tree :sig(Tree) = +{
 
 Structs can participate in recursive type definitions through type aliases:
 
-```perl
+```typist
 BEGIN {
     typedef CategoryTree => 'ArrayRef[Category]';
     struct Category => (name => 'Str', children => 'CategoryTree');
@@ -78,7 +78,7 @@ BEGIN {
 
 Here `Category` has a `children` field of type `CategoryTree`, which is an array of `Category` values. The recursion passes through `ArrayRef`, making it well-founded:
 
-```perl
+```typist
 my $root = Category(
     name     => "root",
     children => [
@@ -98,7 +98,7 @@ The order of definitions matters: the `typedef` for `CategoryTree` must appear b
 
 Recursion without an intervening type constructor creates an infinite loop with no base case. Typist detects and rejects these:
 
-```perl
+```typist
 BEGIN {
     typedef A => 'B';
     typedef B => 'A';
@@ -108,7 +108,7 @@ BEGIN {
 
 Direct self-reference without a constructor is also rejected:
 
-```perl
+```typist
 BEGIN {
     typedef Loop => 'Loop';
 }
@@ -127,7 +127,7 @@ The difference between productive recursion (`ArrayRef[IntList]`) and bare cycle
 
 Even productive recursion could cause infinite loops during type operations like `contains()` (runtime type checking). Typist uses a depth limit to prevent this:
 
-```perl
+```typist
 BEGIN {
     typedef Deep => 'ArrayRef[Deep]';
 }
@@ -145,7 +145,7 @@ Recursive types participate in subtyping through alias resolution. When comparin
 
 Because alias resolution is lazy (resolved on first access, then cached), recursive types do not cause infinite expansion during subtype checks. The resolver handles cycles through its visited-set tracking.
 
-```perl
+```typist
 BEGIN {
     typedef IntList  => 'Int | ArrayRef[IntList]';
     typedef NumList  => 'Num | ArrayRef[NumList]';
@@ -169,7 +169,7 @@ The static checker handles recursive types at several points:
 
 ### Diagnostic example
 
-```perl
+```typist
 BEGIN {
     typedef Foo => 'Bar';
     typedef Bar => 'Foo';
@@ -189,7 +189,7 @@ CycleError: Alias cycle detected involving 'Bar'    (line 3)
 
 The most readable recursive types use a union of a base case and a recursive case wrapped in a type constructor:
 
-```perl
+```typist
 typedef IntList  => 'Int | ArrayRef[IntList]';         # Base: Int
 typedef StrTree  => 'Str | HashRef[Str, StrTree]';     # Base: Str
 typedef JsonValue => 'Str | Num | Bool | Undef | ArrayRef[JsonValue] | HashRef[Str, JsonValue]';
@@ -199,7 +199,7 @@ typedef JsonValue => 'Str | Num | Bool | Undef | ArrayRef[JsonValue] | HashRef[S
 
 When tree nodes carry multiple fields, use a struct with a recursive typedef for the children:
 
-```perl
+```typist
 BEGIN {
     typedef Expr => 'LitExpr | BinExpr';
     struct LitExpr => (value => 'Int');

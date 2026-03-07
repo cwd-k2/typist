@@ -132,7 +132,7 @@ Method:     Function where first param_name is $self (instance) or $class (class
 
 Functions without `:sig()` are still extracted with:
 
-```perl
+```typist
 {
     params_expr => [('Any') x $arity],   # All params are Any
     returns_expr => 'Any',
@@ -520,7 +520,7 @@ _scan_early_returns(env, node):
 
 ### Examples
 
-```perl
+```typist
 my $x :sig(Str | Undef) = get_value();
 if (defined($x)) {
     # $x is narrowed to Str here
@@ -674,7 +674,7 @@ Inference is shallow: only direct callees in the function body are examined. Eff
 
 ### Public API
 
-```perl
+```typist
 my $type = Typist::Static::Infer->infer_expr($ppi_element, $env);
 # Returns: Type object, or undef (cannot infer)
 ```
@@ -761,7 +761,7 @@ Unannotated              sub foo ($x) { ... }                  Skipped (Any -> A
 
 Every check method has an `Any` guard that prevents false positives:
 
-```perl
+```typist
 # In _check_variable_initializers, _check_assignments, _check_call_sites,
 # _check_return_types, _check_method_call, _check_generic_call:
 next if $inferred->is_atom && $inferred->name eq 'Any';
@@ -829,7 +829,7 @@ Workspace.update_file(uri, source)  [on save]
 
 In both TypeChecker and EffectChecker, `Pkg::func()` calls are resolved:
 
-```perl
+```typist
 # TypeChecker._check_call_sites:
 if ($name =~ /\A(.+)::(\w+)\z/) {
     my ($pkg, $fn) = ($1, $2);
@@ -843,7 +843,7 @@ if ($name =~ /\A(.+)::(\w+)\z/) {
 
 ### Diagnostic Structure
 
-```perl
+```typist
 {
     kind     => 'TypeMismatch',           # Diagnostic kind
     message  => 'Expected Int, got Str',  # Human-readable
@@ -880,7 +880,7 @@ Raw errors from checkers may lack precise file/line information. `Analyzer._to_d
 
 A comment `# @typist-ignore` on line N suppresses all diagnostics on line N+1:
 
-```perl
+```typist
 sub handler :sig((Str) -> Str ![Console]) ($s) {
     # @typist-ignore
     some_unannotated_function($s);  # No EffectMismatch

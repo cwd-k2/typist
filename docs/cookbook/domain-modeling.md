@@ -8,7 +8,7 @@ This page covers patterns for encoding domain knowledge in the type system: prev
 
 The most common domain modeling mistake is using raw `Int` or `Str` for everything. A `UserId` and an `OrderId` are both integers, but passing one where the other is expected is a bug. Newtypes catch this at the type level.
 
-```perl
+```typist
 use v5.40;
 use Typist;
 
@@ -23,7 +23,7 @@ BEGIN {
 
 Newtypes are nominal: `UserId` and `OrderId` both wrap `Int`, but they are distinct types. The static checker rejects mixing them:
 
-```perl
+```typist
 sub find_user :sig((UserId) -> Str) ($id) {
     "User #" . UserId::coerce($id);
 }
@@ -40,7 +40,7 @@ find_user(42);      # static error: expected UserId, got Int
 
 Use `Name::coerce($val)` to unwrap a newtype and get the raw value back:
 
-```perl
+```typist
 my $uid = UserId(42);
 my $raw = UserId::coerce($uid);    # 42 (plain Int)
 ```
@@ -62,7 +62,7 @@ Use `typedef` when you want a shorter name for a complex type. Use `newtype` whe
 
 Structs are nominal, immutable, blessed record types. They give you a constructor, accessors, and immutable derivation out of the box.
 
-```perl
+```typist
 BEGIN {
     struct Product => (
         id    => 'ProductId',
@@ -89,7 +89,7 @@ say $widget->price;    # Price object (use Price::coerce to get 1999)
 
 Use `optional(field => 'Type')` for fields that may be omitted at construction time. Optional accessors return `undef` when the field was not provided:
 
-```perl
+```typist
 my $w = Product(
     id    => ProductId("W-001"),
     name  => "Basic Widget",
@@ -105,7 +105,7 @@ say $w->description;    # undef
 
 Structs are immutable. To produce a modified copy, use `derive`:
 
-```perl
+```typist
 my $updated = Product::derive($widget,
     price => Price(1499),
     stock => Quantity(45),
@@ -118,7 +118,7 @@ my $updated = Product::derive($widget,
 
 Structs can be parameterized:
 
-```perl
+```typist
 BEGIN {
     struct 'Pair[T, U]' => (fst => 'T', snd => 'U');
 }
@@ -131,7 +131,7 @@ my $p = Pair(fst => 1, snd => "hello");
 
 Type parameters can carry bounds or typeclass constraints:
 
-```perl
+```typist
 BEGIN {
     struct 'NumBox[T: Num]' => (value => 'T');
     struct 'ShowBox[T: Show]' => (value => 'T');
@@ -151,7 +151,7 @@ Algebraic data types (ADTs) model values that can be one of several variants. Co
 
 For pure enumeration (no payload), use `enum`:
 
-```perl
+```typist
 BEGIN {
     enum Color => qw(Red Green Blue);
 }
@@ -168,7 +168,7 @@ sub color_name :sig((Color) -> Str) ($c) {
 
 When variants carry data, use `datatype`:
 
-```perl
+```typist
 BEGIN {
     datatype OrderStatus => (
         Created   => '()',
@@ -193,7 +193,7 @@ my $label = match $status,
 
 ADTs can be generic:
 
-```perl
+```typist
 BEGIN {
     datatype 'Option[T]' => (
         Some => '(T)',
@@ -211,7 +211,7 @@ BEGIN {
 
 If you omit a variant arm in `match` and there is no `_` fallback, the static checker and Perl::Critic policy `ExhaustivenessCheck` will warn. At runtime, an unmatched variant causes a `die`:
 
-```perl
+```typist
 # Static warning: missing 'Cancelled' arm
 my $msg = match $status,
     Created   => sub { "new" },
@@ -223,7 +223,7 @@ my $msg = match $status,
 
 Add a `_` fallback to suppress the warning when you intentionally want a default:
 
-```perl
+```typist
 my $msg = match $status,
     Shipped => sub ($t) { "In transit: $t" },
     _       => sub { "Other status" };
@@ -235,7 +235,7 @@ my $msg = match $status,
 
 These building blocks compose naturally. A realistic domain model layers them:
 
-```perl
+```typist
 BEGIN {
     # -- Newtypes for domain primitives
     newtype CustomerId => 'Int';
@@ -270,7 +270,7 @@ BEGIN {
 
 ### Functions Over the Domain
 
-```perl
+```typist
 sub order_total :sig((Order) -> Price) ($order) {
     my $total = 0;
     for my $item ($order->items->@*) {
@@ -294,7 +294,7 @@ sub is_active :sig((Order) -> Bool) ($order) {
 
 ### Recursive Types for Trees
 
-```perl
+```typist
 BEGIN {
     struct Category => (
         name     => 'Str',

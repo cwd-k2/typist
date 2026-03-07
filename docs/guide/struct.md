@@ -8,7 +8,7 @@ Structs are nominal, immutable, blessed record types. They give you named constr
 
 Use `struct` inside a `BEGIN` block to define a struct type:
 
-```perl
+```typist
 use v5.40;
 use Typist;
 
@@ -27,7 +27,7 @@ Field types are always strings. This is consistent with all Typist declarations 
 
 Structs use named arguments exclusively:
 
-```perl
+```typist
 my $p = Point(x => 1, y => 2);
 ```
 
@@ -43,7 +43,7 @@ Regardless of whether you use `use Typist` or `use Typist -runtime`, the constru
 
 These are cheap structural checks that catch API misuse without any runtime type overhead:
 
-```perl
+```typist
 eval { Point(x => 1) };
 # Dies: Typist: Point() — missing required field 'y'
 
@@ -55,7 +55,7 @@ eval { Point(x => 1, y => 2, z => 3) };
 
 With `use Typist -runtime`, the constructor additionally validates that each field value matches its declared type via `contains()`:
 
-```perl
+```typist
 use Typist -runtime;
 
 eval { Point(x => "one", y => 2) };
@@ -70,7 +70,7 @@ In static-only mode (`use Typist`), this validation is performed by the static a
 
 Each field produces a read-only accessor method:
 
-```perl
+```typist
 my $p = Point(x => 1, y => 2);
 say $p->x;   # 1
 say $p->y;   # 2
@@ -84,7 +84,7 @@ There are no setter methods. Struct instances are immutable.
 
 Use `optional(field => 'Type')` to declare fields that can be omitted at construction:
 
-```perl
+```typist
 BEGIN {
     struct Item => (
         name => 'Str',
@@ -110,7 +110,7 @@ The `optional` function is a simple syntax helper defined in `Typist.pm`. It tra
 
 `Name::derive($instance, field => value, ...)` creates a **new** instance of the same struct type with the specified fields updated. The original instance is unchanged:
 
-```perl
+```typist
 my $p1 = Point(x => 1, y => 2);
 my $p2 = Point::derive($p1, y => 10);
 
@@ -121,7 +121,7 @@ say $p2->x;   # 1  -- unmodified fields carried over
 
 `derive` rejects unknown fields, just like the constructor:
 
-```perl
+```typist
 eval { Point::derive($p1, z => 99) };
 # Dies: Unknown field 'z' for struct Point
 ```
@@ -134,7 +134,7 @@ This is the only way to "update" a struct. There are no setter methods and no in
 
 Structs can be parameterized with type variables. Quote the name when it has type parameters, because `[` would break Perl's bareword parsing:
 
-```perl
+```typist
 BEGIN {
     struct 'Pair[T, U]' => (fst => 'T', snd => 'U');
     struct 'Box[T]'     => (val => 'T');
@@ -145,7 +145,7 @@ BEGIN {
 
 Type arguments are inferred from field values at construction time:
 
-```perl
+```typist
 my $p = Pair(fst => 42, snd => "hi");   # Pair[Int, Str]
 my $b = Box(val => 3.14);               # Box[Double]
 ```
@@ -156,7 +156,7 @@ You do not explicitly supply type arguments. The constructor infers them from th
 
 Accessors on generic structs resolve through the inferred type arguments:
 
-```perl
+```typist
 my $p = Pair(fst => 42, snd => "hi");
 # $p->fst : Int   (T resolved to Int)
 # $p->snd : Str   (U resolved to Str)
@@ -170,7 +170,7 @@ The static analyzer performs the same substitution: if `$p` is known to be `Pair
 
 Generic struct parameters can carry bounds or typeclass constraints:
 
-```perl
+```typist
 BEGIN {
     struct 'NumBox[T: Num]' => (value => 'T');
     struct 'ShowBox[T: Show]' => (value => 'T');
@@ -189,7 +189,7 @@ BEGIN {
 
 Bounded generic struct constructors are checked at call sites by the static analyzer. In `-runtime` mode, bounds are additionally validated at construction time:
 
-```perl
+```typist
 use Typist -runtime;
 
 my $ok  = NumBox(value => 42);       # ok: Int <: Num
@@ -216,7 +216,7 @@ The key principle: structs can be used where a matching record shape is expected
 
 Generic struct subtyping follows the type arguments covariantly:
 
-```perl
+```typist
 # Bool <: Int, therefore:
 # Box[Bool] <: Box[Int]
 
@@ -243,7 +243,7 @@ Use records for lightweight structural shapes (function parameters, intermediate
 
 ## Complete Example
 
-```perl
+```typist
 use v5.40;
 use Typist;
 

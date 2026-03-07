@@ -21,7 +21,7 @@ This gives you the documentation benefits of checked exceptions, the composabili
 
 Use `effect` inside a `BEGIN` block to define an effect with its operations:
 
-```perl
+```typist
 use v5.40;
 use Typist;
 
@@ -45,7 +45,7 @@ The hashref maps operation names to type signature strings. Use `+{}` to disambi
 
 An effect can have any number of operations:
 
-```perl
+```typist
 BEGIN {
     effect State => +{
         get => '() -> Int',
@@ -66,7 +66,7 @@ Each operation becomes a sub in the effect's namespace: `State::get()`, `State::
 
 Declare which effects a function may perform by adding `![Effect1, Effect2]` after the return type in a `:sig()` annotation:
 
-```perl
+```typist
 sub greet :sig((Str) -> Void ![Console]) ($name) {
     Console::log("Hello, $name!");
 }
@@ -84,7 +84,7 @@ The `!` is part of the effect syntax, not a negation. Read `![Console]` as "may 
 
 A function with no `![]` clause is treated as pure:
 
-```perl
+```typist
 sub add :sig((Int, Int) -> Int) ($a, $b) {
     $a + $b;
 }
@@ -94,7 +94,7 @@ sub add :sig((Int, Int) -> Int) ($a, $b) {
 
 All annotation features compose:
 
-```perl
+```typist
 sub logged_first :sig(<T>(ArrayRef[T]) -> T ![Console]) ($arr) {
     Console::writeLine("taking first element");
     $arr->[0];
@@ -107,7 +107,7 @@ sub logged_first :sig(<T>(ArrayRef[T]) -> T ![Console]) ($arr) {
 
 Effect operations are called as qualified subs in the effect's namespace:
 
-```perl
+```typist
 Console::log("hello");        # calls the Console effect's log operation
 Console::writeLine("world");  # calls the Console effect's writeLine operation
 State::put(42);               # calls the State effect's put operation
@@ -126,7 +126,7 @@ No handler for effect Console::log
 
 The `handle` block installs scoped handlers for effect operations:
 
-```perl
+```typist
 my $result = handle {
     Console::log("hello");
     Console::writeLine("world");
@@ -148,7 +148,7 @@ Key points:
 
 Handle multiple effects in a single `handle` block:
 
-```perl
+```typist
 my @logs;
 my $state = 0;
 
@@ -171,7 +171,7 @@ my $result = handle {
 
 Inner handlers shadow outer handlers for the same effect:
 
-```perl
+```typist
 my @outer_log;
 my @inner_log;
 
@@ -197,7 +197,7 @@ handle {
 
 Handlers are always popped when the `handle` block exits, even on exceptions:
 
-```perl
+```typist
 eval {
     handle {
         Console::log("before");
@@ -215,13 +215,13 @@ eval {
 
 `Exn` is a built-in effect with a single operation, `throw`:
 
-```perl
+```typist
 Exn::throw($error)    # equivalent to die $error
 ```
 
 When a `handle` block includes an `Exn` handler, it catches exceptions from `die` and `Exn::throw`:
 
-```perl
+```typist
 my $result = handle {
     die "something went wrong\n";
     42;    # unreachable
@@ -233,7 +233,7 @@ my $result = handle {
 
 Without an `Exn` handler, exceptions propagate normally through `handle`:
 
-```perl
+```typist
 eval {
     handle {
         die "no handler\n";
@@ -246,7 +246,7 @@ eval {
 
 ### Combining Exn with other effects
 
-```perl
+```typist
 my @logs;
 my $result = handle {
     Console::log("before");
@@ -290,7 +290,7 @@ Perl builtins are annotated with their appropriate effects in the Prelude. For e
 
 Use `declare` to override a builtin's effect annotation. This is useful when you want stricter effect tracking:
 
-```perl
+```typist
 # Make say require the Console effect instead of ambient IO
 declare say => '(Str) -> Void ![Console]';
 
@@ -313,7 +313,7 @@ The static effect checker enforces these rules:
 
 An annotated function without effects cannot call a function with non-ambient effects:
 
-```perl
+```typist
 sub effectful :sig((Str) -> Str ![Console]) ($x) { $x }
 
 sub pure_fn :sig((Str) -> Str) ($x) {
@@ -323,7 +323,7 @@ sub pure_fn :sig((Str) -> Str) ($x) {
 
 ### Rule 2: Callee effects must be a subset of caller effects
 
-```perl
+```typist
 sub needs_ab :sig(() -> Void ![A, B]) () { ... }
 
 sub has_a :sig(() -> Void ![A]) () {
@@ -339,7 +339,7 @@ sub has_abc :sig(() -> Void ![A, B, C]) () {
 
 Unannotated functions are not checked for effects. This is the gradual typing principle:
 
-```perl
+```typist
 sub helper ($x) {
     effectful($x);    # No check -- helper is unannotated
 }
@@ -349,7 +349,7 @@ sub helper ($x) {
 
 When an annotated function calls an unannotated function, the callee is treated as having no effects:
 
-```perl
+```typist
 sub helper ($x) { $x }    # unannotated -- treated as pure
 
 sub main :sig((Str) -> Str ![Console]) ($s) {
@@ -361,7 +361,7 @@ sub main :sig((Str) -> Str ![Console]) ($s) {
 
 Use `# @typist-ignore` on the line before a call to suppress effect mismatch diagnostics:
 
-```perl
+```typist
 sub pure_fn :sig((Str) -> Str) ($s) {
     # @typist-ignore
     effectful($s);    # No EffectMismatch reported
@@ -373,7 +373,7 @@ sub pure_fn :sig((Str) -> Str) ($s) {
 
 ## A Complete Example
 
-```perl
+```typist
 use v5.40;
 use Typist;
 

@@ -214,7 +214,7 @@ All built-in annotations are registered under the `CORE::` namespace. These are 
 
 Use `declare` to override any prelude annotation with a custom one:
 
-```perl
+```typist
 use Typist;
 
 BEGIN {
@@ -233,7 +233,7 @@ Override is useful when:
 
 `declare` can annotate any function, not just builtins:
 
-```perl
+```typist
 BEGIN {
     declare 'Some::Module::process' => '(Str) -> Int ![IO]';
 }

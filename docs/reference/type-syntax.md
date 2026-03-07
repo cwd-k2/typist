@@ -107,7 +107,7 @@ The `:sig()` attribute is the primary way to annotate functions and variables in
 
 ### Variable Annotations
 
-```perl
+```typist
 my $name :sig(Str) = "Alice";
 my $count :sig(Int) = 0;
 my $items :sig(ArrayRef[Str]) = [];
@@ -116,7 +116,7 @@ my $lookup :sig(HashRef[Str, Int]) = {};
 
 ### Function Annotations
 
-```perl
+```typist
 # Simple function
 sub greet :sig((Str) -> Str) ($name) { ... }
 
@@ -252,7 +252,7 @@ Result[Str, Int]                     # Generic with two parameters
 
 `Array[T]` and `Hash[K, V]` are **list types**, representing list-producing expressions. `ArrayRef[T]` and `HashRef[K, V]` are **scalar reference types**. They are not interchangeable:
 
-```perl
+```typist
 # ArrayRef: a scalar reference to an array
 my $items :sig(ArrayRef[Int]) = [1, 2, 3];
 

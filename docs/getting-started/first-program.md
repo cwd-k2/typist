@@ -6,7 +6,7 @@ This page walks through writing, running, and understanding your first Typist-an
 
 Create a file called `hello_typist.pl`:
 
-```perl
+```typist
 use v5.40;
 use lib 'lib';
 use Typist;
@@ -47,7 +47,7 @@ Three things occurred in sequence:
 
 Every type annotation in Typist uses the `:sig()` attribute syntax. It works on both variables and subroutines:
 
-```perl
+```typist
 # Variable: :sig(Type)
 my $count :sig(Int) = 0;
 
@@ -61,14 +61,14 @@ For subroutines, the parameter types go inside inner parentheses, followed by `-
 
 All type declarations in Typist use strings, not barewords:
 
-```perl
+```typist
 typedef Name => 'Str';           # string, not bareword
 struct Point => (x => 'Int', y => 'Int');
 ```
 
 Inside `:sig()`, type names are written directly without quotes -- the annotation parser handles them:
 
-```perl
+```typist
 sub f :sig((Int) -> Str) ($n) { "$n" }
 ```
 
@@ -80,7 +80,7 @@ Perl's CHECK phase runs after compilation but before execution. Typist hooks int
 
 Create `typed_geometry.pl`:
 
-```perl
+```typist
 use v5.40;
 use lib 'lib';
 use Typist;
@@ -121,7 +121,7 @@ The rule is straightforward: any declaration that defines a type name -- `typede
 
 `struct` creates a nominal, immutable type with named fields. Calling the constructor `Point(x => 0, y => 0)` returns a blessed, frozen object. Field access uses generated accessor methods:
 
-```perl
+```typist
 my $p = Point(x => 3, y => 4);
 $p->x;    # 3
 $p->y;    # 4
@@ -129,7 +129,7 @@ $p->y;    # 4
 
 Structs are immutable. To create a modified copy, use `derive`:
 
-```perl
+```typist
 my $moved = Point::derive($p, x => 10);   # Point(x => 10, y => 4)
 ```
 
@@ -137,7 +137,7 @@ my $moved = Point::derive($p, x => 10);   # Point(x => 10, y => 4)
 
 Introduce an intentional error to see what diagnostics look like. Create `type_error.pl`:
 
-```perl
+```typist
 use v5.40;
 use lib 'lib';
 use Typist;

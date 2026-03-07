@@ -119,7 +119,7 @@ Tie::Scalar           | OFF                  | ON
 
 Always use `+{}` to disambiguate from blocks:
 
-```perl
+```typist
 my $config = +{ host => "localhost", port => 8080 };
 ```
 
@@ -127,7 +127,7 @@ my $config = +{ host => "localhost", port => 8080 };
 
 Typeclass and effect definitions use string syntax for method/operation signatures, consistent with `:sig()` annotations:
 
-```perl
+```typist
 show => '(T) -> Str'
 ```
 
@@ -137,7 +137,7 @@ The Extractor only captures `PPI::Token::Quote`, so programmatic type constructo
 
 `use Typist` enables the type system and exports all core functions (`typedef`, `newtype`, `struct`, `optional`, etc.). All type declarations use strings:
 
-```perl
+```typist
 use Typist;
 typedef Name   => 'Str';
 struct Person  => (name => 'Str', age => 'Int', optional(email => 'Str'));
@@ -148,7 +148,7 @@ No separate imports are needed for type names — they are resolved from strings
 
 ### Unified `:sig()` Annotation
 
-```perl
+```typist
 sub add :sig(<T: Num>(T, T) -> T ![Console]) ($a, $b) { ... }
 ```
 
@@ -166,13 +166,13 @@ When adding or modifying static analysis features, update `docs/lsp-coverage.md`
 
 ### Algebraic Data Types (ADT)
 
-```perl
+```typist
 datatype Shape => Circle => '(Int)', Rectangle => '(Int, Int)';
 ```
 
 Constructors are installed into the caller's namespace. Parameterized ADTs:
 
-```perl
+```typist
 datatype 'Option[T]' => Some => '(T)', None => '()';
 ```
 
@@ -180,7 +180,7 @@ Type params are promoted from aliases to Var objects. Subtyping is covariant in 
 
 ### GADT
 
-```perl
+```typist
 datatype 'Expr[A]' => IntLit => '(Int) -> Expr[Int]', BoolLit => '(Bool) -> Expr[Bool]';
 ```
 
@@ -188,7 +188,7 @@ Constructors with `->` specify per-constructor return types. Provides `is_gadt` 
 
 ### Enum
 
-```perl
+```typist
 enum Color => qw(Red Green Blue);
 ```
 
@@ -196,7 +196,7 @@ Sugar for `datatype` with all zero-argument variants.
 
 ### Pattern Matching
 
-```perl
+```typist
 match $value, Tag => sub (...) { ... }, _ => sub { ... };
 ```
 
@@ -204,7 +204,7 @@ Dispatches on `_tag`, splats `_values` into handlers. `_` is the optional fallba
 
 ### Effects
 
-```perl
+```typist
 effect Console => +{ writeLine => '(Str) -> Void' };
 ```
 
@@ -212,7 +212,7 @@ Operations are auto-installed as qualified subs (`Console::writeLine(@args)`), d
 
 ### Effect Protocols
 
-```perl
+```typist
 effect DB => qw/Connected Authed/ => +{
     connect    => protocol('(Str) -> Void', '* -> Connected'),
     query      => protocol('(Str) -> Str',  'Authed -> Authed'),
@@ -222,13 +222,13 @@ effect DB => qw/Connected Authed/ => +{
 
 `*` is the ground state (protocol inactive). Only active states appear in the states list. A function that begins a protocol session transitions from `*`:
 
-```perl
+```typist
 sub start_session :sig(() -> Void ![DB<* -> Connected>]) ($self) { ... }
 ```
 
 Mid-protocol functions may use any valid active state as `From`:
 
-```perl
+```typist
 sub run_query :sig((Str) -> Str ![DB<Authed>]) ($self, $q) { ... }
 ```
 
@@ -236,19 +236,19 @@ Annotation: `![DB<* -> Authed>]` declares start/end states. `![DB<Authed>]` is i
 
 ### Effect Handlers
 
-```perl
+```typist
 handle { BODY } Effect => +{ op => sub { ... } };
 ```
 
 Installs scoped effect handlers, executes BODY, and guarantees cleanup even on exception. The `Exn` effect bridges Perl's `die` to the handler system:
 
-```perl
+```typist
 handle { die "oops\n" } Exn => +{ throw => sub ($err) { "recovered" } };
 ```
 
 ### Variadic Functions
 
-```perl
+```typist
 sub log :sig((Str, ...Any) -> Void) ($fmt, @args) { ... }
 ```
 
@@ -394,7 +394,7 @@ sub total :sig((Amount) -> Amount) ($a) { ... }
 
 **Fix**: always parenthesize `die` when used with `//` or other low-precedence operators:
 
-```perl
+```typist
 $x // die("msg\n")
 ```
 
@@ -404,7 +404,7 @@ $x // die("msg\n")
 
 **Fix**: always normalize the result:
 
-```perl
+```typist
 my $words = $doc->find('PPI::Token::Word') || [];
 ```
 
@@ -416,7 +416,7 @@ my $words = $doc->find('PPI::Token::Word') || [];
 
 A bare `{}` is ambiguous between a block and an anonymous hashref. Always prefix with `+` to force hashref interpretation:
 
-```perl
+```typist
 +{ key => "value" }
 ```
 
@@ -430,7 +430,7 @@ PPI parses anonymous sub signatures as `PPI::Token::Prototype`, not `PPI::Struct
 
 **Fix**: always parenthesize:
 
-```perl
+```typist
 reverse(1 .. 10)
 ```
 
@@ -438,7 +438,7 @@ reverse(1 .. 10)
 
 Functions with `(&@)` prototype (like `handle`, and Perl builtins `map`, `grep`) expect a block followed by a list with no comma separating them. Inserting a comma after the block silently breaks the call:
 
-```perl
+```typist
 # Correct: no comma after block
 handle { BLOCK } Logger => +{ ... };
 
@@ -452,7 +452,7 @@ The same rule applies to `map`, `grep`, `sort`, and any other `(&@)` prototyped 
 
 Operator overload subs (`use overload`) cannot use Perl subroutine signatures. Use the traditional `@_` unpacking:
 
-```perl
+```typist
 use overload '|' => sub {
     my ($self, $other) = @_;  # NOT sub ($self, $other)
     ...

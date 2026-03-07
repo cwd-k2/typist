@@ -21,7 +21,7 @@ Without protocols, the effect system only tracks *which* effects a function uses
 
 The three-argument form of `effect` defines an effect with protocol states:
 
-```perl
+```typist
 use v5.40;
 use Typist;
 
@@ -45,7 +45,7 @@ The three arguments to `effect`:
 
 Each operation uses `protocol()` to combine its type signature with its state transition:
 
-```perl
+```typist
 protocol('(ArgTypes) -> ReturnType', 'FromState -> ToState')
 ```
 
@@ -95,7 +95,7 @@ When the static checker analyzes a function, it:
 
 Protocol state annotations appear inside the effect row brackets using `<From -> To>` syntax:
 
-```perl
+```typist
 # Starts from ground, ends at Connected
 sub start_db :sig((Str) -> Void ![DB<* -> Connected>]) ($dsn) {
     DB::connect($dsn);
@@ -139,7 +139,7 @@ The bare `![DB]` form (no angle brackets) defaults to `* -> *`, meaning the func
 
 ### Operation not allowed in current state
 
-```perl
+```typist
 sub bad :sig(() -> Void ![DB<* -> Authed>]) () {
     DB::query("SELECT 1");    # ProtocolMismatch: 'query' not allowed in state '*'
 }
@@ -149,7 +149,7 @@ The `query` operation requires the `Authed` state, but the function starts at `*
 
 ### Wrong end state
 
-```perl
+```typist
 sub partial :sig(() -> Void ![DB<* -> Authed>]) () {
     DB::connect("localhost");
     # ProtocolMismatch: ends in state 'Connected' but declared end state is 'Authed'
@@ -160,7 +160,7 @@ The function declares it will end at `Authed`, but only reaches `Connected`.
 
 ### Incomplete session
 
-```perl
+```typist
 sub incomplete :sig(() -> Void ![DB]) () {
     DB::connect("localhost");
     DB::auth("user", "pass");
@@ -176,7 +176,7 @@ sub incomplete :sig(() -> Void ![DB]) () {
 
 Functions with protocol annotations can call each other. The checker tracks the state transition across the call:
 
-```perl
+```typist
 sub do_connect :sig(() -> Void ![DB<* -> Connected>]) () {
     DB::connect("localhost");
 }
@@ -199,7 +199,7 @@ The protocol checker handles control flow:
 
 Both branches must reach the same state:
 
-```perl
+```typist
 sub setup :sig((Bool) -> Void ![DB<* -> Connected>]) ($flag) {
     if ($flag) {
         DB::connect("host1");     # * -> Connected
@@ -212,7 +212,7 @@ sub setup :sig((Bool) -> Void ![DB<* -> Connected>]) ($flag) {
 
 ### Divergent branches produce errors
 
-```perl
+```typist
 sub bad_branch :sig((Bool) -> Void ![DB<* -> Authed>]) ($flag) {
     DB::connect("localhost");         # * -> Connected
     if ($flag) {
@@ -228,7 +228,7 @@ sub bad_branch :sig((Bool) -> Void ![DB<* -> Authed>]) ($flag) {
 
 A branch that returns is excluded from the state union:
 
-```perl
+```typist
 sub early_return :sig((Bool) -> Void ![DB<* -> Authed>]) ($flag) {
     DB::connect("localhost");         # * -> Connected
     if ($flag) {
@@ -244,7 +244,7 @@ sub early_return :sig((Bool) -> Void ![DB<* -> Authed>]) ($flag) {
 
 An `if` without `else` creates a fallthrough path where no state change occurs:
 
-```perl
+```typist
 sub maybe_connect :sig((Bool) -> Void ![DB<* -> Connected>]) ($flag) {
     if ($flag) {
         DB::connect("localhost");     # * -> Connected
@@ -260,7 +260,7 @@ sub maybe_connect :sig((Bool) -> Void ![DB<* -> Connected>]) ($flag) {
 
 Protocol operations inside loops must be **idempotent** -- the loop body must not change the protocol state. This is because the loop may execute any number of times, and the checker cannot reason about iteration counts:
 
-```perl
+```typist
 # OK: query is Authed -> Authed (idempotent)
 sub query_loop :sig(() -> Void ![DB<Authed>]) () {
     while (1) {
@@ -283,13 +283,13 @@ sub bad_loop :sig(() -> Void ![DB<Connected>]) () {
 
 An operation can accept multiple pre-states using the `|` operator:
 
-```perl
+```typist
 disconnect => protocol('() -> Void', 'Connected | Authed -> *'),
 ```
 
 This means `disconnect` is valid when the protocol is in either `Connected` or `Authed`. After a conditional branch that leaves the state as a union, an operation with a matching superposition from-set can resolve the ambiguity:
 
-```perl
+```typist
 sub diverge_then_disconnect :sig((Bool) -> Void ![DB<* -> *>]) ($flag) {
     DB::connect("localhost");          # * -> Connected
     if ($flag) {
@@ -308,7 +308,7 @@ The `disconnect` operation's from-set `{Connected, Authed}` is a superset of the
 
 `match` expressions are treated similarly to if/else branches. Each arm is traced independently, and the results are unioned:
 
-```perl
+```typist
 sub match_ops :sig((Str) -> Void ![DB<Connected -> Authed>]) ($mode) {
     match $mode,
         admin => sub { DB::auth("admin", "secret") },    # Connected -> Authed
@@ -319,7 +319,7 @@ sub match_ops :sig((Str) -> Void ![DB<Connected -> Authed>]) ($mode) {
 
 Divergent match arms produce a `ProtocolMismatch`:
 
-```perl
+```typist
 sub bad_match :sig((Str) -> Void ![DB<Connected -> Authed>]) ($mode) {
     match $mode,
         admin => sub { DB::auth("admin", "secret") },    # Connected -> Authed
@@ -334,7 +334,7 @@ sub bad_match :sig((Str) -> Void ![DB<Connected -> Authed>]) ($mode) {
 
 When a `handle` block captures the same effect as the protocol being traced, the body is traced with a fresh `* -> *` scope:
 
-```perl
+```typist
 sub with_handle :sig(() -> Void ![DB<* -> *>]) () {
     handle {
         DB::connect("localhost");
@@ -352,7 +352,7 @@ sub with_handle :sig(() -> Void ![DB<* -> *>]) () {
 
 When a `handle` block captures a *different* effect, it is transparent to the protocol being traced:
 
-```perl
+```typist
 sub transparent :sig(() -> Void ![DB<* -> Authed>, Logger]) () {
     handle {
         DB::connect("localhost");     # protocol operations traced normally
@@ -372,7 +372,7 @@ The analyzer performs well-formedness checks on protocol definitions:
 
 An operation that appears in the effect but not in any protocol transition is flagged:
 
-```perl
+```typist
 effect BadDB => qw/None Connected/ => +{
     connect   => protocol('(Str) -> Void', 'None -> Connected'),
     query     => protocol('(Str) -> Str',  'Connected -> Connected'),
@@ -385,7 +385,7 @@ effect BadDB => qw/None Connected/ => +{
 
 A transition target that is not in the declared states list is flagged:
 
-```perl
+```typist
 effect BadDB => qw/None/ => +{
     connect => protocol('(Str) -> Void', 'None -> Connected'),
 };
@@ -396,7 +396,7 @@ effect BadDB => qw/None/ => +{
 
 ## A Complete Example
 
-```perl
+```typist
 use v5.40;
 use Typist;
 

@@ -55,7 +55,7 @@ Key observations:
 
 ### Usage
 
-```perl
+```typist
 my $n :sig(Num)   = 42;      # ok: Int <: Num
 my $n :sig(Num)   = 3.14;    # ok: Double <: Num
 my $s :sig(Str)   = "hello"; # ok
@@ -81,7 +81,7 @@ my $a :sig(Any)   = [1,2,3]; # ok: Any accepts everything
 | `Array[T]` | `Array[Int]` | List type -- the result of list-producing expressions |
 | `Hash[K, V]` | `Hash[Str, Int]` | List type -- the result of hash-producing expressions |
 
-```perl
+```typist
 my $nums :sig(ArrayRef[Int])       = [1, 2, 3];
 my $map  :sig(HashRef[Str, Int])   = +{ a => 1, b => 2 };
 my $pair :sig(Tuple[Str, Int])     = ["Alice", 30];
@@ -104,7 +104,7 @@ This is a common point of confusion. `Array[T]` and `ArrayRef[T]` are fundamenta
 
 For variables, parameters, and data structures, you almost always want `ArrayRef[T]`. `Array[T]` appears in inferred types when the static analyzer tracks list operations:
 
-```perl
+```typist
 my @words = ("hello", "world");
 my @upper = map { uc($_) } @words;     # inferred: Array[Str]
 my $upper = [map { uc($_) } @words];   # inferred: ArrayRef[Str]
@@ -127,7 +127,7 @@ Tuple[Bool, Str] <: Tuple[Int, Str]      # per-position covariance
 
 Types compose freely:
 
-```perl
+```typist
 my $matrix :sig(ArrayRef[ArrayRef[Int]]) = [[1, 2], [3, 4]];
 my $users  :sig(ArrayRef[{ name => Str, age => Int }]) = [
     +{ name => "Alice", age => 30 },
@@ -147,7 +147,7 @@ BEGIN {
 
 `T | U` -- a value that belongs to either `T` or `U`.
 
-```perl
+```typist
 my $id :sig(Int | Str) = 42;
 $id = "ABC-123";               # ok: Str is a member
 
@@ -180,7 +180,7 @@ Double <: Int | Str         # false: Double </: Int and Double </: Str
 
 `Maybe[T]` is syntactic sugar for `T | Undef`. It is the standard way to express nullable types:
 
-```perl
+```typist
 my $email :sig(Maybe[Str]) = undef;
 $email = "alice@example.com";    # ok: Str
 $email = undef;                  # ok: Undef
@@ -192,7 +192,7 @@ $email = undef;                  # ok: Undef
 
 `T & U` -- a value that satisfies both `T` and `U` simultaneously.
 
-```perl
+```typist
 BEGIN { typedef ReadWrite => 'Readable & Writable'; }
 ```
 
@@ -213,7 +213,7 @@ S <: T & U     iff  S <: T  AND  S <: U     (S must subtype all members)
 
 Intersection syntax also appears in generic constraints, where `+` serves as the intersection operator:
 
-```perl
+```typist
 sub display_max :sig(<T: Num + Show>(T, T) -> Str) ($a, $b) { ... }
 ```
 
@@ -225,7 +225,7 @@ Here `T` must satisfy both `Num` (type bound) and `Show` (typeclass constraint).
 
 `{ key => Type, key? => Type }` -- anonymous structural types for hash-shaped data.
 
-```perl
+```typist
 my $p :sig({ name => Str, age => Int }) = { name => "Alice", age => 30 };
 ```
 
@@ -233,7 +233,7 @@ my $p :sig({ name => Str, age => Int }) = { name => "Alice", age => 30 };
 
 Append `?` to the key name to make a field optional:
 
-```perl
+```typist
 BEGIN {
     typedef Config => '{ host => Str, port => Int, tls? => Bool }';
 }
@@ -269,7 +269,7 @@ Optional vs required:
 
 `Record <: HashRef[Str, V]` when all field values are subtypes of `V`. This enables using record literals where a `HashRef` is expected:
 
-```perl
+```typist
 BEGIN { typedef Json => 'Str | Int | Num | Bool | Undef | ArrayRef[Json] | HashRef[Str, Json]'; }
 
 my $data :sig(Json) = +{ name => "Alice", age => 30 };  # record <: HashRef[Str, Json]
@@ -279,7 +279,7 @@ my $data :sig(Json) = +{ name => "Alice", age => 30 };  # record <: HashRef[Str,
 
 Use `typedef` to give a record type a name:
 
-```perl
+```typist
 BEGIN {
     typedef Point  => '{ x => Int, y => Int }';
     typedef Person => '{ name => Str, age => Int }';
@@ -296,7 +296,7 @@ Named records via `typedef` are still structural -- `Point` and `{ x => Int, y =
 
 `(Params) -> Return` or `(Params) -> Return ![Effects]`
 
-```perl
+```typist
 sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 ```
 
@@ -317,7 +317,7 @@ Contravariant parameters mean a function that accepts a *wider* type is a subtyp
 
 `CodeRef[A -> R]` is the parameterized form for function references stored as values:
 
-```perl
+```typist
 my $f :sig(CodeRef[Int -> Str]) = sub ($n) { "$n" };
 ```
 
@@ -327,7 +327,7 @@ my $f :sig(CodeRef[Int -> Str]) = sub ($n) { "$n" };
 
 Singleton types that represent exactly one value.
 
-```perl
+```typist
 my $answer :sig(42)               = 42;
 my $status :sig("ok" | "error")   = "ok";
 ```
@@ -358,14 +358,14 @@ The static analyzer infers literal types from source-level literals:
 
 When a literal is assigned to an unannotated variable, the type is **widened** to its base atom for downstream use:
 
-```perl
+```typist
 my $x = 42;       # inferred as Int (widened from Literal(42, Int))
 my $s = "hello";  # inferred as Str (widened from Literal("hello", Str))
 ```
 
 This prevents overly specific types from propagating through the program. With an explicit annotation, the literal type is preserved:
 
-```perl
+```typist
 my $x :sig(42) = 42;   # type is exactly Literal(42, Int), not Int
 ```
 
@@ -373,7 +373,7 @@ my $x :sig(42) = 42;   # type is exactly Literal(42, Int), not Int
 
 By default, `0` and `1` are inferred as `Literal(0, Int)` and `Literal(1, Int)` -- that is, integers, not booleans. Only when the **expected type** is `Bool` (via a `:sig(Bool)` annotation or a function parameter typed as `Bool`) do they become `Bool`:
 
-```perl
+```typist
 my $x :sig(Int)  = 0;    # ok: Literal(0, Int) <: Int
 my $b :sig(Bool) = 0;    # ok: bidirectional inference makes it Bool
 ```
@@ -384,7 +384,7 @@ This is bidirectional type inference at work. The expected type flows inward and
 
 Literal types combine naturally with unions to express enumerations:
 
-```perl
+```typist
 BEGIN {
     typedef Status   => '"ok" | "error" | "pending"';
     typedef SmallInt => '0 | 1 | 2 | 3';

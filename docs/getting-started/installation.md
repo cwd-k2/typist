@@ -38,7 +38,7 @@ perl -Ilocal/lib/perl5 -Ilib your_script.pl
 
 Add to your `cpanfile`:
 
-```perl
+```typist
 requires 'Typist';
 ```
 
@@ -100,14 +100,14 @@ my-project/
 
 Your `cpanfile`:
 
-```perl
+```typist
 requires 'perl', 'v5.40';
 requires 'Typist';
 ```
 
 Your type definitions module (`lib/MyApp/Types.pm`):
 
-```perl
+```typist
 package MyApp::Types;
 use v5.40;
 use Typist;
@@ -130,7 +130,7 @@ BEGIN {
 
 Your application code (`lib/MyApp/Logic.pm`):
 
-```perl
+```typist
 package MyApp::Logic;
 use v5.40;
 use Typist;

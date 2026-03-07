@@ -8,7 +8,7 @@ Real projects span multiple files and packages. This page covers how to organize
 
 The recommended pattern is a dedicated types module that defines all shared domain types and exports their constructors:
 
-```perl
+```typist
 # lib/MyApp/Types.pm
 package MyApp::Types;
 use v5.40;
@@ -48,7 +48,7 @@ Key points:
 
 Modules that use these types import the types module:
 
-```perl
+```typist
 # lib/MyApp/Service.pm
 package MyApp::Service;
 use v5.40;
@@ -149,7 +149,7 @@ lib/
 
 For small projects, a single `Types.pm` is sufficient. As the project grows, split by concern:
 
-```perl
+```typist
 # lib/MyApp/Types/Domain.pm
 package MyApp::Types::Domain;
 use v5.40;
@@ -184,7 +184,7 @@ BEGIN {
 1;
 ```
 
-```perl
+```typist
 # lib/MyApp/Types/Events.pm
 package MyApp::Types::Events;
 use v5.40;
@@ -209,7 +209,7 @@ BEGIN {
 
 A top-level module can re-export everything:
 
-```perl
+```typist
 # lib/MyApp/Types.pm
 package MyApp::Types;
 use v5.40;
@@ -232,7 +232,7 @@ our @EXPORT = (
 
 Effects and typeclasses follow the same pattern as types:
 
-```perl
+```typist
 # lib/MyApp/Effects.pm
 package MyApp::Effects;
 use v5.40;
@@ -260,7 +260,7 @@ Consumer modules `use MyApp::Effects` and then use `Logger::log(...)` and `![Log
 
 Typeclass instances can be defined in any module:
 
-```perl
+```typist
 # lib/MyApp/Instances.pm
 package MyApp::Instances;
 use v5.40;

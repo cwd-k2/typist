@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pygments-typist"
+version = "0.1.0"
+requires-python = ">=3.8"
+dependencies = ["pygments"]
+
+[project.entry-points."pygments.lexers"]
+typist = "pygments_typist:TypistLexer"
+
+[tool.setuptools]
+py-modules = ["pygments_typist"]

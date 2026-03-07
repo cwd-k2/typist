@@ -10,7 +10,7 @@ If you are familiar with Haskell type classes, Rust traits, or Swift protocols, 
 
 Use `typeclass` inside a `BEGIN` block:
 
-```perl
+```typist
 use v5.40;
 use Typist;
 
@@ -33,7 +33,7 @@ This registers the typeclass in the Typist Registry and creates a **synthetic na
 
 A typeclass can declare any number of methods:
 
-```perl
+```typist
 BEGIN {
     typeclass Eq => 'T', +{
         eq  => '(T, T) -> Bool',
@@ -50,7 +50,7 @@ All methods must be provided when defining an instance.
 
 Use `instance` to provide concrete implementations for a specific type:
 
-```perl
+```typist
 BEGIN {
     instance Show => 'Int', +{
         show => sub ($v) { "$v" },
@@ -76,7 +76,7 @@ The three arguments are:
 
 Every method declared in the typeclass must be provided. Missing a method dies immediately:
 
-```perl
+```typist
 eval {
     instance Eq => 'Int', +{
         eq => sub ($a, $b) { $a == $b ? 1 : 0 },
@@ -90,7 +90,7 @@ eval {
 
 Instances work with any type -- including structs, newtypes, and ADTs:
 
-```perl
+```typist
 BEGIN {
     struct Point => (x => 'Int', y => 'Int');
 
@@ -108,7 +108,7 @@ say Show::show(Point(x => 1, y => 2));   # "Point(1, 2)"
 
 Call methods through the synthetic namespace `ClassName::method_name`:
 
-```perl
+```typist
 say Show::show(42);         # "42"
 say Show::show("hello");    # "\"hello\""
 say Show::show(1);          # "1" (dispatched as Int)
@@ -127,7 +127,7 @@ When you call `Show::show($value)`, the dispatch function:
 
 If no matching instance is found, it dies:
 
-```perl
+```typist
 eval { Show::show([1, 2, 3]) };
 # Dies: Typist: no instance of Show for ArrayRef
 ```
@@ -138,7 +138,7 @@ eval { Show::show([1, 2, 3]) };
 
 A typeclass can require that instances also have instances of other typeclasses:
 
-```perl
+```typist
 BEGIN {
     typeclass Ord => 'T: Eq', +{
         compare => '(T, T) -> Int',
@@ -148,7 +148,7 @@ BEGIN {
 
 `T: Eq` means: to define an `Ord` instance for a type, that type must already have an `Eq` instance. The superclass constraint is checked when the instance is registered:
 
-```perl
+```typist
 BEGIN {
     # This works because Eq for Int is already registered above
     instance Ord => 'Int', +{
@@ -164,7 +164,7 @@ BEGIN {
 
 If the superclass instance is missing:
 
-```perl
+```typist
 eval {
     instance Ord => 'Double', +{
         compare => sub ($a, $b) { $a <=> $b },
@@ -179,7 +179,7 @@ eval {
 
 Typeclasses can have multiple type variables:
 
-```perl
+```typist
 BEGIN {
     typeclass Convertible => 'T, U', +{
         convert => '(T) -> U',
@@ -199,7 +199,7 @@ BEGIN {
 
 For single-parameter classes, dispatch resolves from the first argument's type. For multi-parameter classes, dispatch infers types from multiple arguments (up to the number of type parameters) and matches against registered instances:
 
-```perl
+```typist
 say Convertible::convert(42);      # "42" (matches Int, Str instance)
 ```
 
@@ -211,7 +211,7 @@ The multi-parameter type expression in the instance declaration uses comma separ
 
 Type classes can abstract over type constructors (types of kind `* -> *`) rather than concrete types:
 
-```perl
+```typist
 BEGIN {
     typeclass Functor => 'F: * -> *', +{
         fmap => '(F[A], CodeRef[A -> B]) -> F[B]',
@@ -225,7 +225,7 @@ BEGIN {
 
 `F: * -> *` declares `F` as a type constructor that takes one type argument. The instance for `ArrayRef` (a `* -> *` constructor) provides a concrete implementation:
 
-```perl
+```typist
 my $doubled = Functor::fmap([1, 2, 3], sub ($x) { $x * 2 });
 say "@$doubled";   # 2 4 6
 
@@ -241,7 +241,7 @@ Instance resolution for HKT classes matches by constructor name: `ArrayRef[Int]`
 
 Use `T: ClassName` in a function's generic declaration to require a typeclass instance:
 
-```perl
+```typist
 sub print_value :sig(<T: Show>(T) -> Void ![IO]) ($x) {
     say Show::show($x);
 }
@@ -249,7 +249,7 @@ sub print_value :sig(<T: Show>(T) -> Void ![IO]) ($x) {
 
 The static analyzer checks at each call site that the inferred type argument has a registered instance of the specified typeclass. This catches errors before runtime:
 
-```perl
+```typist
 print_value(42);         # ok: Show instance for Int exists
 print_value("hello");    # ok: Show instance for Str exists
 print_value([1, 2, 3]);  # diagnostic: no instance of Show for ArrayRef[Int]
@@ -259,7 +259,7 @@ print_value([1, 2, 3]);  # diagnostic: no instance of Show for ArrayRef[Int]
 
 Combine typeclass constraints with `+`:
 
-```perl
+```typist
 sub sorted_display :sig(<T: Ord + Show>(ArrayRef[T]) -> Str) ($arr) {
     my @sorted = sort { Ord::compare($a, $b) } @$arr;
     join(", ", map { Show::show($_) } @sorted);
@@ -276,7 +276,7 @@ Typeclasses and instances can be defined in different files. As long as both fil
 
 **`lib/MyApp/Types.pm`**:
 
-```perl
+```typist
 package MyApp::Types;
 use v5.40;
 use Typist;
@@ -292,7 +292,7 @@ BEGIN {
 
 **`lib/MyApp/Instances.pm`**:
 
-```perl
+```typist
 package MyApp::Instances;
 use v5.40;
 use Typist;
@@ -333,7 +333,7 @@ This means you can call `Show::show(...)` from any package without importing any
 
 ## Complete Example
 
-```perl
+```typist
 use v5.40;
 use Typist;
 

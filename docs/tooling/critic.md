@@ -14,7 +14,7 @@ All policies use the `typist` theme.
 
 Warns when public subroutines (those not starting with `_`) lack a `:sig()` annotation. In a Typist codebase, every public function should carry a type signature for static analysis and documentation.
 
-```perl
+```typist
 # Violation: public sub without :sig()
 sub calculate_total ($items) { ... }
 
@@ -40,7 +40,7 @@ severity = 4
 
 Warns when a function calls effect operations (qualified calls matching `CapitalizedPkg::operation`) without declaring effects in its `:sig()` annotation via the `!` syntax.
 
-```perl
+```typist
 # Violation: calls Logger::log but doesn't declare ![Logger]
 sub process :sig((Str) -> Void) ($msg) {
     Logger::log("Processing: $msg");
@@ -69,7 +69,7 @@ severity = 3
 
 Warns when a `match` expression does not cover all variants and has no `_` fallback arm. A `match` without a fallback will `die` at runtime if an unmatched variant is encountered.
 
-```perl
+```typist
 BEGIN {
     datatype Shape => (
         Circle    => '(Int)',

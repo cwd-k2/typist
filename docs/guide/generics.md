@@ -8,7 +8,7 @@ Generics (parametric polymorphism) let you write functions and data structures t
 
 Declare type parameters in `<>` before the parameter list:
 
-```perl
+```typist
 use v5.40;
 use Typist;
 
@@ -29,7 +29,7 @@ You never write the type argument explicitly -- it is always inferred from the a
 
 Use comma-separated names for independent type variables:
 
-```perl
+```typist
 sub pair :sig(<T, U>(T, U) -> Tuple[T, U]) ($a, $b) {
     [$a, $b];
 }
@@ -48,7 +48,7 @@ my $s = swap($p);             # Tuple[Str, Int]
 
 Constrain a type variable with an upper bound using `T: Bound`:
 
-```perl
+```typist
 sub max_of :sig(<T: Num>(T, T) -> T) ($a, $b) {
     $a > $b ? $a : $b;
 }
@@ -65,7 +65,7 @@ Within the function body, `T` is treated as `Num` for the purposes of static ana
 
 You can use any type as a bound, not just `Num`:
 
-```perl
+```typist
 sub increment :sig(<T: Int>(T) -> T) ($x) {
     $x + 1;
 }
@@ -85,7 +85,7 @@ increment(3.14);    # error: Double is not <: Int
 
 When the name after `:` is a registered typeclass (rather than a type), it becomes a typeclass constraint instead of a type bound:
 
-```perl
+```typist
 BEGIN {
     typeclass Show => 'T', +{
         show => '(T) -> Str',
@@ -119,7 +119,7 @@ This happens automatically -- you use the same syntax for both.
 
 Combine multiple constraints with `+`:
 
-```perl
+```typist
 sub display_max :sig(<T: Num + Show>(T, T) -> Str) ($a, $b) {
     Show::show($a > $b ? $a : $b);
 }
@@ -134,7 +134,7 @@ Both are checked at the call site. The call `display_max(3, 4)` succeeds if `Int
 
 ### Multiple Typeclass Constraints
 
-```perl
+```typist
 sub sorted_show :sig(<T: Ord + Show>(ArrayRef[T]) -> Str) ($arr) {
     # T must have both Ord and Show instances
     ...
@@ -147,7 +147,7 @@ sub sorted_show :sig(<T: Ord + Show>(ArrayRef[T]) -> Str) ($arr) {
 
 Type variables can appear inside parameterized types:
 
-```perl
+```typist
 sub head_or_default :sig(<T>(ArrayRef[T], T) -> T) ($arr, $default) {
     @$arr ? $arr->[0] : $default;
 }
@@ -170,7 +170,7 @@ my $zipped = zip([1, 2], ["a", "b"]);
 
 Structs can be parameterized over type variables (covered in detail in [Structs](struct.md)):
 
-```perl
+```typist
 BEGIN {
     struct 'Pair[T, U]' => (fst => 'T', snd => 'U');
     struct 'Box[T]'     => (val => 'T');
@@ -182,7 +182,7 @@ say $p->fst;                                # 42 (typed as Int)
 
 Bounded generic structs combine generics with type bounds:
 
-```perl
+```typist
 BEGIN {
     struct 'NumBox[T: Num]' => (value => 'T');
 }
@@ -194,7 +194,7 @@ BEGIN {
 
 ADTs can also be parameterized (covered in detail in [ADTs](adt.md)):
 
-```perl
+```typist
 BEGIN {
     datatype 'Option[T]' =>
         Some => '(T)',
@@ -236,7 +236,7 @@ Generic function call-site checking is performed by the static analyzer. At runt
 
 ### Wrapper / Container
 
-```perl
+```typist
 sub wrap :sig(<T>(T) -> ArrayRef[T]) ($x) {
     [$x];
 }
@@ -248,7 +248,7 @@ sub unwrap :sig(<T>(ArrayRef[T]) -> T) ($arr) {
 
 ### Transform
 
-```perl
+```typist
 sub map_maybe :sig(<T, U>(Maybe[T], CodeRef[T -> U]) -> Maybe[U]) ($opt, $f) {
     defined $opt ? $f->($opt) : undef;
 }
@@ -256,7 +256,7 @@ sub map_maybe :sig(<T, U>(Maybe[T], CodeRef[T -> U]) -> Maybe[U]) ($opt, $f) {
 
 ### Constrained Operations
 
-```perl
+```typist
 sub clamp :sig(<T: Num>(T, T, T) -> T) ($val, $lo, $hi) {
     $val < $lo ? $lo : $val > $hi ? $hi : $val;
 }

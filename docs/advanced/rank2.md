@@ -8,7 +8,7 @@ Regular generic functions have rank-1 polymorphism: the caller chooses the concr
 
 In rank-1 polymorphism, the type variable is fixed by the caller at the call site:
 
-```perl
+```typist
 # Rank-1: the caller decides what T is.
 # Calling identity(42) fixes T = Int.
 sub identity :sig(<T>(T) -> T) ($x) { $x }
@@ -16,7 +16,7 @@ sub identity :sig(<T>(T) -> T) ($x) { $x }
 
 In rank-2 polymorphism, a function parameter is itself universally quantified. The callee can apply it at any type it chooses:
 
-```perl
+```typist
 # Rank-2: the parameter $f must work for ALL types A.
 # apply_twice gets to choose what A is, not the caller.
 sub apply_twice :sig((forall A. (A) -> A, Int) -> Int) ($f, $x) {
@@ -40,7 +40,7 @@ forall A. (A, A) -> A
 
 ### Single variable
 
-```perl
+```typist
 forall A. (A) -> A
 ```
 
@@ -48,7 +48,7 @@ A function that takes any type `A` and returns the same type. The identity funct
 
 ### Multiple variables
 
-```perl
+```typist
 forall A B. (A, B) -> A
 ```
 
@@ -58,7 +58,7 @@ Multiple type variables are separated by spaces. This describes a function that 
 
 Quantified variables can carry upper bounds:
 
-```perl
+```typist
 forall A: Num. (A) -> A
 ```
 
@@ -68,7 +68,7 @@ Here `A` must be a subtype of `Num`. The bound restricts which types the variabl
 
 The most common rank-2 usage is a function whose parameter is itself quantified. The `forall` type appears inside the parameter list:
 
-```perl
+```typist
 (forall A. (A) -> A, Int) -> Int
 ```
 
@@ -84,7 +84,7 @@ Rank-2 types participate in the subtype relation with three key rules.
 
 A universally quantified type can be instantiated to any concrete type:
 
-```perl
+```typist
 # (forall A. (A) -> A) <: (Int -> Int)
 # The polymorphic identity can be used wherever a monomorphic Int -> Int is expected.
 ```
@@ -95,7 +95,7 @@ This is safe because a function that works for all types certainly works for `In
 
 A monomorphic type cannot satisfy a universally quantified type:
 
-```perl
+```typist
 # (Int -> Int) is NOT <: (forall A. (A) -> A)
 # A function that only handles Int cannot claim to work for all types.
 ```
@@ -106,7 +106,7 @@ This is the fundamental asymmetry that gives rank-2 polymorphism its power. It a
 
 Two quantified types can be compared by renaming variables and comparing their bodies. Bounds are checked contravariantly:
 
-```perl
+```typist
 # (forall A. (A) -> A) <: (forall B. (B) -> B)
 # Same structure, different variable names -- this holds.
 
@@ -121,7 +121,7 @@ Two quantified types can be compared by renaming variables and comparing their b
 
 Consider a function that applies a transformation to every element of a heterogeneous pair:
 
-```perl
+```typist
 BEGIN {
     typedef Pair => 'Tuple[Any, Any]';
 }

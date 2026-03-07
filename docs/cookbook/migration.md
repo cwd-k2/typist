@@ -39,7 +39,7 @@ The key principle: **no annotation = no constraint**. Adding `use Typist` withou
 
 Here is a typical Perl module before any Typist integration:
 
-```perl
+```typist
 # lib/MyApp/Pricing.pm
 package MyApp::Pricing;
 use v5.40;
@@ -72,7 +72,7 @@ Nothing is wrong with this code. It works. But there is no way to know, from the
 
 ## Step 1: Add `use Typist`
 
-```perl
+```typist
 package MyApp::Pricing;
 use v5.40;
 use Typist;                        # <-- added
@@ -90,7 +90,7 @@ This does nothing visible. No diagnostics, no runtime cost. It registers the pac
 
 Add a `BEGIN` block with type definitions that describe your domain:
 
-```perl
+```typist
 package MyApp::Pricing;
 use v5.40;
 use Typist;
@@ -112,7 +112,7 @@ For a larger project, put shared types in a dedicated module (see [Multi-File Pr
 
 Start with the module's public API -- the functions that callers depend on:
 
-```perl
+```typist
 sub calculate_total :sig((ArrayRef[LineItem]) -> Int) ($items) {
     my $total = 0;
     for my $item (@$items) {
@@ -142,7 +142,7 @@ Now the static checker can verify:
 
 As confidence grows, promote raw types to newtypes for stronger guarantees:
 
-```perl
+```typist
 BEGIN {
     newtype Price    => 'Int';    # cents
     newtype Quantity => 'Int';
@@ -181,7 +181,7 @@ Now `apply_discount(Price(1000), Quantity(5))` is a static error -- you cannot a
 
 The complete migrated module:
 
-```perl
+```typist
 # lib/MyApp/Pricing.pm
 package MyApp::Pricing;
 use v5.40;
@@ -261,7 +261,7 @@ Set `TYPIST_CHECK_QUIET=1` in your shell environment to suppress CHECK-phase out
 
 Once your data types and function signatures are in place, add effect annotations to track side effects:
 
-```perl
+```typist
 BEGIN {
     effect Logger => +{
         log => '(Str) -> Void',
@@ -284,7 +284,7 @@ The static checker will flag callers of `process_order` that do not declare `Log
 
 For test suites, consider enabling runtime mode to catch violations at the boundary between typed and untyped code:
 
-```perl
+```typist
 # t/pricing.t
 use v5.40;
 use Typist -runtime;

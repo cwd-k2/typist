@@ -118,7 +118,7 @@ A non-literal type never subtypes a literal type. `Int </: Literal(42, Int)` -- 
 
 Type aliases (`typedef`) are transparent. The alias is resolved before comparison:
 
-```perl
+```typist
 BEGIN { typedef Name => 'Str'; }
 # Name <: Str  and  Str <: Name  (they are the same type after resolution)
 ```
@@ -139,7 +139,7 @@ T | U <: S    iff T <: S AND U <: S
 
 Every member of the union must subtype the target. This is the safe direction -- if all members fit, the union fits.
 
-```perl
+```typist
 # Int | Bool <: Num
 # because Int <: Num AND Bool <: Int <: Num
 ```
@@ -152,7 +152,7 @@ S <: T | U    iff S <: T OR S <: U
 
 It suffices for the value to fit any one member of the union.
 
-```perl
+```typist
 # Int <: Int | Str
 # because Int <: Int
 ```
@@ -192,7 +192,7 @@ HashRef[K1, V1] <: HashRef[K2, V2]    iff K1 <: K2 AND V1 <: V2
 
 Examples:
 
-```perl
+```typist
 # ArrayRef[Int] <: ArrayRef[Num]     (because Int <: Num)
 # ArrayRef[Num] </: ArrayRef[Int]    (Num is not a subtype of Int)
 # HashRef[Str, Int] <: HashRef[Str, Num]
@@ -200,7 +200,7 @@ Examples:
 
 Two parameterized types with different base constructors are never in a subtype relationship:
 
-```perl
+```typist
 # ArrayRef[Int] </: HashRef[Str, Int]    (different constructors)
 ```
 
@@ -220,7 +220,7 @@ Function types follow the standard variance rules from type theory.
 
 A function that accepts a *broader* input type is substitutable for one that accepts a *narrower* type. The parameter position is contravariant (the direction reverses).
 
-```perl
+```typist
 # (Num) -> Str <: (Int) -> Str
 # A function accepting any Num can be used where one accepting only Int is expected.
 ```
@@ -233,7 +233,7 @@ A function that accepts a *broader* input type is substitutable for one that acc
 
 A function that returns a *narrower* type is substitutable for one that returns a *broader* type.
 
-```perl
+```typist
 # (Int) -> Int <: (Int) -> Num
 # A function returning Int can be used where one returning Num is expected.
 ```
@@ -298,7 +298,7 @@ A record with homogeneous value types subtypes the corresponding `HashRef`. This
 
 Structs use **nominal** subtyping -- two structs are in a subtype relationship only if they have the same name.
 
-```perl
+```typist
 BEGIN {
     struct Point  => (x => 'Int', y => 'Int');
     struct Vector => (x => 'Int', y => 'Int');
@@ -311,7 +311,7 @@ BEGIN {
 
 A struct is a subtype of its structural record shape:
 
-```perl
+```typist
 # Point <: { x => Int, y => Int }
 ```
 
@@ -319,7 +319,7 @@ This allows functions that accept a record shape to work with any struct that ha
 
 ### Record does not subtype Struct (nominal barrier)
 
-```perl
+```typist
 # { x => Int, y => Int } </: Point
 ```
 
@@ -329,7 +329,7 @@ A plain hashref with the right shape cannot masquerade as a named struct. This i
 
 Generic structs are covariant in their type arguments:
 
-```perl
+```typist
 BEGIN {
     struct 'Box[T]' => (value => 'T');
 }
@@ -342,7 +342,7 @@ BEGIN {
 
 Like structs, newtypes and data types use nominal identity:
 
-```perl
+```typist
 BEGIN {
     newtype UserId => 'Int';
     newtype GroupId => 'Int';
@@ -355,7 +355,7 @@ BEGIN {
 
 Data types (from `datatype`/`enum`) follow the same rule, with covariant type arguments when present:
 
-```perl
+```typist
 BEGIN {
     datatype 'Maybe[T]' => +{ Some => '(T)', None => '()' };
 }
@@ -376,7 +376,7 @@ See [Rank-2 Polymorphism](rank2.md) for full coverage. The key subtyping rules:
 
 A universally quantified type can be instantiated to match a concrete type. The checker uses structural unification to find a valid binding for the quantified variables.
 
-```perl
+```typist
 # (forall A. (A) -> A) <: (Int) -> Int
 ```
 
@@ -388,7 +388,7 @@ U </: (forall A. T)    (when U is not quantified)
 
 A concrete type cannot satisfy a universal requirement.
 
-```perl
+```typist
 # (Int) -> Int </: (forall A. (A) -> A)
 ```
 

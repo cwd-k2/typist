@@ -8,7 +8,7 @@ Typist provides two mechanisms for naming types: `typedef` for structural aliase
 
 `typedef` creates a named reference to a type expression. The name and the underlying expression are **interchangeable** -- they have the same identity for subtyping purposes.
 
-```perl
+```typist
 BEGIN {
     typedef Name   => 'Str';
     typedef Price  => 'Int';
@@ -21,7 +21,7 @@ BEGIN {
 
 Once defined, the name works everywhere a type expression does:
 
-```perl
+```typist
 my $name :sig(Name) = "Alice";      # Name = Str, so "Alice" is valid
 my $cost :sig(Price) = 1500;        # Price = Int
 
@@ -36,7 +36,7 @@ greet("Bob");    # ok: Str <: Name because Name is Str
 
 `typedef` creates no barrier. A `Name` is a `Str`, and a `Str` is a `Name`:
 
-```perl
+```typist
 BEGIN {
     typedef Name  => 'Str';
     typedef Label => 'Str';
@@ -55,7 +55,7 @@ This is the key property of structural typing: if the shapes match, the types ma
 
 Recursion through a type constructor is allowed. The type alias resolves lazily, so the self-reference is productive:
 
-```perl
+```typist
 BEGIN {
     typedef IntList => 'Int | ArrayRef[IntList]';
 }
@@ -66,7 +66,7 @@ my $flat :sig(IntList) = 42;                  # ok: Int branch
 
 A bare cycle without a constructor is detected and rejected:
 
-```perl
+```typist
 BEGIN {
     typedef A => 'B';
     typedef B => 'A';    # CycleError: A -> B -> A
@@ -77,7 +77,7 @@ BEGIN {
 
 `typedef` works with any type expression, including unions, intersections, records, and parameterized types:
 
-```perl
+```typist
 BEGIN {
     typedef Config  => '{ host => Str, port => Int, tls? => Bool }';
     typedef IdOrName => 'Int | Str';
@@ -94,7 +94,7 @@ BEGIN {
 
 Named types compose naturally -- use one typedef inside another:
 
-```perl
+```typist
 BEGIN {
     typedef Name    => 'Str';
     typedef Age     => 'Int';
@@ -125,7 +125,7 @@ Since `Name` is `Str` and `Age` is `Int`, the record `{ name => Name, age => Age
 
 `newtype` creates a **nominal** (name-based) type wrapper. Unlike `typedef`, a newtype is NOT interchangeable with its inner type. Two newtypes wrapping the same inner type are distinct from each other and from the raw type.
 
-```perl
+```typist
 BEGIN {
     newtype UserId  => 'Int';
     newtype OrderId => 'Int';
@@ -137,7 +137,7 @@ BEGIN {
 
 Each `newtype` generates a constructor function and a `coerce` method:
 
-```perl
+```typist
 my $uid = UserId(42);               # construct: wraps 42 as a UserId
 my $raw = UserId::coerce($uid);     # extract: returns 42
 ```
@@ -148,7 +148,7 @@ Values are blessed scalar references (`Typist::Newtype::UserId`). The constructo
 
 `UserId` is NOT a subtype of `Int`, even though it wraps `Int`:
 
-```perl
+```typist
 my $uid :sig(UserId) = UserId(42);
 
 # All of these are type errors:
@@ -169,7 +169,7 @@ UserId </: OrderId      # no: different names
 
 Functions that accept `UserId` will reject `OrderId`, raw `Int`, and everything else:
 
-```perl
+```typist
 sub find_user :sig((UserId) -> Str) ($id) {
     "User #" . UserId::coerce($id);
 }
@@ -183,7 +183,7 @@ find_user(UserId(42));       # ok
 
 The constructor validates the inner value's type. With `-runtime` enabled, this validation is enforced at construction time:
 
-```perl
+```typist
 use Typist -runtime;
 
 my $uid = UserId(42);        # ok: 42 is Int
@@ -197,7 +197,7 @@ Without `-runtime`, structural checks (arity) remain active but type validation 
 
 Newtypes work naturally in records, structs, and compound types:
 
-```perl
+```typist
 BEGIN {
     newtype UserId => 'Int';
     newtype Email  => 'Str';
@@ -239,7 +239,7 @@ Here `id` must be a `UserId` (not a raw `Int`) and `email` must be an `Email` (n
 
 Consider a function that transfers money between accounts:
 
-```perl
+```typist
 # With typedef -- DANGEROUS
 BEGIN {
     typedef AccountId => 'Int';
@@ -254,7 +254,7 @@ sub transfer :sig((AccountId, AccountId, Amount) -> Void) ($from, $to, $amt) {
 transfer(100, 1, 2);   # Compiles fine but is semantically wrong!
 ```
 
-```perl
+```typist
 # With newtype -- SAFE
 BEGIN {
     newtype AccountId => 'Int';
@@ -277,7 +277,7 @@ The newtype version makes the argument order part of the type contract. The comp
 
 Both `typedef` and `newtype` must appear inside `BEGIN` blocks so that the type definitions are available during CHECK-phase static analysis:
 
-```perl
+```typist
 # Correct
 BEGIN {
     typedef Name => 'Str';

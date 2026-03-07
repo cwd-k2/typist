@@ -6,7 +6,7 @@ Typist has two enforcement modes. The default is static-only, which catches erro
 
 ## The Two Modes
 
-```perl
+```typist
 use Typist;            # Static-only (default)
 use Typist -runtime;   # Static + runtime enforcement
 ```
@@ -57,7 +57,7 @@ With `use Typist`, type errors are reported as warnings during the CHECK phase -
 
 - **Structural checks**: struct/newtype/datatype constructors validate field names, required fields, and argument arity. These checks are cheap (hash key existence, array length) and catch API misuse:
 
-```perl
+```typist
 BEGIN {
     struct Point => (x => 'Int', y => 'Int');
 }
@@ -85,7 +85,7 @@ With `use Typist -runtime`, three additional enforcement mechanisms activate:
 
 Variables annotated with `:sig(Type)` are monitored via Perl's `tie` mechanism. Every assignment is checked against the declared type:
 
-```perl
+```typist
 use Typist -runtime;
 
 my $count :sig(Int) = 0;
@@ -100,7 +100,7 @@ The `Tie::Scalar` implementation intercepts `STORE` and calls `$type->contains($
 
 Functions with `:sig()` annotations are wrapped to check parameter types on entry and return types on exit:
 
-```perl
+```typist
 use Typist -runtime;
 
 sub add :sig((Int, Int) -> Int) ($a, $b) {
@@ -113,7 +113,7 @@ add(1, "hello");    # dies: parameter 2 expected Int, got 'hello'
 
 For generic functions, the wrapper performs type argument inference and checks constraints:
 
-```perl
+```typist
 sub first :sig(<T>(ArrayRef[T]) -> T) ($arr) {
     $arr->[0];
 }
@@ -126,7 +126,7 @@ first("not an array");  # dies: expected ArrayRef[T]
 
 Newtype, datatype, and struct constructors perform full type checking on their arguments:
 
-```perl
+```typist
 use Typist -runtime;
 
 BEGIN {
@@ -161,7 +161,7 @@ Regardless of mode, constructors perform structural validation. This is cheap an
 
 ### Struct constructors
 
-```perl
+```typist
 BEGIN {
     struct Config => (
         host => 'Str',
@@ -177,7 +177,7 @@ Config(host => "localhost", port => 8080, foo => 1); # dies: unknown field 'foo'
 
 ### Datatype constructors
 
-```perl
+```typist
 BEGIN {
     datatype 'Tree[T]' =>
         Leaf => '(T)',
@@ -191,7 +191,7 @@ Node(Leaf(1), 2);     # dies: wrong number of arguments (expects 3)
 
 ### Newtype constructors
 
-```perl
+```typist
 BEGIN {
     newtype UserId => 'Int';
 }
@@ -216,7 +216,7 @@ UserId(1, 2);         # dies: wrong number of arguments
 
 - **Test environments.** Enable runtime checks in your test suite to catch boundary violations that static analysis might miss:
 
-```perl
+```typist
 # t/my_test.t
 use Typist -runtime;
 use Test::More;
@@ -231,7 +231,7 @@ use Test::More;
 
 Use static-only in your library code and runtime mode in your tests:
 
-```perl
+```typist
 # lib/MyApp/User.pm
 use Typist;    # static-only in production code
 

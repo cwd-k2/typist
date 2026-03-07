@@ -42,7 +42,7 @@ The kind checker validates that type applications have the correct number and ki
 
 ### Valid applications
 
-```perl
+```typist
 my $nums :sig(ArrayRef[Int]) = [1, 2, 3];     # * -> * applied to * = *
 my $map  :sig(HashRef[Str, Int]) = +{a => 1};  # * -> * -> * applied to *, * = *
 my $opt  :sig(Maybe[Str]) = undef;             # * -> * applied to * = *
@@ -52,7 +52,7 @@ my $opt  :sig(Maybe[Str]) = undef;             # * -> * applied to * = *
 
 Applying a concrete type as if it were a type constructor:
 
-```perl
+```typist
 # Int has kind *, not * -> *. It cannot take a type argument.
 my $x :sig(Int[Str]) = 42;
 ```
@@ -65,7 +65,7 @@ KindError: Int applied to too many type arguments (1 excess)
 
 Providing the wrong number of arguments to a known constructor:
 
-```perl
+```typist
 # ArrayRef expects 1 type argument, not 2.
 my $x :sig(ArrayRef[Int, Str]) = [1];
 ```
@@ -82,7 +82,7 @@ Higher-kinded types become essential when defining type classes that abstract ov
 
 ### Declaring a higher-kinded type class
 
-```perl
+```typist
 BEGIN {
     typeclass Functor => 'F: * -> *', +{
         fmap => '(F[A], CodeRef[A -> B]) -> F[B]',
@@ -99,7 +99,7 @@ In the method signature `(F[A], CodeRef[A -> B]) -> F[B]`:
 
 ### Implementing an HKT instance
 
-```perl
+```typist
 BEGIN {
     instance Functor => 'ArrayRef', +{
         fmap => sub ($arr, $f) { [map { $f->($_) } @$arr] },
@@ -111,7 +111,7 @@ The instance declaration `instance Functor => 'ArrayRef'` says that `ArrayRef` (
 
 ### Using the HKT method
 
-```perl
+```typist
 my $doubled = Functor::fmap([1, 2, 3], sub ($x) { $x * 2 });
 # $doubled = [2, 4, 6]
 
@@ -139,7 +139,7 @@ When no kind annotation is provided, Typist infers kinds from how type variables
 
 This means you rarely need to write kind annotations explicitly. They are primarily useful in type class definitions where the intent must be unambiguous:
 
-```perl
+```typist
 # Without kind annotation, T defaults to *
 typeclass Show => 'T', +{
     show => '(T) -> Str',
@@ -171,7 +171,7 @@ The arrow `->` is right-associative: `* -> * -> *` means `* -> (* -> *)`. Parent
 
 Library authors can register custom type constructor kinds for their own parameterized types:
 
-```perl
+```typist
 BEGIN {
     # Register a custom type constructor with kind * -> *
     Typist::KindChecker->register_kind('MyContainer',

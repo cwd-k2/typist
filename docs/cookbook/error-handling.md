@@ -8,7 +8,7 @@ Typist provides several complementary approaches to error handling: ADT-based Re
 
 A `Result[T]` encodes success or failure as a value. The error is part of the return type, so the caller is forced to handle it.
 
-```perl
+```typist
 use v5.40;
 use Typist;
 
@@ -32,7 +32,7 @@ sub parse_int :sig((Str) -> Result[Int]) ($s) {
 
 Use `match` to handle both arms:
 
-```perl
+```typist
 my $result = parse_int("42");
 
 my $value = match $result,
@@ -46,7 +46,7 @@ say $value;    # 42
 
 For sequential operations that each return a `Result`, extract and re-wrap:
 
-```perl
+```typist
 sub parse_and_double :sig((Str) -> Result[Int]) ($s) {
     my $parsed = parse_int($s);
     match $parsed,
@@ -59,7 +59,7 @@ sub parse_and_double :sig((Str) -> Result[Int]) ($s) {
 
 For richer error information, use a struct instead of a plain `Str`:
 
-```perl
+```typist
 BEGIN {
     struct ParseError => (
         input   => 'Str',
@@ -93,7 +93,7 @@ sub parse_csv_field :sig((Str, Int) -> ParseResult[Str]) ($line, $col) {
 
 `Option[T]` models the presence or absence of a value, replacing ad-hoc `undef` checks with a structured type.
 
-```perl
+```typist
 BEGIN {
     datatype 'Option[T]' => (
         Some => '(T)',
@@ -109,7 +109,7 @@ sub find_user :sig((Int) -> Option[Str]) ($id) {
 
 ### Consuming an Option
 
-```perl
+```typist
 my $user = find_user(1);
 
 my $name = match $user,
@@ -130,7 +130,7 @@ Typist also has a built-in `Maybe[T]` type, which is sugar for `T | Undef`. The 
 
 Use `Maybe[T]` for simple nullable values where a `defined` check suffices. Use `Option[T]` when you want explicit `match` exhaustiveness and richer composition.
 
-```perl
+```typist
 # Maybe style -- simpler, uses narrowing
 sub greet_maybe :sig((Maybe[Str]) -> Str) ($name) {
     if (defined($name)) {
@@ -158,7 +158,7 @@ Algebraic effects provide a different approach: errors are declared as effects a
 
 The `Exn` effect bridges Perl's `die` to the handler system:
 
-```perl
+```typist
 sub load_config :sig((Str) -> Str ![Exn]) ($path) {
     open my $fh, '<', $path or die "Cannot open $path: $!\n";
     my $content = do { local $/; <$fh> };
@@ -180,7 +180,7 @@ my $config = handle {
 
 For domain-specific error handling, define your own effect:
 
-```perl
+```typist
 BEGIN {
     effect AppError => +{
         not_found  => '(Str) -> Void',
@@ -205,7 +205,7 @@ sub get_user :sig((Int) -> Str ![AppError]) ($id) {
 
 The caller decides how to handle each error case:
 
-```perl
+```typist
 # In a web handler: map to HTTP responses
 my $response = handle {
     my $user = get_user($request_id);
@@ -233,7 +233,7 @@ handle {
 
 Result types and effects are complementary. A function can return a `Result` for expected failures while using effects for infrastructure concerns:
 
-```perl
+```typist
 BEGIN {
     effect DB => +{
         query => '(Str) -> Str',
@@ -257,7 +257,7 @@ sub find_order :sig((Int) -> Result[Str] ![DB, Logger]) ($id) {
 
 The caller handles effects at the boundary while processing results in the business logic:
 
-```perl
+```typist
 my $result = handle {
     handle {
         find_order(42);
@@ -292,7 +292,7 @@ A pragmatic approach: use `Result` for domain-level expected outcomes and effect
 
 ### Early Return on Error
 
-```perl
+```typist
 sub process_order :sig((Str) -> Result[Str]) ($raw) {
     my $parsed = parse_int($raw);
     my $id = match $parsed,
@@ -310,7 +310,7 @@ sub process_order :sig((Str) -> Result[Str]) ($raw) {
 
 ### Default Values with Option
 
-```perl
+```typist
 sub user_display :sig((Int) -> Str) ($id) {
     my $user = find_user($id);
     match $user,
@@ -321,7 +321,7 @@ sub user_display :sig((Int) -> Str) ($id) {
 
 ### Accumulating Errors
 
-```perl
+```typist
 sub validate_order :sig((Str, Str, Str) -> Result[ArrayRef[Str]]) ($name, $email, $amount) {
     my @errors;
     push @errors, "Name is required"       unless length($name);

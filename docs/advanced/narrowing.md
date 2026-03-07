@@ -18,7 +18,7 @@ The narrowing engine operates during static analysis (Phase 3 of the Analyzer pi
 
 The most common narrowing pattern. When a variable has a union type that includes `Undef`, a `defined()` check removes the `Undef` member:
 
-```perl
+```typist
 sub process :sig((Str | Undef) -> Str) ($x) {
     if (defined($x)) {
         # $x is narrowed to Str here.
@@ -37,7 +37,7 @@ Both `defined($x)` (with parentheses) and `defined $x` (without) are recognized.
 
 A bare variable in a condition narrows by removing `Undef` from its union type:
 
-```perl
+```typist
 my $name :sig(Str | Undef) = get_name();
 if ($name) {
     # $name is narrowed to Str.
@@ -51,7 +51,7 @@ Truthiness narrowing is more conservative than `defined()` -- it only applies wh
 
 Perl's `isa` operator narrows a variable to the tested type:
 
-```perl
+```typist
 BEGIN {
     struct Person => (name => 'Str');
     struct Animal => (species => 'Str');
@@ -74,7 +74,7 @@ The `isa` guard resolves type names through the Registry. Fully qualified names 
 
 The `ref()` function with a string comparison narrows a variable to the corresponding Typist type:
 
-```perl
+```typist
 sub process_data :sig((ArrayRef[Int] | HashRef[Str, Int]) -> Str) ($data) {
     if (ref($data) eq 'ARRAY') {
         # $data is narrowed to ArrayRef[Any].
@@ -110,7 +110,7 @@ Both `ref($x)` and `ref $x` (with or without parentheses) are recognized. Both `
 
 A `return ... unless defined($x)` pattern narrows `$x` for all subsequent statements in the function body:
 
-```perl
+```typist
 sub greet :sig((Maybe[Str]) -> Str) ($name) {
     return "stranger" unless defined($name);
     # From here on, $name is narrowed to Str.
@@ -122,7 +122,7 @@ This is the guard-clause pattern common in Perl. The narrowing engine scans prec
 
 Multiple early returns compose:
 
-```perl
+```typist
 sub process :sig((Maybe[Str], Maybe[Int]) -> Str) ($name, $age) {
     return "no name" unless defined($name);
     return "no age"  unless defined($age);
@@ -137,7 +137,7 @@ sub process :sig((Maybe[Str], Maybe[Int]) -> Str) ($name, $age) {
 
 Narrowing extends to struct field accessors. When you check `defined($struct->field)` for an optional field, the accessor's type is narrowed inside the guarded block:
 
-```perl
+```typist
 BEGIN {
     struct Config => (
         host => 'Str',
@@ -157,7 +157,7 @@ sub describe_config :sig((Config) -> Str) ($c) {
 
 Accessor chain narrowing also works with early returns:
 
-```perl
+```typist
 sub config_label :sig((Config) -> Str) ($c) {
     return "unnamed" unless defined($c->name);
     # $c->name is Str for the rest of the function.
@@ -173,7 +173,7 @@ Multi-level accessor chains (e.g., `$a->b->c`) are parsed but only single-level 
 
 `unless` reverses the narrowing polarity relative to `if`. The body of `unless` receives the *inverse* narrowing:
 
-```perl
+```typist
 my $x :sig(Str | Undef) = get_value();
 unless (defined($x)) {
     # $x is Undef here (the inverse of defined).

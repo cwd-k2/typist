@@ -22,7 +22,7 @@ Functions exist on a spectrum from fully annotated to completely unannotated:
 
 ### Fully annotated
 
-```perl
+```typist
 sub greet :sig((Str) -> Str ![Console]) ($name) {
     Console::writeLine("Hello, $name!");
     "greeted $name";
@@ -33,7 +33,7 @@ All checks are active: parameter types, return type, and effect inclusion are ve
 
 ### Partial -- no effects
 
-```perl
+```typist
 sub add :sig((Int, Int) -> Int) ($a, $b) {
     $a + $b;
 }
@@ -43,7 +43,7 @@ Types are checked. The function is treated as pure (no effects). Calling a non-a
 
 ### Partial -- no return type
 
-```perl
+```typist
 sub process :sig((Str) -> Any) ($data) {
     # parameters checked, return type is Any (compatible with everything)
     ...
@@ -54,7 +54,7 @@ Parameters are checked. Return type is `Any`, which is compatible with all types
 
 ### Unannotated
 
-```perl
+```typist
 sub helper ($x) {
     $x * 2;
 }
@@ -93,7 +93,7 @@ When a function has no `:sig()`, all checkers skip it:
 - **Protocol checker**: no protocol state verification.
 - **Call checker**: no call-site argument checks originating from this function.
 
-```perl
+```typist
 sub unannotated ($x) {
     effectful_fn($x);    # No EffectMismatch -- caller is not checked
     $x + "hello";        # No TypeMismatch -- caller is not checked
@@ -107,7 +107,7 @@ When an annotated function calls an unannotated function:
 - **Type check**: the callee's return type is inferred as `Any`. Type checks involving `Any` are skipped.
 - **Effect check**: the callee is treated as pure (no effects). No effect mismatch is generated.
 
-```perl
+```typist
 sub helper ($x) { $x }    # unannotated
 
 sub main :sig((Str) -> Str ![Console]) ($s) {
@@ -121,7 +121,7 @@ sub main :sig((Str) -> Str ![Console]) ($s) {
 
 Even without `:sig()`, Typist infers types from initializer expressions. This is not enforcement -- it is information:
 
-```perl
+```typist
 my $x = 42;                          # Inferred: Int
 my $s = "hello";                      # Inferred: Str
 my $p = Point(x => 1, y => 2);       # Inferred: Point
@@ -156,7 +156,7 @@ The widening ensures that inferred types are stable. Without it, `my $x = 42` wo
 
 The values `0` and `1` default to `Literal(value, Int)`. They only become `Bool` when the expected type from a `:sig()` annotation is `Bool`:
 
-```perl
+```typist
 my $x = 0;                # Int (no annotation -- widened to Int)
 my $y :sig(Bool) = 0;     # Bool (annotation provides Bool context)
 my $z :sig(Int) = 1;      # Int (annotation provides Int context)
@@ -172,7 +172,7 @@ The same gradual principle applies to effects:
 
 An unannotated function can call anything without effect checks:
 
-```perl
+```typist
 sub main () {
     effectful_fn("data");    # No check -- main is unannotated
 }
@@ -182,7 +182,7 @@ sub main () {
 
 An unannotated callee is treated as pure:
 
-```perl
+```typist
 sub helper ($x) { $x }    # unannotated -- pure
 
 sub checked :sig(() -> Void ![Console]) () {
@@ -194,7 +194,7 @@ sub checked :sig(() -> Void ![Console]) () {
 
 The built-in effects `IO`, `Exn`, and `Decl` are ambient. They are skipped in effect inclusion checks, so calling `say`, `die`, `eval`, etc. never produces an `EffectMismatch`:
 
-```perl
+```typist
 sub pure :sig((Int) -> Int) ($n) {
     say "debug: $n";    # say is ![IO], but IO is ambient -- no error
     $n * 2;
@@ -211,7 +211,7 @@ Here is a recommended path for gradually adding type annotations to an existing 
 
 Annotate the public API of your modules -- the functions that other modules call:
 
-```perl
+```typist
 # Public API -- annotated
 sub find_user :sig((UserId) -> Maybe[User]) ($id) { ... }
 sub create_order :sig((User, ArrayRef[Item]) -> Order ![DB]) ($u, $items) { ... }
@@ -227,7 +227,7 @@ This gives you the highest value-to-effort ratio: cross-module calls are where m
 
 Nominal types are cheap to define and immediately useful:
 
-```perl
+```typist
 BEGIN {
     newtype UserId => 'Int';
     newtype Email  => 'Str';
@@ -246,7 +246,7 @@ These give you constructor validation, accessor type information, and documentat
 
 Mark functions that perform I/O, database access, or other side effects:
 
-```perl
+```typist
 sub fetch_user :sig((UserId) -> Maybe[User] ![DB]) ($id) { ... }
 sub send_email :sig((Email, Str) -> Void ![IO]) ($to, $body) { ... }
 ```
@@ -257,7 +257,7 @@ This lets the effect checker verify that pure functions stay pure and that effec
 
 As you gain confidence, annotate internal helpers and utility functions:
 
-```perl
+```typist
 sub _normalize_name :sig((Str) -> Str) ($name) {
     lc($name) =~ s/\s+/ /gr =~ s/^\s+|\s+$//gr;
 }
@@ -267,7 +267,7 @@ sub _normalize_name :sig((Str) -> Str) ($name) {
 
 Add `-runtime` to your test files to catch boundary violations at test time:
 
-```perl
+```typist
 use Typist -runtime;    # enables constructor type validation, tied scalars
 ```
 
@@ -279,7 +279,7 @@ This is especially valuable for catching issues at module boundaries where exter
 
 When you need to suppress a specific diagnostic, place `# @typist-ignore` on the line immediately before:
 
-```perl
+```typist
 sub pure_fn :sig((Str) -> Str) ($s) {
     # @typist-ignore
     effectful_fn($s);    # No EffectMismatch reported on this line

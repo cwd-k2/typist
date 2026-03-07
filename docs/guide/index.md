@@ -24,7 +24,7 @@ You should have Typist installed and working. If not, see [Getting Started](../g
 
 All code examples assume:
 
-```perl
+```typist
 use v5.40;
 use Typist;
 ```

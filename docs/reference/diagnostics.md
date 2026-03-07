@@ -42,7 +42,7 @@ CycleError: Superclass cycle detected involving 'Eq'
 
 **Cause:** Circular type alias definitions without a type constructor to break the recursion, or circular typeclass inheritance chains.
 
-```perl
+```typist
 # Cycle: A -> B -> A (no type constructor)
 typedef A => 'B';
 typedef B => 'A';
@@ -54,7 +54,7 @@ typeclass Bar => (extends => 'Foo', display => '(Bar) -> Str');
 
 **Fix:** Break the cycle by introducing a type constructor:
 
-```perl
+```typist
 typedef A => 'ArrayRef[A]';  # OK: recursive through ArrayRef
 ```
 
@@ -76,7 +76,7 @@ Return type: expected Int, got Str in function 'calculate'
 
 **Cause:** Passing the wrong type to a function, assigning an incompatible value to an annotated variable, or returning a value that does not match the declared return type.
 
-```perl
+```typist
 sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
 add("hello", 42);  # TypeMismatch: expected Int, got Str in argument 1
 
@@ -117,7 +117,7 @@ ResolveError: cannot resolve alias 'ProductList'
 
 **Cause:** The type name is misspelled, not defined, or not visible from the current package. Types must be defined in a `BEGIN` block (or loaded from a module) before they can be used in `:sig()` annotations.
 
-```perl
+```typist
 sub process :sig((Prodcut) -> Void) ($p) { ... }  # Typo: 'Prodcut'
 ```
 
@@ -138,7 +138,7 @@ Effect mismatch in 'handler': callee requires ![Logger] but caller only has ![IO
 
 **Cause:** A function calls another function that declares effects, but the caller either has no effect annotation or does not include the callee's effects in its own annotation.
 
-```perl
+```typist
 sub read_file :sig((Str) -> Str ![IO]) ($path) { ... }
 sub process :sig((Str) -> Str) ($path) {
     read_file($path);  # EffectMismatch: read_file requires ![IO]
@@ -147,7 +147,7 @@ sub process :sig((Str) -> Str) ($path) {
 
 **Fix:** Add the missing effects to the caller's annotation:
 
-```perl
+```typist
 sub process :sig((Str) -> Str ![IO]) ($path) {
     read_file($path);  # OK
 }
@@ -228,7 +228,7 @@ Kind error in return of main::transform: ...
 
 **Cause:** A type is applied to type arguments but its kind does not allow it, or a higher-kinded type variable is used incorrectly.
 
-```perl
+```typist
 # Int has kind *, cannot take type arguments
 sub bad :sig(<F: * -> *>(F[Int]) -> F[Str]) ($x) { ... }
 bad(42);  # KindError: Int has kind *, expected * -> *
@@ -250,13 +250,13 @@ Type variable 'T' in main::process is not declared in generics
 
 **Cause:** Using a type variable (single uppercase letter) in a `:sig()` without declaring it in `<...>`:
 
-```perl
+```typist
 sub process :sig((T) -> T) ($x) { ... }  # UndeclaredTypeVar: T not declared
 ```
 
 **Fix:** Add the type variable to the generic parameter list:
 
-```perl
+```typist
 sub process :sig(<T>(T) -> T) ($x) { ... }
 ```
 
@@ -274,7 +274,7 @@ Row variable 'r' in main::process is not declared
 
 **Fix:** Declare the row variable in the generic parameter list with the `Row` kind:
 
-```perl
+```typist
 sub process :sig(<T, r: Row>(T) -> T ![Console, r]) ($x) { ... }
 ```
 
@@ -294,7 +294,7 @@ Unknown effect label 'MyEffect' in main::process
 
 **Fix:** Define the effect in a `BEGIN` block:
 
-```perl
+```typist
 BEGIN {
     effect MyEffect => +{ op_name => '(Str) -> Void' };
 }
@@ -353,14 +353,14 @@ This diagnostic is severity 5, which means it is mapped to LSP Hint and not coun
 
 A comment containing `@typist-ignore` on line N suppresses all diagnostics on line N+1:
 
-```perl
+```typist
 # @typist-ignore
 my $x :sig(Int) = "not an int";  # No diagnostic
 ```
 
 The comment can contain other text:
 
-```perl
+```typist
 # TODO: fix this later @typist-ignore
 risky_call();
 ```
