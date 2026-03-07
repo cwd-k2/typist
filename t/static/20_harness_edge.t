@@ -123,6 +123,21 @@ PERL
     is scalar @$errs, 0, 'implicit return analysis reuses earlier local inference';
 };
 
+subtest 'implicit constructor return preserves local alias element types' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+typedef Price => Int;
+datatype 'Option[T]' => Some => '(T)', None => '()';
+sub build :sig(() -> Option[ArrayRef[Int]]) () {
+    my $min :sig(Price) = 1;
+    my $max = $min;
+    Some([$min, $max]);
+}
+PERL
+
+    is scalar @$errs, 0, 'implicit constructor return sees local bindings through nested array literal';
+};
+
 subtest 'loop-scoped locals infer from foreach element types' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
@@ -153,6 +168,22 @@ sub check :sig(() -> Void) () {
 PERL
 
     is scalar @$errs, 0, 'loop inference sees earlier local iterable bindings';
+};
+
+subtest 'list-assignment locals remain available to later statements' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub pair :sig(() -> Tuple[Int, Str]) () { (1, "ok") }
+sub takes_int :sig((Int) -> Void) ($x) { }
+sub takes_str :sig((Str) -> Void) ($x) { }
+sub check :sig(() -> Void) () {
+    my ($count, $label) = pair();
+    takes_int($count);
+    takes_str($label);
+}
+PERL
+
+    is scalar @$errs, 0, 'list-binding inference survives into later uses';
 };
 
 subtest 'env hash lookup infers optional string value' => sub {
@@ -197,6 +228,52 @@ sub check :sig((ArrayRef[Int]) -> Void) ($xs) {
 PERL
 
     is scalar @$errs, 0, 'generic callback locals infer after instantiating higher-order params';
+};
+
+subtest 'match arm callback sees outer locals and arm params without leakage' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+datatype 'Result[T]' => Ok => '(T)', Err => '(Str)';
+sub takes_int :sig((Int) -> Void) ($x) { }
+sub takes_str :sig((Str) -> Void) ($x) { }
+sub check :sig((Result[Int]) -> Void) ($r) {
+    my $tag = "prefix";
+    match $r,
+        Ok => sub ($value) {
+            my $n = $value + 1;
+            takes_int($n);
+            takes_str($tag);
+        },
+        Err => sub ($msg) {
+            takes_str($msg);
+            takes_str($tag);
+        };
+}
+PERL
+
+    is scalar @$errs, 0, 'arm params and outer locals coexist with correct scopes';
+};
+
+subtest 'nested callbacks keep inner params from clobbering outer callback locals' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+declare fmap => '<A, B>(ArrayRef[A], (A) -> B) -> ArrayRef[B]';
+sub takes_int :sig((Int) -> Void) ($x) { }
+sub check :sig((ArrayRef[Int], ArrayRef[Int]) -> Void) ($xs, $ys) {
+    fmap($xs, sub ($x) {
+        my $outer = $x + 1;
+        fmap($ys, sub ($x) {
+            my $inner = $x + 2;
+            takes_int($inner);
+            $inner;
+        });
+        takes_int($outer);
+        $outer;
+    });
+}
+PERL
+
+    is scalar @$errs, 0, 'nested callback params do not clobber outer callback locals';
 };
 
 subtest 'local inferred symbol scopes remain distinct for same-name locals' => sub {
