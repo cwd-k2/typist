@@ -12,6 +12,7 @@
 - [Static-First Design](#static-first-design)
 - [Syntax Conventions](#syntax-conventions)
 - [Feature Reference](#feature-reference)
+- [Namespace Model](#namespace-model)
 - [Design Principles](#design-principles)
 - [Perl Gotchas](#perl-gotchas)
 - [Cross-References](#cross-references)
@@ -288,6 +289,56 @@ Union receivers and untyped receivers are gradual-skipped.
 ### Cross-File Typeclass Instances
 
 `instance` declarations are extracted, registered (existence only), and tracked per-file by Workspace. Static registration does not validate method completeness (cross-file ordering is non-deterministic); completeness checking is deferred to runtime.
+
+---
+
+## Namespace Model
+
+Typist operates in two distinct worlds. Understanding where each name lives is essential for working with the system.
+
+### The Two Worlds
+
+| World | Content | Resolution |
+|-------|---------|------------|
+| **Perl** | Subroutine calls, `use`/`import`, `@EXPORT` | Perl's standard namespace rules |
+| **Typist** | Type expressions inside `:sig()`, `typedef`, struct field types | Typist's Parser + Registry (string-based, global) |
+
+A type name like `Int` exists in **both** worlds but through different mechanisms:
+
+- In `:sig(Int)` — the string token `"Int"` is resolved by the Parser against the Registry. **No import needed.**
+- In `typedef Name => Int` — `Int` is a Perl value (`Typist::Type::Atom` object) from `Typist::DSL`. **Import needed:** `use Typist::DSL qw(Int)`.
+
+### Synthetic Namespaces
+
+Several Typist keywords create namespaces that have no corresponding `.pm` file. These follow a uniform pattern: **`${TypeName}::${operation}`**.
+
+| Keyword | Created namespace | Operations | Perl callable? |
+|---------|------------------|------------|---------------|
+| `effect Logger => +{...}` | `Logger::` | `Logger::log(...)` | Yes — runtime effect dispatch |
+| `typeclass Show => ...` | `Show::` | `Show::show(...)` | Yes — runtime instance dispatch |
+| `newtype UserId => ...` | `UserId::` | `UserId::coerce(...)` | Yes — unwrap inner value |
+| `struct Person => (...)` | `Person::` | `Person::derive(...)`, `Person::name(...)` | Yes — derive + accessors |
+| `datatype Option => (...)` | *(none)* | — | Constructors (`Some`, `None`) go into the defining package |
+
+These are available after the defining code has executed (typically in a `BEGIN` block). If `Shop::Types` defines `effect Logger => ...`, then any code loaded after `use Shop::Types` can call `Logger::log(...)`.
+
+### What `use` Controls
+
+| Statement | What it does |
+|-----------|-------------|
+| `use Typist` | Enables the type system for this package (attribute handlers, CHECK registration). |
+| `use Typist -runtime` | Additionally enables Tie::Scalar monitoring for `:sig()` variables. |
+| `use Typist::DSL qw(Int Str)` | Imports type **values** as Perl constants for use in `typedef`/`newtype`/`struct` expressions. Not needed for `:sig()`. |
+| `use Shop::Types` | (1) Imports constructors via Exporter. (2) Side-effect: registers types in the global Registry, making them available in `:sig()`. (3) Side-effect: creates synthetic namespaces for effects/typeclasses. |
+
+### Dependency Tracking
+
+When reading code, there are two kinds of dependencies to trace:
+
+- **Visible** (via `use`): constructor functions, Exporter `@EXPORT` items.
+- **Implicit** (via Registry side-effects): type names in `:sig()`, synthetic namespace operations.
+
+Both are activated by `use`, but only the first kind appears in `@EXPORT`. The second kind is a side-effect of executing `BEGIN` blocks that call `typedef`, `newtype`, `effect`, etc.
 
 ---
 
