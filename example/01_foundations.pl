@@ -2,7 +2,6 @@
 use v5.40;
 use lib 'lib';
 use Typist -runtime;
-use Typist::DSL;
 
 # ═══════════════════════════════════════════════════════════
 #  01 — Foundations
@@ -20,8 +19,8 @@ use Typist::DSL;
 # Place in BEGIN so CHECK-phase analysis can resolve them.
 
 BEGIN {
-    typedef Name => Str;
-    typedef Age  => Int;
+    typedef Name => 'Str';
+    typedef Age  => 'Int';
 }
 
 # Aliases are structural — Name is interchangeable with Str.
@@ -93,7 +92,7 @@ say "clamp(-5, 0, 10) = ", clamp(-5, 0, 10);   # 0
 # ── Aliases Compose ───────────────────────────────────────
 
 BEGIN {
-    typedef Greeting => Str;
+    typedef Greeting => 'Str';
 }
 
 sub make_greeting :sig((Name, Age) -> Greeting) ($n, $a) {

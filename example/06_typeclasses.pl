@@ -2,7 +2,6 @@
 use v5.40;
 use lib 'lib';
 use Typist -runtime;
-use Typist::DSL;
 
 # ═══════════════════════════════════════════════════════════
 #  06 — Type Classes
@@ -27,15 +26,15 @@ BEGIN {
         show => '(T) -> Str',
     };
 
-    instance Show => Int, +{
+    instance Show => 'Int', +{
         show => sub ($v) { "Int($v)" },
     };
 
-    instance Show => Str, +{
+    instance Show => 'Str', +{
         show => sub ($v) { qq["$v"] },
     };
 
-    instance Show => Bool, +{
+    instance Show => 'Bool', +{
         show => sub ($v) { $v ? "True" : "False" },
     };
 }
@@ -56,12 +55,12 @@ BEGIN {
         neq => '(T, T) -> Bool',
     };
 
-    instance Eq => Int, +{
+    instance Eq => 'Int', +{
         eq  => sub ($a, $b) { $a == $b ? 1 : 0 },
         neq => sub ($a, $b) { $a != $b ? 1 : 0 },
     };
 
-    instance Eq => Str, +{
+    instance Eq => 'Str', +{
         eq  => sub ($a, $b) { $a eq $b ? 1 : 0 },
         neq => sub ($a, $b) { $a ne $b ? 1 : 0 },
     };
@@ -81,11 +80,11 @@ BEGIN {
         compare => '(T, T) -> Int',
     };
 
-    instance Ord => Int, +{
+    instance Ord => 'Int', +{
         compare => sub ($a, $b) { $a <=> $b },
     };
 
-    instance Ord => Str, +{
+    instance Ord => 'Str', +{
         compare => sub ($a, $b) { $a cmp $b },
     };
 }

@@ -258,7 +258,6 @@ Typist.pm (entry point)
   +-- Static::Checker               Always loaded
   |     +-- Type::Fold
   +-- Error, Error::Global          Always loaded
-  +-- DSL                           Always loaded
   |
   +-- Static::Analyzer              LAZY (require in CHECK)
   |     +-- Prelude                 Builtin type annotations

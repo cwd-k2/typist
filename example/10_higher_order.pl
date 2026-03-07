@@ -3,7 +3,6 @@ use v5.40;
 use lib 'lib';
 BEGIN { $ENV{TYPIST_CHECK_QUIET} = 1 }  # LSP provides diagnostics
 use Typist -runtime;
-use Typist::DSL;
 
 # ═══════════════════════════════════════════════════════════
 #  10 — Higher-Order Function Type Inference

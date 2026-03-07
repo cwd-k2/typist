@@ -235,13 +235,12 @@ use Typist -runtime;
 
 Adds `Tie::Scalar`-based monitoring: typed variables are checked on every assignment. Violations `die` instead of `warn`.
 
-**DSL values for type expressions:**
+All type declarations use strings — no special imports needed beyond `use Typist`:
 
 ```perl
-use Typist::DSL qw(Int Str Record optional);
+typedef Name => 'Str';
+struct Person => (name => 'Str', age => 'Int', optional(email => 'Str'));
 ```
-
-Imports type **values** as Perl constants. Use these when building type expressions programmatically in `typedef`, `newtype`, `struct`, etc. These are **not** needed for `:sig()` annotations (which parse type names from strings).
 
 ---
 
@@ -477,7 +476,7 @@ This is a Perl prototype rule: `(&@)` prototypes (used by `handle`, `map`, `grep
 
 | Document | What you'll learn |
 |----------|-------------------|
-| [Type System Reference](type-system.md) | All type constructs, subtyping rules, DSL, effect system |
+| [Type System Reference](type-system.md) | All type constructs, subtyping rules, effect system |
 | [Architecture](architecture.md) | Internal design, module graph, validation layers |
 | [Static Analysis](static-analysis.md) | How the analyzer works, inference rules, gradual typing semantics |
 | [LSP Coverage](lsp-coverage.md) | Full feature matrix and diagnostic kinds |

@@ -131,18 +131,20 @@ Typeclass and effect definitions use string syntax for method/operation signatur
 show => '(T) -> Str'
 ```
 
-The Extractor only captures `PPI::Token::Quote`, so DSL `Func(...)` does not work for static analysis.
+The Extractor only captures `PPI::Token::Quote`, so programmatic type constructors do not work for static analysis.
 
-### Selective DSL Export
+### String-Based Type Declarations
 
-`use Typist` enables the type system and exports core functions (`typedef`, `newtype`, `struct`, etc.). To use type values as Perl expressions (e.g., in `typedef`, `struct`, `instance`), import them separately:
+`use Typist` enables the type system and exports all core functions (`typedef`, `newtype`, `struct`, `optional`, etc.). All type declarations use strings:
 
 ```perl
-use Typist;                                # Enable type system
-use Typist::DSL qw(Int Str Record optional);  # Import DSL values for Perl expressions
+use Typist;
+typedef Name   => 'Str';
+struct Person  => (name => 'Str', age => 'Int', optional(email => 'Str'));
+instance Show  => 'Int', +{ show => sub ($x) { "$x" } };
 ```
 
-DSL values are **not** needed for `:sig()` annotations, which resolve type names from strings automatically. See [Namespace Model](#namespace-model) for details.
+No separate imports are needed for type names — they are resolved from strings by the Parser and Registry.
 
 ### Unified `:sig()` Annotation
 
@@ -312,10 +314,10 @@ Typist operates in two distinct worlds. Understanding where each name lives is e
 | **Perl** | Subroutine calls, `use`/`import`, `@EXPORT` | Perl's standard namespace rules |
 | **Typist** | Type expressions inside `:sig()`, `typedef`, struct field types | Typist's Parser + Registry (string-based, global) |
 
-A type name like `Int` exists in **both** worlds but through different mechanisms:
+A type name like `Int` exists in both worlds:
 
 - In `:sig(Int)` — the string token `"Int"` is resolved by the Parser against the Registry. **No import needed.**
-- In `typedef Name => Int` — `Int` is a Perl value (`Typist::Type::Atom` object) from `Typist::DSL`. **Import needed:** `use Typist::DSL qw(Int)`.
+- In `typedef Name => 'Int'` — the string `'Int'` is coerced into a type object via `Typist::Type->coerce`. **No import needed.**
 
 ### Synthetic Namespaces
 
@@ -337,7 +339,6 @@ These are available after the defining code has executed (typically in a `BEGIN`
 |-----------|-------------|
 | `use Typist` | Enables the type system for this package (attribute handlers, CHECK registration). |
 | `use Typist -runtime` | Additionally enables Tie::Scalar monitoring for `:sig()` variables. |
-| `use Typist::DSL qw(Int Str)` | Imports type **values** as Perl constants for use in `typedef`/`newtype`/`struct` expressions. Not needed for `:sig()`. |
 | `use Shop::Types` | (1) Imports constructors via Exporter. (2) Side-effect: registers types in the global Registry, making them available in `:sig()`. (3) Side-effect: creates synthetic namespaces for effects/typeclasses. |
 
 ### Dependency Tracking

@@ -2,7 +2,6 @@
 use v5.40;
 use lib 'lib';
 use Typist -runtime;
-use Typist::DSL;
 
 # ═══════════════════════════════════════════════════════════
 #  13 — Contract Programming via Algebraic Effects + Protocol

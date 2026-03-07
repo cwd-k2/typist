@@ -2,7 +2,6 @@
 use v5.40;
 use lib 'lib';
 use Typist;         # static-only: errors appear as warnings, program continues
-use Typist::DSL;
 
 # ═══════════════════════════════════════════════════════════
 #  11 — Static Analysis Error Showcase

@@ -26,7 +26,7 @@ This document provides a comprehensive reference for all type constructs, subtyp
 - [Algebraic Effects](#algebraic-effects)
 - [Row Polymorphism](#row-polymorphism)
 - [Subtyping Rules](#subtyping-rules)
-- [Type DSL](#type-dsl)
+- [Type Expressions](#type-expressions)
 - [Gradual Typing](#gradual-typing)
 - [Type Narrowing](#type-narrowing)
 - [Builtin Prelude](#builtin-prelude)
@@ -102,7 +102,7 @@ Types that take type parameters inside `[...]`:
 | `Maybe[T]` | `* -> *` | `Maybe[Str]` | Desugars to `T \| Undef` |
 | `CodeRef[A -> R]` | `* -> *` | `CodeRef[Int -> Str]` | Desugars to `Func([A], R)` |
 
-The DSL also provides short aliases `Array[T]` and `Hash[K, V]` for `ArrayRef[T]` and `HashRef[K, V]`.
+`Array[T]` and `Hash[K, V]` are list-type counterparts to `ArrayRef[T]` and `HashRef[K, V]`.
 
 ### Subtyping
 
@@ -559,7 +559,7 @@ Recursion must go through a type constructor (`ArrayRef`, `HashRef`, etc.). Bare
 Type variables represent unknown types in generic signatures:
 
 ```
-T, U, V                      Single-character (DSL constants)
+T, U, V                      Single-character type variables
 T: Num                        With upper bound
 F: * -> *                     With kind annotation
 ```
@@ -663,10 +663,8 @@ Maybe     :: * -> *
 ### Usage in Type Classes
 
 ```perl
-use Typist::DSL qw(TVar);
-
 BEGIN {
-    typeclass Functor => TVar('F', kind => '* -> *'), +{
+    typeclass Functor => ('F', kind => '* -> *'), +{
         fmap => 'CodeRef[CodeRef[A -> B], F[A] -> F[B]]',
     };
 }
@@ -1026,89 +1024,35 @@ Complete reference of all subtyping rules implemented in `Typist::Subtype`:
 
 ---
 
-## Type DSL
+## Type Expressions
 
-`Typist::DSL` provides convenient constants and constructors for building type expressions programmatically:
+All type declarations in Typist use **strings**. Type names are resolved by the Parser and Registry — no special imports are needed beyond `use Typist`.
 
-### Atom Constants
-
-```perl
-use Typist::DSL qw(Int Str Double Num Bool Any Void Never Undef);
-
-Int, Str, Double, Num, Bool, Any, Void, Never, Undef
-```
-
-These are `use constant` singletons backed by `Typist::Type::Atom` flyweight pool entries. Imported via `use Typist::DSL qw(...)`.
-
-> **Note:** These DSL values are for building type expressions programmatically (`typedef`, `struct`, etc.). They are **not** needed inside `:sig()` annotations, which resolve type names from strings.
-
-### Type Variable Constants
+### Declaration Syntax
 
 ```perl
-use Typist::DSL qw(T U V A B K);     # Single-character type variables
+use Typist;
 
-# For advanced usage (multi-char vars, kind annotations):
-use Typist::DSL qw(TVar);
-TVar('Elem')                     # Multi-character type variable
-TVar('F', kind => '* -> *')     # With kind annotation
-```
-
-### Parametric Constructors
-
-```perl
-use Typist::DSL qw(ArrayRef Array HashRef Hash Tuple Maybe Record);
-
-ArrayRef(Int)                    # ArrayRef[Int]
-Array(Int)                       # ArrayRef[Int]  (alias)
-HashRef(Str, Int)                # HashRef[Str, Int]
-Hash(Str, Int)                   # HashRef[Str, Int]  (alias)
-Tuple(Int, Str, Bool)            # Tuple[Int, Str, Bool]
-Maybe(Str)                       # Str | Undef
-Record(name => Str, age => Int)  # { name => Str, age => Int }
-```
-
-`Func`, `Row`, `Eff`, `TVar`, `Alias` are internal constructors available via `use Typist::DSL qw(:internal)`.
-
-### Operator Overloads
-
-```perl
-Int | Str          # Union: Int | Str
-Readable & Writable # Intersection: Readable & Writable
-"$type"            # Stringify: to_string()
+BEGIN {
+    typedef Name   => 'Str';
+    typedef Config => '{ host => Str, port => Int }';
+    typedef IdOrName => 'Str | Int';
+    newtype UserId => 'Int';
+    struct Person  => (name => 'Str', age => 'Int', optional(email => 'Str'));
+}
 ```
 
 ### Type Coercion
 
-`Typist::Type->coerce($expr)` accepts both Type objects and strings:
+`Typist::Type->coerce($expr)` parses a string into a type object:
 
 ```perl
 Typist::Type->coerce('Int')           # Atom(Int)
-Typist::Type->coerce(Int)             # Atom(Int) (DSL constant, passthrough)
 Typist::Type->coerce('ArrayRef[Str]') # Param(ArrayRef, Atom(Str))
+Typist::Type->coerce('Int | Str')     # Union(Atom(Int), Atom(Str))
 ```
 
-### Importing DSL Symbols
-
-Import DSL values via `use Typist::DSL qw(...)`:
-
-```perl
-use Typist;                                    # Enable type system
-use Typist::DSL qw(Int Str Record optional);   # Import DSL values
-
-BEGIN {
-    typedef Name   => Str;                     # DSL form
-    typedef Person => Record(name => Str);     # DSL form
-    typedef Config => '{ host => Str }';       # String form (always works)
-}
-```
-
-For advanced usage, `Typist::DSL` provides export tags:
-
-```perl
-use Typist::DSL qw(:all);       # All symbols (types + vars + internal)
-use Typist::DSL qw(:vars);      # T, U, V, A, B, K
-use Typist::DSL qw(:internal);  # TVar, Alias, Row, Eff, Func
-```
+All declaration functions (`typedef`, `newtype`, `instance`, etc.) call `coerce` internally, so strings and type objects are both accepted.
 
 ---
 

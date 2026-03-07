@@ -7,8 +7,8 @@ Navigation hub for all Typist documentation.
 **For users** (writing Typist-annotated Perl code):
 1. [README](../README.md) — Installation, synopsis, quick start
 2. [Getting Started](getting-started.md) — First program, `:sig()` cheatsheet, common patterns
-3. [Type System Reference](type-system.md) — All type constructs, subtyping rules, DSL
-4. Module POD — `perldoc Typist`, `perldoc Typist::DSL`, etc.
+3. [Type System Reference](type-system.md) — All type constructs, subtyping rules
+4. Module POD — `perldoc Typist`, etc.
 
 **For contributors** (working on Typist internals):
 1. [Architecture](architecture.md) — System design, module graph, data flow

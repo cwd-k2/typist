@@ -2,7 +2,6 @@
 use v5.40;
 use lib 'lib';
 use Typist -runtime;
-use Typist::DSL qw(:all Alias);
 
 # ═══════════════════════════════════════════════════════════
 #  04 — Nominal Types
@@ -24,9 +23,9 @@ use Typist::DSL qw(:all Alias);
 # Boundary enforcement is ALWAYS active, even without -runtime.
 
 BEGIN {
-    newtype UserId  => Int;
-    newtype OrderId => Int;
-    newtype Email   => Str;
+    newtype UserId  => 'Int';
+    newtype OrderId => 'Int';
+    newtype Email   => 'Str';
 }
 
 my $uid = UserId(42);
@@ -95,14 +94,11 @@ say '"ok"|"error" <- "warning":  ' . $@ if $@;
 
 # ── Recursive Types ──────────────────────────────────────
 #
-# Self-referential typedef using Alias() for lazy resolution.
+# Self-referential typedef using string form for lazy resolution.
 # The recursion must be productive — always through a constructor.
 
 BEGIN {
-    typedef JsonValue =>
-        Str | Num | Bool | Undef
-        | ArrayRef(Alias('JsonValue'))
-        | HashRef(Str, Alias('JsonValue'));
+    typedef JsonValue => 'Str | Num | Bool | Undef | ArrayRef[JsonValue] | HashRef[Str, JsonValue]';
 }
 
 my $json :sig(JsonValue) = +{
@@ -126,11 +122,7 @@ say "JsonValue <- CodeRef:  $@" if $@;
 # ── Combining Newtype and Struct ──────────────────────────
 
 BEGIN {
-    typedef Account => Record(
-        id    => Alias('UserId'),
-        email => Alias('Email'),
-        name  => Str,
-    );
+    typedef Account => '{ id => UserId, email => Email, name => Str }';
 }
 
 my $acct :sig(Account) = +{

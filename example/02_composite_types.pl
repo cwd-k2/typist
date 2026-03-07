@@ -2,7 +2,6 @@
 use v5.40;
 use lib 'lib';
 use Typist -runtime;
-use Typist::DSL;
 
 # ═══════════════════════════════════════════════════════════
 #  02 — Composite Types
@@ -14,12 +13,12 @@ use Typist::DSL;
 
 # ── Record (structural typing) ────────────────────────────
 #
-# Record(k => T, ...) defines a structural record type.
+# { k => T, ... } defines a structural record type.
 # Values are plain hashrefs — Typist checks field presence and types.
 
 BEGIN {
-    typedef Point  => Record(x => Int, y => Int);
-    typedef Person => Record(name => Str, age => Int);
+    typedef Point  => '{ x => Int, y => Int }';
+    typedef Person => '{ name => Str, age => Int }';
 }
 
 my $origin :sig(Point) = +{ x => 0, y => 0 };
@@ -42,12 +41,7 @@ say "Person age=Str:   $@" if $@;
 # present fields must match the declared type.
 
 BEGIN {
-    typedef Config => Record(
-        host      => Str,
-        port      => Int,
-        'debug?'  => Bool,
-        'label?'  => Str,
-    );
+    typedef Config => '{ host => Str, port => Int, debug? => Bool, label? => Str }';
 }
 
 my $cfg :sig(Config) = +{ host => "localhost", port => 8080 };
@@ -98,7 +92,7 @@ eval { $id = [1, 2] };
 say "Int|Str <- ArrayRef:  $@" if $@;
 
 # Union of more types
-BEGIN { typedef Status => Str; }
+BEGIN { typedef Status => 'Str'; }
 
 my $result :sig(Int | Str | Undef) = undef;
 $result = 200;
@@ -167,8 +161,8 @@ say "Ref[Int] <- \\Str:  $@" if $@;
 # Types compose freely: ArrayRef of Struct, HashRef of arrays, etc.
 
 BEGIN {
-    typedef UserList => ArrayRef(Record(name => Str, age => Int));
-    typedef Matrix   => ArrayRef(ArrayRef(Int));
+    typedef UserList => 'ArrayRef[{ name => Str, age => Int }]';
+    typedef Matrix   => 'ArrayRef[ArrayRef[Int]]';
 }
 
 my $users :sig(UserList) = [

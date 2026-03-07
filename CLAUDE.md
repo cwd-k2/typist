@@ -37,7 +37,6 @@ Error (value + Collector), Error::Global (singleton buffer)
 Type::{Atom,Param,Union,Intersection,Func,Record,Struct,Var,Alias,Literal,Newtype,Quantified,Row,Eff,Data}
 Type::Fold (map_type, walk)
 Kind, KindChecker, TypeClass, Effect, Static::Registration
-DSL (Type constructors: Int, Str, Double, Num, Array, Hash, Record, optional, etc.)
 ```
 
 ## Validation Architecture
@@ -90,7 +89,7 @@ mise run example           # Run all examples
 
 | Directory | Scope | Notes |
 |-----------|-------|-------|
-| `t/` | Core type system | parser, subtype, inference, newtype, ADT, effects, struct, protocol, DSL |
+| `t/` | Core type system | parser, subtype, inference, newtype, ADT, effects, struct, protocol |
 | `t/static/` | Static analysis | extractor, analyzer, inference, type/effect/protocol check, narrowing, unify |
 | `t/lsp/` | LSP server | transport, diagnostics, hover, completion, workspace, references, rename, semantic tokens |
 | `t/critic/` | Perl::Critic | annotation style, effect completeness, match exhaustiveness |

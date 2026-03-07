@@ -20,7 +20,7 @@ Typist brings static type annotations to Perl through standard attribute syntax.
 | Document | Audience | Content |
 |----------|----------|---------|
 | [Getting Started](docs/getting-started.md) | Users | First program, `:sig()` cheatsheet, common patterns |
-| [Type System Reference](docs/type-system.md) | Users, Contributors | Complete type constructs, subtyping rules, DSL |
+| [Type System Reference](docs/type-system.md) | Users, Contributors | Complete type constructs, subtyping rules |
 | [Architecture](docs/architecture.md) | Contributors | System design, module graph, data flow |
 | [Static Analysis](docs/static-analysis.md) | Contributors | Analyzer pipeline, inference, checking |
 | [LSP Coverage](docs/lsp-coverage.md) | Contributors | Feature matrix and diagnostic kinds |
@@ -30,17 +30,16 @@ Typist brings static type annotations to Perl through standard attribute syntax.
 
 ```perl
 use Typist;
-use Typist::DSL qw(Int Str Num Bool Double ArrayRef HashRef Record Maybe optional);
 
 # Type aliases and records (structural)
 BEGIN {
-    typedef Name   => Str;
-    typedef Config => Record(host => Str, port => Int);
+    typedef Name   => 'Str';
+    typedef Config => '{ host => Str, port => Int }';
 }
 
 # Nominal struct types (blessed, immutable)
 BEGIN {
-    struct Person => (name => Str, age => Int, email => optional(Str));
+    struct Person => (name => 'Str', age => 'Int', optional(email => 'Str'));
 }
 
 my $p = Person(name => "Alice", age => 30);
@@ -95,8 +94,8 @@ For the complete type system reference, see [docs/type-system.md](docs/type-syst
 | Record (structural) | `{ k => T, k? => T }` | `{ name => Str, age? => Int }` |
 | Maybe | `Maybe[T]` | `Maybe[Str]` = `Str \| Undef` |
 | Literal types | `42`, `"hello"` | Singleton types for specific values |
-| Type aliases | `typedef` | `typedef Price => Int` |
-| Nominal types | `newtype` / `Name::coerce` | `newtype UserId => Int` |
+| Type aliases | `typedef` | `typedef Price => 'Int'` |
+| Nominal types | `newtype` / `Name::coerce` | `newtype UserId => 'Int'` |
 | ADT / GADT | `datatype` | Tagged unions, per-constructor return types |
 | Enumerations | `enum` | `enum Color => qw(Red Green Blue)` |
 | Generics | `<T>`, `<T: Bound>` | `<T: Num>(T, T) -> T` |
