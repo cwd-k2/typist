@@ -1,22 +1,10 @@
 use v5.40;
 use Test::More;
-use lib 'lib';
+use lib 'lib', 't/lib';
 
-use Typist::Static::Analyzer;
+use Test::Typist::Analyze qw(type_errors all_errors);
 use Typist::Static::Extractor;
 use Typist::Parser;
-
-# Helper: analyze source, return diagnostics of kind TypeMismatch
-sub type_errors ($source) {
-    my $result = Typist::Static::Analyzer->analyze($source);
-    [ grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@* ];
-}
-
-# Helper: analyze source, return all diagnostics
-sub all_diagnostics ($source) {
-    my $result = Typist::Static::Analyzer->analyze($source);
-    $result->{diagnostics};
-}
 
 # ── Parser integration (via parse_annotation) ──
 
@@ -60,7 +48,7 @@ subtest 'TypeChecker: rank-2 param accepts quantified-subtype argument' => sub {
     # This tests that the extracted function can be analyzed without errors.
     # The type checker won't have a quantified argument to check against
     # unless we can infer it, so we primarily verify no crashes.
-    my $diags = all_diagnostics(<<'PERL');
+    my $diags = all_errors(<<'PERL');
 use v5.40;
 sub apply_twice :sig((forall A. A -> A, Int) -> Int) ($f, $x) {
     42;

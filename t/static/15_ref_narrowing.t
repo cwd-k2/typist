@@ -1,18 +1,8 @@
 use v5.40;
 use Test::More;
-use lib 'lib';
+use lib 'lib', 't/lib';
 
-use Typist::Static::Analyzer;
-
-sub type_errors ($source) {
-    my $result = Typist::Static::Analyzer->analyze($source);
-    [ grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@* ];
-}
-
-sub all_errors ($source) {
-    my $result = Typist::Static::Analyzer->analyze($source);
-    $result->{diagnostics};
-}
+use Test::Typist::Analyze qw(type_errors all_errors);
 
 # ── ref($x) eq 'HASH' → HashRef[Any] ────────
 

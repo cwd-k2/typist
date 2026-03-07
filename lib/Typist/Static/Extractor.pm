@@ -5,6 +5,7 @@ our $VERSION = '0.01';
 
 use PPI;
 use Typist::Parser;
+use Typist::Prelude;
 
 # ── Public API ───────────────────────────────────
 
@@ -94,6 +95,7 @@ sub _collect_special_words ($class, $doc, $result) {
         $name =~ s/\A.+:://;
         $name => 1;
     } keys $result->{declares}->%*;
+    my %known_builtins = map { $_ => 1 } Typist::Prelude->builtin_names;
     my $words = $doc->find('PPI::Token::Word') || [];
     $result->{word_tokens} = $words;
     for my $word (@$words) {
@@ -113,6 +115,7 @@ sub _collect_special_words ($class, $doc, $result) {
         next unless ref($next) && $next->isa('PPI::Structure::List');
         next unless $known_locals{$name}
             || $known_declares{$name}
+            || $known_builtins{$name}
             || $wanted{$name}
             || $name =~ /::/
             || $name =~ /\A[A-Z]\w*\z/;

@@ -371,37 +371,19 @@ sub narrow_env_for_block ($self, $env, $node) {
     }
 
     # Dispatch through narrowing rules (order matters: most specific first)
-    my %narrowing;
-    my $rule;
-
-    my %try_defined = $self->_narrow_defined(\@cond_children, $env)->%*;
-    if (%try_defined) {
-        %narrowing = %try_defined;
-        $rule = 'defined';
-    }
-
-    unless ($rule) {
-        my %try_isa = $self->_narrow_isa(\@cond_children, $env)->%*;
-        if (%try_isa) {
-            %narrowing = %try_isa;
-            $rule = 'isa';
-        }
-    }
-
-    unless ($rule) {
-        my %try_ref = $self->_narrow_ref(\@cond_children, $env)->%*;
-        if (%try_ref) {
-            %narrowing = %try_ref;
-            $rule = 'ref';
-        }
-    }
-
-    unless ($rule) {
-        my %try_truth = $self->_narrow_truthiness(\@cond_children, $env)->%*;
-        if (%try_truth) {
-            %narrowing = %try_truth;
-            $rule = 'truthiness';
-        }
+    my (%narrowing, $rule);
+    for my $candidate (
+        [defined    => sub { $self->_narrow_defined(\@cond_children, $env) }],
+        [isa        => sub { $self->_narrow_isa(\@cond_children, $env) }],
+        [ref        => sub { $self->_narrow_ref(\@cond_children, $env) }],
+        [truthiness => sub { $self->_narrow_truthiness(\@cond_children, $env) }],
+    ) {
+        my ($name, $cb) = @$candidate;
+        my %try = $cb->()->%*;
+        next unless %try;
+        %narrowing = %try;
+        $rule = $name;
+        last;
     }
 
     return $self->{_block_env_cache}{$cache_key} = $env unless $rule;
@@ -500,8 +482,8 @@ sub narrow_env_for_block ($self, $env, $node) {
 
 # ── Early Return Narrowing ──────────────────────
 
-# Scan for `return ... unless defined $var` patterns before the current node's
-# containing statement. Each such pattern narrows the env by removing Undef.
+# Scan for `return ... unless defined $var` patterns preceding the current node.
+# Walks up through enclosing compound/block scopes to accumulate narrowings.
 sub scan_early_returns ($self, $env, $node) {
     # Find the statement containing this node
     my $stmt = $node;
@@ -857,6 +839,7 @@ sub collect_accessor_narrowings ($self, $ppi_doc) {
 
         my $accessor = $self->extract_defined_accessor(\@cond_children);
         next unless $accessor;
+        next unless @{$accessor->{chain}} == 1;
 
         my $is_unless = $kw eq 'unless';
         my @blocks = grep { $_->isa('PPI::Structure::Block') } $compound->schildren;

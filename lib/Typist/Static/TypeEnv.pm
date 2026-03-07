@@ -56,6 +56,7 @@ sub narrowed_accessor_types ($self) { $self->{narrowing}->narrowed_accessors }
 sub build ($self) {
     $self->{env} = $self->_build_env;
     $self->{_fn_env_cache} = +{};
+    $self->{_fn_template_cache} = +{};
     $self->{_node_env_cache} = +{};
     $self->{_infer_value_cache} = +{};
     $self->{_infer_list_cache} = +{};

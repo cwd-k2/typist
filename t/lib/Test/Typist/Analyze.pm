@@ -7,6 +7,7 @@ use Typist::Static::Analyzer;
 
 our @EXPORT_OK = qw(
     analyze
+    all_errors
     diags_of_kind
     type_errors
     arity_errors
@@ -14,6 +15,11 @@ our @EXPORT_OK = qw(
 
 sub analyze ($source, %opts) {
     return Typist::Static::Analyzer->analyze($source, %opts);
+}
+
+sub all_errors ($source, %opts) {
+    my $result = analyze($source, %opts);
+    return $result->{diagnostics};
 }
 
 sub diags_of_kind ($source, $kind, %opts) {

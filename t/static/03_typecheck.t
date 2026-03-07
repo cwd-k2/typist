@@ -1,20 +1,8 @@
 use v5.40;
 use Test::More;
-use lib 'lib';
+use lib 'lib', 't/lib';
 
-use Typist::Static::Analyzer;
-
-# Helper: analyze source, return diagnostics of kind TypeMismatch
-sub type_errors ($source) {
-    my $result = Typist::Static::Analyzer->analyze($source);
-    [ grep { $_->{kind} eq 'TypeMismatch' } $result->{diagnostics}->@* ];
-}
-
-# Helper: analyze source, return diagnostics of kind ArityMismatch
-sub arity_errors ($source) {
-    my $result = Typist::Static::Analyzer->analyze($source);
-    [ grep { $_->{kind} eq 'ArityMismatch' } $result->{diagnostics}->@* ];
-}
+use Test::Typist::Analyze qw(type_errors arity_errors);
 
 # ── Variable Initializer Checks ──────────────────
 
