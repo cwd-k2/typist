@@ -46,17 +46,10 @@ use Typist::External;
 sub import ($class, @args) {
     my $caller = caller;
 
-    # Suppress "attribute may clash with future reserved word" for :sig
-    # Install only once; restored in CHECK after all attributes are processed.
-    unless ($Typist::_WARN_INSTALLED) {
-        $Typist::_WARN_ORIG = $SIG{__WARN__};
-        $SIG{__WARN__} = sub {
-            return if $_[0] =~ /attribute may clash with future reserved word/;
-            if ($Typist::_WARN_ORIG) { $Typist::_WARN_ORIG->(@_) }
-            else                     { warn $_[0] }
-        };
-        $Typist::_WARN_INSTALLED = 1;
-    }
+    # Suppress "attribute may clash with future reserved word" for :sig.
+    # Perl 5.40+ defers this warning to after CHECK, so $SIG{__WARN__}
+    # cannot catch it.  Lexical unimport propagates to caller via $^H.
+    warnings->unimport('reserved');
 
     for my $arg (@args) {
         if    ($arg eq '-runtime') { $Typist::RUNTIME = 1 }
@@ -140,12 +133,6 @@ CHECK {
         warn Typist::Error::Global->report;
     }
 
-    # Restore original warn handler — attribute processing is complete.
-    if ($Typist::_WARN_INSTALLED) {
-        if ($Typist::_WARN_ORIG) { $SIG{__WARN__} = $Typist::_WARN_ORIG }
-        else                     { delete $SIG{__WARN__} }
-        $Typist::_WARN_INSTALLED = 0;
-    }
 }
 
 # ── CHECK-Phase Static Analysis ──────────────────
