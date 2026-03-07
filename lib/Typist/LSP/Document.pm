@@ -242,6 +242,47 @@ sub _is_in_comment ($self, $line, $col) {
     0;
 }
 
+# Check if the cursor position falls within a PPI string token (Quote/HereDoc).
+sub _is_in_string ($self, $line, $col) {
+    my $ppi_doc = ($self->{result} // return 0)->{extracted}{ppi_doc} // return 0;
+    my $ppi_line = $line + 1;  # LSP 0-indexed → PPI 1-indexed
+
+    my $strings = $ppi_doc->find(sub {
+        $_[1]->isa('PPI::Token::Quote') || $_[1]->isa('PPI::Token::HereDoc')
+    }) || [];
+
+    for my $t (@$strings) {
+        if ($t->isa('PPI::Token::HereDoc')) {
+            my @body = $t->heredoc;
+            next unless @body;
+            my $body_start = $t->line_number + 1;
+            my $body_end   = $body_start + $#body;
+            return 1 if $ppi_line >= $body_start && $ppi_line <= $body_end;
+            next;
+        }
+
+        my $start_line = $t->line_number;
+        my $start_col  = $t->column_number - 1;  # PPI 1-indexed → 0-indexed
+        my $content    = $t->content;
+        my $newlines   = () = $content =~ /\n/g;
+        my $end_line   = $start_line + $newlines;
+
+        next if $ppi_line < $start_line || $ppi_line > $end_line;
+
+        if ($start_line == $end_line) {
+            return 1 if $col >= $start_col && $col < $start_col + length($content);
+        } elsif ($ppi_line == $start_line) {
+            return 1 if $col >= $start_col;
+        } elsif ($ppi_line == $end_line) {
+            my $last_line_len = length($content) - rindex($content, "\n") - 1;
+            return 1 if $col < $last_line_len;
+        } else {
+            return 1;  # middle line: entirely inside string
+        }
+    }
+    0;
+}
+
 # Check if the cursor is on the function name part of a qualified name (Pkg::func).
 # Returns true if cursor ($col) is on or after the last :: separator.
 sub _cursor_on_func_part ($self, $line, $col, $word) {
@@ -280,6 +321,7 @@ sub symbol_at ($self, $line, $col) {
     # Primary: match by word under cursor
     my $wr = $self->_word_range_at($line, $col) // return undef;
     return undef if $self->_is_in_comment($line, $col);
+    return undef if $self->_is_in_string($line, $col);
     my $word = $wr->{word};
     my $range = +{
         start => +{ line => $line, character => $wr->{start} },
@@ -724,6 +766,7 @@ sub definition_at ($self, $line, $col) {
 
     my $word = $self->_word_at($line, $col) // return undef;
     return undef if $self->_is_in_comment($line, $col);
+    return undef if $self->_is_in_string($line, $col);
 
     # Strip sigil for type/function lookup
     (my $bare = $word) =~ s/^[\$\@%]//;
@@ -1100,6 +1143,7 @@ sub code_completion_at ($self, $line, $col) {
     my $lines = $self->_lines;
     return undef unless $line < @$lines;
     return undef if $self->_is_in_comment($line, $col);
+    return undef if $self->_is_in_string($line, $col);
     my $text = substr($lines->[$line], 0, $col);
 
     # $var->{  → record field completion

@@ -7,7 +7,7 @@ Static analysis capabilities vs LSP feature coverage.
 **Rule**: When adding or modifying static analysis features, update this document.
 New analysis outputs must have corresponding LSP entries (or an explicit "N/A" with rationale).
 
-Last updated: 2026-03-03
+Last updated: 2026-03-08
 
 ---
 
@@ -104,6 +104,29 @@ The server tries annotation context first, then falls back to code context (see 
 | `field` | `(struct) field?: type` | Done |
 | `method` | `(struct) name(...) -> returns` | Done |
 | `builtin_type` | `type Int` / `type ArrayRef[T]` + description + hierarchy | Done |
+| `match` (keyword) | `match(target: type) -> result_type` | Done |
+| `handle` (keyword) | `handle: result_type ![Effect1, ...]` | Done |
+
+### Contextual Hover
+
+| Context | Mechanism | Status |
+|---|---|---|
+| Accessor `$var->field` | `_resolver->resolve_accessor_hover` (type chain walking) | Done |
+| Struct constructor key `Name(key => ...)` | `_resolve_struct_key_hover` (PPI tree → struct field lookup) | Done |
+| Keyword `match` / `handle` | `_resolve_keyword_hover` (PPI sibling walk → type synthesis) | Done |
+
+### Non-Code Suppression
+
+Hover, go-to-definition, and completion are suppressed in non-code regions via PPI token detection:
+
+| Region | Detection | Suppression |
+|---|---|---|
+| Comments (`# ...`) | `PPI::Token::Comment` — column-level check | Full |
+| Pod (`=head1` ... `=cut`) | `PPI::Token::Pod` — line range check | Full |
+| String literals (`"..."`, `'...'`, `qq{}`, `q{}`) | `PPI::Token::Quote::*` — position within token bounds | Full |
+| Here-documents (`<<EOF`) | `PPI::Token::HereDoc` — body line range | Full |
+
+**Rationale**: `_word_range_at` extracts words from raw text without PPI token-type awareness. Without these guards, bare words in comments/strings would match against the registry fallback path (builtins, cross-package types, constructors), producing false hover results. PPI does not decompose interpolated strings into sub-tokens, so `$var` inside `"text $var"` is also suppressed — this is acceptable since the hover would be imprecise (scope/position mismatch within string content).
 
 ### Cross-Package Resolution
 
@@ -204,6 +227,8 @@ The server tries annotation context first, then falls back to code context (see 
 |------|-----------|-----------|
 | Typeclass instance completeness | Static analysis registers instances but does not verify method completeness. Missing methods are only detected at runtime. | Cross-file instance ordering is non-deterministic; static registration stores existence only (empty methods hash). Completeness check requires all source files to be loaded, which is a runtime guarantee. |
 | Diagnostics timing | Diagnostics are published on `didOpen` and `didSave`, not on every keystroke (`didChange`). Hover, completion, and inlay hints use lazy analysis and are always fresh. | Full PPI parse + type checking on every keystroke is prohibitively expensive for large files. Save-time diagnostics is a standard LSP pattern that balances responsiveness with performance. |
+| String interpolation hover | Variables inside interpolated strings (`"text $var"`) do not show hover. All content within string tokens is uniformly suppressed. | PPI does not decompose string content into sub-tokens. Attempting partial hover within strings would require custom parsing of interpolation syntax and would produce imprecise results (scope/position mismatch). |
+| Regex content | Words inside regex patterns (`/pattern/`, `m//`, `s///`, `qr//`) are not suppressed. | Regex content rarely contains identifiers that collide with registered types/functions. False positives are negligible in practice. |
 
 ---
 

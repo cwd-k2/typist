@@ -45,10 +45,13 @@ Hover over any symbol to see its type information:
 - **Type definitions**: `typedef`, `newtype`, `datatype`, `struct` definitions with fields and variants
 - **Effects**: operation table with signatures and protocol transitions
 - **Typeclasses**: name, type parameter, and method list
-- **Struct fields**: field name, type, required/optional status
+- **Struct fields**: field name, type, required/optional status (also for constructor keys: `Point(x => 1)` -- hover on `x`)
 - **Built-in types**: description and position in the type hierarchy
+- **Keywords**: `match` shows the matched expression's type and result; `handle` shows handled effects
 
 Cross-file hover is supported: hovering over a type or function defined in another file shows its definition via the workspace registry.
+
+Hover is suppressed in comments, Pod sections, and string literals. This prevents false matches where a word in a comment or string happens to share a name with a registered type or function.
 
 ### Completion
 

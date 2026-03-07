@@ -2124,6 +2124,52 @@ PERL
     is $hover->{result}, undef, 'no hover result for word in comment';
 };
 
+# ── No hover in strings ──────────────────────────
+
+subtest 'no hover on bare words in strings' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub Order :sig(() -> Int) { 42 }
+say "Order created";
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 2, character => 5 },  # on 'Order' inside string
+        }),
+    ));
+
+    my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $hover, 'got hover response';
+    is $hover->{result}, undef, 'no hover for bare word in string';
+};
+
+subtest 'no hover on interpolated var in string' => sub {
+    my $source = <<'PERL';
+use v5.40;
+my $order :sig(Int) = 42;
+say "value is $order";
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 2, character => 11 },  # on '$order' inside string
+        }),
+    ));
+
+    my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $hover, 'got hover response';
+    is $hover->{result}, undef, 'no hover for var in string (B: suppress all)';
+};
+
 # ── Struct constructor key hover ─────────────────
 
 subtest 'hover on struct constructor key shows field info' => sub {
