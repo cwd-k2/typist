@@ -1073,6 +1073,13 @@ sub _infer_hash ($constructor, $env = undef, $expected = undef) {
         $expected = $resolved if $resolved;
     }
 
+    # Expand Handler[E] to Record(op => Func, ...) for bidirectional inference
+    if ($expected && $expected->is_param && $expected->base eq 'Handler'
+        && scalar($expected->params) == 1 && $env && $env->{registry}) {
+        my $expanded = Typist::Subtype::_expand_handler($expected, $env->{registry});
+        $expected = $expanded if $expanded;
+    }
+
     # Build field-level expected types from Struct
     my %field_expected;
     if ($expected && $expected->is_record) {
