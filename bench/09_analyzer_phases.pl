@@ -50,9 +50,7 @@ for my $file (@files) {
     }
 }
 
-for my $phase (sort {
-    ($a eq 'total' ? 1 : 0) <=> ($b eq 'total' ? 1 : 0) || $a cmp $b
-} keys %samples) {
+for my $phase (_ordered_phases(keys %samples)) {
     my $median = _median(@{$samples{$phase}});
     printf "  %-18s %8.3f ms\n", $phase, $median * 1000;
 }
@@ -100,4 +98,40 @@ sub _median (@xs) {
     @xs = sort { $a <=> $b } @xs;
     return 0 unless @xs;
     return $xs[int(@xs / 2)];
+}
+
+sub _ordered_phases (@phases) {
+    my %rank = (
+        extract                           => 10,
+        registration                      => 20,
+        visibility                        => 30,
+        structural                        => 40,
+        'structural.aliases'              => 41,
+        'structural.functions'            => 42,
+        'structural.functions.free_vars'  => 43,
+        'structural.functions.undeclared_vars' => 44,
+        'structural.functions.effects'    => 45,
+        'structural.functions.bounds'     => 46,
+        'structural.functions.type_wellformed' => 47,
+        'structural.functions.kinds'      => 48,
+        'structural.functions.total'      => 49,
+        'structural.typeclasses'          => 50,
+        'structural.protocols'            => 51,
+        type_env                          => 60,
+        file_checks                       => 70,
+        'file_checks.variables'           => 71,
+        'file_checks.assignments'         => 72,
+        'file_checks.call_sites'          => 73,
+        'file_checks.match_exhaustiveness' => 74,
+        function_checks                   => 80,
+        collection                        => 90,
+        diagnostics                       => 100,
+        symbols                           => 110,
+        total                             => 999,
+    );
+
+    return sort {
+        ($rank{$a} // 500) <=> ($rank{$b} // 500)
+            || $a cmp $b
+    } @phases;
 }

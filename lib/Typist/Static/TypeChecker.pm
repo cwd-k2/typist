@@ -6,6 +6,7 @@ our $VERSION = '0.01';
 use List::Util 'any';
 use Typist::Static::CallChecker;
 use Typist::Static::Infer;
+use Typist::Static::Timing qw(start_timing record_timing);
 use Typist::Static::TypeEnv;
 use Typist::Subtype;
 use Typist::Type::Atom;
@@ -25,6 +26,7 @@ sub new ($class, %args) {
         file                 => $args{file} // '(buffer)',
         gradual_hints        => $args{gradual_hints},
         _inferred_fn_returns => +{},
+        timings              => $args{timings},
     }, $class;
 }
 
@@ -69,6 +71,7 @@ sub analyze ($self) {
 # ── Phase 4: File-Level Checks ──────────────────
 
 sub check_variables ($self) {
+    my $t0 = start_timing($self->{timings});
     for my $var ($self->{extracted}{variables}->@*) {
         my $init_node = $var->{init_node} // next;
 
@@ -102,10 +105,11 @@ sub check_variables ($self) {
             );
         }
     }
+    record_timing($self->{timings}, variables => $t0);
 }
 
 sub check_assignments ($self) {
-    my $ppi_doc = $self->{type_env}->ppi_doc // return;
+    my $t0 = start_timing($self->{timings});
 
     # Only check explicitly annotated variables (not inferred ones)
     my %annotated = map { $_->{name} => 1 }
@@ -116,20 +120,14 @@ sub check_assignments ($self) {
                    grep { $_->{type_expr} }
                    $self->{extracted}{variables}->@*;
 
-    my $ops = $ppi_doc->find('PPI::Token::Operator') || [];
+    my $ops = $self->{extracted}{assignment_ops} // [];
     for my $op (@$ops) {
-        next unless $op->content eq '=';
-
         # LHS: immediate preceding sibling must be a symbol
         my $lhs = $op->sprevious_sibling or next;
         next unless $lhs->isa('PPI::Token::Symbol');
 
         my $var_name = $lhs->content;
         next unless $annotated{$var_name};
-
-        # Skip variable declarations — check_variables handles those
-        my $stmt = $op->parent;
-        next if $stmt && $stmt->isa('PPI::Statement::Variable');
 
         # Look up the declared type (already resolved by TypeEnv)
         my $env = $self->_env_for_node($op);
@@ -164,9 +162,11 @@ sub check_assignments ($self) {
             );
         }
     }
+    record_timing($self->{timings}, assignments => $t0);
 }
 
 sub check_call_sites ($self) {
+    my $t0 = start_timing($self->{timings});
     my $te = $self->{type_env};
     Typist::Static::CallChecker->new(
         extracted     => $self->{extracted},
@@ -179,11 +179,12 @@ sub check_call_sites ($self) {
         has_type_var  => \&_has_type_var,
         gradual_hints => $self->{gradual_hints},
     )->check_call_sites;
+    record_timing($self->{timings}, call_sites => $t0);
 }
 
 sub check_match_exhaustiveness ($self) {
-    my $ppi_doc = $self->{type_env}->ppi_doc // return;
-    my $words = $ppi_doc->find('PPI::Token::Word') || [];
+    my $t0 = start_timing($self->{timings});
+    my $words = $self->{extracted}{special_words}{match} // [];
 
     for my $word (@$words) {
         next unless $word->content eq 'match';
@@ -218,6 +219,7 @@ sub check_match_exhaustiveness ($self) {
             ],
         );
     }
+    record_timing($self->{timings}, match_exhaustiveness => $t0);
 }
 
 # ── Phase 5: Function-Level Checks ──────────────
@@ -404,14 +406,12 @@ sub collect_callback_params ($self) {
 # Proactively walk standalone match/map/grep/sort/handle expressions
 # so their callback params are collected for LSP hover/inlay hints.
 sub _collect_match_callback_params ($self) {
-    my $ppi_doc = $self->{type_env}->ppi_doc // return;
-    my $words = $ppi_doc->find('PPI::Token::Word') || [];
-
-    my %mgs = (match => 1, map => 1, grep => 1, sort => 1, handle => 1);
-    for my $word (@$words) {
-        next unless $mgs{$word->content};
-        my $env = $self->_env_for_node($word);
-        Typist::Static::Infer->infer_expr($word, $env);
+    for my $kind (qw(match map grep sort handle)) {
+        my $words = $self->{extracted}{special_words}{$kind} // [];
+        for my $word (@$words) {
+            my $env = $self->_env_for_node($word);
+            Typist::Static::Infer->infer_expr($word, $env);
+        }
     }
 }
 

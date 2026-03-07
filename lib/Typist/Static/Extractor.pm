@@ -27,6 +27,9 @@ sub extract ($class, $source) {
         declares       => +{},
         loop_variables => [],
         use_modules    => [],
+        special_words  => +{},
+        assignment_ops => [],
+        word_tokens    => [],
         package        => 'main',
         ppi_doc        => $doc,
     };
@@ -72,10 +75,38 @@ sub extract ($class, $source) {
     $class->_extract_variables(\@var_stmts, $result);
     $class->_extract_functions(\@sub_stmts, $result);
     $class->_extract_loop_variables(\@compound_stmts, $result);
+    $class->_collect_special_words($doc, $result);
+    $class->_collect_assignment_ops(\@$all_stmts, $result);
 
     $result->{ignore_lines} = $class->_collect_ignore_lines($doc);
 
     $result;
+}
+
+sub _collect_special_words ($class, $doc, $result) {
+    my %wanted = map { $_ => 1 } qw(match handle map grep sort);
+    my %found;
+    my $words = $doc->find('PPI::Token::Word') || [];
+    $result->{word_tokens} = $words;
+    for my $word (@$words) {
+        my $name = $word->content;
+        next unless $wanted{$name};
+        push @{$found{$name} //= []}, $word;
+    }
+    $result->{special_words} = \%found;
+}
+
+sub _collect_assignment_ops ($class, $stmts, $result) {
+    my @ops;
+    for my $stmt (@$stmts) {
+        next if $stmt->isa('PPI::Statement::Variable');
+        for my $child ($stmt->schildren) {
+            next unless $child->isa('PPI::Token::Operator');
+            next unless $child->content eq '=';
+            push @ops, $child;
+        }
+    }
+    $result->{assignment_ops} = \@ops;
 }
 
 # ── typedef Extraction ──────────────────────────

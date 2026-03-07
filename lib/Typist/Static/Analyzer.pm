@@ -15,9 +15,14 @@ use Typist::Parser;
 use Typist::Static::Checker;
 use Typist::Error;
 use Typist::Prelude;
+use Typist::Static::Timing qw(
+    start_timing
+    record_timing
+    merge_prefixed_timings
+    finish_total_timing
+);
 use Typist::Subtype;
 use Typist::Type::Data;
-use Time::HiRes qw(time);
 use Typist::Static::SymbolInfo qw(
     sym_function sym_parameter sym_variable sym_typedef sym_newtype
     sym_effect sym_typeclass sym_datatype sym_struct
@@ -53,16 +58,16 @@ sub analyze ($class, $source, %opts) {
     # Subtype cache is cleared by Workspace on type definition changes.
     # No need to clear per-analysis — refaddr-based keys prevent stale hits.
     my $timings = $opts{collect_timing} ? +{} : undef;
-    my $t0 = $timings ? time() : undef;
+    my $t0 = start_timing($timings);
 
     my $extracted = $opts{extracted} // Typist::Static::Extractor->extract($source);
-    _record_timing($timings, extract => $t0) if $timings;
+    record_timing($timings, extract => $t0);
     my $registry  = Typist::Registry->new;
     my $errors    = Typist::Error->collector;
     my $file      = $opts{file} // '(buffer)';
 
     # Phase 1: Import + Registration
-    my $t_phase = $timings ? time() : undef;
+    my $t_phase = start_timing($timings);
     if ($opts{workspace_registry}) {
         $registry->merge($opts{workspace_registry});
     }
@@ -72,52 +77,58 @@ sub analyze ($class, $source, %opts) {
         errors => $errors,
         file   => $file,
     );
-    _record_timing($timings, registration => $t_phase) if $timings;
+    record_timing($timings, registration => $t_phase);
 
     # Phase 1b: Type visibility check (lint level)
-    $t_phase = $timings ? time() : undef;
+    $t_phase = start_timing($timings);
     _check_type_visibility($extracted, $registry, $errors, $file);
-    _record_timing($timings, visibility => $t_phase) if $timings;
+    record_timing($timings, visibility => $t_phase);
 
     # Phase 2: Structural verification
-    $t_phase = $timings ? time() : undef;
+    $t_phase = start_timing($timings);
+    my $checker_timings = $timings ? +{} : undef;
     Typist::Static::Checker->new(
         registry  => $registry,
         errors    => $errors,
         extracted => $extracted,
         file      => $file,
+        ($checker_timings ? (timings => $checker_timings) : ()),
     )->analyze;
-    _record_timing($timings, structural => $t_phase) if $timings;
+    record_timing($timings, structural => $t_phase);
+    merge_prefixed_timings($timings, structural => $checker_timings);
 
     # Phase 3: Type environment construction
-    $t_phase = $timings ? time() : undef;
+    $t_phase = start_timing($timings);
     my $type_env = Typist::Static::TypeEnv->new(
         registry  => $registry,
         extracted => $extracted,
         ppi_doc   => $extracted->{ppi_doc},
     );
     $type_env->build;
-    _record_timing($timings, type_env => $t_phase) if $timings;
+    record_timing($timings, type_env => $t_phase);
 
     # Phase 4: File-level checks
     # Scope callback param collector — reentrant-safe via local
-    $t_phase = $timings ? time() : undef;
+    $t_phase = start_timing($timings);
     local $Typist::Static::Infer::_CALLBACK_CTX = { params => [], seen => {} };
+    my $type_checker_timings = $timings ? +{} : undef;
     my $type_checker = Typist::Static::TypeChecker->new(
         type_env      => $type_env,
         errors        => $errors,
         extracted     => $extracted,
         file          => $file,
         gradual_hints => $opts{gradual_hints},
+        ($type_checker_timings ? (timings => $type_checker_timings) : ()),
     );
     $type_checker->check_variables;
     $type_checker->check_assignments;
     $type_checker->check_call_sites;
     $type_checker->check_match_exhaustiveness;
-    _record_timing($timings, file_checks => $t_phase) if $timings;
+    record_timing($timings, file_checks => $t_phase);
+    merge_prefixed_timings($timings, file_checks => $type_checker_timings);
 
     # Phase 5: Function-level checks (unified loop)
-    $t_phase = $timings ? time() : undef;
+    $t_phase = start_timing($timings);
     my $effect_checker = Typist::Static::EffectChecker->new(
         registry  => $registry,
         errors    => $errors,
@@ -141,23 +152,23 @@ sub analyze ($class, $source, %opts) {
         $protocol_checker->check_function($name);
     }
     $protocol_checker->check_handle_blocks;
-    _record_timing($timings, function_checks => $t_phase) if $timings;
+    record_timing($timings, function_checks => $t_phase);
 
     # Phase 6: Collection (LSP hints)
-    $t_phase = $timings ? time() : undef;
+    $t_phase = start_timing($timings);
     $type_checker->collect_fn_return_types;
     $type_checker->collect_callback_params;
     my $inferred_effects = Typist::Static::EffectChecker->infer_effects($extracted, $registry);
-    _record_timing($timings, collection => $t_phase) if $timings;
+    record_timing($timings, collection => $t_phase);
 
     # Phase 7: Results
-    $t_phase = $timings ? time() : undef;
+    $t_phase = start_timing($timings);
     my $diagnostics = _to_diagnostics($errors, $file, $extracted);
-    _record_timing($timings, diagnostics => $t_phase) if $timings;
-    $t_phase = $timings ? time() : undef;
+    record_timing($timings, diagnostics => $t_phase);
+    $t_phase = start_timing($timings);
     my $symbols = _build_symbol_index($extracted, $type_checker->env, $type_checker);
-    _record_timing($timings, symbols => $t_phase) if $timings;
-    $timings->{total} = time() - $t0 if $timings;
+    record_timing($timings, symbols => $t_phase);
+    finish_total_timing($timings, $t0);
     return +{
         diagnostics         => $diagnostics,
         symbols             => $symbols,
@@ -170,11 +181,6 @@ sub analyze ($class, $source, %opts) {
         infer_log           => $type_checker->infer_log,
         ($timings ? (timings => $timings) : ()),
     };
-}
-
-sub _record_timing ($timings, $name, $started_at) {
-    return unless $timings && defined $started_at;
-    $timings->{$name} = time() - $started_at;
 }
 
 # ── Diagnostic Conversion ───────────────────────

@@ -9,7 +9,9 @@ use Typist::Error;
 use Typist::Error::Global;
 use Typist::Kind;
 use Typist::KindChecker;
+use Typist::Static::Timing qw(start_timing record_timing accumulate_timing);
 use Typist::Type::Fold;
+use Scalar::Util qw(refaddr);
 
 # ── Constructor ──────────────────────────────────
 
@@ -19,16 +21,33 @@ sub new ($class, %args) {
         errors    => $args{errors}   // 'Typist::Error::Global',
         extracted => $args{extracted},
         file      => $args{file}     // '(buffer)',
+        timings   => $args{timings},
+        _fn_line_cache => +{},
+        _type_wf_cache => +{},
+        _free_vars_cache => +{},
     }, $class;
 }
 
 # ── CHECK-phase Static Analysis ─────────────────
 
 sub analyze ($self) {
+    my $timings = $self->{timings};
+
+    my $t0 = start_timing($timings);
     $self->_check_aliases;
+    record_timing($timings, aliases => $t0);
+
+    $t0 = start_timing($timings);
     $self->_check_functions;
+    record_timing($timings, functions => $t0);
+
+    $t0 = start_timing($timings);
     $self->_check_typeclasses;
+    record_timing($timings, typeclasses => $t0);
+
+    $t0 = start_timing($timings);
     $self->_check_protocols;
+    record_timing($timings, protocols => $t0);
 }
 
 # ── Source Location Helpers ─────────────────────
@@ -40,10 +59,16 @@ sub _alias_line ($self, $name) {
 }
 
 sub _fn_line ($self, $fqn) {
+    if (my $cached = $self->{_fn_line_cache}{$fqn}) {
+        return @$cached;
+    }
+
     my $ext = $self->{extracted} // return (0, '(function signature)', 0);
     my $bare = $fqn =~ s/\A.*:://r;
     my $info = $ext->{functions}{$bare} // return (0, '(function signature)', 0);
-    ($info->{line}, $self->{file}, $info->{col} // 0);
+    my @loc = ($info->{line}, $self->{file}, $info->{col} // 0);
+    $self->{_fn_line_cache}{$fqn} = \@loc;
+    @loc;
 }
 
 sub _tc_line ($self, $name) {
@@ -88,23 +113,28 @@ sub _check_aliases ($self) {
 # Verify all type vars in params/returns are declared in :Generic.
 sub _check_functions ($self) {
     my %functions = $self->{registry}->all_functions;
+    my $timings = $self->{timings};
 
     for my $fqn (sort keys %functions) {
+        my $t_sig = start_timing($timings);
         my $sig = $functions{$fqn};
         my ($fn_line, $fn_file, $fn_col) = $self->_fn_line($fqn);
         my %declared = map { $_->{name} => 1 }
                        ($sig->{generics} // [])->@*;
 
         # Collect unique free type variables from params and returns
+        my $t_phase = start_timing($timings);
         my %seen_free;
         for my $ptype (($sig->{params} // [])->@*) {
-            $seen_free{$_} = 1 for $ptype->free_vars;
+            $seen_free{$_} = 1 for $self->_free_vars_of($ptype);
         }
         if ($sig->{returns}) {
-            $seen_free{$_} = 1 for $sig->{returns}->free_vars;
+            $seen_free{$_} = 1 for $self->_free_vars_of($sig->{returns});
         }
+        accumulate_timing($timings, 'functions.free_vars', $t_phase);
 
         # Check each free variable is declared
+        $t_phase = start_timing($timings);
         for my $var (sort keys %seen_free) {
             unless ($declared{$var}) {
                 $self->{errors}->collect(
@@ -116,13 +146,17 @@ sub _check_functions ($self) {
                 );
             }
         }
+        accumulate_timing($timings, 'functions.undeclared_vars', $t_phase);
 
         # Validate effect annotations
+        $t_phase = start_timing($timings);
         if ($sig->{effects}) {
             $self->_check_effect_wellformed($sig->{effects}, $fqn, \%declared);
         }
+        accumulate_timing($timings, 'functions.effects', $t_phase);
 
         # Validate bound expressions are well-formed
+        $t_phase = start_timing($timings);
         for my $g (($sig->{generics} // [])->@*) {
             next unless ref $g eq 'HASH' && $g->{bound_expr};
             my $bound_type = eval { Typist::Parser->parse($g->{bound_expr}) };
@@ -138,12 +172,16 @@ sub _check_functions ($self) {
                 $self->_check_type_wellformed($bound_type, $fqn);
             }
         }
+        accumulate_timing($timings, 'functions.bounds', $t_phase);
 
         # Validate that param/return type expressions are well-formed
+        $t_phase = start_timing($timings);
         $self->_check_type_wellformed($_, $fqn) for ($sig->{params} // [])->@*;
         $self->_check_type_wellformed($sig->{returns}, $fqn) if $sig->{returns};
+        accumulate_timing($timings, 'functions.type_wellformed', $t_phase);
 
         # Kind well-formedness: verify type expressions respect declared kinds
+        $t_phase = start_timing($timings);
         my %var_kinds;
         for my $g (($sig->{generics} // [])->@*) {
             next unless ref $g eq 'HASH' && $g->{var_kind};
@@ -175,6 +213,8 @@ sub _check_functions ($self) {
                 }
             }
         }
+        accumulate_timing($timings, 'functions.kinds', $t_phase);
+        accumulate_timing($timings, 'functions.total', $t_sig);
     }
 }
 
@@ -184,22 +224,48 @@ sub _check_type_wellformed ($self, $type, $context) {
     return unless $type;
 
     my ($ctx_line, $ctx_file, $ctx_col) = $self->_fn_line($context);
+    my @unknown_aliases = $self->_unknown_aliases_in_type($type);
 
+    for my $name (@unknown_aliases) {
+        $self->{errors}->collect(
+            kind    => 'UnknownType',
+            message => "Type alias '$name' is not defined (in $context)",
+            file    => $ctx_file,
+            line    => $ctx_line,
+            col     => $ctx_col,
+        );
+    }
+}
+
+sub _unknown_aliases_in_type ($self, $type) {
+    my $cache_key = ref $type ? refaddr($type) : "$type";
+    if (exists $self->{_type_wf_cache}{$cache_key}) {
+        return $self->{_type_wf_cache}{$cache_key}->@*;
+    }
+
+    my @unknown;
     Typist::Type::Fold->walk($type, sub ($node) {
-        if ($node->is_alias) {
-            my $name = $node->alias_name;
-            unless ($self->{registry}->has_alias($name) || $self->{registry}->has_typeclass($name)
-                    || $self->{registry}->lookup_effect($name)) {
-                $self->{errors}->collect(
-                    kind    => 'UnknownType',
-                    message => "Type alias '$name' is not defined (in $context)",
-                    file    => $ctx_file,
-                    line    => $ctx_line,
-                    col     => $ctx_col,
-                );
-            }
-        }
+        return unless $node->is_alias;
+        my $name = $node->alias_name;
+        return if $self->{registry}->has_alias($name);
+        return if $self->{registry}->has_typeclass($name);
+        return if $self->{registry}->lookup_effect($name);
+        push @unknown, $name;
     });
+
+    $self->{_type_wf_cache}{$cache_key} = \@unknown;
+    @unknown;
+}
+
+sub _free_vars_of ($self, $type) {
+    my $cache_key = ref $type ? refaddr($type) : "$type";
+    if (exists $self->{_free_vars_cache}{$cache_key}) {
+        return $self->{_free_vars_cache}{$cache_key}->@*;
+    }
+
+    my @free = $type->free_vars;
+    $self->{_free_vars_cache}{$cache_key} = \@free;
+    @free;
 }
 
 # ── Effect Well-formedness ────────────────────────

@@ -37,7 +37,9 @@ sub _has_type_var ($self, $type) { $self->{has_type_var}->($type) }
 
 sub check_call_sites ($self) {
     my $ppi_doc = $self->{ppi_doc} // return;
-    my $words = $ppi_doc->find('PPI::Token::Word') || [];
+    my $words = $self->{extracted}{word_tokens}
+        // $ppi_doc->find('PPI::Token::Word')
+        // [];
 
     for my $word (@$words) {
         my $name = $word->content;

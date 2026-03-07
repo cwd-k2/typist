@@ -26,6 +26,7 @@ sub new ($class, %args) {
         _local_var_types => +{},
         _infer_log       => [],
         _fn_env_cache    => +{},
+        _resolve_cache   => +{},
     }, $class;
 }
 
@@ -52,15 +53,26 @@ sub build ($self) {
 
 sub resolve_type ($self, $expr) {
     return undef unless defined $expr;
+    if (exists $self->{_resolve_cache}{$expr}) {
+        return $self->{_resolve_cache}{$expr};
+    }
+
     my $parsed = eval { Typist::Parser->parse($expr) };
-    return undef if $@;
+    if ($@) {
+        $self->{_resolve_cache}{$expr} = undef;
+        return undef;
+    }
 
     # Resolve aliases through the local registry
     if ($parsed->is_alias) {
         my $resolved = $self->{registry}->lookup_type($parsed->alias_name);
-        return $resolved if $resolved;
+        if ($resolved) {
+            $self->{_resolve_cache}{$expr} = $resolved;
+            return $resolved;
+        }
     }
 
+    $self->{_resolve_cache}{$expr} = $parsed;
     $parsed;
 }
 
