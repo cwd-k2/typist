@@ -41,18 +41,18 @@ PERL
     like $out, qr/Typist::DSL::Optional/, 'optional() available via Typist::DSL';
 };
 
-# ── Deprecated path: use Typist qw(...) ──
+# ── Rejected path: use Typist qw(...) ──
 
-subtest 'use Typist qw(Int Str) — still works but emits deprecation warning' => sub {
+subtest 'use Typist qw(Int) — dies with clear message' => sub {
     my $out = run_perl(<<'PERL');
 use v5.40;
 use lib 'lib';
-use Typist qw(Int Str);
-print ref(Int), "\n";
+eval { require Typist; Typist->import('Int') };
+print $@ ? "died: $@" : "ok\n";
 PERL
 
-    like $out, qr/Typist::Type::Atom/, 'Int is still available';
-    like $out, qr/deprecated.*Typist::DSL/, 'deprecation warning emitted';
+    like $out, qr/died/, 'use Typist qw(Int) dies';
+    like $out, qr/Typist::DSL/, 'error message mentions Typist::DSL';
 };
 
 subtest 'use Typist — bare import does not export DSL names' => sub {
@@ -67,7 +67,7 @@ PERL
     like $out, qr/not_found/, 'Int is NOT available with bare use Typist';
 };
 
-subtest 'use Typist qw(NotAType) — dies on unknown name' => sub {
+subtest 'use Typist qw(NotAType) — dies on any DSL-like name' => sub {
     my $out = run_perl(<<'PERL');
 use v5.40;
 use lib 'lib';
@@ -75,7 +75,7 @@ eval { require Typist; Typist->import('NotAType') };
 print $@ ? "died\n" : "ok\n";
 PERL
 
-    like $out, qr/died/, 'unknown DSL name causes die';
+    like $out, qr/died/, 'any uppercase arg causes die';
 };
 
 subtest 'use Typist -runtime — runtime flag with bare import' => sub {

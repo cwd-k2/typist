@@ -54,10 +54,12 @@ sub import ($class, @args) {
         else            { warn $_[0] }
     };
 
-    my @dsl_names;
     for my $arg (@args) {
         if    ($arg eq '-runtime') { $Typist::RUNTIME = 1 }
-        elsif ($arg =~ /\A[A-Z]/ || $arg eq 'optional') { push @dsl_names, $arg }
+        elsif ($arg =~ /\A[A-Z]/ || $arg eq 'optional') {
+            die "Typist: DSL names cannot be imported via 'use Typist'. "
+              . "Use 'use Typist::DSL qw($arg)' instead (at $caller)\n";
+        }
     }
 
     # Track this package
@@ -105,19 +107,6 @@ sub import ($class, @args) {
     *{"${caller}::protocol"}  = \&Typist::EffectDef::_make_protocol;
     *{"${caller}::declare"}   = \&Typist::External::_declare;
 
-    # Selective DSL re-export (deprecated — use Typist::DSL instead)
-    if (@dsl_names) {
-        warn "Typist: importing DSL names via 'use Typist qw("
-            . join(' ', @dsl_names)
-            . ")' is deprecated; use 'use Typist::DSL qw("
-            . join(' ', @dsl_names)
-            . ")' instead (at $caller)\n";
-        my $map = Typist::DSL->export_map;
-        for my $name (@dsl_names) {
-            die "Typist: unknown export '$name'\n" unless exists $map->{$name};
-            *{"${caller}::${name}"} = $map->{$name};
-        }
-    }
 }
 
 CHECK {
