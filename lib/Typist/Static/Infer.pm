@@ -241,9 +241,44 @@ sub infer_expr_with_siblings ($class, $element, $env = undef) {
         my $next = $element->snext_sibling;
         if ($next && $next->isa('PPI::Token::Operator')) {
             my $op = $next->content;
+
+            # Ternary: COND ? THEN : ELSE (possibly nested)
+            if ($op eq '?') {
+                my @rest;
+                my $sib = $next->snext_sibling;
+                while ($sib) {
+                    last if $sib->isa('PPI::Token::Structure');
+                    push @rest, $sib;
+                    $sib = $sib->snext_sibling;
+                }
+                if (@rest) {
+                    my $result = _infer_flat_ternary(\@rest, $env, undef);
+                    return $result if defined $result;
+                }
+            }
+
             if ($op ne '=' && $op ne '->' && $op ne '=>') {
                 my $rhs = $next->snext_sibling;
                 if ($rhs) {
+                    # Check for ternary extension: EXPR OP RHS ? THEN : ELSE
+                    my $after_rhs = $rhs->snext_sibling;
+                    if ($after_rhs && $after_rhs->isa('PPI::Token::Operator')
+                        && $after_rhs->content eq '?')
+                    {
+                        # Collect all remaining siblings and delegate to flat ternary
+                        my @rest;
+                        my $sib = $after_rhs->snext_sibling;
+                        while ($sib) {
+                            last if $sib->isa('PPI::Token::Structure');
+                            push @rest, $sib;
+                            $sib = $sib->snext_sibling;
+                        }
+                        if (@rest) {
+                            my $result = _infer_flat_ternary(\@rest, $env, undef);
+                            return $result if defined $result;
+                        }
+                    }
+
                     my $result = _infer_binop($op, $element, $rhs, $env);
                     return $result if defined $result;
                 }
