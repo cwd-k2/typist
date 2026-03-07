@@ -1,105 +1,160 @@
 # Installation
 
 !!! warning "Not on CPAN"
-    There is an unrelated module named `Typist` on CPAN — it is **not** this project. This Typist is distributed exclusively via its [GitHub repository](https://github.com/cwd-k2/typist). Clone or download from there.
+    There is an unrelated module named `Typist` on CPAN — it is **not** this project. This Typist is distributed exclusively via its [GitHub repository](https://github.com/cwd-k2/typist).
 
 ## Prerequisites
 
-Typist requires:
+- **Perl 5.40 or later.**
+- **[cpanm](https://metacpan.org/pod/App::cpanminus)** (recommended for installation).
 
-- **Perl 5.40 or later.** The project's `.perl-version` targets 5.42.0 (managed via [plenv](https://github.com/tokuhirom/plenv)), but any 5.40+ release works.
-- **[PPI](https://metacpan.org/pod/PPI)** -- the Perl document parser that powers Typist's static analysis engine.
-- **[JSON::PP](https://metacpan.org/pod/JSON::PP)** -- used by the LSP transport layer. This module ships with Perl core since 5.14, so you likely already have it.
+All other dependencies (PPI, JSON::PP) are resolved automatically.
 
-Optional:
+## Install
 
-- **[Perl::Critic](https://metacpan.org/pod/Perl::Critic)** -- enables additional lint-style policies (effect completeness, match exhaustiveness, annotation style).
-
-## Installation Methods
-
-### Via Carton (recommended)
-
-The repository includes a `cpanfile` that declares all dependencies. [Carton](https://metacpan.org/pod/Carton) installs them into a local `local/` directory, keeping your system Perl clean.
+### cpanm (recommended)
 
 ```sh
-# Install Carton if you don't have it
-cpanm Carton
-
-# Install project dependencies
-carton install
+cpanm https://github.com/cwd-k2/typist.git
 ```
 
-If you use [mise](https://mise.jdx.dev/), the project provides a task alias:
+This installs the `Typist` module, along with the `typist-check` and `typist-lsp` CLI tools.
+
+### Local install (per-project)
+
+If you prefer to install into a project-local directory:
 
 ```sh
-mise run deps
+cpanm -L local https://github.com/cwd-k2/typist.git
 ```
 
-This runs `carton install` under the hood.
-
-### Direct CPAN install
-
-If you prefer a global installation:
+Then run your scripts with the local library path:
 
 ```sh
-cpanm PPI
-cpanm Perl::Critic    # optional
+perl -Ilocal/lib/perl5 -Ilib your_script.pl
 ```
 
-## Verification
+### Carton
 
-Run these three checks to confirm everything is working.
+Add to your `cpanfile`:
 
-### 1. Module loads
+```perl
+requires 'Typist';
+```
+
+Then:
 
 ```sh
-perl -Ilib -e 'use Typist; say "ok"'
+cpanm -L local https://github.com/cwd-k2/typist.git
 ```
 
-You should see `ok` printed to stdout. If Perl cannot find `PPI`, you will get a compilation error here.
+!!! note
+    Since Typist is not on CPAN, `carton install` alone cannot resolve it. Install Typist with `cpanm` first, then Carton will recognize it in `local/`.
 
-### 2. CLI checker runs
+### From source
 
 ```sh
-perl -Ilib bin/typist-check --help
+git clone https://github.com/cwd-k2/typist.git
+cd typist
+perl Makefile.PL
+make && make test
+make install
 ```
 
-This prints the usage summary for `typist-check`, the command-line static analysis tool.
+## Verify
 
-### 3. An example runs cleanly
+After installation, confirm that Typist is working:
 
 ```sh
-perl -Ilib example/01_foundations.pl
+perl -e 'use Typist; say "ok"'
 ```
 
-This runs the foundations example, which exercises type aliases, typed variables, and typed subroutines. You should see output demonstrating successful type-checked execution.
-
-### When using Carton
-
-If you installed dependencies via Carton, prefix every command with `carton exec --` so that Perl picks up the `local/` library paths:
+Check that the CLI tools are available:
 
 ```sh
-carton exec -- perl -e 'use Typist; say "ok"'
-carton exec -- perl bin/typist-check --help
-carton exec -- perl example/01_foundations.pl
+typist-check --help
+typist-lsp --help
 ```
 
-## Available Commands via mise
+If you used `-L local`, use the full paths instead:
 
-The project ships a `mise.toml` with task definitions for common workflows. These all use `carton exec` internally, so you do not need to prefix commands yourself.
+```sh
+perl -Ilocal/lib/perl5 -e 'use Typist; say "ok"'
+local/bin/typist-check --help
+```
 
-| Command | Description |
-|---------|-------------|
-| `mise run deps` | Install dependencies via Carton |
-| `mise run check` | Run `typist-check` static analysis on `lib/` |
-| `mise run test` | Run all test suites in parallel |
-| `mise run test:core` | Core type system tests (`t/`) |
-| `mise run test:static` | Static analysis tests (`t/static/`) |
-| `mise run test:lsp` | LSP server tests (`t/lsp/`) |
-| `mise run test:critic` | Perl::Critic policy tests (`t/critic/`) |
-| `mise run test:e2e` | LSP end-to-end smoke test |
-| `mise run example` | Run all example programs |
+## Project Setup
+
+A typical Typist project looks like this:
+
+```
+my-project/
+  lib/
+    MyApp/
+      Types.pm        # Type definitions (typedef, struct, effect, ...)
+      Logic.pm        # Business logic with :sig() annotations
+  script/
+    app.pl            # Entry point
+  cpanfile            # Dependencies
+```
+
+Your `cpanfile`:
+
+```perl
+requires 'perl', 'v5.40';
+requires 'Typist';
+```
+
+Your type definitions module (`lib/MyApp/Types.pm`):
+
+```perl
+package MyApp::Types;
+use v5.40;
+use Typist;
+use Exporter 'import';
+
+our @EXPORT = qw(Name Email);
+
+BEGIN {
+    newtype Name  => 'Str';
+    newtype Email => 'Str';
+
+    struct User => (
+        name  => 'Name',
+        email => 'Email',
+    );
+}
+
+1;
+```
+
+Your application code (`lib/MyApp/Logic.pm`):
+
+```perl
+package MyApp::Logic;
+use v5.40;
+use Typist;
+use MyApp::Types;
+
+sub greet :sig((User) -> Str) ($user) {
+    "Hello, " . $user->name . "!";
+}
+
+1;
+```
+
+## Static Analysis
+
+Run `typist-check` against your project:
+
+```sh
+typist-check                     # Scans lib/ by default
+typist-check lib/MyApp/Logic.pm  # Check specific files
+typist-check --verbose           # Show clean files too
+```
+
+See [typist-check CLI](../tooling/typist-check.md) for the full option reference.
 
 ## Next Steps
 
-With everything installed, proceed to [First Program](first-program.md) to write your first typed Perl program.
+With everything installed, proceed to [First Program](first-program.md) to walk through a complete typed program step by step.
