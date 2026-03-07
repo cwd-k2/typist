@@ -14,6 +14,7 @@ use Typist::Type::Var;
 use Exporter 'import';
 our @EXPORT_OK = qw(
     gen_atom gen_literal gen_ground_type gen_type gen_subtype_pair
+    gen_parseable_type
 );
 
 # ── Atom hierarchy ───────────────────────────────
@@ -177,6 +178,71 @@ sub _gen_with_vars ($depth) {
         Typist::Type::Var->new($VAR_NAMES[int rand @VAR_NAMES]);
     } else {
         _gen_ground($depth);
+    }
+}
+
+# Generate types that survive parse(to_string()) round-trip.
+# Excludes Literal (to_string is bare value, not parseable as type).
+sub gen_parseable_type (%opts) {
+    my $max_depth = $opts{max_depth} // 2;
+    _gen_parseable($max_depth);
+}
+
+# Generates types without Func inside Union/Intersection (ambiguous to_string).
+sub _gen_parseable ($depth) {
+    if ($depth <= 0) {
+        return gen_atom();
+    }
+
+    my $r = rand();
+
+    if ($r < 0.40) {
+        gen_atom();
+    }
+    elsif ($r < 0.55) {
+        # Union members must not be Func (-> vs | precedence ambiguity)
+        Typist::Type::Union->new(
+            _gen_non_func($depth - 1),
+            _gen_non_func($depth - 1),
+        );
+    }
+    elsif ($r < 0.70) {
+        my $nparams = 1 + int(rand(2));
+        my @params = map { _gen_parseable($depth - 1) } 1 .. $nparams;
+        my $ret = _gen_parseable($depth - 1);
+        Typist::Type::Func->new(\@params, $ret);
+    }
+    elsif ($r < 0.85) {
+        Typist::Type::Param->new('ArrayRef', _gen_parseable($depth - 1));
+    }
+    else {
+        # Intersection members must not be Func (-> vs & precedence ambiguity)
+        Typist::Type::Intersection->new(
+            _gen_non_func($depth - 1),
+            _gen_non_func($depth - 1),
+        );
+    }
+}
+
+# Generate parseable type that is NOT a Func (for Union/Intersection members).
+sub _gen_non_func ($depth) {
+    if ($depth <= 0) {
+        return gen_atom();
+    }
+
+    my $r = rand();
+
+    if ($r < 0.50) {
+        gen_atom();
+    }
+    elsif ($r < 0.75) {
+        Typist::Type::Param->new('ArrayRef', _gen_parseable($depth - 1));
+    }
+    else {
+        Typist::Type::Intersection->new(
+            _gen_non_func($depth - 1),
+            _gen_non_func($depth - 1),
+        );
     }
 }
 

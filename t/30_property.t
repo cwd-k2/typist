@@ -16,7 +16,8 @@ use Typist::Type::Param;
 use Typist::Type::Var;
 use Typist::Subtype;
 use Typist::Static::Unify;
-use Test::Typist::Gen qw(gen_atom gen_literal gen_ground_type gen_subtype_pair);
+use Typist::Parser;
+use Test::Typist::Gen qw(gen_atom gen_literal gen_ground_type gen_subtype_pair gen_parseable_type);
 
 my $seed  = $ENV{TYPIST_PROP_SEED}  // int(rand(2**31));
 my $iters = $ENV{TYPIST_PROP_ITERS} // 200;
@@ -194,6 +195,76 @@ subtest 'unify: Var to Any skips binding' => sub {
     my $result = unify($var, $Any);
     ok defined $result, 'unify(X, Any) succeeds';
     ok !exists $result->{X}, 'X not bound (Any carries no information)';
+};
+
+# ── Subtype: Antisymmetry ─────────────────────────
+
+# NOTE: The subtype relation is a preorder, not a partial order on syntax.
+# Mutual subtyping does NOT imply structural equality (e.g. Str | Literal("",Str)
+# ≡ Str semantically, but differs structurally). Antisymmetry holds on atoms.
+subtest 'subtype: antisymmetry (atoms)' => sub {
+    my @atoms = map { Typist::Type::Atom->new($_) } qw(Bool Int Double Num Str Undef Any);
+    for my $t (@atoms) {
+        for my $u (@atoms) {
+            next unless is_sub($t, $u) && is_sub($u, $t);
+            ok type_eq($t, $u),
+                "antisymmetry: $t <=> $u should be equal"
+                or last;
+        }
+    }
+};
+
+# ── LUB: Associativity ───────────────────────────
+
+subtest 'LUB: associativity (lub(T, lub(U,V)) = lub(lub(T,U), V))' => sub {
+    for (1 .. $iters) {
+        my $t = gen_atom();
+        my $u = gen_atom();
+        my $v = gen_atom();
+        my $l1 = lub($t, lub($u, $v));
+        my $l2 = lub(lub($t, $u), $v);
+        ok type_eq($l1, $l2),
+            "associativity: lub($t, lub($u,$v))=$l1 vs lub(lub($t,$u),$v)=$l2"
+            or last;
+    }
+};
+
+# ── LUB: Identity elements ───────────────────────
+
+# TODO: common_super does not handle Never as bottom element.
+# lub(T, Never) should return T, but currently falls through to Any.
+subtest 'LUB: Never is identity (lub(T, Never) = T)' => sub {
+    local $TODO = 'common_super lacks Never handling';
+    for (1 .. $iters) {
+        my $t = gen_atom();
+        my $l = lub($t, $Never);
+        ok type_eq($l, $t), "identity: lub($t, Never) = $l"
+            or last;
+    }
+};
+
+subtest 'LUB: Any is absorbing (lub(T, Any) = Any)' => sub {
+    for (1 .. $iters) {
+        my $t = gen_atom();
+        my $l = lub($t, $Any);
+        ok type_eq($l, $Any), "absorbing: lub($t, Any) = $l"
+            or last;
+    }
+};
+
+# ── Parser Round-Trip ─────────────────────────────
+
+subtest 'parser: round-trip (parse(T.to_string()) = T)' => sub {
+    for (1 .. $iters) {
+        my $t = gen_parseable_type(max_depth => 2);
+        my $str = $t->to_string;
+        my $parsed = eval { Typist::Parser->parse($str) };
+        ok defined $parsed, "parse succeeds: '$str'"
+            or do { diag "parse error: $@"; last };
+        ok type_eq($t, $parsed),
+            "round-trip: $t -> '$str' -> $parsed"
+            or last;
+    }
 };
 
 done_testing;
