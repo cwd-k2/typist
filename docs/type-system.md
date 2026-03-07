@@ -330,7 +330,7 @@ BEGIN {
 
 - `UserId` is NOT a subtype of `Int`, even if defined as `newtype UserId => 'Int'`
 - Only `UserId` values satisfy the `UserId` type
-- Constructor validates the inner type (boundary enforcement, always active)
+- Constructor validates the inner type when `-runtime` is enabled
 - Values are blessed scalar references (`Typist::Newtype::$name`)
 
 ### Subtyping
@@ -403,9 +403,9 @@ my $r = Rectangle(3, 4);      # Typist::Data::Shape { _tag => 'Rectangle', _valu
 my $p = Point();               # Typist::Data::Shape { _tag => 'Point', _values => [] }
 ```
 
-Constructors perform boundary enforcement:
-- Arity check: number of arguments must match variant definition
-- Type check: each argument is validated against the declared type via `contains()`
+Constructors perform structural enforcement:
+- Arity check: number of arguments must match variant definition (always active)
+- Type check: each argument is validated against the declared type via `contains()` (requires `-runtime`)
 
 ### Type Interface
 
@@ -524,7 +524,7 @@ Implementation sketch:
 1. Parse `'SortedPair[T: Ord]'` → type_params `['T']`, bounds `{T => 'Ord'}`
 2. In Registration, emit `generics => [{name => 'T', bound_expr => 'Ord'}]`
 3. TypeChecker's existing step 5 (bounded quantification check) handles the rest
-4. Runtime constructor validates `Subtype->is_subtype($inferred, $bound)` per field
+4. Runtime constructor (with `-runtime`) validates `Subtype->is_subtype($inferred, $bound)` per field
 
 ---
 

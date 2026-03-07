@@ -42,20 +42,22 @@ DSL (Type constructors: Int, Str, Double, Num, Array, Hash, Record, optional, et
 
 ## Validation Architecture
 
-Typist の検証は3層に分かれる。設計原則は「静的解析を既定とし、型の境界は常に守り、ランタイム監視は選択的に」。
+Typist の検証は3層に分かれる。設計原則は「静的解析を既定とし、通常実行への負荷をゼロに、ランタイム検証は選択的に」。
 
 - **Layer 1 — Static Analysis** (compile time, always): PPI ベース。`Analyzer` が 7フェーズで統括: Extractor → Registration → Checker → TypeEnv(環境構築) → TypeChecker/CallChecker(ファイルレベル検査) → 統一関数ループ(TypeChecker+EffectChecker+ProtocolChecker) → 収集。CHECK ブロックがパッケージごとに実行。LSP は `Document->analyze` で差分実行。`TYPIST_CHECK_QUIET=1` で CHECK スキップ。
-- **Layer 2 — Boundary Enforcement** (runtime, always-on): newtype/datatype/struct コンストラクタ + Effect::op ディスパッチの検証。`-runtime` に依存しない。コンストラクタは型の不変条件を確立する場。
-- **Layer 3 — Runtime Monitoring** (opt-in: `-runtime` / `TYPIST_RUNTIME=1`): `Tie::Scalar` による `:sig()` 変数の代入監視。唯一 `-runtime` でゲートされる機構。
+- **Layer 2 — Structural Enforcement** (runtime, always-on): コンストラクタの構造検査（未知フィールド、必須フィールド欠損、引数アリティ）。安価で API 誤用を防ぐ。Effect/typeclass ディスパッチはメカニズムそのもの。
+- **Layer 3 — Runtime Type Checking** (opt-in: `-runtime` / `TYPIST_RUNTIME=1`): コンストラクタ型検証（`contains`/`infer_value`/bounds/typeclass）、`Tie::Scalar` 変数監視、重量モジュール（Inference, Subtype）のロード。
 
 ```
-機構              | use Typist (default) | use Typist -runtime
-──────────────────|──────────────────────|─────────────────────
-Static Analysis   | ON                   | ON
-CHECK diagnostics | ON                   | ON
-Constructor 境界  | ON                   | ON
-Effect dispatch   | ON                   | ON
-Tie::Scalar 監視  | OFF                  | ON
+機構                 | use Typist (default) | use Typist -runtime
+─────────────────────|──────────────────────|─────────────────────
+Static Analysis      | ON                   | ON
+CHECK diagnostics    | ON                   | ON
+構造検査 (arity等)   | ON                   | ON
+Effect dispatch      | ON                   | ON
+Typeclass dispatch   | ON                   | ON
+Constructor 型検証   | OFF                  | ON
+Tie::Scalar 監視     | OFF                  | ON
 ```
 
 ## Documentation

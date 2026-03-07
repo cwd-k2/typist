@@ -54,8 +54,9 @@ Typist::Type::Newtype - Nominal wrapper type (newtype UserId => 'Int')
 
 A nominal wrapper that creates a distinct type from an existing inner
 type. Values must be blessed into C<Typist::Newtype::$name> and the
-inner value must satisfy the inner type. Newtype boundary enforcement
-is always active, even without C<-runtime>.
+inner value must satisfy the inner type. Type validation in the
+constructor requires C<-runtime>; without it, the value is wrapped
+without type checking.
 
 =head1 ABSTRACT INTERFACE
 

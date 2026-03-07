@@ -90,11 +90,10 @@ Typist operates across three phases of a Perl program's lifecycle:
 |    Tied scalars: STORE/FETCH validate.   |
 |    Wrapped subs: args + return checked.  |
 |                                          |
-|  Always active:                          |
-|    Newtype constructors validate.        |
-|    Datatype constructors validate.       |
+|  Always active (structural):             |
+|    Constructor arity/field checks.       |
 |    Name::coerce($val) extracts inner.    |
-|    Effect::op() dispatches effect ops.      |
+|    Effect::op() dispatches effect ops.   |
 |    handle { } scoped handler blocks.     |
 +==========================================+
 ```
@@ -840,8 +839,9 @@ Per scalar write    0              1 method dispatch + contains()
 Per function call   0              N * contains() + 1 * contains()
 Per generic call    0              N * infer_value + instantiate +
                                    N * parse(bound) + N * is_subtype
-Newtype construct   contains()     contains()         (always active)
-Datatype construct  arity+types    arity+types        (always active)
+Newtype construct   0              contains()
+Datatype construct  arity only     arity + N * contains()
+Struct construct    fields only    fields + N * contains()
 Effect::op/handle   stack ops      stack ops          (always active)
 ```
 
@@ -853,19 +853,20 @@ Effect::op/handle   stack ops      stack ops          (always active)
 
 ```
 EAGER (loaded with `use Typist`):
-  36 modules — all Type::* (including Data, Fold), Parser, Registry,
-  Subtype, Attribute, Handler, etc.
-  These are needed for compile-time attribute processing.
+  Type::* (including Data, Fold), Parser, Registry, Handler, etc.
+  These are needed for compile-time attribute processing and
+  constructor generation.
 
-LAZY (loaded only when needed):
-  PPI             — via require Static::Analyzer in CHECK phase
+DEFERRED (loaded on first use):
+  Attribute deps  — Parser, Inference, Subtype, Tie::Scalar, Transform,
+                    Kind, KindChecker (via _ensure_deps() on first :sig())
+  Inference       — via require in import() when -runtime is set
+  Subtype         — via require in import() when -runtime is set
+
+LAZY (loaded only in CHECK phase):
+  PPI             — via require Static::Checker in CHECK phase
+  Static::*       — via require in _check_analyze()
   Prelude         — via use in Analyzer/Workspace
-  Static::Analyzer — via require in _check_analyze()
-  Static::Extractor — via use in Analyzer (transitively lazy)
-  Static::TypeChecker — via use in Analyzer
-  Static::EffectChecker — via use in Analyzer
-  Static::Infer   — via use in TypeChecker
-  Static::Unify   — via use in TypeChecker
 
 NEVER (unless LSP):
   LSP::*          — only loaded by bin/typist-lsp
@@ -874,9 +875,11 @@ NEVER (unless LSP):
 
 ### Rationale
 
-PPI is the heaviest dependency (~1MB of code, creates full ASTs). By loading it lazily via `require` inside the CHECK block, programs that use `TYPIST_CHECK_QUIET=1` (when the LSP provides diagnostics instead) avoid the PPI startup cost entirely.
+PPI is the heaviest dependency (~1MB of code, creates full ASTs). By loading it lazily via `require` inside the CHECK block, programs that use `TYPIST_CHECK_QUIET=1` (when the LSP provides diagnostics instead) avoid the PPI startup cost entirely. PPI and all `Static::*` modules are **never** loaded during normal program execution.
 
-The eagerly-loaded modules are lightweight: they define type node classes (small hashref-based objects), the parser (pure Perl recursive descent), and the registry (hash-based storage). This is the minimum needed to process `:sig()` attributes at compile time.
+The `Attribute` module defers its 8 heavy dependencies (Parser, Inference, Subtype, etc.) via `_ensure_deps()`, loading them only on the first `:sig()` annotation encountered. When no `:sig()` is used (e.g., a module that only defines types via `struct`/`datatype`), these modules are never loaded.
+
+The eagerly-loaded modules are lightweight: they define type node classes (small hashref-based objects) and the registry (hash-based storage). This is the minimum needed to generate constructors at compile time.
 
 ---
 
@@ -889,6 +892,6 @@ The eagerly-loaded modules are lightweight: they define type node classes (small
 5. **Lazy heavy deps**: PPI loaded only in CHECK phase, never at runtime
 6. **Dual-mode Registry**: class methods for singleton (CHECK), instance methods for LSP
 7. **Gradual typing**: annotation density determines check strictness; `Any` bypasses checks
-8. **Boundary enforcement**: newtype and datatype constructors always validate, independent of mode
+8. **Zero runtime cost**: constructor type validation is opt-in (`-runtime`); structural checks (arity, unknown fields) are always active
 9. **No source filters**: standard Perl attributes + PPI parsing for static analysis
 10. **Effect handlers**: `Effect::op(...)`/`handle` provide dynamic-scope effect dispatch at runtime

@@ -74,14 +74,16 @@ TypeClass dispatch installs into the caller's namespace (`${caller}::${ClassName
 
 `use Typist -runtime;` (or `TYPIST_RUNTIME=1`) additionally enables `Tie::Scalar` variable monitoring on `:sig()` annotated variables.
 
-### Boundary Enforcement (Always Active)
+### Structural Enforcement (Always Active)
 
-Constructor boundary validation is always on, regardless of `-runtime`:
+Constructors always perform cheap structural checks, regardless of `-runtime`:
 
-- **newtype**: `$inner->contains($value)` validates the inner type. `Name::coerce($val)` extracts the inner value.
-- **datatype**: argument count + `$type->contains($arg)` per argument.
-- **struct**: unknown/missing field checks + per-field type validation.
+- **newtype**: creates blessed scalar reference. `Name::coerce($val)` extracts the inner value.
+- **datatype**: argument count must match variant definition.
+- **struct**: unknown field and missing required field checks.
 - **Effect dispatch**: `Effect::op(@args)` dispatches to the nearest handler on the runtime stack.
+
+Type validation (`contains`, `infer_value`, bounds, typeclass constraints) in constructors requires `-runtime`.
 
 ### CHECK Phase
 
@@ -98,13 +100,15 @@ Annotation density determines check strictness:
 - **Completely unannotated** -- `(Any...) -> Any`, type checks skip, effect treated as pure (no constraint).
 
 ```
-Mechanism          | use Typist (default) | use Typist -runtime
--------------------|----------------------|---------------------
-Static Analysis    | ON                   | ON
-CHECK diagnostics  | ON                   | ON
-Constructor checks | ON                   | ON
-Effect dispatch    | ON                   | ON
-Tie::Scalar        | OFF                  | ON
+Mechanism             | use Typist (default) | use Typist -runtime
+----------------------|----------------------|---------------------
+Static Analysis       | ON                   | ON
+CHECK diagnostics     | ON                   | ON
+Structural checks     | ON                   | ON
+Effect dispatch       | ON                   | ON
+Typeclass dispatch    | ON                   | ON
+Constructor type val. | OFF                  | ON
+Tie::Scalar           | OFF                  | ON
 ```
 
 ---
@@ -375,7 +379,7 @@ sub total :sig((Amount) -> Amount) ($a) { ... }
 5. **Lazy heavy deps** -- PPI loaded only in CHECK phase, never at runtime.
 6. **Dual-mode Registry** -- class methods for singleton (CHECK), instance methods for LSP.
 7. **Gradual typing** -- annotation density determines check strictness; `Any` bypasses checks.
-8. **Boundary enforcement** -- newtype and datatype constructors always validate, independent of mode.
+8. **Zero runtime cost** -- constructor type validation is opt-in (`-runtime`); structural checks (arity, unknown fields) are always active.
 9. **No source filters** -- standard Perl attributes + PPI parsing for static analysis.
 10. **Effect handlers** -- `Effect::op(...)`/`handle` provide dynamic-scope effect dispatch at runtime.
 

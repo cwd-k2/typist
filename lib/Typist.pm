@@ -246,9 +246,9 @@ or a L<Typist::Type> object.
 
     newtype UserId => 'Int';
 
-Define a nominal type with boundary enforcement. Constructor validates
-values at creation time. Use C<< ${Name}::coerce($val) >> to extract the
-inner value.
+Define a nominal type wrapper. With C<-runtime>, the constructor validates
+values against the inner type at creation time. Use C<< ${Name}::coerce($val) >>
+to extract the inner value.
 
 =head2 struct
 

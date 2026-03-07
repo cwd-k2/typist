@@ -213,10 +213,11 @@ sub double :sig(<T: Num>(T) -> T) ($x) { $x * 2 }
 |---|---|---|
 | CHECK-phase analysis | ON | ON |
 | CLI / LSP diagnostics | ON | ON |
-| Constructor validation | ON | ON |
-| Effect dispatch | ON | ON |
+| Structural checks (arity, fields) | ON | ON |
+| Effect / typeclass dispatch | ON | ON |
+| **Constructor type validation** | **OFF** | **ON** |
 | **Tie::Scalar monitoring** | **OFF** | **ON** |
-| Runtime cost | Zero | Per-assignment checks |
+| Runtime cost | Zero | Per-call / per-assignment checks |
 
 **Default (static-only):**
 
