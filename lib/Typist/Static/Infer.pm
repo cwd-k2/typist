@@ -244,14 +244,15 @@ sub infer_expr_with_siblings ($class, $element, $env = undef) {
 
             # Ternary: COND ? THEN : ELSE (possibly nested)
             if ($op eq '?') {
-                my @rest;
+                # Include ? itself so _infer_flat_ternary can find it
+                my @rest = ($next);
                 my $sib = $next->snext_sibling;
                 while ($sib) {
                     last if $sib->isa('PPI::Token::Structure');
                     push @rest, $sib;
                     $sib = $sib->snext_sibling;
                 }
-                if (@rest) {
+                if (@rest > 1) {
                     my $result = _infer_flat_ternary(\@rest, $env, undef);
                     return $result if defined $result;
                 }
@@ -265,15 +266,15 @@ sub infer_expr_with_siblings ($class, $element, $env = undef) {
                     if ($after_rhs && $after_rhs->isa('PPI::Token::Operator')
                         && $after_rhs->content eq '?')
                     {
-                        # Collect all remaining siblings and delegate to flat ternary
-                        my @rest;
+                        # Include ? itself so _infer_flat_ternary can find it
+                        my @rest = ($after_rhs);
                         my $sib = $after_rhs->snext_sibling;
                         while ($sib) {
                             last if $sib->isa('PPI::Token::Structure');
                             push @rest, $sib;
                             $sib = $sib->snext_sibling;
                         }
-                        if (@rest) {
+                        if (@rest > 1) {
                             my $result = _infer_flat_ternary(\@rest, $env, undef);
                             return $result if defined $result;
                         }
