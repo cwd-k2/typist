@@ -287,6 +287,33 @@ sub compute ($class, $doc) {
         }
     }
 
+    # ── handle expression tokens (effect name + handler ops) ──
+    if (my $ppi_doc = $extracted->{ppi_doc}) {
+        my $registry = $result->{registry};
+
+        my $words = $ppi_doc->find('PPI::Token::Word') || [];
+        for my $w (@$words) {
+            next unless $w->content eq 'handle';
+            my $block = $w->snext_sibling or next;
+            next unless $block->isa('PPI::Structure::Block');
+
+            # Walk siblings after the block for EffectName => +{ op => ... }
+            my $sib = $block->snext_sibling;
+            while ($sib) {
+                if ($sib->isa('PPI::Token::Word')) {
+                    my $eff_name = $sib->content;
+                    my $ops = _resolve_effect_ops($extracted, $registry, $eff_name);
+                    if ($ops) {
+                        push @tokens, [$sib->line_number - 1, $sib->column_number - 1,
+                                       length($eff_name), 'enum', 0];
+                        _tokenize_handle_ops(\@tokens, $sib, $ops);
+                    }
+                }
+                $sib = $sib->snext_sibling;
+            }
+        }
+    }
+
     # ── Delta Encoding ────────────────────────
     # Sort by line, then column
     @tokens = sort { $a->[0] <=> $b->[0] || $a->[1] <=> $b->[1] } @tokens;
@@ -445,6 +472,40 @@ sub _tokenize_quoted_types ($tokens, $lines, $line0, $generic_names = +{}, $end_
             my $content_col = $match_end - length($content) - 1;  # first char inside quotes
             _tokenize_content($tokens, $li, $content_col, $content, $generic_names);
         }
+    }
+}
+
+# Resolve effect operation names from extracted data or registry.
+sub _resolve_effect_ops ($extracted, $registry, $eff_name) {
+    if ($registry) {
+        my $eff = $registry->lookup_effect($eff_name);
+        return +{ map { $_ => 1 } $eff->op_names } if $eff;
+    }
+    if (my $info = ($extracted->{effects} // +{})->{$eff_name}) {
+        my $ops = $info->{operations} // +{};
+        return +{ map { $_ => 1 } keys %$ops } if %$ops;
+    }
+    undef;
+}
+
+# Color handler operation names inside EffectName => +{ op => sub { ... } }.
+sub _tokenize_handle_ops ($tokens, $effect_word, $known_ops) {
+    my $sib = $effect_word->snext_sibling or return;
+    return unless $sib->isa('PPI::Token::Operator') && $sib->content eq '=>';
+    $sib = $sib->snext_sibling or return;
+    # Skip + cast
+    if ($sib->isa('PPI::Token::Operator') && $sib->content eq '+') {
+        $sib = $sib->snext_sibling or return;
+    }
+    return unless $sib->isa('PPI::Structure');
+
+    my $inner_words = $sib->find('PPI::Token::Word') || [];
+    for my $w (@$inner_words) {
+        next unless $known_ops->{$w->content};
+        my $next = $w->snext_sibling or next;
+        next unless $next->isa('PPI::Token::Operator') && $next->content eq '=>';
+        push @$tokens, [$w->line_number - 1, $w->column_number - 1,
+                        length($w->content), 'function', 0];
     }
 }
 

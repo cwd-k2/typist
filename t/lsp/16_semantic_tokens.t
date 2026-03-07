@@ -1026,6 +1026,41 @@ PERL
     ok scalar @handle_kw >= 1, 'found handle keyword token';
 };
 
+subtest 'handle expression: effect name and handler op tokens' => sub {
+    my $source = <<'PERL';
+use v5.40;
+effect Console => +{ writeLine => '(Str) -> Void' };
+sub run :sig(() -> Str ![Console]) () {
+    handle { Console::writeLine("hi"); "done" } Console => +{
+        writeLine => sub ($msg) { }
+    };
+}
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # Line 3 (0-indexed): handle { ... } Console => +{
+    # The 'Console' after '}' should be enum (type 6)
+    my @eff_names = grep { $_->{type} == 6 && $_->{line} == 3 && $_->{len} == 7 } @tokens;
+    ok scalar @eff_names >= 1, 'Console in handler section colored as enum';
+
+    # Line 4 (0-indexed): writeLine => sub ($msg) { }
+    # 'writeLine' should be function (type 3)
+    my @op_names = grep { $_->{type} == 3 && $_->{line} == 4 && $_->{len} == 9 } @tokens;
+    ok scalar @op_names >= 1, 'writeLine in handler hash colored as function';
+};
+
 subtest 'semantic tokens for match keyword' => sub {
     my $source = <<'PERL';
 use v5.40;
