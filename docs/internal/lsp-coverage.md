@@ -25,6 +25,7 @@ Every field returned by `Analyzer->analyze()` and its LSP consumers.
 | `inferred_effects` | InlayHints (unannotated function effect labels) | Complete |
 | `inferred_fn_returns` | InlayHints (unannotated function return type labels) | Complete |
 | `narrowed_accessors` | Hover (accessor chain type narrowing in defined() guards) | Complete |
+| `infer_log` | Debug tools (`typist-infer-dump`) | N/A (internal) |
 
 ---
 
@@ -49,6 +50,7 @@ All error kinds produced by static analysis and their LSP surface.
 | ImportHint | Analyzer | Yes | — | Type used in `:sig()` but defining package not imported |
 | InvalidBound | Checker | Yes | — | |
 | KindError | Checker | Yes | — | |
+| GradualHint | Analyzer | Yes | — | Severity 5 (opt-in blame tracking for `Any` usage) |
 
 ---
 
@@ -78,7 +80,7 @@ The server tries annotation context first, then falls back to code context (see 
 | `method` | `$self->` | Same-package methods (with signature detail) | Done |
 | `effect_op` | `Effect::` | Effect operations (with signature) | Done |
 | Constructor (fallback) | uppercase word | `all_constructor_names` from Workspace | Done (basic) |
-| Function name | bare word | Registry functions | **Not implemented** |
+| Function name | bare word | Registry functions (same-package + imported) | Done |
 | Match arm | `match $val,` | Datatype variant names (with snippets, excludes used) | Done |
 | Handle handler | `handle { } Eff =>` | Effect operation stubs | **Not implemented** |
 | Variable name | `$` prefix | In-scope variables from symbols | **Not implemented** |
@@ -125,6 +127,8 @@ Hover, go-to-definition, and completion are suppressed in non-code regions via P
 | Pod (`=head1` ... `=cut`) | `PPI::Token::Pod` — line range check | Full |
 | String literals (`"..."`, `'...'`, `qq{}`, `q{}`) | `PPI::Token::Quote::*` — position within token bounds | Full |
 | Here-documents (`<<EOF`) | `PPI::Token::HereDoc` — body line range | Full |
+
+**Exception**: Strings inside Typist declarations (`typedef`, `newtype`, `struct`, `effect`, `typeclass`, `instance`, `datatype`, `enum`, `declare`, `protocol`) contain type expressions and are NOT suppressed. Detection: walk up PPI tree to the outermost `PPI::Statement`; if its first word is a Typist keyword, the string is a type expression.
 
 **Rationale**: `_word_range_at` extracts words from raw text without PPI token-type awareness. Without these guards, bare words in comments/strings would match against the registry fallback path (builtins, cross-package types, constructors), producing false hover results. PPI does not decompose interpolated strings into sub-tokens, so `$var` inside `"text $var"` is also suppressed — this is acceptable since the hover would be imprecise (scope/position mismatch within string content).
 

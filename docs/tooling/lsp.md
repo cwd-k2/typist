@@ -51,7 +51,7 @@ Hover over any symbol to see its type information:
 
 Cross-file hover is supported: hovering over a type or function defined in another file shows its definition via the workspace registry.
 
-Hover is suppressed in comments, Pod sections, and string literals. This prevents false matches where a word in a comment or string happens to share a name with a registered type or function.
+Hover is suppressed in comments, Pod sections, and string literals to prevent false matches where a word in a comment or string happens to share a name with a registered type or function. Strings inside Typist declarations (`typedef`, `struct`, `effect`, etc.) are exempt -- type names in these strings still show hover information.
 
 ### Completion
 

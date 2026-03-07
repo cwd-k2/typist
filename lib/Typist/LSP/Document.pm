@@ -243,6 +243,8 @@ sub _is_in_comment ($self, $line, $col) {
 }
 
 # Check if the cursor position falls within a PPI string token (Quote/HereDoc).
+# Exception: strings inside Typist declarations (typedef, struct, effect, etc.)
+# contain type expressions and should NOT be suppressed.
 sub _is_in_string ($self, $line, $col) {
     my $ppi_doc = ($self->{result} // return 0)->{extracted}{ppi_doc} // return 0;
     my $ppi_line = $line + 1;  # LSP 0-indexed → PPI 1-indexed
@@ -257,7 +259,10 @@ sub _is_in_string ($self, $line, $col) {
             next unless @body;
             my $body_start = $t->line_number + 1;
             my $body_end   = $body_start + $#body;
-            return 1 if $ppi_line >= $body_start && $ppi_line <= $body_end;
+            if ($ppi_line >= $body_start && $ppi_line <= $body_end) {
+                return 0 if _in_typist_declaration($t);
+                return 1;
+            }
             next;
         }
 
@@ -269,16 +274,33 @@ sub _is_in_string ($self, $line, $col) {
 
         next if $ppi_line < $start_line || $ppi_line > $end_line;
 
-        if ($start_line == $end_line) {
-            return 1 if $col >= $start_col && $col < $start_col + length($content);
-        } elsif ($ppi_line == $start_line) {
-            return 1 if $col >= $start_col;
-        } elsif ($ppi_line == $end_line) {
-            my $last_line_len = length($content) - rindex($content, "\n") - 1;
-            return 1 if $col < $last_line_len;
-        } else {
-            return 1;  # middle line: entirely inside string
+        my $inside = $start_line == $end_line
+            ? ($col >= $start_col && $col < $start_col + length($content))
+            : $ppi_line == $start_line ? ($col >= $start_col)
+            : $ppi_line == $end_line   ? ($col < length($content) - rindex($content, "\n") - 1)
+            :                            1;  # middle line
+
+        if ($inside) {
+            return 0 if _in_typist_declaration($t);
+            return 1;
         }
+    }
+    0;
+}
+
+# Check if a PPI token is inside a Typist declaration statement
+# (typedef, newtype, struct, effect, typeclass, instance, datatype, enum, declare, protocol).
+my %_TYPIST_DECL_KW = map { $_ => 1 } qw(
+    typedef newtype struct effect typeclass instance datatype enum declare protocol
+);
+sub _in_typist_declaration ($token) {
+    my $node = $token;
+    while ($node = $node->parent) {
+        next unless $node->isa('PPI::Statement');
+        next if $node->isa('PPI::Statement::Expression');
+        my $first = $node->schild(0) or return 0;
+        return 0 unless $first->isa('PPI::Token::Word');
+        return $_TYPIST_DECL_KW{$first->content} // 0;
     }
     0;
 }

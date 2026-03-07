@@ -2170,6 +2170,36 @@ PERL
     is $hover->{result}, undef, 'no hover for var in string (B: suppress all)';
 };
 
+subtest 'hover allowed on types inside Typist declaration strings' => sub {
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+
+    my $source = <<'PERL';
+package TestPkg;
+use v5.40;
+use Typist;
+typedef Price => 'Int';
+struct Point => (x => 'Int', y => 'Int');
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///test.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze;
+
+    # Line 3: "typedef Price => 'Int';" — Int at col 18
+    my $sym = $doc->symbol_at(3, 18);
+    ok $sym, 'hover works for type in typedef string';
+    is $sym->{kind}, 'builtin_type', 'Int is builtin_type';
+
+    # Line 4: "struct Point => (x => 'Int', ...)" — Int at col 23
+    $sym = $doc->symbol_at(4, 23);
+    ok $sym, 'hover works for type in struct field string';
+    is $sym->{kind}, 'builtin_type', 'Int is builtin_type in struct';
+};
+
 # ── Struct constructor key hover ─────────────────
 
 subtest 'hover on struct constructor key shows field info' => sub {
