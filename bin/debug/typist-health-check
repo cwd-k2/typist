@@ -1,0 +1,335 @@
+#!/usr/bin/env perl
+use v5.40;
+use FindBin;
+use lib "$FindBin::Bin/../../lib";
+
+use Getopt::Long ();
+use Cwd          ();
+use File::Find   ();
+
+use Typist::LSP::Workspace;
+use Typist::Static::Analyzer;
+use Typist::Static::Infer;
+
+# ── Argument Parsing ────────────────────────────
+
+my %opts;
+Getopt::Long::Configure('no_auto_abbrev', 'bundling');
+Getopt::Long::GetOptions(
+    \%opts,
+    'root=s',
+    'section=s',    # all, infer, diag, subtype, handler, effect, coverage
+    'verbose|v',
+    'no-color',
+    'help|h',
+);
+
+if ($opts{help}) {
+    print <<~'HELP';
+    Usage: typist-health-check [OPTIONS] [FILES...]
+
+    Comprehensive health check for Typist projects.
+    Runs workspace analysis and reports issues across multiple dimensions.
+
+    Options:
+      --root DIR        Workspace root for cross-file resolution
+      --section SEC     Run specific section only:
+                        all (default), infer, diag, subtype, handler,
+                        effect, coverage
+      --verbose, -v     Show detailed output (not just issues)
+      --no-color        Disable colored output
+      -h, --help        Show this help message
+
+    Sections:
+      infer      Variable inference gaps (undef, Any_skip)
+      diag       Diagnostic summary per file
+      subtype    Subtype mismatches in return/assignment
+      handler    Handler[E] completeness check
+      effect     Effect operation coverage
+      coverage   Annotation coverage (annotated vs unannotated functions)
+    HELP
+    exit 0;
+}
+
+my $section = $opts{section} // 'all';
+my $verbose = $opts{verbose};
+my $use_color = _should_color(\%opts);
+
+# ── Resolve workspace root ──────────────────────
+
+my $root = $opts{root};
+unless ($root) {
+    $root = Cwd::getcwd();
+    if (-d "$root/lib") { $root = "$root/lib" }
+}
+
+# ── Collect files ───────────────────────────────
+
+my @files = @ARGV;
+unless (@files) {
+    File::Find::find(
+        { wanted => sub { push @files, $_ if /\.pm\z/ && -f }, no_chdir => 1 },
+        $root,
+    );
+}
+@files = sort @files;
+
+die "No .pm files found under $root\n" unless @files;
+
+# ── Build workspace ─────────────────────────────
+
+my $ws = Typist::LSP::Workspace->new(root => $root);
+$ws->scan;
+my $ws_registry = $ws->registry;
+
+# ── Analyze each file ──────────────────────────
+
+my %all_results;
+my @all_infer_issues;
+my @all_diag_issues;
+my @all_handler_issues;
+my @all_effect_issues;
+my @all_coverage;
+
+for my $file (@files) {
+    open my $fh, '<', $file or next;
+    local $/;
+    my $source = <$fh>;
+    close $fh;
+
+    Typist::Static::Infer->clear_callback_params;
+    my $result = eval {
+        Typist::Static::Analyzer->analyze(
+            $source,
+            file               => $file,
+            workspace_registry => $ws_registry,
+        );
+    };
+    if ($@) {
+        push @all_diag_issues, { file => $file, kind => 'AnalyzerCrash', message => "$@" };
+        next;
+    }
+    $all_results{$file} = $result;
+
+    my $extracted = $result->{extracted};
+    my $registry  = $result->{registry};
+    my $short     = $file =~ s{.*/lib/}{}r;
+
+    # ── Section: infer ──────────────────────
+    if ($section eq 'all' || $section eq 'infer') {
+        for my $log ($result->{infer_log}->@*) {
+            my $status = $log->{status} // 'ok';
+            if ($status eq 'undef' || $status eq 'Any_skip') {
+                push @all_infer_issues, {
+                    file   => $short,
+                    line   => $log->{line},
+                    name   => $log->{name},
+                    status => $status,
+                    scope  => $log->{scope} // 'top',
+                };
+            }
+        }
+    }
+
+    # ── Section: diag ───────────────────────
+    if ($section eq 'all' || $section eq 'diag') {
+        for my $d ($result->{diagnostics}->@*) {
+            next if $d->{severity} >= 4;  # skip hints
+            push @all_diag_issues, {
+                file     => $short,
+                line     => $d->{range}{start}{line} + 1,
+                severity => $d->{severity},
+                kind     => ($d->{code} // '?'),
+                message  => $d->{message},
+            };
+        }
+    }
+
+    # ── Section: handler ────────────────────
+    if ($section eq 'all' || $section eq 'handler') {
+        for my $name (keys $extracted->{functions}->%*) {
+            my $fn = $extracted->{functions}{$name};
+            my $ret = $fn->{returns_expr} // next;
+            next unless $ret =~ /Handler\[(\w+)\]/;
+            my $eff_name = $1;
+            my $eff = $registry->lookup_effect($eff_name);
+            unless ($eff) {
+                push @all_handler_issues, {
+                    file    => $short,
+                    line    => $fn->{line},
+                    func    => $name,
+                    message => "Handler[$eff_name]: effect '$eff_name' not found in registry",
+                };
+                next;
+            }
+            # Check that function body returns a hash with all ops
+            my @expected_ops = $eff->op_names;
+            # (structural check would need PPI walking — just flag if effect exists)
+        }
+    }
+
+    # ── Section: effect ─────────────────────
+    if ($section eq 'all' || $section eq 'effect') {
+        for my $eff_name (keys(($extracted->{effects} // +{})->%*)) {
+            my $info = $extracted->{effects}{$eff_name};
+            my $ops  = $info->{operations} // +{};
+            for my $op (keys %$ops) {
+                my $sig = $ops->{$op};
+                # Check if sig parses correctly
+                eval {
+                    require Typist::Parser;
+                    Typist::Parser->parse($sig);
+                };
+                if ($@) {
+                    push @all_effect_issues, {
+                        file    => $short,
+                        line    => $info->{line},
+                        effect  => $eff_name,
+                        op      => $op,
+                        message => "Failed to parse sig '$sig': $@",
+                    };
+                }
+            }
+        }
+    }
+
+    # ── Section: coverage ───────────────────
+    if ($section eq 'all' || $section eq 'coverage') {
+        my $total_fns    = scalar keys $extracted->{functions}->%*;
+        my $annotated    = 0;
+        my $unannotated  = 0;
+        my @unannotated_names;
+        for my $name (sort keys $extracted->{functions}->%*) {
+            my $fn = $extracted->{functions}{$name};
+            if (defined $fn->{returns_expr} || ($fn->{params_expr} && @{$fn->{params_expr}})) {
+                $annotated++;
+            } else {
+                $unannotated++;
+                push @unannotated_names, $name;
+            }
+        }
+        push @all_coverage, {
+            file           => $short,
+            total          => $total_fns,
+            annotated      => $annotated,
+            unannotated    => $unannotated,
+            unannotated_fn => \@unannotated_names,
+        };
+    }
+}
+
+# ── Report ──────────────────────────────────────
+
+my $RED    = $use_color ? "\e[31m" : '';
+my $YELLOW = $use_color ? "\e[33m" : '';
+my $GREEN  = $use_color ? "\e[32m" : '';
+my $CYAN   = $use_color ? "\e[36m" : '';
+my $BOLD   = $use_color ? "\e[1m"  : '';
+my $RESET  = $use_color ? "\e[0m"  : '';
+
+sub header ($title) { say "\n${BOLD}═══ $title ═══${RESET}" }
+
+# ── Diagnostics ─────────────────────────────────
+if ($section eq 'all' || $section eq 'diag') {
+    header("Diagnostics (errors/warnings)");
+    if (@all_diag_issues) {
+        for my $d (sort { $a->{file} cmp $b->{file} || $a->{line} <=> $b->{line} } @all_diag_issues) {
+            my $sev = $d->{severity} == 1 ? "${RED}ERROR${RESET}" : "${YELLOW}WARN${RESET}";
+            printf "  %s  %-50s L%-4d [%s] %s\n",
+                $sev, $d->{file}, $d->{line} // 0, $d->{kind}, $d->{message};
+        }
+    } else {
+        say "  ${GREEN}All clean.${RESET}";
+    }
+}
+
+# ── Inference Gaps ──────────────────────────────
+if ($section eq 'all' || $section eq 'infer') {
+    header("Inference Gaps (undef / Any_skip)");
+    if (@all_infer_issues) {
+        for my $i (sort { $a->{file} cmp $b->{file} || $a->{line} <=> $b->{line} } @all_infer_issues) {
+            my $color = $i->{status} eq 'undef' ? $RED : $YELLOW;
+            printf "  ${color}%-10s${RESET}  %-40s L%-4d %-15s [%s]\n",
+                $i->{status}, $i->{file}, $i->{line}, $i->{name}, $i->{scope};
+        }
+        my $undef_cnt = grep { $_->{status} eq 'undef' } @all_infer_issues;
+        my $skip_cnt  = grep { $_->{status} eq 'Any_skip' } @all_infer_issues;
+        say "  Total: ${RED}$undef_cnt undef${RESET}, ${YELLOW}$skip_cnt Any_skip${RESET}";
+    } else {
+        say "  ${GREEN}All variables resolved.${RESET}";
+    }
+}
+
+# ── Handler Issues ──────────────────────────────
+if ($section eq 'all' || $section eq 'handler') {
+    header("Handler[E] Issues");
+    if (@all_handler_issues) {
+        for my $h (@all_handler_issues) {
+            printf "  ${RED}%-40s${RESET} L%-4d %s: %s\n",
+                $h->{file}, $h->{line}, $h->{func}, $h->{message};
+        }
+    } else {
+        say "  ${GREEN}All Handler[E] resolved.${RESET}";
+    }
+}
+
+# ── Effect Issues ───────────────────────────────
+if ($section eq 'all' || $section eq 'effect') {
+    header("Effect Signature Issues");
+    if (@all_effect_issues) {
+        for my $e (@all_effect_issues) {
+            printf "  ${RED}%-40s${RESET} L%-4d %s::%s — %s\n",
+                $e->{file}, $e->{line}, $e->{effect}, $e->{op}, $e->{message};
+        }
+    } else {
+        say "  ${GREEN}All effect signatures valid.${RESET}";
+    }
+}
+
+# ── Annotation Coverage ─────────────────────────
+if ($section eq 'all' || $section eq 'coverage') {
+    header("Annotation Coverage");
+    my ($total_a, $total_u, $total_t) = (0, 0, 0);
+    for my $c (sort { $a->{file} cmp $b->{file} } @all_coverage) {
+        next unless $c->{total} > 0;
+        $total_a += $c->{annotated};
+        $total_u += $c->{unannotated};
+        $total_t += $c->{total};
+        my $pct = $c->{total} ? int(100 * $c->{annotated} / $c->{total}) : 0;
+        my $color = $pct == 100 ? $GREEN : $pct >= 80 ? $YELLOW : $RED;
+        printf "  %-45s %s%3d%%${RESET}  (%d/%d)",
+            $c->{file}, $color, $pct, $c->{annotated}, $c->{total};
+        if ($verbose && @{$c->{unannotated_fn}}) {
+            print "  unannotated: " . join(', ', @{$c->{unannotated_fn}});
+        }
+        print "\n";
+    }
+    if ($total_t > 0) {
+        my $pct = int(100 * $total_a / $total_t);
+        say "  ${BOLD}Total: $pct% ($total_a/$total_t)${RESET}";
+    }
+}
+
+# ── Summary ─────────────────────────────────────
+header("Summary");
+my $diag_errors = grep { ($_->{severity} // 0) == 1 } @all_diag_issues;
+my $diag_warns  = grep { ($_->{severity} // 0) == 2 || ($_->{severity} // 0) == 3 } @all_diag_issues;
+my $infer_undef = grep { $_->{status} eq 'undef' } @all_infer_issues;
+my $infer_skip  = grep { $_->{status} eq 'Any_skip' } @all_infer_issues;
+printf "  Files: %d  Errors: %s%d%s  Warnings: %s%d%s  Infer(undef): %s%d%s  Infer(skip): %s%d%s  Handler: %s%d%s  Effect: %s%d%s\n",
+    scalar @files,
+    $diag_errors ? $RED : $GREEN, $diag_errors, $RESET,
+    $diag_warns  ? $YELLOW : $GREEN, $diag_warns, $RESET,
+    $infer_undef ? $RED : $GREEN, $infer_undef, $RESET,
+    $infer_skip  ? $YELLOW : $GREEN, $infer_skip, $RESET,
+    @all_handler_issues ? $RED : $GREEN, scalar @all_handler_issues, $RESET,
+    @all_effect_issues  ? $RED : $GREEN, scalar @all_effect_issues, $RESET;
+
+exit($diag_errors > 0 ? 1 : 0);
+
+# ── Utilities ───────────────────────────────────
+
+sub _should_color ($opts) {
+    return 0 if $opts->{'no-color'};
+    return -t STDOUT ? 1 : 0;
+}

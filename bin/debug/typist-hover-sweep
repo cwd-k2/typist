@@ -1,0 +1,170 @@
+#!/usr/bin/env perl
+use v5.40;
+use FindBin;
+use lib "$FindBin::Bin/../../lib";
+
+use Getopt::Long ();
+use Cwd          ();
+use File::Find   ();
+
+use Typist::LSP::Workspace;
+use Typist::LSP::Document;
+use Typist::LSP::Hover;
+use Typist::LSP::Logger;
+
+# ── Argument Parsing ────────────────────────────
+
+my %opts;
+Getopt::Long::Configure('no_auto_abbrev', 'bundling');
+Getopt::Long::GetOptions(
+    \%opts,
+    'root=s',
+    'no-color',
+    'verbose|v',
+    'help|h',
+);
+
+if ($opts{help}) {
+    print <<~'HELP';
+    Usage: typist-hover-sweep [OPTIONS] [FILES...]
+
+    Sweep all annotated function parameters and variables, checking that
+    LSP hover produces a meaningful result for each.
+
+    Options:
+      --root DIR        Workspace root
+      --verbose, -v     Show successful hovers too
+      --no-color        Disable colored output
+      -h, --help        Show this help message
+
+    Reports:
+      - Function parameters with missing/empty hover
+      - Annotated variables with missing/empty hover
+      - Callback params (inferred) with missing hover
+    HELP
+    exit 0;
+}
+
+my $use_color = _should_color(\%opts);
+my $verbose   = $opts{verbose};
+
+my $RED    = $use_color ? "\e[31m" : '';
+my $GREEN  = $use_color ? "\e[32m" : '';
+my $YELLOW = $use_color ? "\e[33m" : '';
+my $CYAN   = $use_color ? "\e[36m" : '';
+my $BOLD   = $use_color ? "\e[1m"  : '';
+my $RESET  = $use_color ? "\e[0m"  : '';
+
+# ── Resolve workspace root ──────────────────────
+
+my $root = $opts{root};
+unless ($root) {
+    $root = Cwd::getcwd();
+    if (-d "$root/lib") { $root = "$root/lib" }
+}
+
+# ── Collect files ───────────────────────────────
+
+my @files = @ARGV;
+unless (@files) {
+    File::Find::find(
+        { wanted => sub { push @files, $_ if /\.pm\z/ && -f }, no_chdir => 1 },
+        $root,
+    );
+}
+@files = sort @files;
+
+die "No .pm files found under $root\n" unless @files;
+
+# ── Build workspace ─────────────────────────────
+
+my $ws = Typist::LSP::Workspace->new(root => $root);
+$ws->scan;
+
+my $logger = Typist::LSP::Logger->new(level => 'off');
+
+# ── Sweep each file ────────────────────────────
+
+my ($total_checks, $total_ok, $total_missing) = (0, 0, 0);
+
+for my $file (@files) {
+    open my $fh, '<', $file or next;
+    local $/;
+    my $source = <$fh>;
+    close $fh;
+
+    my $uri = "file://$file";
+    my $doc = Typist::LSP::Document->new(
+        uri       => $uri,
+        content   => $source,
+        version   => 1,
+        workspace => $ws,
+        logger    => $logger,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    my $result    = $doc->result // next;
+    my $extracted = $result->{extracted} // next;
+    my @lines     = split /\n/, $source;
+    my $short     = $file =~ s{.*/lib/}{}r;
+
+    my @issues;
+
+    # Collect all symbols from the analysis result
+    my $symbols = $result->{symbols} // [];
+
+    # Check each symbol that represents a parameter or variable
+    for my $sym (@$symbols) {
+        my $kind = $sym->{kind} // '';
+        next unless $kind eq 'variable' || $kind eq 'parameter';
+        my $sname = $sym->{name} // next;
+        my $sym_line = $sym->{line} // 1;
+
+        $total_checks++;
+
+        # Hover directly on the symbol — no need for symbol_at position lookup
+        my $hover = Typist::LSP::Hover->hover($sym);
+        my $value = $hover ? $hover->{contents}{value} // '' : '';
+        if (!$hover || !length($value)) {
+            $total_missing++;
+            push @issues, { line => $sym_line, name => $sname, status => 'missing', sym_kind => $kind };
+        } else {
+            $total_ok++;
+            push @issues, { line => $sym_line, name => $sname, status => 'ok', value => $value, sym_kind => $kind }
+                if $verbose;
+        }
+    }
+
+    # Report
+    my @problems = grep { $_->{status} eq 'missing' } @issues;
+    if (@problems || $verbose) {
+        say "${BOLD}$short${RESET}";
+        for my $i (sort { $a->{line} <=> $b->{line} } @issues) {
+            my $color = $i->{status} eq 'missing' ? $RED
+                      : $i->{status} eq 'any'     ? $YELLOW
+                      : $GREEN;
+            printf "  ${color}%-8s${RESET}  L%-4d %-15s", $i->{status}, $i->{line}, $i->{name};
+            print "  $i->{value}" if $i->{value} && $verbose;
+            print "\n";
+        }
+    }
+}
+
+# ── Summary ─────────────────────────────────────
+
+say "\n${BOLD}═══ Hover Sweep Summary ═══${RESET}";
+printf "  Checks: %d  OK: %s%d%s  Missing: %s%d%s\n",
+    $total_checks,
+    $GREEN, $total_ok, $RESET,
+    $total_missing ? $RED : $GREEN, $total_missing, $RESET;
+
+exit($total_missing > 0 ? 1 : 0);
+
+# ── Utilities ───────────────────────────────────
+
+sub min ($a, $b) { $a < $b ? $a : $b }
+
+sub _should_color ($opts) {
+    return 0 if $opts->{'no-color'};
+    return -t STDOUT ? 1 : 0;
+}
