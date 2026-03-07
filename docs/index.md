@@ -15,6 +15,7 @@ Navigation hub for all Typist documentation.
 2. [Static Analysis](static-analysis.md) — Analyzer pipeline, inference, checking
 3. [Conventions](conventions.md) — Coding conventions, feature reference, Perl gotchas
 4. [LSP Coverage](lsp-coverage.md) — Feature matrix, diagnostic kinds
+5. [Critical Review](review.md) — Architecture evaluation, improvement proposals
 
 ## Document Map
 
@@ -27,6 +28,7 @@ Navigation hub for all Typist documentation.
 | [static-analysis.md](static-analysis.md) | Extractor, inference, type checking, effect checking, protocols | Contributors |
 | [conventions.md](conventions.md) | Language conventions, type system patterns, Perl gotchas | Contributors |
 | [lsp-coverage.md](lsp-coverage.md) | LSP feature matrix, diagnostic kinds, coverage tracking | Contributors |
+| [review.md](review.md) | Critical review, architecture evaluation, improvement proposals | Contributors |
 | [CLAUDE.md](../CLAUDE.md) | AI assistance context (compact summary) | AI Tools |
 
 ## Topic Index
