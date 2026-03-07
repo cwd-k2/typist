@@ -1,14 +1,15 @@
 # Static vs Runtime Mode
 
-Typist has two enforcement modes. The default is static-only, which catches errors at compile time with zero runtime cost. The opt-in runtime mode adds per-call and per-assignment enforcement for situations where static analysis is not sufficient.
+Typist has separate static and runtime enforcement paths. By default, `use Typist;` installs runtime helpers only. Static analysis is opt-in via `use Typist -static;`, `TYPIST_STATIC=1`, `typist-check`, or the LSP. Runtime mode adds per-call and per-assignment enforcement for situations where static analysis is not sufficient.
 
 ---
 
 ## The Two Modes
 
 ```typist
-use Typist;            # Static-only (default)
-use Typist -runtime;   # Static + runtime enforcement
+use Typist;            # Runtime helpers only (default)
+use Typist -static;    # Opt-in CHECK-phase static analysis
+use Typist -runtime;   # Runtime enforcement
 ```
 
 You can also enable runtime mode via an environment variable:
@@ -26,7 +27,7 @@ The environment variable is useful for enabling runtime checks in test environme
 | Mechanism | `use Typist` | `use Typist -runtime` |
 |-----------|:-----------:|:---------------------:|
 | Static analysis (CHECK phase) | ON | ON |
-| CHECK-phase diagnostics | ON | ON |
+| CHECK-phase diagnostics | OFF | OFF |
 | Structural checks (arity, required fields, unknown fields) | ON | ON |
 | Effect dispatch (`handle` / operations) | ON | ON |
 | Typeclass dispatch | ON | ON |
@@ -73,7 +74,7 @@ Point(x => 1, y => 2, z => 3);   # dies: unknown field 'z'
 
 ### Performance characteristics
 
-Static-only mode adds **zero runtime overhead** to your program. The `:sig()` attributes are processed during compilation. At runtime, the original subroutine executes without any wrapper, proxy, or interception.
+Default mode adds almost no runtime overhead to your program. The `:sig()` attributes are processed during compilation, but no CHECK analysis runs unless you opt in. At runtime, the original subroutine executes without any wrapper, proxy, or interception.
 
 ---
 
@@ -205,11 +206,11 @@ UserId(1, 2);         # dies: wrong number of arguments
 
 ## When to Use Which
 
-### Static-only (`use Typist`) is appropriate for:
+### Static analysis (`use Typist -static`, `typist-check`, or LSP) is appropriate for:
 
 - **Production code** where performance matters. Zero overhead means types are free.
 - **Libraries** consumed by other code. Static analysis catches errors at build time.
-- **Code with good LSP coverage.** If your editor shows diagnostics inline, CHECK-phase output is redundant.
+- **Code with good LSP coverage.** If your editor shows diagnostics inline, opt-in CHECK output is redundant.
 - **Code where the static analyzer covers your needs.** For most Perl code, the PPI-based analyzer catches the same errors that runtime checks would.
 
 ### Runtime mode (`use Typist -runtime`) is appropriate for:
@@ -229,11 +230,11 @@ use Test::More;
 
 ### A common pattern
 
-Use static-only in your library code and runtime mode in your tests:
+Use plain `use Typist` in library code, static tooling in development/CI, and runtime mode in tests when needed:
 
 ```typist
 # lib/MyApp/User.pm
-use Typist;    # static-only in production code
+use Typist;    # runtime helpers only in production code
 
 # t/user.t
 use Typist -runtime;    # runtime checks in tests
@@ -244,9 +245,10 @@ use MyApp::User;
 
 ## Suppressing CHECK Output
 
-When using the LSP server for diagnostics, the CHECK-phase output is redundant. Suppress it with:
+When using the LSP server for diagnostics, opt-in CHECK output is redundant. Suppress it with:
 
 ```bash
+export TYPIST_STATIC=1
 export TYPIST_CHECK_QUIET=1
 ```
 
@@ -265,6 +267,7 @@ This is useful when:
 | Variable | Effect |
 |----------|--------|
 | `TYPIST_RUNTIME=1` | Enables runtime enforcement (same as `use Typist -runtime`) |
+| `TYPIST_STATIC=1` | Enables CHECK-phase static analysis |
 | `TYPIST_CHECK_QUIET=1` | Skips CHECK-phase static analysis output |
 
 Both can be set per-invocation or in your shell profile.
@@ -305,13 +308,13 @@ CHECK phase
 
 ## Summary
 
-| Aspect | Static-only | Runtime |
+| Aspect | Static tooling / `-static` | Runtime |
 |--------|:-----------:|:-------:|
-| Static analysis | Full | Full |
+| Static analysis | Full | Off by default |
 | Runtime overhead | Zero | Per-call / per-assignment |
 | Structural checks | Always | Always |
 | Type enforcement | Compile time only | Compile time + runtime |
 | Use case | Production, libraries | Tests, development, input boundaries |
-| Enable via | `use Typist` (default) | `use Typist -runtime` or `TYPIST_RUNTIME=1` |
+| Enable via | `use Typist -static`, `TYPIST_STATIC=1`, `typist-check`, or LSP | `use Typist -runtime` or `TYPIST_RUNTIME=1` |
 
 **Previous**: [Gradual Typing](gradual-typing.md) -- incremental adoption.

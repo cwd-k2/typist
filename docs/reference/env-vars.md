@@ -7,7 +7,8 @@ All environment variables recognized by Typist, its LSP server, and the `typist-
 | Variable | Values | Default | Description |
 |----------|--------|---------|-------------|
 | `TYPIST_RUNTIME` | `1` | off | Enable runtime type enforcement |
-| `TYPIST_CHECK_QUIET` | `1` | off | Skip CHECK-phase static analysis |
+| `TYPIST_STATIC` | `1` | off | Enable CHECK-phase static analysis |
+| `TYPIST_CHECK_QUIET` | `1` | off | Silence CHECK-phase static diagnostics |
 | `TYPIST_LSP_LOG` | `off`, `error`, `warn`, `info`, `debug`, `trace` | `info` | LSP server log level |
 | `TYPIST_LSP_TRACE` | file path | (none) | Record LSP messages to JSONL file |
 | `NO_COLOR` | (any value) | (none) | Disable colored output in `typist-check` |
@@ -28,7 +29,7 @@ When unset or `0` (the default):
 
 - Only structural enforcement is active at runtime (unknown fields, required fields, arity checks in constructors).
 - No `Tie::Scalar` monitoring.
-- Static analysis still runs at CHECK time regardless of this setting.
+- Static analysis is still opt-in via `-static` or `TYPIST_STATIC=1`.
 
 ```bash
 # Enable via environment
@@ -40,25 +41,49 @@ use Typist -runtime;
 
 | Mechanism | Default (`use Typist`) | Runtime (`-runtime` or `TYPIST_RUNTIME=1`) |
 |-----------|------------------------|--------------------------------------------|
-| Static analysis (CHECK) | ON | ON |
+| Static analysis (CHECK) | OFF | OFF |
 | Structural checks (arity, fields) | ON | ON |
 | Effect dispatch | ON | ON |
 | Typeclass dispatch | ON | ON |
 | Constructor type validation | OFF | ON |
 | `Tie::Scalar` variable monitoring | OFF | ON |
 
+### `TYPIST_STATIC`
+
+Enables CHECK-phase static analysis. Equivalent to `use Typist -static;` in source code.
+
+When set to `1`:
+
+- Typist registers a CHECK hook during compile time.
+- Structural validation and whole-file static analysis run at CHECK time.
+- Diagnostics are printed to STDERR unless `TYPIST_CHECK_QUIET=1` is also set.
+
+When unset or `0` (the default):
+
+- `use Typist;` only installs runtime helpers and prelude definitions.
+- No CHECK-phase static analysis runs.
+- Use `typist-check` or the LSP for explicit static analysis.
+
+```bash
+# Enable compile-time static analysis
+TYPIST_STATIC=1 perl my_app.pl
+
+# Equivalent in source code
+use Typist -static;
+```
+
 ### `TYPIST_CHECK_QUIET`
 
 Suppresses the CHECK-phase static analysis output.
 
-When set to `1`, the `_check_analyze()` pass in the CHECK block is skipped entirely. No diagnostics are printed to STDERR during compilation.
+When set to `1`, Typist still registers the static CHECK hook when enabled, but skips the full `_check_analyze()` pass and suppresses diagnostic STDERR output from that phase.
 
 This is useful when the LSP server is running, since the LSP provides the same diagnostics inline in the editor. Without this setting, you would see duplicate diagnostics: once from the CHECK phase on STDERR, and once from the LSP in the editor.
 
 ```bash
 # Suppress CHECK output when LSP is active
 export TYPIST_CHECK_QUIET=1
-perl my_app.pl    # No STDERR diagnostics from CHECK phase
+TYPIST_STATIC=1 perl my_app.pl    # No STDERR diagnostics from CHECK phase
 ```
 
 This does **not** affect:
@@ -166,8 +191,8 @@ TYPIST_LSP_TRACE=/tmp/trace.jsonl typist-lsp  # Full message trace
 
 ### Production
 
-In production, use Typist in its default static-only mode. No environment variables are needed. The CHECK phase runs at compile time and adds zero runtime overhead:
+In production, use plain `use Typist;` by default. No static analysis runs unless you opt into it, so direct program execution stays free of compile-time analyzer overhead:
 
 ```typist
-use Typist;  # Static checks only, no runtime cost
+use Typist;  # Runtime helpers only, no static CHECK pass
 ```

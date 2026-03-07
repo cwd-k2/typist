@@ -109,8 +109,12 @@ sub _check_functions :TIMED(functions) ($self) {
         my ($fn_line, $fn_file, $fn_col) = $self->_fn_line($fqn);
         my %declared = map { $_->{name} => 1 }
                        ($sig->{generics} // [])->@*;
+        my @signature_types = $self->_unique_types(
+            ($sig->{params} // [])->@*,
+            ($sig->{returns} ? ($sig->{returns}) : ()),
+        );
 
-        my %seen_free = $self->_collect_signature_free_vars($sig);
+        my %seen_free = $self->_collect_signature_free_vars(@signature_types);
 
         # Check each free variable is declared
         for my $var (sort keys %seen_free) {
@@ -131,10 +135,9 @@ sub _check_functions :TIMED(functions) ($self) {
 
         $self->_check_function_bounds($sig, $fqn, $fn_line, $fn_file, $fn_col);
 
-        $self->_check_type_wellformed($_, $fqn) for ($sig->{params} // [])->@*;
-        $self->_check_type_wellformed($sig->{returns}, $fqn) if $sig->{returns};
+        $self->_check_type_wellformed($_, $fqn) for @signature_types;
 
-        $self->_check_function_kinds($sig, $fqn, $fn_line, $fn_file, $fn_col);
+        $self->_check_function_kinds(\@signature_types, $sig, $fqn, $fn_line, $fn_file, $fn_col);
         accumulate_timing($timings, 'functions.total', $t_sig);
     }
 }
@@ -144,8 +147,10 @@ sub _check_functions :TIMED(functions) ($self) {
 sub _check_type_wellformed :TIMED_ACC(functions.type_wellformed) ($self, $type, $context) {
     return unless $type;
 
-    my ($ctx_line, $ctx_file, $ctx_col) = $self->_fn_line($context);
     my @unknown_aliases = $self->_unknown_aliases_in_type($type);
+    return unless @unknown_aliases;
+
+    my ($ctx_line, $ctx_file, $ctx_col) = $self->_fn_line($context);
 
     for my $name (@unknown_aliases) {
         $self->{errors}->collect(
@@ -164,10 +169,24 @@ sub _unknown_aliases_in_type ($self, $type) {
         return $self->{_type_wf_cache}{$cache_key}->@*;
     }
 
+    if ($type->is_atom || $type->is_literal || $type->is_var) {
+        $self->{_type_wf_cache}{$cache_key} = [];
+        return;
+    }
+
+    if ($type->is_alias) {
+        my $name = $type->alias_name;
+        my @unknown = $self->_alias_like_name_is_defined($name) ? () : ($name);
+        $self->{_type_wf_cache}{$cache_key} = \@unknown;
+        return @unknown;
+    }
+
+    my %seen;
     my @unknown;
     Typist::Type::Fold->walk($type, sub ($node) {
         return unless $node->is_alias;
         my $name = $node->alias_name;
+        return if $seen{$name}++;
         return if $self->_alias_like_name_is_defined($name);
         push @unknown, $name;
     });
@@ -180,6 +199,17 @@ sub _free_vars_of :TIMED_ACC(functions.free_vars) ($self, $type) {
     my $cache_key = ref $type ? refaddr($type) : "$type";
     if (exists $self->{_free_vars_cache}{$cache_key}) {
         return $self->{_free_vars_cache}{$cache_key}->@*;
+    }
+
+    if ($type->is_atom || $type->is_literal) {
+        $self->{_free_vars_cache}{$cache_key} = [];
+        return;
+    }
+
+    if ($type->is_var) {
+        my @free = ($type->name);
+        $self->{_free_vars_cache}{$cache_key} = \@free;
+        return @free;
     }
 
     my @free = $type->free_vars;
@@ -365,13 +395,10 @@ sub _check_protocols :TIMED(protocols) ($self) {
     }
 }
 
-sub _collect_signature_free_vars ($self, $sig) {
+sub _collect_signature_free_vars ($self, @types) {
     my %seen_free;
-    for my $ptype (($sig->{params} // [])->@*) {
+    for my $ptype (@types) {
         $seen_free{$_} = 1 for $self->_free_vars_of($ptype);
-    }
-    if ($sig->{returns}) {
-        $seen_free{$_} = 1 for $self->_free_vars_of($sig->{returns});
     }
 
     return %seen_free;
@@ -395,7 +422,7 @@ sub _check_function_bounds :TIMED_ACC(functions.bounds) ($self, $sig, $fqn, $fn_
     }
 }
 
-sub _check_function_kinds :TIMED_ACC(functions.kinds) ($self, $sig, $fqn, $fn_line, $fn_file, $fn_col) {
+sub _check_function_kinds :TIMED_ACC(functions.kinds) ($self, $types, $sig, $fqn, $fn_line, $fn_file, $fn_col) {
     my %var_kinds;
     for my $g (($sig->{generics} // [])->@*) {
         next unless ref $g eq 'HASH' && $g->{var_kind};
@@ -404,7 +431,7 @@ sub _check_function_kinds :TIMED_ACC(functions.kinds) ($self, $sig, $fqn, $fn_li
 
     return unless %var_kinds;
 
-    for my $ptype (($sig->{params} // [])->@*) {
+    for my $ptype ($types->@*) {
         eval { Typist::KindChecker->infer_kind($ptype, \%var_kinds) };
         if ($@) {
             $self->{errors}->collect(
@@ -417,18 +444,18 @@ sub _check_function_kinds :TIMED_ACC(functions.kinds) ($self, $sig, $fqn, $fn_li
         }
     }
 
-    return unless $sig->{returns};
+}
 
-    eval { Typist::KindChecker->infer_kind($sig->{returns}, \%var_kinds) };
-    if ($@) {
-        $self->{errors}->collect(
-            kind    => 'KindError',
-            message => "Kind error in return type of $fqn: $@",
-            file    => $fn_file,
-            line    => $fn_line,
-            col     => $fn_col,
-        );
+sub _unique_types ($self, @types) {
+    my %seen;
+    my @unique;
+    for my $type (@types) {
+        next unless $type;
+        my $key = ref $type ? refaddr($type) : "$type";
+        next if $seen{$key}++;
+        push @unique, $type;
     }
+    return @unique;
 }
 
 1;

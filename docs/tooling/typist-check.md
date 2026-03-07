@@ -156,7 +156,8 @@ fi
 | Variable | Effect |
 |----------|--------|
 | `NO_COLOR` | When set, disables colored output |
-| `TYPIST_CHECK_QUIET` | Set to `1` to suppress CHECK-phase output from modules being analyzed (recommended when diagnostics come from `typist-check` itself) |
+| `TYPIST_STATIC` | Set to `1` to enable CHECK-phase diagnostics in direct `perl` runs. `typist-check` itself does not require this. |
+| `TYPIST_CHECK_QUIET` | Set to `1` to suppress CHECK-phase output from modules being analyzed when static mode is enabled separately (recommended when diagnostics come from `typist-check` itself) |
 
 ---
 

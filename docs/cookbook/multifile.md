@@ -38,7 +38,7 @@ BEGIN {
 
 Key points:
 
-- **`BEGIN` blocks** ensure types are registered before CHECK-phase analysis runs.
+- **`BEGIN` blocks** ensure types are registered before compile-time analysis and cross-file tooling runs.
 - **`@EXPORT`** exports constructor functions (`UserId(...)`, `Product(...)`) into the caller's namespace via Perl's standard Exporter mechanism.
 - Type names in `:sig()` annotations are resolved from the Registry, not from `@EXPORT`. But constructors used as function calls in code do need to be exported.
 

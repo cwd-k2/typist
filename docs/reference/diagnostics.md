@@ -367,13 +367,14 @@ risky_call();
 
 ### `TYPIST_CHECK_QUIET`
 
-Setting `TYPIST_CHECK_QUIET=1` skips the entire CHECK-phase static analysis. Use this when the LSP server provides diagnostics, to avoid duplicate output:
+Setting `TYPIST_CHECK_QUIET=1` skips the analyzer portion of CHECK-phase static analysis when static mode is enabled. Use this when the LSP server provides diagnostics, to avoid duplicate output:
 
 ```bash
+export TYPIST_STATIC=1
 export TYPIST_CHECK_QUIET=1
 ```
 
-This only affects the CHECK-phase STDERR output. The LSP server and `typist-check` CLI are not affected.
+This only affects opt-in CHECK-phase STDERR output. The LSP server and `typist-check` CLI are not affected.
 
 ## Diagnostic Locations
 

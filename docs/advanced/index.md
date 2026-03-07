@@ -28,4 +28,4 @@ use v5.40;
 use Typist;
 ```
 
-Type definitions (`typedef`, `newtype`, `struct`, `datatype`, `effect`, `typeclass`, `instance`) must appear inside `BEGIN` blocks so they are visible during CHECK-phase static analysis.
+Type definitions (`typedef`, `newtype`, `struct`, `datatype`, `effect`, `typeclass`, `instance`) must appear inside `BEGIN` blocks so they are visible to opt-in CHECK-phase static analysis and other compile-time consumers.

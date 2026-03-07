@@ -15,7 +15,7 @@ These recipes assume familiarity with the basics covered in the [Guide](../guide
 
 ## Conventions Used
 
-- All type definitions appear in `BEGIN` blocks (required for CHECK-phase visibility).
+- All type definitions appear in `BEGIN` blocks (required for compile-time visibility, including opt-in CHECK analysis).
 - String syntax is used for type expressions: `'Int'`, not bare `Int`.
 - `+{}` is used for hashref literals to avoid block/hashref ambiguity.
 - No comma after blocks in `handle`/`map`/`grep` (prototype rule).

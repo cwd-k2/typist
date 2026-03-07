@@ -82,9 +82,9 @@ Typist operates across three phases of a Perl program's lifecycle:
 +==========================================+
 |  RUNTIME                                 |
 |                                          |
-|  Static-only (default):                  |
+|  Default (`use Typist`):                 |
 |    Original subs execute directly.       |
-|    No tie, no wrappers. Zero overhead.   |
+|    No tie, no wrappers, no static pass.  |
 |                                          |
 |  Runtime mode (-runtime):               |
 |    Tied scalars: STORE/FETCH validate.   |
@@ -880,7 +880,7 @@ NEVER (unless LSP):
 
 ### Rationale
 
-PPI is the heaviest dependency (~1MB of code, creates full ASTs). By loading it lazily via `require` inside the CHECK block, programs that use `TYPIST_CHECK_QUIET=1` (when the LSP provides diagnostics instead) avoid the PPI startup cost entirely. PPI and all `Static::*` modules are **never** loaded during normal program execution.
+PPI is the heaviest dependency (~1MB of code, creates full ASTs). By loading it lazily via opt-in static analysis paths, programs that just `use Typist;` avoid the PPI startup cost entirely. PPI and all `Static::*` modules are **never** loaded during normal program execution unless `-static`, `TYPIST_STATIC=1`, `typist-check`, or the LSP explicitly needs them.
 
 The `Attribute` module defers its 8 heavy dependencies (Parser, Inference, Subtype, etc.) via `_ensure_deps()`, loading them only on the first `:sig()` annotation encountered. When no `:sig()` is used (e.g., a module that only defines types via `struct`/`datatype`), these modules are never loaded.
 

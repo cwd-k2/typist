@@ -68,7 +68,7 @@ TypeClass dispatch installs into the caller's namespace (`${caller}::${ClassName
 
 ### Default Mode
 
-`use Typist;` enables static-only analysis. No runtime overhead: original subs execute directly with no tie, no wrappers.
+`use Typist;` installs runtime helpers and the prelude only. No static analysis runs by default, and original subs execute directly with no tie and no wrappers.
 
 ### Runtime Mode
 
@@ -89,7 +89,7 @@ Type validation (`contains`, `infer_value`, bounds, typeclass constraints) in co
 
 The CHECK phase runs both structural checks (`Checker`) and full static analysis (`Analyzer` with `TypeChecker` + `EffectChecker`) per loaded package. Diagnostics surface as `warn` to STDERR, which perlnavigator picks up.
 
-Suppress with `TYPIST_CHECK_QUIET=1` when using typist-lsp to avoid duplicate diagnostics.
+If you opt into CHECK analysis, suppress duplicate terminal diagnostics with `TYPIST_CHECK_QUIET=1` when using `typist-lsp`.
 
 ### Gradual Typing
 

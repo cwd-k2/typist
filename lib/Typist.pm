@@ -3,7 +3,9 @@ use v5.40;
 
 our $VERSION = '0.01';
 our $RUNTIME     = $ENV{TYPIST_RUNTIME}     ? 1 : 0;
+our $STATIC      = $ENV{TYPIST_STATIC}      ? 1 : 0;
 our $CHECK_QUIET = $ENV{TYPIST_CHECK_QUIET} ? 1 : 0;
+our $STATIC_HOOK_INSTALLED = 0;
 
 # Core runtime — always needed
 use Typist::Type;
@@ -53,6 +55,7 @@ sub import ($class, @args) {
 
     for my $arg (@args) {
         if    ($arg eq '-runtime') { $Typist::RUNTIME = 1 }
+        elsif ($arg eq '-static')  { $Typist::STATIC  = 1 }
         elsif ($arg =~ /\A[A-Z]/) {
             die "Typist: unknown import argument '$arg'. "
               . "Use :sig($arg) for type annotations (at $caller)\n";
@@ -68,6 +71,11 @@ sub import ($class, @args) {
     # Prelude builtins/effects are part of the base Typist runtime contract.
     require Typist::Prelude;
     Typist::Prelude->install(Typist::Registry->_default);
+
+    if ($Typist::STATIC && !$Typist::STATIC_HOOK_INSTALLED && ${^GLOBAL_PHASE} ne 'RUN') {
+        eval q{ CHECK { Typist::_run_static_checks() } 1 } or die $@;
+        $Typist::STATIC_HOOK_INSTALLED = 1;
+    }
 
     # Track this package
     Typist::Registry->register_package($caller);
@@ -117,8 +125,7 @@ sub import ($class, @args) {
 
 }
 
-END {
-    return if ${^GLOBAL_PHASE} eq 'DESTRUCT';
+sub _run_static_checks () {
     Typist::Error::Global->reset;
 
     # 0. Ensure Prelude effects (IO/Exn/Decl) + CORE builtins are in the default
@@ -139,7 +146,7 @@ END {
     }
 }
 
-# ── Process-End Static Analysis ──────────────────
+# ── Static Analysis Hook ─────────────────────────
 
 sub _check_analyze () {
     require Typist::Static::Analyzer;
@@ -191,7 +198,9 @@ Typist - A static-first type system for Perl 5
 
 =head1 SYNOPSIS
 
-    use Typist;
+    use Typist;            # Runtime helpers only
+    use Typist -runtime;   # Enable runtime enforcement
+    use Typist -static;    # Enable CHECK-phase static diagnostics
 
     # Type aliases
     BEGIN {
@@ -217,8 +226,9 @@ Typist brings static type annotations to Perl through the standard attribute
 syntax C<:sig(...)>. Errors are caught at compile time (CHECK phase) and
 via the LSP server, with zero runtime overhead by default.
 
-    use Typist;            # Static-only (default)
+    use Typist;            # Runtime helpers only (default)
     use Typist -runtime;   # Enable runtime enforcement
+    use Typist -static;    # Enable CHECK-phase static diagnostics
 
 =head1 EXPORTS
 
@@ -325,10 +335,14 @@ L<Typist::Prelude> entries for the declared name.
 
 Set to C<1> to enable runtime type enforcement.
 
+=item C<TYPIST_STATIC>
+
+Set to C<1> to enable CHECK-phase static diagnostics.
+
 =item C<TYPIST_CHECK_QUIET>
 
-Set to C<1> to suppress CHECK-phase diagnostics (use when the LSP server
-provides diagnostics).
+Set to C<1> to suppress CHECK-phase diagnostics when static mode is enabled
+(use when the LSP server provides diagnostics).
 
 =back
 

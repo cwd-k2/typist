@@ -194,4 +194,4 @@ Kind errors are reported as `KindError` diagnostics by the static checker:
 | Kind mismatch in argument | `KindError: F argument 1 has kind *, expected * -> *` |
 | Union/intersection member not `*` | `KindError: union/intersection member has kind * -> *, expected *` |
 
-These diagnostics surface during CHECK-phase analysis and in the LSP server.
+These diagnostics surface in opt-in CHECK-phase analysis (`use Typist -static;` or `TYPIST_STATIC=1`) and in the LSP server.

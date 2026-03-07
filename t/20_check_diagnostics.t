@@ -6,12 +6,29 @@ use File::Temp qw(tempfile);
 
 my $perl = $^X;
 
+# ── Default import: no static CHECK ──
+
+subtest 'default import does not run static CHECK diagnostics' => sub {
+    my $out = _run_perl_code(<<'PERL');
+use v5.40;
+use Typist;
+
+sub greet :sig((Str) -> Str) ($name) { "Hello, $name!" }
+
+greet(42);
+print "DONE";
+PERL
+
+    is $out->{stderr}, '', 'no CHECK diagnostics by default';
+    like $out->{stdout}, qr/DONE/, 'program runs normally';
+};
+
 # ── Static-only mode: CHECK detects TypeMismatch ──
 
 subtest 'CHECK detects TypeMismatch in static-only mode' => sub {
     my $out = _run_perl_code(<<'PERL');
 use v5.40;
-use Typist;
+use Typist -static;
 
 sub greet :sig((Str) -> Str) ($name) { "Hello, $name!" }
 
@@ -27,7 +44,7 @@ PERL
 subtest 'CHECK detects EffectMismatch in static-only mode' => sub {
     my $out = _run_perl_code(<<'PERL');
 use v5.40;
-use Typist;
+use Typist -static;
 
 BEGIN {
     effect Console => +{ writeLine => 'CodeRef[Str -> Void]' };
@@ -111,12 +128,12 @@ PERL
     like $out_runtime->{stdout}, qr/DIED/, 'runtime: tie enforces';
 };
 
-# ── TYPIST_CHECK_QUIET suppresses CHECK output ──
+# ── TYPIST_CHECK_QUIET suppresses static CHECK output ──
 
 subtest 'CHECK_QUIET suppresses warn and skips Analyzer' => sub {
     my $code = <<'PERL';
 use v5.40;
-use Typist;
+use Typist -static;
 
 sub greet :sig((Str) -> Str) ($name) { "Hello, $name!" }
 

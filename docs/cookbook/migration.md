@@ -8,7 +8,7 @@ Typist is designed for incremental adoption. You do not need to annotate your en
 
 The recommended order:
 
-1. **Add `use Typist;`** to your modules -- zero overhead, no behavior change.
+1. **Add `use Typist;`** to your modules -- runtime helpers only, no behavior change.
 2. **Define domain types** -- `typedef`, `newtype`, `struct` for your data models.
 3. **Annotate public API functions** -- start at module boundaries.
 4. **Set up `typist-check` in CI** -- catch regressions early.
@@ -82,7 +82,7 @@ our @EXPORT_OK = qw(calculate_total apply_discount format_price);
 # ... rest unchanged
 ```
 
-This does nothing visible. No diagnostics, no runtime cost. It registers the package for CHECK-phase analysis and enables `:sig()` attributes.
+This does nothing visible. No diagnostics, and almost no runtime cost. It enables `:sig()` attributes, runtime helpers, and the prelude. Static analysis remains explicit via `typist-check`, the LSP, or `use Typist -static;`.
 
 ---
 
@@ -253,7 +253,7 @@ Color is auto-disabled when stdout is not a TTY, so `--no-color` is optional in 
 
 Configure your editor to use `typist-lsp` for real-time feedback. See [Editor Setup](../getting-started/editor-setup.md) for Neovim, VS Code, and other editor configurations.
 
-Set `TYPIST_CHECK_QUIET=1` in your shell environment to suppress CHECK-phase output when the LSP is providing the same diagnostics inline.
+If you opt into CHECK-phase analysis with `TYPIST_STATIC=1` or `use Typist -static;`, set `TYPIST_CHECK_QUIET=1` to suppress duplicate output when the LSP is providing the same diagnostics inline.
 
 ---
 

@@ -39,7 +39,7 @@ Three things occurred in sequence:
 
 1. **Compile time.** Perl compiled the file. The `use Typist` statement installed the `:sig()` attribute handler and registered the annotation parser.
 2. **CHECK phase.** Before the program body executed, Typist's static analyzer ran. It verified that `greet` receives a `Str` and returns a `Str`, that the call site `greet("world")` passes a `Str`, and that `$msg` is assigned a value compatible with its declared type `Str`.
-3. **Runtime.** The program body executed normally. In the default static-only mode (`use Typist`), no runtime type checks are performed -- the annotations have zero cost at this point.
+3. **Runtime.** The program body executed normally. With plain `use Typist`, no runtime type checks are performed, and no static CHECK pass runs unless you opt in with `-static` or `TYPIST_STATIC=1`.
 
 ## Key Concepts
 
@@ -160,7 +160,7 @@ STDERR output:
 Type error in main: expected Int, got Str in argument 1 of add at line 7.
 ```
 
-The program still runs (printing a result from Perl's string-to-number coercion), but the CHECK-phase warning tells you exactly where the type contract was violated: argument 1 of `add` at line 7 expected `Int` but received `Str`.
+The program still runs (printing a result from Perl's string-to-number coercion), but `typist-check`, the LSP, or opt-in CHECK analysis (`use Typist -static;`) tells you exactly where the type contract was violated: argument 1 of `add` at line 7 expected `Int` but received `Str`.
 
 ### Using typist-check
 

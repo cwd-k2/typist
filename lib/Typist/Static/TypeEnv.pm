@@ -26,6 +26,7 @@ sub new ($class, %args) {
         _local_var_types => +{},
         _infer_log       => [],
         _fn_env_cache    => +{},
+        _node_env_cache  => +{},
         _resolve_cache   => +{},
     }, $class;
 }
@@ -46,6 +47,7 @@ sub narrowed_accessor_types ($self) { $self->{narrowing}->narrowed_accessors }
 sub build ($self) {
     $self->{env} = $self->_build_env;
     $self->{_fn_env_cache} = +{};
+    $self->{_node_env_cache} = +{};
     $self->_collect_loop_var_types;
     $self->_collect_local_var_types;
     $self->{narrowing}->collect_accessor_narrowings($self->{ppi_doc});
@@ -123,6 +125,11 @@ sub fn_env ($self, $fn) {
 # If the node is inside a function body, return fn_env with parameter bindings.
 # Additionally, narrow the env based on control flow (e.g. `defined` guards).
 sub env_for_node ($self, $node) {
+    my $node_addr = refaddr($node);
+    if (exists $self->{_node_env_cache}{$node_addr}) {
+        return $self->{_node_env_cache}{$node_addr};
+    }
+
     my $env;
     my $ancestor = $node->parent;
     while ($ancestor) {
@@ -153,7 +160,7 @@ sub env_for_node ($self, $node) {
     $env = $self->_inject_loop_vars($env, $node);
     $env = $self->{narrowing}->narrow_env_for_block($env, $node);
     $env = $self->{narrowing}->scan_early_returns($env, $node);
-    $env;
+    return $self->{_node_env_cache}{$node_addr} = $env;
 }
 
 # ── Environment Construction ─────────────────────

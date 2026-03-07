@@ -275,7 +275,7 @@ The newtype version makes the argument order part of the type contract. The comp
 
 ## BEGIN blocks
 
-Both `typedef` and `newtype` must appear inside `BEGIN` blocks so that the type definitions are available during CHECK-phase static analysis:
+Both `typedef` and `newtype` must appear inside `BEGIN` blocks so that the type definitions are available during compile-time analysis:
 
 ```typist
 # Correct

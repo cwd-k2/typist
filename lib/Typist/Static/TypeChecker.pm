@@ -219,14 +219,12 @@ sub check_match_exhaustiveness :TIMED(match_exhaustiveness) ($self) {
 sub check_function_returns :TIMED_ACC(function_checks.returns) ($self, $name) {
     my $fn = $self->{extracted}{functions}{$name};
     my $returns_expr = $fn->{returns_expr} // return;
-    my $block = $fn->{block} // return;
+    $fn->{block} // return;
 
     my $declared = $self->_resolve_type($returns_expr);
     return unless defined $declared;
 
     return if _has_type_var($declared);
-
-    my $env = $self->_fn_env($fn);
 
     # Find return statements within the block
     my $returns = $fn->{return_words} // [];
@@ -337,7 +335,6 @@ sub collect_fn_return_types ($self) {
     for my $name (sort keys $self->{extracted}{functions}->%*) {
         my $fn = $self->{extracted}{functions}{$name};
         next unless $fn->{unannotated};
-        my $env = $self->_fn_env($fn);
         my @types;
 
         # Explicit returns
