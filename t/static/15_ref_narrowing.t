@@ -296,7 +296,7 @@ subtest 'early return defined accessor narrows Option[Str] to Str' => sub {
 use v5.40;
 struct Widget => (
     label => 'Str',
-    tooltip => 'optional Str',
+    optional(tooltip => 'Str'),
 );
 sub get_tooltip :sig((Widget) -> Str) ($w) {
     return "none" unless defined($w->tooltip);

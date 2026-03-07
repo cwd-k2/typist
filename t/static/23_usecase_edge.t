@@ -112,8 +112,8 @@ subtest 'narrowing: sequential early returns' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
 struct Config => (
-    host => 'optional Str',
-    port => 'optional Int',
+    optional(host => 'Str'),
+    optional(port => 'Int'),
 );
 sub validate :sig((Config) -> Str) ($cfg) {
     return "no host" unless defined($cfg->host());
@@ -317,7 +317,7 @@ subtest 'struct: optional field access' => sub {
 use v5.40;
 struct Person => (
     name  => 'Str',
-    email => 'optional Str',
+    optional(email => 'Str'),
 );
 sub display :sig((Person) -> Str) ($p) {
     return $p->name();
@@ -1232,7 +1232,7 @@ PERL
 subtest 'cross: struct field in loop with narrowing' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-struct Item => (name => 'Str', price => 'optional Int');
+struct Item => (name => 'Str', optional(price => 'Int'));
 sub total_price :sig((ArrayRef[Item]) -> Int) ($items) {
     my $sum :sig(Int) = 0;
     for my $item (@$items) {

@@ -29,9 +29,9 @@ subtest 'guard: multiple sequential guards' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
 struct Config => (
-    host    => 'optional Str',
-    port    => 'optional Int',
-    timeout => 'optional Int',
+    optional(host    => 'Str'),
+    optional(port    => 'Int'),
+    optional(timeout => 'Int'),
 );
 sub connect_str :sig((Config) -> Str) ($c) {
     return "bad" unless defined($c->host());
@@ -770,19 +770,17 @@ PERL
 
 # ── 10.5 Accessor narrowing not leaking ──
 
-subtest 'regression: accessor narrowing stays in branch' => sub {
+subtest 'regression: accessor narrowing with early return' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-struct Widget => (label => 'Str', tooltip => 'optional Str');
-sub display :sig((Widget) -> Str) ($w) {
-    if (defined($w->tooltip())) {
-        return $w->tooltip();
-    }
-    return $w->label();
+struct Widget => (label => 'Str', optional(tooltip => 'Str'));
+sub get_tooltip :sig((Widget) -> Str) ($w) {
+    return $w->label unless defined($w->tooltip);
+    $w->tooltip;
 }
 PERL
 
-    is scalar @$errs, 0, 'accessor narrowing in branch does not leak';
+    is scalar @$errs, 0, 'early return defined accessor narrows optional to Str';
 };
 
 done_testing;
