@@ -2,7 +2,7 @@
 
 > Canonical reference for Typist coding conventions, design patterns, and known Perl gotchas.
 > For architecture overview, see [architecture.md](architecture.md).
-> For type system reference, see [type-system.md](type-system.md).
+> For type system reference, see the [Guide](../guide/index.md).
 > For static analysis internals, see [static-analysis.md](static-analysis.md).
 
 ## Table of Contents
@@ -149,12 +149,12 @@ No separate imports are needed for type names — they are resolved from strings
 ### Unified `:sig()` Annotation
 
 ```perl
-sub add :sig(<T: Num>(T, T) -> T ! Console) ($a, $b) { ... }
+sub add :sig(<T: Num>(T, T) -> T ![Console]) ($a, $b) { ... }
 ```
 
 - Generics in `<>`.
 - Arrow `->` separates parameters from return type.
-- `!` introduces the effect row.
+- `![...]` introduces the effect row (brackets are required).
 
 ### LSP Coverage Rule
 
@@ -464,6 +464,6 @@ use overload '|' => sub {
 ## Cross-References
 
 - [architecture.md](architecture.md) -- Module dependency graph, lifecycle, registry design, error system.
-- [type-system.md](type-system.md) -- All type constructs, subtyping rules, advanced features.
+- [Guide](../guide/index.md) -- All type constructs, subtyping rules, advanced features.
 - [static-analysis.md](static-analysis.md) -- Analysis pipeline internals, TypeChecker, EffectChecker, inference.
 - [lsp-coverage.md](lsp-coverage.md) -- LSP feature coverage matrix.

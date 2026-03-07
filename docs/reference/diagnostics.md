@@ -6,13 +6,16 @@ Complete reference for all diagnostic kinds emitted by Typist's static analyzer,
 
 Typist uses an internal five-level severity scale. The LSP server maps these to the four standard LSP severity levels.
 
-| Internal | Label | LSP Severity | LSP Label | Description |
-|----------|-------|--------------|-----------|-------------|
-| 1 | error | 1 | Error | Critical -- breaks type resolution |
-| 2 | error | 2 | Error | Type errors, arity mismatches |
-| 3 | warning | 3 | Warning | Undeclared variables, unknown effects |
+| Internal | CLI Label | LSP Severity | LSP Label | Description |
+|----------|-----------|--------------|-----------|-------------|
+| 1 | error | 1 | Error | Critical — breaks type resolution |
+| 2 | error | 2 | Warning | Type errors, arity mismatches |
+| 3 | warning | 3 | Information | Undeclared variables, unknown effects |
 | 4 | warning | 4 | Hint | Informational hints |
 | 5 | hint | 4 | Hint | Opt-in gradual typing hints |
+
+!!! note
+    Internal severity 2 maps to LSP "Warning" (not "Error") per the LSP specification, but `typist-check` CLI labels it as "error". Similarly, internal severity 3 is LSP "Information" but CLI "warning".
 
 The `typist-check` CLI uses the following exit codes:
 
@@ -196,7 +199,7 @@ UnknownTypeClass: typeclass 'Showable' is not defined
 
 ---
 
-### InvalidBound (Severity 2)
+### InvalidBound (Severity 3)
 
 A bound expression in a generic parameter declaration is malformed.
 
@@ -212,7 +215,7 @@ Invalid bound expression 'NotAType' for T in main::process: ...
 
 ---
 
-### KindError (Severity 2)
+### KindError (Severity 3)
 
 A kind mismatch in type application.
 

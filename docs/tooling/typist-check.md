@@ -89,8 +89,8 @@ All diagnostic kinds produced by the static analyzer:
 | UndeclaredTypeVar | 3 | Type variable used but not declared in generics |
 | UndeclaredRowVar | 3 | Row variable used but not declared |
 | UnknownEffect | 3 | Effect name not found in registry |
-| UnknownTypeClass | 3 | Typeclass name not found in registry |
-| UnknownType | 3 | Type name not found in registry |
+| UnknownTypeClass | 2 | Typeclass name not found in registry |
+| UnknownType | 4 | Type name not found in registry |
 | InvalidBound | 3 | Invalid bound expression on generic parameter |
 | KindError | 3 | Kind mismatch (e.g., applying type arguments to a non-parameterized type) |
 | ImportHint | 4 | Type used in `:sig()` but defining package not imported |

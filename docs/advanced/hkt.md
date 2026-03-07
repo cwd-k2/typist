@@ -163,9 +163,7 @@ Kind expressions use the same syntax as kind theory:
 | `Row` | Effect row |
 | `* -> *` | Unary type constructor |
 | `* -> * -> *` | Binary type constructor |
-| `(* -> *) -> *` | Constructor that takes a unary constructor |
-
-Parentheses override the default right-associativity when needed. `(* -> *) -> *` is a constructor that takes a `* -> *` argument -- a type-constructor-level function.
+The arrow `->` is right-associative: `* -> * -> *` means `* -> (* -> *)`. Parenthesized grouping (e.g., `(* -> *) -> *`) is **not** currently supported by the kind parser.
 
 ---
 

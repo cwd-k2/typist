@@ -66,7 +66,7 @@ The same distinction applies to `Hash[K, V]` vs `HashRef[K, V]`.
 ### Subtyping for Constructors
 
 - `ArrayRef` is covariant: `ArrayRef[Int] <: ArrayRef[Num]`
-- `HashRef` is covariant in the value type: `HashRef[Str, Int] <: HashRef[Str, Num]`
+- `HashRef` is covariant in both parameters: `HashRef[Str, Int] <: HashRef[Any, Num]`
 - `Record <: HashRef[Str, V]` when all field values are subtypes of `V`
 
 ## Built-in Effect Labels

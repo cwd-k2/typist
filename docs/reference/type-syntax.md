@@ -81,7 +81,8 @@ generic_param   = Name
 constraint      = Name ('+' Name)*                  -- typeclass or bound type
                 | 'Row'                             -- row variable kind
                 | kind_expr                         -- HKT kind (e.g., '* -> *')
-kind_expr       = '*' ('->' '*')*
+kind_expr       = kind_primary ('->' kind_primary)*
+kind_primary    = '*' | 'Row'
 ```
 
 ### Name Resolution Rules

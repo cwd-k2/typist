@@ -138,5 +138,5 @@ Any editor with LSP support can use `typist-lsp`. The server communicates over s
 
 With your editor configured, you have real-time diagnostics, hover information, and completion as you write. Explore the rest of the documentation:
 
-- **[Getting Started (overview)](../getting-started.md)** -- The `:sig()` cheatsheet, type basics, static vs runtime mode
-- **[LSP Coverage](../lsp-coverage.md)** -- Full feature matrix, diagnostic kinds, and completion contexts
+- **[Guide](../guide/index.md)** -- Type annotations, type system, effects, and more
+- **[LSP Coverage](../internal/lsp-coverage.md)** -- Full feature matrix, diagnostic kinds, and completion contexts

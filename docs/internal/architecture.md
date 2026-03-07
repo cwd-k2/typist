@@ -2,7 +2,7 @@
 
 This document describes the internal architecture of Typist, including module dependencies, data flow, and design decisions.
 
-> **Related documentation**: [type-system.md](type-system.md) (type theory) | [static-analysis.md](static-analysis.md) (analyzer algorithms) | [conventions.md](conventions.md) (coding conventions) | [lsp-coverage.md](lsp-coverage.md) (LSP features)
+> **Related documentation**: [Guide](../guide/index.md) (type system) | [static-analysis.md](static-analysis.md) (analyzer algorithms) | [conventions.md](conventions.md) (coding conventions) | [lsp-coverage.md](lsp-coverage.md) (LSP features)
 
 ## Table of Contents
 
@@ -245,19 +245,18 @@ Typist.pm (entry point)
   |     +-- Type::Quantified        Rank-2 polymorphism (forall)
   |     +-- Type::Fold              map_type / walk traversals
   +-- Effect, TypeClass             Always loaded
-  +-- Kind, KindChecker             Always loaded
   +-- Parser                        Always loaded
   +-- Registry                      Always loaded
-  +-- Subtype                       Always loaded
-  +-- Inference                     Always loaded
   +-- Handler                       Always loaded (effect handler stack)
-  +-- Attribute                     Always loaded
-  |     +-- B (Perl introspection)
-  |     +-- Transform
-  |     +-- Tie::Scalar
-  +-- Static::Checker               Always loaded
-  |     +-- Type::Fold
+  +-- Attribute                     Always loaded (require, not use)
   +-- Error, Error::Global          Always loaded
+  |
+  +-- Kind, KindChecker             DEFERRED (via Attribute._ensure_deps)
+  +-- Subtype                       DEFERRED (via Attribute._ensure_deps)
+  +-- Inference                     DEFERRED (via Attribute._ensure_deps)
+  +-- B, Transform, Tie::Scalar     DEFERRED (via Attribute._ensure_deps)
+  +-- Static::Checker               DEFERRED (require in CHECK phase)
+  |     +-- Type::Fold
   |
   +-- Static::Analyzer              LAZY (require in CHECK)
   |     +-- Prelude                 Builtin type annotations
@@ -531,8 +530,8 @@ EffectChecker->analyze()
     |         return { name, effects, unannotated, line }
     |
     +-- for each callee:
-          if callee.unannotated:
-            collect EffectMismatch (may perform any effect)
+          if callee.unannotated (row_var '*'):
+            skip (treated as pure, no constraint)
           if caller has no effects but callee does:
             collect EffectMismatch (pure calls effectful)
           if both have closed rows:
@@ -662,14 +661,21 @@ Severity 2 (Error):
   ResolveError         Cannot resolve type reference
   UnknownTypeClass     Referenced typeclass not found
   EffectMismatch       Callee effects not covered by caller
+  ProtocolMismatch     Effect protocol state transition violation
 
 Severity 3 (Warning):
   UndeclaredTypeVar    Type variable not in generic list
   UndeclaredRowVar     Row variable not in generic list
   UnknownEffect        Effect label not registered
+  InvalidBound         Malformed bound expression
+  KindError            Kind mismatch in type application
 
 Severity 4 (Info):
   UnknownType          Referenced type not found (low severity)
+  ImportHint           Type used but defining package not imported
+
+Severity 5 (Hint, verbose-only):
+  GradualHint          Type check skipped due to Any
 ```
 
 ---

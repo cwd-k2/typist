@@ -2,7 +2,7 @@
 
 This document describes the internal workings of Typist's static analysis pipeline: how type and effect errors are detected at compile time.
 
-> **Related documentation**: [architecture.md](architecture.md) (system overview) | [type-system.md](type-system.md) (type theory) | [conventions.md](conventions.md) (coding conventions) | [lsp-coverage.md](lsp-coverage.md) (LSP features)
+> **Related documentation**: [architecture.md](architecture.md) (system overview) | [Guide](../guide/index.md) (type system) | [conventions.md](conventions.md) (coding conventions) | [lsp-coverage.md](lsp-coverage.md) (LSP features)
 
 ## Table of Contents
 
@@ -779,8 +779,8 @@ Neither:              Completely unannotated → return Any → gradual bypass
 ### Unannotated in EffectChecker
 
 ```
-Unannotated function as CALLER:  Skipped entirely (line 47)
-Unannotated function as CALLEE:  Flagged with EffectMismatch (may perform any effect)
+Unannotated function as CALLER:  Skipped entirely
+Unannotated function as CALLEE:  Skipped (treated as pure, no constraint)
 ```
 
 ---
@@ -857,9 +857,11 @@ if ($name =~ /\A(.+)::(\w+)\z/) {
 ```
 1 (Critical)  CycleError
 2 (Error)     TypeMismatch, ArityMismatch, TypeError, ResolveError,
-              UnknownTypeClass, EffectMismatch
-3 (Warning)   UndeclaredTypeVar, UndeclaredRowVar, UnknownEffect
-4 (Info)      UnknownType
+              UnknownTypeClass, EffectMismatch, ProtocolMismatch
+3 (Warning)   UndeclaredTypeVar, UndeclaredRowVar, UnknownEffect,
+              InvalidBound, KindError
+4 (Info)      UnknownType, ImportHint
+5 (Hint)      GradualHint (verbose-only)
 ```
 
 ### Enrichment

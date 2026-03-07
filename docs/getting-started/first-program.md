@@ -188,5 +188,5 @@ You now know the three essential pieces: `:sig()` annotations for declaring type
 From here:
 
 - **[Editor Setup](editor-setup.md)** -- Configure your editor for real-time diagnostics, hover, and completion.
-- **[Getting Started (overview)](../getting-started.md)** -- The `:sig()` cheatsheet, compound types, static vs runtime mode, and common patterns.
+- **[Guide](../guide/index.md)** -- The `:sig()` syntax, compound types, static vs runtime mode, and more.
 - **`example/` directory** -- Twelve runnable examples covering every feature, from foundations through effects and protocols.
