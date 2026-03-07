@@ -20,7 +20,7 @@ This section walks you through the Typist type system from first principles to a
 
 ## Prerequisites
 
-You should have Typist installed and working. If not, see [Getting Started](../getting-started.md) first.
+You should have Typist installed and working. If not, see [Getting Started](../getting-started/index.md) first.
 
 All code examples assume:
 
