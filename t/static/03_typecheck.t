@@ -1802,6 +1802,88 @@ PERL
     is scalar @$errs, 0, 'no error for tuple argument';
 };
 
+# ── Struct derive edge cases ─────────────────────
+
+subtest 'struct derive: named update does not trigger arity mismatch' => sub {
+    my $errs = arity_errors(<<'PERL');
+package main;
+use v5.40;
+use Typist;
+
+struct Person => (
+    name => 'Str',
+    age  => 'Int',
+    city => 'Str',
+);
+
+sub test :sig(() -> Person) () {
+    my $p = Person(name => "Alice", age => 30, city => "Tokyo");
+    return Person::derive($p, age => 31);
+}
+PERL
+
+    is scalar @$errs, 0, 'derive named update is not treated as positional arity mismatch';
+};
+
+subtest 'struct derive: base argument type is checked' => sub {
+    my $errs = type_errors(<<'PERL');
+package main;
+use v5.40;
+use Typist;
+
+struct Person => (
+    name => 'Str',
+    age  => 'Int',
+);
+
+sub test :sig(() -> Person) () {
+    return Person::derive("not-a-person", age => 31);
+}
+PERL
+
+    is scalar @$errs, 1, 'one type error';
+    like $errs->[0]{message}, qr/Argument 1 of Person::derive/, 'derive base argument is checked against the struct type';
+};
+
+subtest 'struct derive: updated field type is checked' => sub {
+    my $errs = type_errors(<<'PERL');
+package main;
+use v5.40;
+use Typist;
+
+struct Person => (
+    name => 'Str',
+    age  => 'Int',
+);
+
+sub test :sig(() -> Person) () {
+    my $p = Person(name => "Alice", age => 30);
+    return Person::derive($p, age => "old");
+}
+PERL
+
+    is scalar @$errs, 1, 'one type error';
+    like $errs->[0]{message}, qr/field 'age'/, 'derive field update is typechecked';
+};
+
+# ── Return edge cases ───────────────────────────
+
+subtest 'return: bare return is skipped and later explicit return is checked' => sub {
+    my $errs = type_errors(<<'PERL');
+package main;
+use v5.40;
+use Typist;
+
+sub maybe_num :sig((Bool) -> Int) ($flag) {
+    return unless $flag;
+    return "oops";
+}
+PERL
+
+    is scalar @$errs, 1, 'one type error';
+    like $errs->[0]{message}, qr/Return value of maybe_num/, 'explicit return after bare return is still checked';
+};
+
 # ── Diagnostics: suggestions / related / GradualHint ──
 
 subtest 'diagnostics include suggestions' => sub {

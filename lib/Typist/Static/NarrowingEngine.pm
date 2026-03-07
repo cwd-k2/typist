@@ -18,6 +18,8 @@ sub new ($class, %args) {
         _narrowed_accessors => [],
         _last_narrowed_type => +{},
         _recorded_blocks    => +{},
+        _block_env_cache    => +{},
+        _early_return_cache => +{},
     }, $class;
 }
 
@@ -333,13 +335,20 @@ sub narrow_env_for_block ($self, $env, $node) {
     }
     return $env unless $block;
 
+    my $cache_key = join "\0", Scalar::Util::refaddr($env), Scalar::Util::refaddr($block);
+    if (exists $self->{_block_env_cache}{$cache_key}) {
+        return $self->{_block_env_cache}{$cache_key};
+    }
+
     # The block's parent must be a Compound statement (if/elsif/unless/while)
     my $compound = $block->parent;
-    return $env unless $compound && $compound->isa('PPI::Statement::Compound');
+    unless ($compound && $compound->isa('PPI::Statement::Compound')) {
+        return $self->{_block_env_cache}{$cache_key} = $env;
+    }
 
     # Determine which block we are in: then (index 0) or else (index 1+)
     my @blocks = grep { $_->isa('PPI::Structure::Block') } $compound->schildren;
-    return $env unless @blocks;
+    return $self->{_block_env_cache}{$cache_key} = $env unless @blocks;
 
     my $block_index = -1;
     for my $i (0 .. $#blocks) {
@@ -348,11 +357,11 @@ sub narrow_env_for_block ($self, $env, $node) {
             last;
         }
     }
-    return $env if $block_index < 0;
+    return $self->{_block_env_cache}{$cache_key} = $env if $block_index < 0;
 
     # Extract the condition
     my ($condition) = grep { $_->isa('PPI::Structure::Condition') } $compound->schildren;
-    return $env unless $condition;
+    return $self->{_block_env_cache}{$cache_key} = $env unless $condition;
 
     # Unwrap: Condition -> Expression -> children
     my @cond_children = $condition->schildren;
@@ -395,7 +404,7 @@ sub narrow_env_for_block ($self, $env, $node) {
         }
     }
 
-    return $env unless $rule;
+    return $self->{_block_env_cache}{$cache_key} = $env unless $rule;
 
     # Detect `unless` keyword — reverses narrowing polarity
     my ($keyword) = grep { $_->isa('PPI::Token::Word') } $compound->schildren;
@@ -428,7 +437,7 @@ sub narrow_env_for_block ($self, $env, $node) {
         }
     }
 
-    return $env unless %applied;
+    return $self->{_block_env_cache}{$cache_key} = $env unless %applied;
 
     # Record narrowed variables for LSP visibility (once per block)
     my $block_id = Scalar::Util::refaddr($block);
@@ -449,7 +458,7 @@ sub narrow_env_for_block ($self, $env, $node) {
 
     my %new_vars = $env->{variables}->%*;
     $new_vars{$_} = $applied{$_} for keys %applied;
-    +{ %$env, variables => \%new_vars };
+    return $self->{_block_env_cache}{$cache_key} = +{ %$env, variables => \%new_vars };
 }
 
 # ── Early Return Narrowing ──────────────────────
@@ -464,48 +473,43 @@ sub scan_early_returns ($self, $env, $node) {
     }
     return $env unless $stmt;
 
-    # The statement must live inside a Block
-    my $parent_block = $stmt->parent;
-    return $env unless $parent_block && $parent_block->isa('PPI::Structure::Block');
-
-    # Walk preceding sibling statements
-    my %narrowed_vars;
-    my %narrowed_accessors;
-    my $sib = $stmt->sprevious_sibling;
-    while ($sib) {
-        if ($sib->isa('PPI::Statement')) {
-            my @children = $sib->schildren;
-            # Match: return [expr] unless defined $var
-            if ($self->_is_early_return_unless_defined(\@children)) {
-                my $var_name = $self->_early_return_var(\@children);
-                if ($var_name) {
-                    my $var_type = $env->{variables}{$var_name};
-                    my $narrowed = $self->remove_undef_from_type($var_type);
-                    $narrowed_vars{$var_name} = $narrowed if $narrowed;
-                } else {
-                    # Try accessor chain: return ... unless defined($var->accessor)
-                    my $accessor = $self->_early_return_accessor(\@children);
-                    if ($accessor && @{$accessor->{chain}} == 1) {
-                        my $vname = $accessor->{var_name};
-                        my $field = $accessor->{chain}[0];
-                        my $field_type = $self->resolve_accessor_type($env, $vname, $field);
-                        if ($field_type) {
-                            my $narrowed = $self->remove_undef_from_type($field_type);
-                            if ($narrowed) {
-                                $narrowed_accessors{"$vname\0$field"} = +{
-                                    var_name => $vname, accessor => $field,
-                                    type => $narrowed,
-                                };
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        $sib = $sib->sprevious_sibling;
+    my $cache_key = join "\0", Scalar::Util::refaddr($env), Scalar::Util::refaddr($stmt);
+    if (exists $self->{_early_return_cache}{$cache_key}) {
+        return $self->{_early_return_cache}{$cache_key};
     }
 
-    return $env unless %narrowed_vars || %narrowed_accessors;
+    # The statement must live inside a Block
+    my $parent_block = $stmt->parent;
+    unless ($parent_block && $parent_block->isa('PPI::Structure::Block')) {
+        return $self->{_early_return_cache}{$cache_key} = $env;
+    }
+
+    my %narrowed_vars;
+    my %narrowed_accessors;
+    my $cursor_stmt = $stmt;
+    my $cursor_block = $parent_block;
+    while ($cursor_block) {
+        my $sib = $cursor_stmt->sprevious_sibling;
+        while ($sib) {
+            if ($sib->isa('PPI::Statement')) {
+                my %vars = $self->_statement_early_return_narrowed_vars($sib, $env)->%*;
+                my %accs = $self->_statement_early_return_narrowed_accessors($sib, $env)->%*;
+                $narrowed_vars{$_} //= $vars{$_} for keys %vars;
+                $narrowed_accessors{$_} //= $accs{$_} for keys %accs;
+            }
+            $sib = $sib->sprevious_sibling;
+        }
+
+        my $compound = $cursor_block->parent;
+        last unless $compound && $compound->isa('PPI::Statement::Compound');
+        $cursor_stmt = $compound;
+        $cursor_block = $compound->parent;
+        last unless $cursor_block && $cursor_block->isa('PPI::Structure::Block');
+    }
+
+    unless (%narrowed_vars || %narrowed_accessors) {
+        return $self->{_early_return_cache}{$cache_key} = $env;
+    }
 
     # Record narrowed variables/accessors for LSP visibility (once per statement)
     my $stmt_id = Scalar::Util::refaddr($stmt);
@@ -548,7 +552,7 @@ sub scan_early_returns ($self, $env, $node) {
         $new_env->{narrowed_accessors} = \%acc;
     }
 
-    $new_env;
+    return $self->{_early_return_cache}{$cache_key} = $new_env;
 }
 
 # Check if statement children match: return [exprs] unless defined $var [;]
@@ -632,6 +636,163 @@ sub _early_return_accessor ($self, $children) {
         }
     }
     undef;
+}
+
+sub _statement_early_return_narrowed_vars ($self, $stmt, $env) {
+    my %narrowed;
+    my @children = $stmt->schildren;
+    if ($self->_is_early_return_unless_defined(\@children)) {
+        my $var_name = $self->_early_return_var(\@children);
+        if ($var_name) {
+            my $var_type = $env->{variables}{$var_name};
+            my $n = $self->remove_undef_from_type($var_type);
+            $narrowed{$var_name} = $n if $n;
+        }
+    }
+
+    if ($stmt->isa('PPI::Statement::Compound')) {
+        my %compound = $self->_compound_fallthrough_narrowed_vars($stmt, $env)->%*;
+        $narrowed{$_} //= $compound{$_} for keys %compound;
+    }
+
+    return +{ %narrowed };
+}
+
+sub _statement_early_return_narrowed_accessors ($self, $stmt, $env) {
+    my %narrowed;
+    my @children = $stmt->schildren;
+    if ($self->_is_early_return_unless_defined(\@children)) {
+        my $accessor = $self->_early_return_accessor(\@children);
+        if ($accessor && @{$accessor->{chain}} == 1) {
+            my $vname = $accessor->{var_name};
+            my $field = $accessor->{chain}[0];
+            my $field_type = $self->resolve_accessor_type($env, $vname, $field);
+            if ($field_type) {
+                my $n = $self->remove_undef_from_type($field_type);
+                if ($n) {
+                    $narrowed{"$vname\0$field"} = +{
+                        var_name => $vname,
+                        accessor => $field,
+                        type     => $n,
+                    };
+                }
+            }
+        }
+    }
+
+    if ($stmt->isa('PPI::Statement::Compound')) {
+        my %compound = $self->_compound_fallthrough_narrowed_accessors($stmt, $env)->%*;
+        $narrowed{$_} //= $compound{$_} for keys %compound;
+    }
+
+    return +{ %narrowed };
+}
+
+sub _compound_fallthrough_narrowed_vars ($self, $compound, $env) {
+    my ($condition) = grep { $_->isa('PPI::Structure::Condition') } $compound->schildren;
+    return +{} unless $condition;
+
+    my @blocks = grep { $_->isa('PPI::Structure::Block') } $compound->schildren;
+    return +{} unless @blocks >= 2;
+
+    my ($return_idx, $flow_idx) = $self->_compound_return_and_flow_indices(@blocks);
+    return +{} unless defined $return_idx && defined $flow_idx;
+
+    my @cond_children = $condition->schildren;
+    my $expr = $cond_children[0];
+    @cond_children = $expr->schildren if $expr && $expr->isa('PPI::Statement::Expression');
+
+    my (%narrowing, $rule);
+    for my $candidate (
+        [defined    => sub { $self->_narrow_defined(\@cond_children, $env) }],
+        [isa        => sub { $self->_narrow_isa(\@cond_children, $env) }],
+        [ref        => sub { $self->_narrow_ref(\@cond_children, $env) }],
+        [truthiness => sub { $self->_narrow_truthiness(\@cond_children, $env) }],
+    ) {
+        my ($name, $cb) = @$candidate;
+        my %try = $cb->()->%*;
+        next unless %try;
+        %narrowing = %try;
+        $rule = $name;
+        last;
+    }
+    return +{} unless $rule;
+
+    my ($keyword) = grep { $_->isa('PPI::Token::Word') } $compound->schildren;
+    my $is_unless = $keyword && $keyword->content eq 'unless';
+    my $apply_direct = $is_unless ? ($flow_idx > 0) : ($flow_idx == 0);
+    if ($rule eq 'ref' && ($narrowing{_ref_op} // '') eq 'ne') {
+        $apply_direct = !$apply_direct;
+    }
+    delete $narrowing{_ref_op};
+
+    return +{ %narrowing } if $apply_direct;
+
+    my %applied;
+    for my $var_name (keys %narrowing) {
+        my $original = $env->{variables}{$var_name};
+        my %inv = $self->_inverse_narrowing($rule, $var_name, $original)->%*;
+        $applied{$_} = $inv{$_} for keys %inv;
+    }
+    return +{ %applied };
+}
+
+sub _compound_fallthrough_narrowed_accessors ($self, $compound, $env) {
+    my ($condition) = grep { $_->isa('PPI::Structure::Condition') } $compound->schildren;
+    return +{} unless $condition;
+
+    my @blocks = grep { $_->isa('PPI::Structure::Block') } $compound->schildren;
+    return +{} unless @blocks >= 2;
+
+    my ($return_idx, $flow_idx) = $self->_compound_return_and_flow_indices(@blocks);
+    return +{} unless defined $return_idx && defined $flow_idx;
+
+    my @cond_children = $condition->schildren;
+    my $expr = $cond_children[0];
+    @cond_children = $expr->schildren if $expr && $expr->isa('PPI::Statement::Expression');
+    my $accessor = $self->extract_defined_accessor(\@cond_children) // return +{};
+    return +{} unless @{$accessor->{chain}} == 1;
+
+    my ($keyword) = grep { $_->isa('PPI::Token::Word') } $compound->schildren;
+    my $is_unless = $keyword && $keyword->content eq 'unless';
+    my $apply_direct = $is_unless ? ($flow_idx > 0) : ($flow_idx == 0);
+    return +{} unless $apply_direct;
+
+    my $vname = $accessor->{var_name};
+    my $field = $accessor->{chain}[0];
+    my $field_type = $self->resolve_accessor_type($env, $vname, $field);
+    return +{} unless $field_type;
+    my $n = $self->remove_undef_from_type($field_type);
+    return +{} unless $n;
+
+    return +{
+        "$vname\0$field" => +{
+            var_name => $vname,
+            accessor => $field,
+            type     => $n,
+        },
+    };
+}
+
+sub _compound_return_and_flow_indices ($self, @blocks) {
+    my ($return_idx, $flow_idx);
+    for my $i (0 .. $#blocks) {
+        if ($self->_block_is_immediate_return($blocks[$i])) {
+            $return_idx = $i;
+        } elsif (!defined $flow_idx) {
+            $flow_idx = $i;
+        }
+    }
+    return ($return_idx, $flow_idx);
+}
+
+sub _block_is_immediate_return ($self, $block) {
+    my @stmts = grep { $_->isa('PPI::Statement') } $block->schildren;
+    return 0 unless @stmts == 1;
+    my @children = $stmts[0]->schildren;
+    return 0 unless @children;
+    return $children[0]->isa('PPI::Token::Word')
+        && $children[0]->content eq 'return';
 }
 
 # ── Accessor Narrowing Collection ────────────────

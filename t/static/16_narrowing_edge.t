@@ -89,6 +89,78 @@ PERL
     is scalar @$errs, 0, 'truthiness narrows Maybe[Str] to Str';
 };
 
+# ── Widening after branch exit ──────────────────
+
+subtest 'defined narrowing does not leak past branch end' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub takes_str :sig((Str) -> Void) ($x) { }
+sub check :sig((Maybe[Str]) -> Void) ($x) {
+    if (defined($x)) {
+        takes_str($x);
+    }
+    takes_str($x);
+}
+PERL
+
+    is scalar @$errs, 1, 'one error after branch exit';
+    like $errs->[0]{message}, qr/Argument 1.*takes_str.*Str/, 'value is widened again after leaving the branch';
+};
+
+subtest 'unless else branch narrowing does not leak into following flat scope' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub takes_str :sig((Str) -> Void) ($x) { }
+sub check :sig((Maybe[Str]) -> Void) ($x) {
+    unless (defined($x)) {
+        return;
+    } else {
+        takes_str($x);
+    }
+    takes_str($x);
+}
+PERL
+
+    is scalar @$errs, 0, 'early return preserves narrowing in following flat scope';
+};
+
+# ── Early return flat-scope behavior ────────────
+
+subtest 'early return narrowing applies after nested branch' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub takes_str :sig((Str) -> Str) ($x) { $x }
+sub check :sig((Maybe[Str], Bool) -> Str) ($x, $flag) {
+    return "none" unless defined $x;
+    if ($flag) {
+        my $y :sig(Str) = $x;
+    }
+    return takes_str($x);
+}
+PERL
+
+    is scalar @$errs, 0, 'early return narrowing survives through later flat scope';
+};
+
+subtest 'branch-local narrowing does not survive sibling branch' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub takes_str :sig((Str) -> Void) ($x) { }
+sub check :sig((Maybe[Str], Bool) -> Void) ($x, $flag) {
+    if (defined($x)) {
+        takes_str($x);
+    }
+    if ($flag) {
+        return;
+    }
+    takes_str($x);
+}
+PERL
+
+    is scalar @$errs, 1, 'one error after sibling branch merge';
+    like $errs->[0]{message}, qr/Argument 1.*takes_str.*Str/, 'branch-local narrowing is widened at merge point';
+};
+
 # ── NarrowingEngine unit tests ─────────────────
 
 subtest 'remove_undef_from_type' => sub {

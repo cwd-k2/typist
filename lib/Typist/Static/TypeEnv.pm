@@ -26,9 +26,16 @@ sub new ($class, %args) {
         _local_var_types => +{},
         _infer_log       => [],
         _fn_env_cache    => +{},
+        _fn_template_cache => +{},
         _node_env_cache  => +{},
         _resolve_cache   => +{},
         _parsed_generics_cache => +{},
+        _infer_value_cache => +{},
+        _infer_list_cache  => +{},
+        _anon_param_env_cache => +{},
+        _loop_env_cache => +{},
+        _loop_ancestor_cache => +{},
+        _loop_elem_cache => +{},
     }, $class;
 }
 
@@ -49,6 +56,12 @@ sub build ($self) {
     $self->{env} = $self->_build_env;
     $self->{_fn_env_cache} = +{};
     $self->{_node_env_cache} = +{};
+    $self->{_infer_value_cache} = +{};
+    $self->{_infer_list_cache} = +{};
+    $self->{_anon_param_env_cache} = +{};
+    $self->{_loop_env_cache} = +{};
+    $self->{_loop_ancestor_cache} = +{};
+    $self->{_loop_elem_cache} = +{};
     $self->_collect_loop_var_types;
     $self->_collect_local_var_types;
     $self->{narrowing}->collect_accessor_narrowings($self->{ppi_doc});
@@ -83,11 +96,28 @@ sub resolve_type ($self, $expr) {
 sub fn_env ($self, $fn) {
     my $base = $self->{env};
     my $names  = $fn->{param_names}  // [];
-    my $exprs  = $fn->{params_expr}  // [];
 
     return $base unless @$names;
+    my $template = $self->_fn_template($fn);
+    my %vars = $self->_apply_fn_bindings($base->{variables}, $fn, $template);
 
-    # Build bound map for generic type variables: T => Num, etc.
+    +{
+        variables => \%vars,
+        functions => $base->{functions},
+        known     => $base->{known},
+        registry  => $base->{registry},
+        package   => $base->{package},
+    };
+}
+
+sub _fn_template ($self, $fn) {
+    my $cache_key = refaddr($fn);
+    if ($cache_key && exists $self->{_fn_template_cache}{$cache_key}) {
+        return $self->{_fn_template_cache}{$cache_key};
+    }
+
+    my $exprs = $fn->{params_expr} // [];
+    my $names = $fn->{param_names} // [];
     my %bound_map;
     if ($fn->{generics} && $fn->{generics}->@*) {
         my @generics = $self->_parse_generics($fn->{generics});
@@ -98,28 +128,36 @@ sub fn_env ($self, $fn) {
         }
     }
 
-    # Shallow copy variables hash and add parameter bindings
-    my %vars = $base->{variables}->%*;
+    my @param_bindings;
     for my $i (0 .. $#$names) {
         my $expr = $exprs->[$i] // next;
         my $type = $self->resolve_type($expr);
-        # For type variables with bounds, substitute the bound type for body checking
         if ($type && $type->is_var && $bound_map{$type->name}) {
             $type = $bound_map{$type->name};
         } elsif (!$type && $bound_map{$expr}) {
             $type = $bound_map{$expr};
         }
         next unless $type;
-        $vars{$names->[$i]} = $type;
+        push @param_bindings, [$names->[$i], $type];
     }
 
-    +{
-        variables => \%vars,
-        functions => $base->{functions},
-        known     => $base->{known},
-        registry  => $base->{registry},
-        package   => $base->{package},
+    my $template = +{
+        params_expr => $exprs,
+        bound_map   => \%bound_map,
+        param_bindings => \@param_bindings,
     };
+    $self->{_fn_template_cache}{$cache_key} = $template if $cache_key;
+    return $template;
+}
+
+sub _apply_fn_bindings ($self, $variables, $fn, $template = undef) {
+    my %vars = $variables->%*;
+    $template //= $self->_fn_template($fn);
+    for my $binding ($template->{param_bindings}->@*) {
+        my ($name, $type) = @$binding;
+        $vars{$name} = $type;
+    }
+    return %vars;
 }
 
 # Determine the appropriate env for a PPI node.
@@ -232,59 +270,22 @@ sub _build_env ($self) {
 
         # List assignment: use cached RHS type and distribute by position
         if (defined $var->{list_position}) {
-            my $addr = refaddr($init_node);
-            $list_rhs_cache{$addr} //=
-                _distribute_list_type(
-                    Typist::Static::Infer->infer_list_rhs_type($init_node, $infer_env),
-                    $var->{list_count},
-                );
-            my $inferred = $list_rhs_cache{$addr}[$var->{list_position}];
-
-            my $status = !defined $inferred  ? 'undef'
-                       : ($inferred->is_atom && $inferred->name eq 'Any') ? 'Any_skip'
-                       : 'ok';
-            my $widened = ($status eq 'ok') ? _widen_literal($inferred) : $inferred;
-            unless ($inside_fn) {
-                push $self->{_infer_log}->@*, +{
-                    name   => $var->{name}, line => $var->{line},
-                    type   => $widened ? $widened->to_string : undef,
-                    status => $status,
-                    scope  => 'top',
-                };
-            }
+            my ($inferred, $status, $widened) = $self->_infer_list_binding(
+                \%list_rhs_cache, $init_node, $infer_env, $var->{list_count}, $var->{list_position},
+            );
+            $self->_record_infer_log($var->{name}, $var->{line}, $widened, $status, 'top')
+                unless $inside_fn;
             if (defined $inferred && !($inferred->is_atom && $inferred->name eq 'Any')) {
                 $variables{$var->{name}} = $widened;
             }
             next;
         }
 
-        # Hash variable with literal init: my %h = (k => v, ...)
-        my $inferred;
-        if ($var->{name} =~ /\A%/ && $init_node
-            && $init_node->isa('PPI::Structure::List'))
-        {
-            $inferred = _infer_hash_literal_type($init_node, $infer_env);
-        }
-        # Array variable with list init: my @arr = (elem, ...)
-        if (!$inferred && $var->{name} =~ /\A\@/ && $init_node
-            && $init_node->isa('PPI::Structure::List'))
-        {
-            $inferred = _infer_array_literal_type($init_node, $infer_env);
-        }
-        $inferred //= Typist::Static::Infer->infer_expr_with_siblings($init_node, $infer_env);
-
-        my $status = !defined $inferred  ? 'undef'
-                   : ($inferred->is_atom && $inferred->name eq 'Any') ? 'Any_skip'
-                   : 'ok';
-        my $widened = ($status eq 'ok') ? _widen_literal($inferred) : $inferred;
-        unless ($inside_fn) {
-            push $self->{_infer_log}->@*, +{
-                name   => $var->{name}, line => $var->{line},
-                type   => $widened ? $widened->to_string : undef,
-                status => $status,
-                scope  => 'top',
-            };
-        }
+        my ($inferred, $status, $widened) = $self->_infer_unannotated_value(
+            $var->{name}, $init_node, $infer_env,
+        );
+        $self->_record_infer_log($var->{name}, $var->{line}, $widened, $status, 'top')
+            unless $inside_fn;
 
         next unless defined $inferred;
         next if $inferred->is_atom && $inferred->name eq 'Any';
@@ -302,15 +303,7 @@ sub _scoped_env ($self, $base_env, $node) {
         if ($parent->isa('PPI::Statement::Sub') && $parent->name) {
             my $fn = $self->{extracted}{functions}{$parent->name};
             if ($fn && $fn->{param_names} && @{$fn->{param_names}}) {
-                my %vars = $base_env->{variables}->%*;
-                my $names = $fn->{param_names};
-                my $exprs = $fn->{params_expr} // [];
-                for my $i (0 .. $#$names) {
-                    my $expr = $exprs->[$i] // next;
-                    my $type = $self->resolve_type($expr);
-                    next unless $type;
-                    $vars{$names->[$i]} = $type;
-                }
+                my %vars = $self->_apply_fn_bindings($base_env->{variables}, $fn);
                 return +{ %$base_env, variables => \%vars };
             }
             last;
@@ -376,29 +369,18 @@ sub _env_for_loop_list ($self, $node) {
 # Walk ancestors to detect enclosing for/foreach loops and inject loop
 # variable types into the env.
 sub _inject_loop_vars ($self, $env, $node) {
-    my @loop_vars;    # collect from outermost to innermost
-
-    my $ancestor = $node;
-    while ($ancestor = $ancestor->parent) {
-        next unless $ancestor->isa('PPI::Structure::Block');
-
-        my $compound = $ancestor->parent;
-        next unless $compound && $compound->isa('PPI::Statement::Compound');
-
-        my $parsed = Typist::Static::Extractor->parse_loop_compound($compound)
-            // next;
-
-        # Verify the block matches the ancestor
-        next unless $parsed->{block} == $ancestor;
-
-        unshift @loop_vars, $parsed;
+    my $cache_key = join "\0", refaddr($env), refaddr($node);
+    if (exists $self->{_loop_env_cache}{$cache_key}) {
+        return $self->{_loop_env_cache}{$cache_key};
     }
 
-    return $env unless @loop_vars;
+    my @loop_vars = $self->_loop_ancestors_for_node($node);
+
+    return $self->{_loop_env_cache}{$cache_key} = $env unless @loop_vars;
 
     my %new_vars = $env->{variables}->%*;
     for my $lv (@loop_vars) {
-        my $elem_type = Typist::Static::Infer->infer_iterable_element_type($lv->{list}, $env);
+        my $elem_type = $self->_loop_element_type($lv->{list}, $env);
         if ($elem_type) {
             $new_vars{$lv->{var_sym}->content} = $elem_type;
 
@@ -415,7 +397,7 @@ sub _inject_loop_vars ($self, $env, $node) {
         }
     }
 
-    +{ %$env, variables => \%new_vars };
+    return $self->{_loop_env_cache}{$cache_key} = +{ %$env, variables => \%new_vars };
 }
 
 # ── Variable Collection ──────────────────────────
@@ -432,7 +414,7 @@ sub _collect_loop_var_types ($self) {
         # Use function-scoped env if loop is inside a function body
         my $env = $self->_env_for_loop_list($list_node);
 
-        my $elem_type = Typist::Static::Infer->infer_iterable_element_type($list_node, $env);
+        my $elem_type = $self->_loop_element_type($list_node, $env);
         next unless $elem_type;
 
         my $block_last = $block_node->last_token;
@@ -446,6 +428,38 @@ sub _collect_loop_var_types ($self) {
             scope_end   => $lv->{scope_end},
         };
     }
+}
+
+sub _loop_ancestors_for_node ($self, $node) {
+    my $cache_key = refaddr($node);
+    if (exists $self->{_loop_ancestor_cache}{$cache_key}) {
+        return $self->{_loop_ancestor_cache}{$cache_key}->@*;
+    }
+
+    my @loop_vars;
+    my $ancestor = $node;
+    while ($ancestor = $ancestor->parent) {
+        next unless $ancestor->isa('PPI::Structure::Block');
+
+        my $compound = $ancestor->parent;
+        next unless $compound && $compound->isa('PPI::Statement::Compound');
+
+        my $parsed = Typist::Static::Extractor->parse_loop_compound($compound)
+            // next;
+        next unless $parsed->{block} == $ancestor;
+        unshift @loop_vars, $parsed;
+    }
+
+    $self->{_loop_ancestor_cache}{$cache_key} = \@loop_vars;
+    return @loop_vars;
+}
+
+sub _loop_element_type ($self, $list_node, $env) {
+    my $cache_key = join "\0", refaddr($list_node), refaddr($env);
+    return $self->{_loop_elem_cache}{$cache_key}
+        if exists $self->{_loop_elem_cache}{$cache_key};
+    return $self->{_loop_elem_cache}{$cache_key}
+        = Typist::Static::Infer->infer_iterable_element_type($list_node, $env);
 }
 
 # Walk each function body to find unannotated `my $var = EXPR` declarations
@@ -501,34 +515,14 @@ sub _collect_local_var_types ($self) {
 
             # List assignment: my ($a, $b) = expr
             if (@list_syms && $init_node) {
-                my $env = $self->fn_env($fn);
-                $env = $self->_inject_loop_vars($env, $init_node);
-                $env = $self->_inject_anon_sub_params($env, $stmt, $block, $fn);
-                if (keys $self->{_local_var_types}->%*) {
-                    my %vars = $env->{variables}->%*;
-                    for my $lv (values $self->{_local_var_types}->%*) {
-                        next unless $lv->{scope_start} == $fn->{line};
-                        $vars{$lv->{name}} //= $lv->{type};
-                    }
-                    $env = +{ $env->%*, variables => \%vars };
-                }
-                my $distributed = _distribute_list_type(
-                    Typist::Static::Infer->infer_list_rhs_type($init_node, $env),
-                    scalar @list_syms,
-                );
+                my $env = $self->_local_infer_env($fn, $stmt, $block, $init_node);
+                my %list_rhs_cache;
                 for my $pos (0 .. $#list_syms) {
                     my $sym = $list_syms[$pos];
-                    my $inferred = $distributed->[$pos];
-                    my $status = !defined $inferred  ? 'undef'
-                               : ($inferred->is_atom && $inferred->name eq 'Any') ? 'Any_skip'
-                               : 'ok';
-                    my $widened = ($status eq 'ok') ? _widen_literal($inferred) : $inferred;
-                    push $self->{_infer_log}->@*, +{
-                        name   => $sym->content, line => $sym->line_number,
-                        type   => $widened ? $widened->to_string : undef,
-                        status => $status,
-                        scope  => "fn:$fn_name",
-                    };
+                    my ($inferred, $status, $widened) = $self->_infer_list_binding(
+                        \%list_rhs_cache, $init_node, $env, scalar @list_syms, $pos,
+                    );
+                    $self->_record_infer_log($sym->content, $sym->line_number, $widened, $status, "fn:$fn_name");
                     next unless defined $inferred;
                     next if $inferred->is_atom && $inferred->name eq 'Any';
 
@@ -547,46 +541,12 @@ sub _collect_local_var_types ($self) {
 
             next unless $var_name && $init_node;
 
-            # Use function-scoped env (includes parameter bindings)
-            my $env = $self->fn_env($fn);
-            $env = $self->_inject_loop_vars($env, $init_node);
-            $env = $self->_inject_anon_sub_params($env, $stmt, $block, $fn);
+            my $env = $self->_local_infer_env($fn, $stmt, $block, $init_node);
 
-            # Inject previously collected local var types
-            if (keys $self->{_local_var_types}->%*) {
-                my %vars = $env->{variables}->%*;
-                for my $lv (values $self->{_local_var_types}->%*) {
-                    next unless $lv->{scope_start} == $fn->{line};
-                    $vars{$lv->{name}} //= $lv->{type};
-                }
-                $env = +{ $env->%*, variables => \%vars };
-            }
-
-            # Hash variable with literal init: my %h = (k => v, ...)
-            my $inferred;
-            if ($var_name =~ /\A%/ && $init_node
-                && $init_node->isa('PPI::Structure::List'))
-            {
-                $inferred = _infer_hash_literal_type($init_node, $env);
-            }
-            # Array variable with list init: my @arr = (elem, ...)
-            if (!$inferred && $var_name =~ /\A\@/ && $init_node
-                && $init_node->isa('PPI::Structure::List'))
-            {
-                $inferred = _infer_array_literal_type($init_node, $env);
-            }
-            $inferred //= Typist::Static::Infer->infer_expr_with_siblings($init_node, $env);
-
-            my $status = !defined $inferred  ? 'undef'
-                       : ($inferred->is_atom && $inferred->name eq 'Any') ? 'Any_skip'
-                       : 'ok';
-            my $widened = ($status eq 'ok') ? _widen_literal($inferred) : $inferred;
-            push $self->{_infer_log}->@*, +{
-                name   => $var_name, line => $var_sym->line_number,
-                type   => $widened ? $widened->to_string : undef,
-                status => $status,
-                scope  => "fn:$fn_name",
-            };
+            my ($inferred, $status, $widened) = $self->_infer_unannotated_value(
+                $var_name, $init_node, $env,
+            );
+            $self->_record_infer_log($var_name, $var_sym->line_number, $widened, $status, "fn:$fn_name");
 
             next unless defined $inferred;
             next if $inferred->is_atom && $inferred->name eq 'Any';
@@ -602,6 +562,73 @@ sub _collect_local_var_types ($self) {
             };
         }
     }
+}
+
+sub _local_infer_env ($self, $fn, $stmt, $block, $node) {
+    my $env = $self->fn_env($fn);
+    $env = $self->_inject_loop_vars($env, $node);
+    $env = $self->_inject_anon_sub_params($env, $stmt, $block, $fn);
+    return $self->_inject_local_var_types($env, $fn->{line});
+}
+
+sub _inject_local_var_types ($self, $env, $scope_start) {
+    return $env unless keys $self->{_local_var_types}->%*;
+
+    my %vars = $env->{variables}->%*;
+    for my $lv (values $self->{_local_var_types}->%*) {
+        next unless $lv->{scope_start} == $scope_start;
+        $vars{$lv->{name}} //= $lv->{type};
+    }
+    return +{ $env->%*, variables => \%vars };
+}
+
+sub _infer_list_binding ($self, $cache, $init_node, $env, $count, $position) {
+    my $cache_key = join "\0", refaddr($init_node), refaddr($env), $count;
+    $cache->{$cache_key} //=
+        $self->{_infer_list_cache}{$cache_key}
+        //= _distribute_list_type(
+            Typist::Static::Infer->infer_list_rhs_type($init_node, $env),
+            $count,
+        );
+    my $inferred = $cache->{$cache_key}[$position];
+    my $status = !defined $inferred  ? 'undef'
+               : ($inferred->is_atom && $inferred->name eq 'Any') ? 'Any_skip'
+               : 'ok';
+    my $widened = ($status eq 'ok') ? _widen_literal($inferred) : $inferred;
+    return ($inferred, $status, $widened);
+}
+
+sub _infer_unannotated_value ($self, $var_name, $init_node, $env) {
+    my $cache_key = join "\0", $var_name, refaddr($init_node), refaddr($env);
+    if (exists $self->{_infer_value_cache}{$cache_key}) {
+        return $self->{_infer_value_cache}{$cache_key}->@*;
+    }
+
+    my $inferred;
+    if ($var_name =~ /\A%/ && $init_node && $init_node->isa('PPI::Structure::List')) {
+        $inferred = _infer_hash_literal_type($init_node, $env);
+    }
+    if (!$inferred && $var_name =~ /\A\@/ && $init_node && $init_node->isa('PPI::Structure::List')) {
+        $inferred = _infer_array_literal_type($init_node, $env);
+    }
+    $inferred //= Typist::Static::Infer->infer_expr_with_siblings($init_node, $env);
+
+    my $status = !defined $inferred  ? 'undef'
+               : ($inferred->is_atom && $inferred->name eq 'Any') ? 'Any_skip'
+               : 'ok';
+    my $widened = ($status eq 'ok') ? _widen_literal($inferred) : $inferred;
+    $self->{_infer_value_cache}{$cache_key} = [$inferred, $status, $widened];
+    return ($inferred, $status, $widened);
+}
+
+sub _record_infer_log ($self, $name, $line, $widened, $status, $scope) {
+    push $self->{_infer_log}->@*, +{
+        name   => $name,
+        line   => $line,
+        type   => $widened ? $widened->to_string : undef,
+        status => $status,
+        scope  => $scope,
+    };
 }
 
 # ── Pure Helpers ─────────────────────────────────
@@ -727,6 +754,11 @@ sub _infer_hash_literal_type ($list_node, $env) {
 # patterns:  match arms, HOF callbacks, and return closures.
 
 sub _inject_anon_sub_params ($self, $env, $node, $fn_block, $fn) {
+    my $cache_key = join "\0", refaddr($env), refaddr($node), refaddr($fn_block);
+    if (exists $self->{_anon_param_env_cache}{$cache_key}) {
+        return $self->{_anon_param_env_cache}{$cache_key};
+    }
+
     my $ancestor = $node->parent;
     while ($ancestor && $ancestor != $fn_block) {
         if ($ancestor->isa('PPI::Structure::Block')) {
@@ -749,7 +781,7 @@ sub _inject_anon_sub_params ($self, $env, $node, $fn_block, $fn) {
         }
         $ancestor = $ancestor->parent;
     }
-    $env;
+    return $self->{_anon_param_env_cache}{$cache_key} = $env;
 }
 
 # Determine parameter types for an anonymous sub from its calling context.
