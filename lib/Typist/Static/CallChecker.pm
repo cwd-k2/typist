@@ -888,17 +888,19 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
     for my $i (0 .. $n - 1) {
         my $concrete = Typist::Static::Unify->substitute($param_types[$i], $bindings);
         next if $self->_has_type_var($concrete);
-        next if _contains_any($arg_types[$i]);
-        unless (Typist::Subtype->is_subtype($arg_types[$i], $concrete, registry => $self->{registry})) {
+        my $inferred = Typist::Static::Infer->infer_expr($args->[$i], $env, $concrete)
+            // $arg_types[$i];
+        next if _contains_any($inferred);
+        unless (Typist::Subtype->is_subtype($inferred, $concrete, registry => $self->{registry})) {
             $self->{errors}->collect(
                 kind          => 'TypeMismatch',
-                message       => "Argument " . ($i + 1) . " of $name(): cannot pass ${\$arg_types[$i]->to_string} as ${\$concrete->to_string}",
+                message       => "Argument " . ($i + 1) . " of $name(): cannot pass ${\$inferred->to_string} as ${\$concrete->to_string}",
                 file          => $self->{file},
                 line          => $word->line_number,
                 col           => $word->column_number,
                 end_col       => $word->column_number + length($word->content),
                 expected_type => $concrete->to_string,
-                actual_type   => $arg_types[$i]->to_string,
+                actual_type   => $inferred->to_string,
             );
         }
     }

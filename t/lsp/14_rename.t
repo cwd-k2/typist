@@ -136,6 +136,59 @@ PERL
     ok $edit->{changes}{"file://$dir/lib/Helper.pm"}, 'has closed workspace file edit';
 };
 
+subtest 'rename excludes similarly-prefixed names in closed workspace files' => sub {
+    my $dir = tempdir(CLEANUP => 1);
+    make_path("$dir/lib");
+
+    open my $fh1, '>', "$dir/lib/Helper.pm" or die;
+    print $fh1 <<'PERL';
+package Helper;
+use v5.40;
+sub helper :sig((Int) -> Int) ($n) { $n + 1 }
+1;
+PERL
+    close $fh1;
+
+    open my $fh2, '>', "$dir/lib/Other.pm" or die;
+    print $fh2 <<'PERL';
+package Other;
+use v5.40;
+sub helper_extra :sig((Int) -> Int) ($n) { $n + 2 }
+1;
+PERL
+    close $fh2;
+
+    my $source = <<'PERL';
+package App;
+use v5.40;
+use Helper;
+my $y = helper(10);
+PERL
+
+    my @results = run_session(
+        lsp_request(1, 'initialize', +{ rootUri => "file://$dir" }),
+        lsp_notification('initialized'),
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///app.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/rename', +{
+            textDocument => +{ uri => 'file:///app.pm' },
+            position => +{ line => 3, character => 8 },
+            newName  => 'assist',
+        }),
+        lsp_request(99, 'shutdown'),
+        lsp_notification('exit'),
+    );
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got rename response';
+    my $edit = $resp->{result};
+    ok $edit && $edit->{changes}, 'has changes';
+    ok $edit->{changes}{'file:///app.pm'}, 'renames open-file occurrence';
+    ok $edit->{changes}{"file://$dir/lib/Helper.pm"}, 'renames exact closed-file match';
+    ok !$edit->{changes}{"file://$dir/lib/Other.pm"}, 'does not rename similarly-prefixed closed-file symbol';
+};
+
 # ── Rename returns null for unknown position ─────
 
 subtest 'rename returns null when cursor is on whitespace' => sub {

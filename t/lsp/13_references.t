@@ -176,6 +176,60 @@ PERL
     ok $uris{"file://$dir/lib/Helper.pm"}, 'found closed workspace file reference';
 };
 
+subtest 'references excludes similarly-prefixed names in closed workspace files' => sub {
+    my $dir = tempdir(CLEANUP => 1);
+    make_path("$dir/lib");
+
+    open my $fh1, '>', "$dir/lib/Helper.pm" or die;
+    print $fh1 <<'PERL';
+package Helper;
+use v5.40;
+sub helper :sig((Int) -> Int) ($n) { $n + 1 }
+1;
+PERL
+    close $fh1;
+
+    open my $fh2, '>', "$dir/lib/Other.pm" or die;
+    print $fh2 <<'PERL';
+package Other;
+use v5.40;
+sub helper_extra :sig((Int) -> Int) ($n) { $n + 2 }
+1;
+PERL
+    close $fh2;
+
+    my $source = <<'PERL';
+package App;
+use v5.40;
+use Helper;
+my $y = helper(10);
+PERL
+
+    my @results = run_session(
+        lsp_request(1, 'initialize', +{ rootUri => "file://$dir" }),
+        lsp_notification('initialized'),
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///app.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/references', +{
+            textDocument => +{ uri => 'file:///app.pm' },
+            position => +{ line => 3, character => 8 },
+        }),
+        lsp_request(99, 'shutdown'),
+        lsp_notification('exit'),
+    );
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got references response';
+    my $locs = $resp->{result};
+    ok $locs && @$locs >= 2, 'found references for helper';
+
+    my %uris = map { $_->{uri} => 1 } @$locs;
+    ok $uris{'file:///app.pm'}, 'includes open file';
+    ok $uris{"file://$dir/lib/Helper.pm"}, 'includes exact closed-file match';
+    ok !$uris{"file://$dir/lib/Other.pm"}, 'excludes similarly-prefixed closed-file symbol';
+};
+
 # ── Word boundary precision ─────────────────────
 
 subtest 'references respects word boundaries' => sub {

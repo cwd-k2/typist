@@ -89,6 +89,11 @@ sub _collect_special_words ($class, $doc, $result) {
     my %found;
     my @call_words;
     my %known_locals = map { $_ => 1 } keys $result->{functions}->%*;
+    my %known_declares = map {
+        my $name = $_;
+        $name =~ s/\A.+:://;
+        $name => 1;
+    } keys $result->{declares}->%*;
     my $words = $doc->find('PPI::Token::Word') || [];
     $result->{word_tokens} = $words;
     for my $word (@$words) {
@@ -107,6 +112,7 @@ sub _collect_special_words ($class, $doc, $result) {
         my $next = $word->snext_sibling // next;
         next unless ref($next) && $next->isa('PPI::Structure::List');
         next unless $known_locals{$name}
+            || $known_declares{$name}
             || $wanted{$name}
             || $name =~ /::/
             || $name =~ /\A[A-Z]\w*\z/;

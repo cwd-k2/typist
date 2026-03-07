@@ -165,4 +165,69 @@ subtest 'didSave updates workspace index' => sub {
     ok $server->{workspace}->registry->has_alias('Score'), 'Score registered via save';
 };
 
+subtest 'transitive signature change re-diagnoses downstream chain only' => sub {
+    my $dir = tempdir(CLEANUP => 1);
+    my $server = _setup_server_docs($dir,
+        +{
+            uri  => 'file:///doc_a.pm',
+            text => "package A;\nuse v5.40;\nsub foo :sig((Int) -> Int) (\$x) { \$x }\n",
+        },
+        +{
+            uri  => 'file:///doc_b.pm',
+            text => "package B;\nuse v5.40;\nuse A;\nsub bar :sig((Int) -> Int) (\$x) { foo(\$x) }\n",
+        },
+        +{
+            uri  => 'file:///doc_c.pm',
+            text => "package C;\nuse v5.40;\nuse B;\nsub baz :sig((Int) -> Int) (\$x) { bar(\$x) }\n",
+        },
+        +{
+            uri  => 'file:///doc_d.pm',
+            text => "package D;\nuse v5.40;\nsub qux :sig((Str) -> Str) (\$x) { \$x }\n",
+        },
+    );
+
+    $server->_handle_did_save(+{
+        textDocument => +{ uri => 'file:///doc_a.pm' },
+        text => "package A;\nuse v5.40;\nsub foo :sig((Int) -> Str) (\$x) { \"\$x\" }\n",
+    });
+
+    my @diag_msgs = grep { $_->{method} eq 'textDocument/publishDiagnostics' } @sent;
+    my %seen_uris = map { $_->{params}{uri} => 1 } @diag_msgs;
+
+    ok $seen_uris{'file:///doc_a.pm'}, 'changed file re-diagnosed';
+    ok $seen_uris{'file:///doc_b.pm'}, 'direct dependent re-diagnosed';
+    ok $seen_uris{'file:///doc_c.pm'}, 'transitive dependent re-diagnosed';
+    ok !$seen_uris{'file:///doc_d.pm'}, 'unrelated file not re-diagnosed';
+};
+
+subtest 'transitive body-only change does not re-diagnose downstream chain' => sub {
+    my $dir = tempdir(CLEANUP => 1);
+    my $server = _setup_server_docs($dir,
+        +{
+            uri  => 'file:///doc_a.pm',
+            text => "package A;\nuse v5.40;\nsub foo :sig((Int) -> Int) (\$x) { \$x }\n",
+        },
+        +{
+            uri  => 'file:///doc_b.pm',
+            text => "package B;\nuse v5.40;\nuse A;\nsub bar :sig((Int) -> Int) (\$x) { foo(\$x) }\n",
+        },
+        +{
+            uri  => 'file:///doc_c.pm',
+            text => "package C;\nuse v5.40;\nuse B;\nsub baz :sig((Int) -> Int) (\$x) { bar(\$x) }\n",
+        },
+    );
+
+    $server->_handle_did_save(+{
+        textDocument => +{ uri => 'file:///doc_a.pm' },
+        text => "package A;\nuse v5.40;\nsub foo :sig((Int) -> Int) (\$x) { \$x + 1 }\n",
+    });
+
+    my @diag_msgs = grep { $_->{method} eq 'textDocument/publishDiagnostics' } @sent;
+    my %seen_uris = map { $_->{params}{uri} => 1 } @diag_msgs;
+
+    ok $seen_uris{'file:///doc_a.pm'}, 'saved file re-diagnosed';
+    ok !$seen_uris{'file:///doc_b.pm'}, 'direct dependent not re-diagnosed for body-only change';
+    ok !$seen_uris{'file:///doc_c.pm'}, 'transitive dependent not re-diagnosed for body-only change';
+};
+
 done_testing;

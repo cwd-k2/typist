@@ -36,6 +36,7 @@ sub new ($class, %args) {
         _loop_env_cache => +{},
         _loop_ancestor_cache => +{},
         _loop_elem_cache => +{},
+        _fn_scope_start_cache => +{},
     }, $class;
 }
 
@@ -62,6 +63,7 @@ sub build ($self) {
     $self->{_loop_env_cache} = +{};
     $self->{_loop_ancestor_cache} = +{};
     $self->{_loop_elem_cache} = +{};
+    $self->{_fn_scope_start_cache} = +{};
     $self->_collect_loop_var_types;
     $self->_collect_local_var_types;
     $self->{narrowing}->collect_accessor_narrowings($self->{ppi_doc});
@@ -170,12 +172,14 @@ sub env_for_node ($self, $node) {
     }
 
     my $env;
+    my $scope_start;
     my $ancestor = $node->parent;
     while ($ancestor) {
         if ($ancestor->isa('PPI::Structure::Block')) {
             my $addr = refaddr($ancestor);
             if (exists $self->{_fn_env_cache}{$addr}) {
                 $env = $self->{_fn_env_cache}{$addr};
+                $scope_start = $self->{_fn_scope_start_cache}{$addr};
                 last;
             }
             # Check if this block belongs to a known function
@@ -187,6 +191,8 @@ sub env_for_node ($self, $node) {
                     if ($fn->{block} && $fn->{block} == $ancestor) {
                         $env = $self->fn_env($fn);
                         $self->{_fn_env_cache}{$addr} = $env;
+                        $self->{_fn_scope_start_cache}{$addr} = $fn->{line};
+                        $scope_start = $fn->{line};
                         last;
                     }
                 }
@@ -196,6 +202,9 @@ sub env_for_node ($self, $node) {
     }
     $env //= $self->{env};
 
+    if ($scope_start) {
+        $env = $self->_inject_local_var_types($env, $scope_start, $node->line_number);
+    }
     $env = $self->_inject_loop_vars($env, $node);
     $env = $self->{narrowing}->narrow_env_for_block($env, $node);
     $env = $self->{narrowing}->scan_early_returns($env, $node);
@@ -247,8 +256,9 @@ sub _build_env ($self) {
         next if $var->{type_expr};
         next if exists $variables{$var->{name}};
 
-        # Function-local variables: still populate env, but skip infer_log
-        # (_collect_local_var_types reports these with proper fn-scoped context)
+        # Function-local variables are handled later by _collect_local_var_types
+        # with a proper function-scoped env. Do not leak them into the top-level
+        # env here, or same-name locals from one function can poison another.
         my $inside_fn = @_fn_ranges
             && grep { $var->{line} >= $_->[0] && $var->{line} <= $_->[1] } @_fn_ranges;
 
@@ -276,7 +286,7 @@ sub _build_env ($self) {
             $self->_record_infer_log($var->{name}, $var->{line}, $widened, $status, 'top')
                 unless $inside_fn;
             if (defined $inferred && !($inferred->is_atom && $inferred->name eq 'Any')) {
-                $variables{$var->{name}} = $widened;
+                $variables{$var->{name}} = $widened unless $inside_fn;
             }
             next;
         }
@@ -290,7 +300,7 @@ sub _build_env ($self) {
         next unless defined $inferred;
         next if $inferred->is_atom && $inferred->name eq 'Any';
 
-        $variables{$var->{name}} = $widened;
+        $variables{$var->{name}} = $widened unless $inside_fn;
     }
 
     $partial_env;
@@ -566,17 +576,18 @@ sub _collect_local_var_types ($self) {
 
 sub _local_infer_env ($self, $fn, $stmt, $block, $node) {
     my $env = $self->fn_env($fn);
+    $env = $self->_inject_local_var_types($env, $fn->{line}, $stmt->line_number);
     $env = $self->_inject_loop_vars($env, $node);
-    $env = $self->_inject_anon_sub_params($env, $stmt, $block, $fn);
-    return $self->_inject_local_var_types($env, $fn->{line});
+    return $self->_inject_anon_sub_params($env, $stmt, $block, $fn);
 }
 
-sub _inject_local_var_types ($self, $env, $scope_start) {
+sub _inject_local_var_types ($self, $env, $scope_start, $upto_line = undef) {
     return $env unless keys $self->{_local_var_types}->%*;
 
     my %vars = $env->{variables}->%*;
     for my $lv (values $self->{_local_var_types}->%*) {
         next unless $lv->{scope_start} == $scope_start;
+        next if defined $upto_line && ($lv->{line} // 0) > $upto_line;
         $vars{$lv->{name}} //= $lv->{type};
     }
     return +{ $env->%*, variables => \%vars };
@@ -885,8 +896,8 @@ sub _hof_callback_param_types ($self, $sub_word, $env) {
     return () unless $sig && $sig->{params} && $sig->{generics} && @{$sig->{generics}};
 
     # Determine callback position and collect other args
-    my $expr = $container->find_first('PPI::Statement::Expression')
-            || $container->find_first('PPI::Statement');
+    my $expr = $container->schild(0);
+    $expr = undef unless $expr && $expr->isa('PPI::Statement');
     return () unless $expr;
 
     my @children = $expr->schildren;

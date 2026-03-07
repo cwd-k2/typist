@@ -437,7 +437,25 @@ sub narrow_env_for_block ($self, $env, $node) {
         }
     }
 
-    return $self->{_block_env_cache}{$cache_key} = $env unless %applied;
+    my %applied_accessors;
+    if ($apply_direct && $rule eq 'defined') {
+        my $accessor = $self->extract_defined_accessor(\@cond_children);
+        if ($accessor && @{$accessor->{chain}} == 1) {
+            my $var_name = $accessor->{var_name};
+            my $field = $accessor->{chain}[0];
+            my $field_type = $self->resolve_accessor_type($env, $var_name, $field);
+            my $narrowed = $self->remove_undef_from_type($field_type);
+            if ($narrowed) {
+                $applied_accessors{$var_name} = +{
+                    accessor => $field,
+                    type     => $narrowed,
+                };
+            }
+        }
+    }
+
+    return $self->{_block_env_cache}{$cache_key} = $env
+        unless %applied || %applied_accessors;
 
     # Record narrowed variables for LSP visibility (once per block)
     my $block_id = Scalar::Util::refaddr($block);
@@ -454,11 +472,30 @@ sub narrow_env_for_block ($self, $env, $node) {
                 scope_end   => $block_end,
             };
         }
+        for my $var_name (keys %applied_accessors) {
+            my $info = $applied_accessors{$var_name};
+            push $self->{_narrowed_accessors}->@*, +{
+                var_name    => $var_name,
+                chain       => [$info->{accessor}],
+                type        => $info->{type},
+                scope_start => $block_start,
+                scope_end   => $block_end,
+            };
+        }
     }
 
     my %new_vars = $env->{variables}->%*;
     $new_vars{$_} = $applied{$_} for keys %applied;
-    return $self->{_block_env_cache}{$cache_key} = +{ %$env, variables => \%new_vars };
+    my $new_env = +{ %$env, variables => \%new_vars };
+    if (%applied_accessors) {
+        my %acc = ($env->{narrowed_accessors} // +{})->%*;
+        for my $var_name (keys %applied_accessors) {
+            my $info = $applied_accessors{$var_name};
+            $acc{$var_name}{$info->{accessor}} = $info->{type};
+        }
+        $new_env->{narrowed_accessors} = \%acc;
+    }
+    return $self->{_block_env_cache}{$cache_key} = $new_env;
 }
 
 # ── Early Return Narrowing ──────────────────────
