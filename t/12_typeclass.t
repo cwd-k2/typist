@@ -648,7 +648,7 @@ subtest 'multi-param install_dispatch with prefix' => sub {
     Typist::Registry->register_instance('Convertible', 'Int, Str', $inst);
 
     $def->install_dispatch('TestPkg');
-    my $result = TestPkg::Convertible::convert(99);
+    my $result = Convertible::convert(99);
     is $result, 'num:99', 'install_dispatch works with single-arg multi-param';
 };
 

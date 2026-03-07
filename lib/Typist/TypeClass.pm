@@ -91,7 +91,7 @@ sub install_dispatch ($self, $caller) {
     my $arity = $self->arity;
     no strict 'refs';
     for my $method_name (keys $self->{methods}->%*) {
-        *{"${caller}::${name}::${method_name}"} = sub {
+        *{"${name}::${method_name}"} = sub {
             my @args = @_;
             if ($arity > 1) {
                 # Multi-parameter: infer types from available arguments
@@ -287,8 +287,12 @@ Optional: C<methods>.
 
     $def->install_dispatch($caller_package);
 
-Installs runtime dispatch functions for all methods into the caller's
-namespace. Dispatch infers the argument type and resolves the matching
+Installs runtime dispatch functions into the typeclass's own namespace
+(C<${Class}::${method}>).  For example, C<< typeclass Show => ... >>
+installs C<Show::show>.  The C<$caller_package> argument is accepted
+for historical reasons but no longer affects the installation target.
+
+Dispatch infers the argument type and resolves the matching
 instance from the registry.
 
 =head2 check_instance_completeness
