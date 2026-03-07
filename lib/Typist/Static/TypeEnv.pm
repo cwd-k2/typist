@@ -245,6 +245,12 @@ sub _build_env ($self) {
         {
             $inferred = _infer_hash_literal_type($init_node, $infer_env);
         }
+        # Array variable with list init: my @arr = (elem, ...)
+        if (!$inferred && $var->{name} =~ /\A\@/ && $init_node
+            && $init_node->isa('PPI::Structure::List'))
+        {
+            $inferred = _infer_array_literal_type($init_node, $infer_env);
+        }
         $inferred //= Typist::Static::Infer->infer_expr_with_siblings($init_node, $infer_env);
 
         my $status = !defined $inferred  ? 'undef'
@@ -533,6 +539,12 @@ sub _collect_local_var_types ($self) {
             {
                 $inferred = _infer_hash_literal_type($init_node, $env);
             }
+            # Array variable with list init: my @arr = (elem, ...)
+            if (!$inferred && $var_name =~ /\A\@/ && $init_node
+                && $init_node->isa('PPI::Structure::List'))
+            {
+                $inferred = _infer_array_literal_type($init_node, $env);
+            }
             $inferred //= Typist::Static::Infer->infer_expr_with_siblings($init_node, $env);
 
             my $status = !defined $inferred  ? 'undef'
@@ -602,6 +614,45 @@ sub _distribute_list_type ($type, $count) {
     }
 
     [(undef) x $count];
+}
+
+# Infer Array[T] from a list literal: (elem, ...)
+# Empty list () → Array[Any].
+sub _infer_array_literal_type ($list_node, $env) {
+    my $expr = $list_node->find_first('PPI::Statement::Expression')
+            // $list_node->find_first('PPI::Statement');
+
+    # Empty list: ()
+    unless ($expr) {
+        require Typist::Type::Param;
+        return Typist::Type::Param->new('Array', Typist::Type::Atom->new('Any'));
+    }
+
+    my @children = $expr->schildren;
+    # If it has =>, it's a hash literal, not an array
+    my $has_fat_comma = grep {
+        $_->isa('PPI::Token::Operator') && $_->content eq '=>'
+    } @children;
+    return undef if $has_fat_comma;
+
+    my @elem_types;
+    for my $child (@children) {
+        next if $child->isa('PPI::Token::Operator') && $child->content eq ',';
+        my $t = Typist::Static::Infer->infer_expr($child, $env);
+        $t = _widen_literal($t) if $t;
+        push @elem_types, $t if $t;
+    }
+
+    require Typist::Type::Param;
+    unless (@elem_types) {
+        return Typist::Type::Param->new('Array', Typist::Type::Atom->new('Any'));
+    }
+
+    my $elem_lub = $elem_types[0];
+    for my $i (1 .. $#elem_types) {
+        $elem_lub = Typist::Subtype->common_super($elem_lub, $elem_types[$i]);
+    }
+    Typist::Type::Param->new('Array', $elem_lub);
 }
 
 # Infer Hash[Str, V] from a literal list with => pairs: (k => v, ...)

@@ -69,7 +69,7 @@ sub infer_expr ($class, $element, $env = undef, $expected = undef) {
     }
     # ── qw() word list ────────────────────────────
     if ($element->isa('PPI::Token::QuoteLike::Words')) {
-        return Typist::Type::Atom->new('Str');
+        return Typist::Type::Param->new('Array', Typist::Type::Atom->new('Str'));
     }
 
     # ── undef keyword ──────────────────────────
