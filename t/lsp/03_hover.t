@@ -2100,4 +2100,64 @@ PERL
     like $hover->{result}{contents}{value}, qr/type Int = Str/, 'shows user typedef, not builtin';
 };
 
+# ── No hover in comments ─────────────────────────
+
+subtest 'no hover on words in comments' => sub {
+    my $source = <<'PERL';
+use v5.40;
+typedef Order => 'Int';
+# process the Order
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            position => +{ line => 2, character => 16 },  # on 'Order' in comment
+        }),
+    ));
+
+    my ($hover) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $hover, 'got hover response';
+    is $hover->{result}, undef, 'no hover result for word in comment';
+};
+
+# ── Struct constructor key hover ─────────────────
+
+subtest 'hover on struct constructor key shows field info' => sub {
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+
+    my $source = <<'PERL';
+package TestPkg;
+use v5.40;
+use Typist;
+struct Point => (x => 'Int', y => 'Int');
+my $p = Point(x => 1, y => 2);
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///test.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze;
+
+    # Line 4 (0-indexed): "my $p = Point(x => 1, y => 2);"
+    #                       0123456789012345
+    #                                       ^ x is at col 14
+    my $sym = $doc->symbol_at(4, 14);
+    ok $sym, 'found symbol for struct constructor key';
+    is $sym->{kind}, 'field', 'kind is field';
+    is $sym->{name}, 'x', 'field name is x';
+    like $sym->{type}, qr/Int/, 'field type is Int';
+    is $sym->{struct_name}, 'Point', 'struct_name is Point';
+
+    my $hover = Typist::LSP::Hover->hover($sym);
+    ok $hover, 'got hover response';
+    like $hover->{contents}{value}, qr/\(Point\)\s*x:\s*Int/, 'shows field type info';
+};
+
 done_testing;

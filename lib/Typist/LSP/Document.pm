@@ -224,6 +224,24 @@ sub _word_range_at ($self, $line, $col) {
     +{ word => $word, start => $start, end => $end };
 }
 
+# Check if the cursor position falls within a PPI comment or pod token.
+sub _is_in_comment ($self, $line, $col) {
+    my $ppi_doc = ($self->{result} // return 0)->{extracted}{ppi_doc} // return 0;
+    my $ppi_line = $line + 1;  # LSP 0-indexed → PPI 1-indexed
+    my $comments = $ppi_doc->find('PPI::Token::Comment') || [];
+    for my $t (@$comments) {
+        next unless $t->line_number == $ppi_line;
+        return 1 if $col >= $t->column_number - 1;  # PPI 1-indexed → 0-indexed
+    }
+    my $pods = $ppi_doc->find('PPI::Token::Pod') || [];
+    for my $t (@$pods) {
+        my $start_line = $t->line_number;
+        my $end_line = $start_line + (() = $t->content =~ /\n/g);
+        return 1 if $ppi_line >= $start_line && $ppi_line <= $end_line;
+    }
+    0;
+}
+
 # Check if the cursor is on the function name part of a qualified name (Pkg::func).
 # Returns true if cursor ($col) is on or after the last :: separator.
 sub _cursor_on_func_part ($self, $line, $col, $word) {
@@ -261,6 +279,7 @@ sub symbol_at ($self, $line, $col) {
 
     # Primary: match by word under cursor
     my $wr = $self->_word_range_at($line, $col) // return undef;
+    return undef if $self->_is_in_comment($line, $col);
     my $word = $wr->{word};
     my $range = +{
         start => +{ line => $line, character => $wr->{start} },
@@ -288,14 +307,22 @@ sub symbol_at ($self, $line, $col) {
         return $with_range->($sym) if $sym;
     }
 
-    # Fallback: synthesize symbol for Perl builtins
-    # Skip builtin resolution for hash keys (word followed by =>)
-    my $builtin_name = $bare // $word;
+    # Check if word is a hash key (followed by =>)
     my $is_hash_key = do {
         my $text = $self->_lines->[$line] // '';
         $wr->{end} < length($text)
             && substr($text, $wr->{end}) =~ /\A\s*=>/;
     };
+
+    # Struct constructor key: Point(x => 1) — hover on "x" shows field info
+    if ($is_hash_key) {
+        if (my $field_sym = $self->_resolve_struct_key_hover($word, $line, $col)) {
+            return $with_range->($field_sym);
+        }
+    }
+
+    # Fallback: synthesize symbol for Perl builtins
+    my $builtin_name = $bare // $word;
     if ($BUILTINS{$builtin_name} && !$is_hash_key) {
         # Use actual Prelude signature from CORE registry when available
         if (my $registry = $result->{registry}) {
@@ -467,6 +494,50 @@ sub _ppi_word_at ($self, $line, $col) {
         next unless $col >= $t_col && $col < $t_col + length($t->content);
         return $t;
     }
+    undef;
+}
+
+# Resolve struct constructor key: Point(x => 1) — hover on "x".
+sub _resolve_struct_key_hover ($self, $word, $line, $col) {
+    my $result   = $self->{result} // return undef;
+    my $registry = $result->{registry} // return undef;
+
+    my $ppi_word = $self->_ppi_word_at($line, $col) // return undef;
+    return undef unless $ppi_word->content eq $word;
+
+    # Walk up to enclosing Structure::List
+    my $parent = $ppi_word->parent;
+    while ($parent && !$parent->isa('PPI::Structure::List')) {
+        $parent = $parent->parent;
+    }
+    return undef unless $parent;
+
+    # Constructor name is the previous sibling of the List
+    my $prev = $parent->sprevious_sibling or return undef;
+    return undef unless $prev->isa('PPI::Token::Word');
+    my $struct_name = $prev->content;
+
+    my $st = $registry->lookup_struct($struct_name) // return undef;
+
+    my %req = $st->record->required_fields;
+    my %opt = $st->record->optional_fields;
+
+    if (my $type = $req{$word}) {
+        return sym_field(
+            name        => $word,
+            type        => $type->to_string,
+            struct_name => $struct_name,
+        );
+    }
+    if (my $type = $opt{$word}) {
+        return sym_field(
+            name        => $word,
+            type        => $type->to_string,
+            struct_name => $struct_name,
+            optional    => 1,
+        );
+    }
+
     undef;
 }
 
@@ -652,6 +723,7 @@ sub definition_at ($self, $line, $col) {
     my $symbols = $result->{symbols} // return undef;
 
     my $word = $self->_word_at($line, $col) // return undef;
+    return undef if $self->_is_in_comment($line, $col);
 
     # Strip sigil for type/function lookup
     (my $bare = $word) =~ s/^[\$\@%]//;
@@ -1027,6 +1099,7 @@ sub _symbol_detail ($self, $sym) {
 sub code_completion_at ($self, $line, $col) {
     my $lines = $self->_lines;
     return undef unless $line < @$lines;
+    return undef if $self->_is_in_comment($line, $col);
     my $text = substr($lines->[$line], 0, $col);
 
     # $var->{  → record field completion
