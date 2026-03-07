@@ -252,6 +252,10 @@ sub _check_impl ($sub, $super, $registry = undef) {
         return 1 unless @pp;  # raw base matches raw base
         return 0 unless @sp == @pp;
         # Covariant: ArrayRef[T] <: ArrayRef[U] iff T <: U
+        # NOTE: This is a static approximation. Perl arrays/hashes are mutable,
+        # so true covariance is unsound (e.g. ArrayRef[Int] <: ArrayRef[Num]
+        # allows pushing a Double into an Int array). We accept this trade-off
+        # for practical usability, matching TypeScript's approach.
         return all { _check($sp[$_], $pp[$_], $registry) } 0 .. $#sp;
     }
 
