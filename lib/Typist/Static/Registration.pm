@@ -33,6 +33,12 @@ sub register_all ($class, $extracted, $registry, %opts) {
 
 # Phase 1: type definitions (no dependency on other files' typeclasses)
 sub register_types ($class, $extracted, $registry, %opts) {
+    # Record use-chain for type visibility
+    my $pkg = $extracted->{package} // 'main';
+    for my $used (@{$extracted->{use_modules} // []}) {
+        $registry->register_package_use($pkg, $used);
+    }
+
     $class->register_aliases($extracted, $registry, %opts);
     $class->register_newtypes($extracted, $registry, %opts);
     $class->register_typeclasses($extracted, $registry, %opts);

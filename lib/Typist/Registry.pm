@@ -31,6 +31,7 @@ sub new ($class, %args) {
         name_index     => +{},
         instance_index => +{},
         defined_in     => +{},
+        package_uses   => +{},
     }, $class;
 }
 
@@ -289,6 +290,34 @@ sub types_defined_by ($invocant, $pkg) {
     grep { ($self->{defined_in}{$_} // '') eq $pkg } keys $self->{defined_in}->%*;
 }
 
+# ── Package Dependency Tracking ───────────────────
+# Record that $pkg uses $used_pkg (via `use`).
+
+sub register_package_use ($invocant, $pkg, $used_pkg) {
+    my $self = _self($invocant);
+    push @{$self->{package_uses}{$pkg} //= []}, $used_pkg;
+}
+
+sub package_uses ($invocant, $pkg) {
+    my $self = _self($invocant);
+    @{$self->{package_uses}{$pkg} // []};
+}
+
+# Check if type $name is visible to $pkg:
+# - defined in $pkg itself
+# - defined in a package that $pkg uses (directly)
+# - has no provenance (prelude / builtin)
+sub is_type_visible ($invocant, $name, $pkg) {
+    my $self = _self($invocant);
+    my $definer = $self->{defined_in}{$name};
+    return 1 unless defined $definer;    # no provenance → always visible (builtins)
+    return 1 if $definer eq $pkg;        # defined locally
+    for my $used ($self->package_uses($pkg)) {
+        return 1 if $definer eq $used;
+    }
+    0;
+}
+
 # ── TypeClass Management ──────────────────────────
 
 sub register_typeclass ($invocant, $name, $def) {
@@ -413,6 +442,10 @@ sub merge ($self, $other) {
     for my $name (keys(($other->{defined_in} // +{})->%*)) {
         $self->{defined_in}{$name} //= $other->{defined_in}{$name};
     }
+    for my $pkg (keys(($other->{package_uses} // +{})->%*)) {
+        my $uses = $other->{package_uses}{$pkg} // [];
+        push @{$self->{package_uses}{$pkg} //= []}, @$uses;
+    }
     # Clear resolved cache since new aliases may change resolution
     $self->{resolved} = +{};
     $self;
@@ -437,6 +470,7 @@ sub reset ($invocant) {
         $invocant->{name_index}     = +{};
         $invocant->{instance_index} = +{};
         $invocant->{defined_in}     = +{};
+        $invocant->{package_uses}   = +{};
     } else {
         $DEFAULT = undef;
     }

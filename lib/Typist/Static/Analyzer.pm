@@ -36,6 +36,7 @@ my %SEVERITY = (
     UnknownEffect    => 3,
     UnknownTypeClass => 2,
     UnknownType      => 4,
+    ImportHint       => 4,  # hint — type used in :sig() but defining package not imported
     ProtocolMismatch => 2,
     GradualHint      => 5,  # opt-in hint — blame tracking for Any
 );
@@ -64,6 +65,9 @@ sub analyze ($class, $source, %opts) {
         errors => $errors,
         file   => $file,
     );
+
+    # Phase 1b: Type visibility check (lint level)
+    _check_type_visibility($extracted, $registry, $errors, $file);
 
     # Phase 2: Structural verification
     Typist::Static::Checker->new(
@@ -561,6 +565,67 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
     }
 
     \@symbols;
+}
+
+# ── Type Visibility Check ────────────────────────
+
+sub _check_type_visibility ($extracted, $registry, $errors, $file) {
+    my $pkg = $extracted->{package} // 'main';
+
+    # Collect type names used in annotations → first occurrence line
+    my %seen;
+
+    # Function signatures
+    for my $name (keys $extracted->{functions}->%*) {
+        my $fn = $extracted->{functions}{$name};
+        my $line = $fn->{line};
+        for my $p (($fn->{params_expr} // [])->@*) {
+            _collect_type_names($p, $line, \%seen);
+        }
+        _collect_type_names($fn->{returns_expr}, $line, \%seen);
+        _collect_type_names($fn->{eff_expr}, $line, \%seen);
+    }
+
+    # Variable annotations
+    for my $var ($extracted->{variables}->@*) {
+        _collect_type_names($var->{type_expr}, $var->{line}, \%seen);
+    }
+
+    # Type definitions (aliases, newtypes, structs, effects)
+    for my $info (values $extracted->{aliases}->%*) {
+        _collect_type_names($info->{expr}, $info->{line}, \%seen);
+    }
+    for my $info (values $extracted->{newtypes}->%*) {
+        _collect_type_names($info->{inner_expr}, $info->{line}, \%seen);
+    }
+    for my $info (values(($extracted->{structs} // +{})->%*)) {
+        my $fields = $info->{fields} // +{};
+        for my $ftype (values %$fields) {
+            _collect_type_names($ftype, $info->{line}, \%seen);
+        }
+    }
+
+    # Check visibility
+    for my $type_name (sort keys %seen) {
+        my $definer = $registry->defined_in($type_name);
+        next unless defined $definer;                            # builtins / no provenance
+        next if $registry->is_type_visible($type_name, $pkg);
+
+        $errors->collect(
+            kind    => 'ImportHint',
+            message => "Type '$type_name' (defined in $definer) used but '$definer' is not imported",
+            file    => $file,
+            line    => $seen{$type_name},
+            col     => 1,
+        );
+    }
+}
+
+sub _collect_type_names ($expr, $line, $map) {
+    return unless defined $expr && length $expr;
+    while ($expr =~ /\b([A-Z][A-Za-z0-9_]*)\b/g) {
+        $map->{$1} //= $line;
+    }
 }
 
 1;

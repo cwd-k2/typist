@@ -46,6 +46,7 @@ All error kinds produced by static analysis and their LSP surface.
 | UnknownEffect | Checker | Yes | — | |
 | UnknownTypeClass | Checker | Yes | — | |
 | UnknownType | Checker | Yes | — | |
+| ImportHint | Analyzer | Yes | — | Type used in `:sig()` but defining package not imported |
 | InvalidBound | Checker | Yes | — | |
 | KindError | Checker | Yes | — | |
 

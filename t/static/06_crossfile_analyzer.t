@@ -185,4 +185,74 @@ PERL
     is scalar @type_errs, 0, 'Price satisfies bound Num via alias resolution (Price -> Int <: Num)';
 };
 
+# ── Type visibility (ImportHint) ──────────────────
+
+subtest 'ImportHint emitted when defining package not imported' => sub {
+    my $ws_reg = Typist::Registry->new;
+    $ws_reg->define_alias('UserId', 'Int');
+    $ws_reg->set_defined_in('UserId', 'Types');
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws_reg);
+package Consumer;
+use v5.40;
+
+sub get_name :sig((UserId) -> Str) ($id) {
+    return "Alice";
+}
+PERL
+
+    my @hints = grep { $_->{kind} eq 'ImportHint' } $result->{diagnostics}->@*;
+    is scalar @hints, 1, 'one ImportHint for missing use';
+    like $hints[0]{message}, qr/UserId.*Types/, 'message mentions type and definer';
+};
+
+subtest 'no ImportHint when defining package is imported' => sub {
+    my $ws_reg = Typist::Registry->new;
+    $ws_reg->define_alias('UserId', 'Int');
+    $ws_reg->set_defined_in('UserId', 'Types');
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws_reg);
+package Consumer;
+use v5.40;
+use Types;
+
+sub get_name :sig((UserId) -> Str) ($id) {
+    return "Alice";
+}
+PERL
+
+    my @hints = grep { $_->{kind} eq 'ImportHint' } $result->{diagnostics}->@*;
+    is scalar @hints, 0, 'no ImportHint — Types is imported';
+};
+
+subtest 'no ImportHint for locally defined types' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package MyApp;
+use v5.40;
+
+typedef UserId => 'Int';
+
+sub get_name :sig((UserId) -> Str) ($id) {
+    return "Alice";
+}
+PERL
+
+    my @hints = grep { $_->{kind} eq 'ImportHint' } $result->{diagnostics}->@*;
+    is scalar @hints, 0, 'no ImportHint for locally defined type';
+};
+
+subtest 'no ImportHint for builtins' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package MyApp;
+use v5.40;
+
+sub add :sig((Int, Int) -> Int) ($a, $b) {
+    return $a + $b;
+}
+PERL
+
+    my @hints = grep { $_->{kind} eq 'ImportHint' } $result->{diagnostics}->@*;
+    is scalar @hints, 0, 'no ImportHint for builtins (Int, Str, etc.)';
+};
+
 done_testing;

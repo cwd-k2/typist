@@ -341,6 +341,25 @@ When reading code, there are two kinds of dependencies to trace:
 
 Both are activated by `use`, but only the first kind appears in `@EXPORT`. The second kind is a side-effect of executing `BEGIN` blocks that call `typedef`, `newtype`, `effect`, etc.
 
+### Visibility Check (ImportHint)
+
+The static analyzer tracks type **provenance** (which package defined each type) and **use chains** (which packages the current file imports). When a type name used in `:sig()` was defined in a package that is not reachable through the current file's `use` declarations, an `ImportHint` diagnostic (severity: hint) is emitted.
+
+This is an advisory check, not a hard error — types still resolve via the global Registry regardless of visibility. The diagnostic helps developers maintain explicit import discipline.
+
+```
+# ✗ ImportHint: Type 'Amount' (defined in Shop::Types) used but 'Shop::Types' is not imported
+package Order;
+use v5.40;
+sub total :sig((Amount) -> Amount) ($a) { ... }
+
+# ✓ No hint — Shop::Types is explicitly imported
+package Order;
+use v5.40;
+use Shop::Types;
+sub total :sig((Amount) -> Amount) ($a) { ... }
+```
+
 ---
 
 ## Design Principles

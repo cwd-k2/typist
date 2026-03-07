@@ -26,6 +26,7 @@ sub extract ($class, $source) {
         instances      => [],
         declares       => +{},
         loop_variables => [],
+        use_modules    => [],
         package        => 'main',
         ppi_doc        => $doc,
     };
@@ -40,6 +41,10 @@ sub extract ($class, $source) {
     for my $stmt (@$all_stmts) {
         if ($stmt->isa('PPI::Statement::Package')) {
             $result->{package} = $stmt->namespace;
+        } elsif ($stmt->isa('PPI::Statement::Include')
+                 && ($stmt->type // '') eq 'use'
+                 && $stmt->module) {
+            push @{$result->{use_modules}}, $stmt->module;
         } elsif ($stmt->isa('PPI::Statement::Sub')
                  && !$stmt->isa('PPI::Statement::Scheduled')) {
             push @sub_stmts, $stmt;
