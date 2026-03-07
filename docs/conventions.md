@@ -234,7 +234,11 @@ Annotation: `![DB<* -> Authed>]` declares start/end states. `![DB<Authed>]` is i
 handle { BODY } Effect => +{ op => sub { ... } };
 ```
 
-Installs scoped effect handlers, executes BODY, and guarantees cleanup even on exception.
+Installs scoped effect handlers, executes BODY, and guarantees cleanup even on exception. The `Exn` effect bridges Perl's `die` to the handler system:
+
+```perl
+handle { die "oops\n" } Exn => +{ throw => sub ($err) { "recovered" } };
+```
 
 ### Variadic Functions
 

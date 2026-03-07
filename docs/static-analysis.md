@@ -605,7 +605,7 @@ Pure list:      scalar, reverse, sort         → pure
 
 ### Standard Effect Labels
 
-The prelude registers three standard effect labels — `IO`, `Exn`, and `Decl` — so the Checker does not report them as `UnknownEffect`.
+The prelude registers three standard effect labels — `IO`, `Exn`, and `Decl` — so the Checker does not report them as `UnknownEffect`. All three are ambient (skipped by EffectChecker's inclusion check). `Exn` additionally has a `throw` operation `(Any) -> Never` and installs `Exn::throw` as a bridge to Perl's `die`. At runtime, `handle { } Exn => +{ throw => sub { } }` catches exceptions from both `die` and `Exn::throw`.
 
 ---
 

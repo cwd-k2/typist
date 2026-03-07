@@ -84,6 +84,16 @@ sub _effect ($name, @rest) {
 sub _handle :prototype(&@) {
     my ($body, @handler_specs) = @_;
 
+    # Scan for Exn handler before consuming the spec list
+    my $exn_handler;
+    {
+        my @scan = @handler_specs;
+        while (@scan >= 2) {
+            my ($eff, $handlers) = splice(@scan, 0, 2);
+            if ($eff eq 'Exn') { $exn_handler = $handlers; last }
+        }
+    }
+
     # Push all effect handlers onto the stack
     my $pushed = 0;
     while (@handler_specs >= 2) {
@@ -104,8 +114,14 @@ sub _handle :prototype(&@) {
     # Pop handlers (LIFO — matches push order)
     Typist::Handler->pop_handler for 1 .. $pushed;
 
-    # Re-raise if body threw
-    die $err unless $ok;
+    # On exception: delegate to Exn handler or re-raise
+    unless ($ok) {
+        if ($exn_handler && $exn_handler->{throw}) {
+            my @r = $exn_handler->{throw}->($err);
+            return wantarray ? @r : $r[0];
+        }
+        die $err;
+    }
 
     wantarray ? @result : $result[0];
 }

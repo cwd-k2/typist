@@ -118,7 +118,14 @@ my %BUILTINS = (
 # Effects referenced by the builtin annotations above.  Registered so
 # the Checker does not report them as UnknownEffect.
 
-my @EFFECTS = qw(IO Exn Decl);
+my @EFFECTS = qw(IO Decl);
+
+# Exn is special: ambient + has a throw operation + Exn::throw bridges to die
+my $EXN_EFFECT = Typist::Effect->new(
+    name       => 'Exn',
+    operations => +{ throw => '(Any) -> Never' },
+    ambient    => 1,
+);
 
 my @TYPIST_BUILTINS = qw(
     typedef newtype effect typeclass instance declare datatype enum struct
@@ -139,6 +146,13 @@ sub install ($class, $registry) {
             $eff_name,
             Typist::Effect->new(name => $eff_name, operations => +{}, ambient => 1),
         );
+    }
+
+    # Exn: ambient effect with throw operation, bridged to Perl's die
+    unless ($registry->lookup_effect('Exn')) {
+        $registry->register_effect('Exn', $EXN_EFFECT);
+        no strict 'refs';
+        *{"Exn::throw"} = sub ($err) { die $err } unless defined &Exn::throw;
     }
 
     for my $name (sort keys %BUILTINS) {

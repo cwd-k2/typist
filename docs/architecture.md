@@ -825,7 +825,9 @@ handle { BODY } Effect => +{ ... }:
   push handlers
   eval { BODY }
   pop handlers (even on exception)
-  re-raise if exception
+  if exception and Exn handler with throw:
+    return Exn_handler->{throw}->($err)
+  re-raise if exception (no Exn handler)
 ```
 
 ### Cost Summary

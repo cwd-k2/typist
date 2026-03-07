@@ -400,4 +400,125 @@ subtest 'multiple handlers all popped on exception' => sub {
         'State handler popped after exception';
 };
 
+# ══════════════════════════════════════════════════════
+# Exn handling: die / Exn::throw bridged to handle
+# ══════════════════════════════════════════════════════
+
+# ── handle catches die via Exn handler ────────────────
+
+subtest 'handle catches die via Exn => throw' => sub {
+    reset_handlers();
+
+    my $result = handle {
+        die "boom\n";
+        "unreachable";
+    } Exn => +{
+        throw => sub ($err) { "caught: $err" },
+    };
+
+    is $result, "caught: boom\n", 'Exn throw handler receives die error';
+};
+
+# ── handle catches Exn::throw via Exn handler ────────
+
+subtest 'handle catches Exn::throw via Exn => throw' => sub {
+    reset_handlers();
+
+    my $result = handle {
+        Exn::throw("explicit\n");
+        "unreachable";
+    } Exn => +{
+        throw => sub ($err) { "caught: $err" },
+    };
+
+    is $result, "caught: explicit\n", 'Exn::throw bridged through die to handler';
+};
+
+# ── without Exn handler, die still propagates ─────────
+
+subtest 'die propagates without Exn handler' => sub {
+    reset_handlers();
+
+    eval {
+        handle {
+            die "no-exn-handler\n";
+        } Console => +{
+            log => sub ($msg) { },
+        };
+    };
+    is $@, "no-exn-handler\n", 'die re-raised when no Exn handler';
+};
+
+# ── Exn handler with other effects ────────────────────
+
+subtest 'Exn handler coexists with other effects' => sub {
+    reset_handlers();
+
+    my @logs;
+    my $result = handle {
+        Console::log("before");
+        die "mid-error\n";
+        Console::log("after");  # unreachable
+        "normal";
+    } Console => +{
+        log => sub ($msg) { push @logs, $msg },
+    }, Exn => +{
+        throw => sub ($err) { "recovered" },
+    };
+
+    is_deeply \@logs, ["before"], 'Console handler ran before die';
+    is $result, "recovered", 'Exn handler provided fallback value';
+};
+
+# ── Exn handler cleans up other handlers ──────────────
+
+subtest 'Exn handler: all handlers popped after catch' => sub {
+    reset_handlers();
+
+    handle {
+        die "cleanup-test\n";
+    } Console => +{
+        log => sub ($msg) { },
+    }, Exn => +{
+        throw => sub ($err) { "ok" },
+    };
+
+    eval { Console::log("test") };
+    like $@, qr/No handler for effect Console::log/,
+        'Console handler popped after Exn catch';
+};
+
+# ── Nested handle with Exn ────────────────────────────
+
+subtest 'nested handle: inner Exn catches, outer unaffected' => sub {
+    reset_handlers();
+
+    my @outer_logs;
+    my $result = handle {
+        my $inner = handle {
+            die "inner-boom\n";
+        } Exn => +{
+            throw => sub ($err) { "inner-caught" },
+        };
+
+        Console::log("after-inner: $inner");
+        $inner;
+    } Console => +{
+        log => sub ($msg) { push @outer_logs, $msg },
+    };
+
+    is $result, "inner-caught", 'inner Exn handler caught die';
+    is_deeply \@outer_logs, ["after-inner: inner-caught"],
+        'outer handle continued normally after inner catch';
+};
+
+# ── Exn::throw without handler dies normally ──────────
+
+subtest 'Exn::throw without handle dies normally' => sub {
+    reset_handlers();
+
+    eval { Exn::throw("raw-throw\n") };
+    is $@, "raw-throw\n", 'Exn::throw is just die without handle';
+};
+
 done_testing;

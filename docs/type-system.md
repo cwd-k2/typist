@@ -894,6 +894,36 @@ handle {
 };
 ```
 
+### Exception Handling via Exn
+
+The `Exn` effect bridges Perl's native `die`/`eval` to the algebraic effect system. When `handle` has an `Exn` handler with a `throw` operation, exceptions thrown by `die` (or `Exn::throw`) in the body are caught and delegated to the handler instead of being re-raised:
+
+```perl
+my $result = handle {
+    my $val = do_something();
+    die "failed\n" if !$val;     # caught by Exn handler
+    $val;
+} Exn => +{
+    throw => sub ($err) { "fallback" },
+};
+# $result is "fallback" if die was called, otherwise $val
+```
+
+`Exn::throw($err)` is syntactic sugar for `die $err` — both are equivalent inside a `handle` block. Without an `Exn` handler, `die` propagates normally.
+
+Exn handlers compose with other effects:
+
+```perl
+handle {
+    Console::log("starting");
+    die "oops\n";
+} Console => +{
+    log => sub ($msg) { say $msg },
+}, Exn => +{
+    throw => sub ($err) { warn "caught: $err"; undef },
+};
+```
+
 ### Handler Stack
 
 `Typist::Handler` maintains a LIFO stack of effect handlers. `handle` pushes handlers, executes the body, and pops handlers (even on exception). Effect operation calls search the stack from top to bottom for a matching handler.
@@ -911,7 +941,7 @@ Inner handlers shadow outer ones for the same effect, enabling nested scoping.
 
 ### Prelude Effects
 
-The `Typist::Prelude` pre-registers `IO` and `Exn` effect labels with default annotations for common builtins (say, print, warn, die, open, close). These coexist with user-defined effects and can be overridden via `declare`.
+The `Typist::Prelude` pre-registers `IO`, `Exn`, and `Decl` effect labels with default annotations for common builtins (say, print, warn, die, open, close). `IO` and `Decl` are label-only (no operations). `Exn` has a `throw` operation (`(Any) -> Never`) and installs `Exn::throw` as a bridge to Perl's `die`. All three are ambient — they do not require explicit `![Exn]` annotations and can be overridden via `declare`.
 
 ---
 
@@ -1284,7 +1314,7 @@ Three standard effect labels are registered by the prelude so that the Checker d
 | Label | Scope | Examples |
 |-------|-------|---------|
 | `IO` | I/O, time, randomness | `say`, `print`, `warn`, `open`, `close`, `rand`, `time`, `sleep` |
-| `Exn` | Exceptions, evaluation, exit | `die`, `eval`, `exit` |
+| `Exn` | Exceptions, evaluation, exit | `die`, `eval`, `exit`. Has `throw` op; handleable via `handle { } Exn => +{ throw => sub { } }` |
 | `Decl` | Type and effect declarations | `typedef`, `newtype`, `struct`, `effect`, `typeclass`, `instance`, `datatype`, `enum`, `declare` |
 
 ### Builtin Annotations
