@@ -134,7 +134,7 @@ for my $file (@files) {
     # ── Section: diag ───────────────────────
     if ($section eq 'all' || $section eq 'diag') {
         for my $d ($result->{diagnostics}->@*) {
-            next if $d->{severity} >= 4;  # skip hints
+            next if ($d->{severity} // 4) >= 4;  # skip hints
             push @all_diag_issues, {
                 file     => $short,
                 line     => $d->{range}{start}{line} + 1,

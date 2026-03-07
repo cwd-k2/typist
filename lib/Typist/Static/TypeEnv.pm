@@ -219,7 +219,14 @@ sub _build_env ($self) {
             next;
         }
 
-        my $inferred = Typist::Static::Infer->infer_expr_with_siblings($init_node, $infer_env);
+        # Hash variable with literal init: my %h = (k => v, ...)
+        my $inferred;
+        if ($var->{name} =~ /\A%/ && $init_node
+            && $init_node->isa('PPI::Structure::List'))
+        {
+            $inferred = _infer_hash_literal_type($init_node, $infer_env);
+        }
+        $inferred //= Typist::Static::Infer->infer_expr_with_siblings($init_node, $infer_env);
 
         my $status = !defined $inferred  ? 'undef'
                    : ($inferred->is_atom && $inferred->name eq 'Any') ? 'Any_skip'
@@ -496,7 +503,14 @@ sub _collect_local_var_types ($self) {
                 $env = +{ $env->%*, variables => \%vars };
             }
 
-            my $inferred = Typist::Static::Infer->infer_expr_with_siblings($init_node, $env);
+            # Hash variable with literal init: my %h = (k => v, ...)
+            my $inferred;
+            if ($var_name =~ /\A%/ && $init_node
+                && $init_node->isa('PPI::Structure::List'))
+            {
+                $inferred = _infer_hash_literal_type($init_node, $env);
+            }
+            $inferred //= Typist::Static::Infer->infer_expr_with_siblings($init_node, $env);
 
             my $status = !defined $inferred  ? 'undef'
                        : ($inferred->is_atom && $inferred->name eq 'Any') ? 'Any_skip'
@@ -565,6 +579,41 @@ sub _distribute_list_type ($type, $count) {
     }
 
     [(undef) x $count];
+}
+
+# Infer Hash[Str, V] from a literal list with => pairs: (k => v, ...)
+sub _infer_hash_literal_type ($list_node, $env) {
+    my $expr = $list_node->find_first('PPI::Statement::Expression')
+            // $list_node->find_first('PPI::Statement');
+    return undef unless $expr;
+
+    my @children = $expr->schildren;
+    # Must have at least one => to be a hash literal
+    my $has_fat_comma = grep {
+        $_->isa('PPI::Token::Operator') && $_->content eq '=>'
+    } @children;
+    return undef unless $has_fat_comma;
+
+    # Collect value types (elements after =>)
+    my @value_types;
+    for my $i (0 .. $#children) {
+        next unless $children[$i]->isa('PPI::Token::Operator')
+                 && $children[$i]->content eq '=>';
+        next unless $i + 1 <= $#children;
+        my $val = Typist::Static::Infer->infer_expr($children[$i + 1], $env);
+        $val = _widen_literal($val) if $val;
+        push @value_types, $val if $val;
+    }
+    return undef unless @value_types;
+
+    # LUB of all value types
+    my $value_lub = $value_types[0];
+    for my $i (1 .. $#value_types) {
+        $value_lub = Typist::Subtype->common_super($value_lub, $value_types[$i]);
+    }
+
+    require Typist::Type::Param;
+    Typist::Type::Param->new('Hash', Typist::Type::Atom->new('Str'), $value_lub);
 }
 
 1;

@@ -98,19 +98,38 @@ sub infer_expr ($class, $element, $env = undef, $expected = undef) {
         }
     }
 
-    # ── Code reference: \&Package::function ─────
+    # ── Code reference: \&Package::function or \&local_func ─────
     if ($element->isa('PPI::Token::Cast') && $element->content eq '\\') {
         my $next = $element->snext_sibling;
-        if ($next && $next->isa('PPI::Token::Symbol') && $next->content =~ /\A&(.+)::(\w+)\z/) {
-            my ($pkg, $fname) = ($1, $2);
-            if (my $registry = $env && $env->{registry}) {
-                my $sig = $registry->lookup_function($pkg, $fname)
-                       // $registry->search_function_by_name($fname);
-                if ($sig && $sig->{params} && $sig->{returns}) {
-                    require Typist::Type::Func;
-                    return Typist::Type::Func->new(
-                        $sig->{params}, $sig->{returns}, $sig->{effects});
+        if ($next && $next->isa('PPI::Token::Symbol') && $next->content =~ /\A&/) {
+            my $sym = $next->content;
+            if ($sym =~ /\A&(.+)::(\w+)\z/) {
+                my ($pkg, $fname) = ($1, $2);
+                if (my $registry = $env && $env->{registry}) {
+                    my $sig = $registry->lookup_function($pkg, $fname)
+                           // $registry->search_function_by_name($fname);
+                    if ($sig && $sig->{params} && $sig->{returns}) {
+                        require Typist::Type::Func;
+                        return Typist::Type::Func->new(
+                            $sig->{params}, $sig->{returns}, $sig->{effects});
+                    }
                 }
+            } elsif ($sym =~ /\A&(\w+)\z/) {
+                # Local function reference: \&func_name
+                my $fname = $1;
+                if (my $registry = $env && $env->{registry}) {
+                    my $sig = $registry->search_function_by_name($fname);
+                    if ($sig && $sig->{params} && $sig->{returns}) {
+                        require Typist::Type::Func;
+                        return Typist::Type::Func->new(
+                            $sig->{params}, $sig->{returns}, $sig->{effects});
+                    }
+                }
+                # Annotated local function
+                if ($env && $env->{functions} && $env->{functions}{$fname}) {
+                    return Typist::Type::Atom->new('CodeRef');
+                }
+                # Unannotated / unresolved → undef for gradual typing
             }
         }
         return undef;
@@ -120,6 +139,18 @@ sub infer_expr ($class, $element, $env = undef, $expected = undef) {
     if ($element->isa('PPI::Token::Symbol')) {
         return undef unless $env;
         my $var_type = $env->{variables}{$element->content};
+
+        # $hash{key} → look up %hash in env, apply subscript directly
+        if (!$var_type && $element->content =~ /\A\$(.+)/) {
+            my $next = $element->snext_sibling;
+            if ($next && $next->isa('PPI::Structure::Subscript') && $next->braces eq '{}') {
+                my $hash_type = $env->{variables}{'%' . $1};
+                if ($hash_type) {
+                    return _infer_subscript_access($hash_type, $next);
+                }
+            }
+        }
+
         return undef unless $var_type;
 
         return _chase_subscript_chain($var_type, $element, $env);
@@ -253,6 +284,24 @@ sub infer_list_rhs_type ($class, $init_node, $env) {
         my $next = $init_node->snext_sibling;
         if ($next && $next->isa('PPI::Structure::List')) {
             return _infer_call($init_node->content, $env, $next);
+        }
+    }
+
+    # Pattern 4: List literal (...) → Tuple from element-wise inference
+    if ($init_node->isa('PPI::Structure::List')) {
+        my $expr = $init_node->find_first('PPI::Statement::Expression')
+                // $init_node->find_first('PPI::Statement');
+        if ($expr) {
+            my @elems;
+            for my $child ($expr->schildren) {
+                next if $child->isa('PPI::Token::Operator') && $child->content eq ',';
+                push @elems, $class->infer_expr($child, $env);
+            }
+            if (@elems && grep { defined } @elems) {
+                require Typist::Type::Param;
+                return Typist::Type::Param->new('Tuple',
+                    map { $_ // Typist::Type::Atom->new('Any') } @elems);
+            }
         }
     }
 
@@ -1465,8 +1514,18 @@ sub _infer_binop ($op, $lhs, $rhs, $env) {
     return Typist::Type::Atom->new('Bool')
         if $op eq '=~' || $op eq '!~';
 
+    # Defined-or → LUB of both sides (handles $x // "default")
+    if ($op eq '//') {
+        my $lt = __PACKAGE__->infer_expr($lhs, $env);
+        my $rt = __PACKAGE__->infer_expr($rhs, $env);
+        return $lt if $lt && !$rt;
+        return $rt if $rt && !$lt;
+        return Typist::Subtype->common_super($lt, $rt) if $lt && $rt;
+        return undef;
+    }
+
     # Logical → left operand type
-    if ($op =~ /\A(?:&&|\|\||\/\/|and|or)\z/) {
+    if ($op =~ /\A(?:&&|\|\||and|or)\z/) {
         return __PACKAGE__->infer_expr($lhs, $env);
     }
 
@@ -1488,8 +1547,8 @@ sub _infer_subscript_access ($var_type, $subscript) {
 
     # Hash/Struct subscript: $h->{key}
     if ($braces eq '{}') {
-        # HashRef[K, V] → V
-        if ($var_type->is_param && $var_type->base eq 'HashRef') {
+        # HashRef[K, V] or Hash[K, V] → V
+        if ($var_type->is_param && ($var_type->base eq 'HashRef' || $var_type->base eq 'Hash')) {
             return ($var_type->params)[1];
         }
 
