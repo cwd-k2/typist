@@ -94,6 +94,12 @@ sub complete_code ($class, $context, $doc, $registry) {
     if ($kind eq 'match_arm') {
         return $class->_complete_match_arms($context, $doc, $registry);
     }
+    if ($kind eq 'variable') {
+        return $class->_complete_variables($context, $doc);
+    }
+    if ($kind eq 'function') {
+        return $class->_complete_functions($context, $doc, $registry);
+    }
 
     [];
 }
@@ -292,6 +298,88 @@ sub _complete_effect_ops ($class, $context, $registry) {
     \@items;
 }
 
+sub _complete_variables ($class, $context, $doc) {
+    my $prefix = $context->{prefix} // '';
+    my $line   = $context->{line};
+
+    my $result  = $doc->result // return [];
+    my $symbols = $result->{symbols} // return [];
+
+    my $ppi_line = defined $line ? $line + 1 : undef;
+
+    my %seen;
+    my @items;
+
+    for my $sym (@$symbols) {
+        my $kind = $sym->{kind} // '';
+        next unless $kind eq 'variable' || $kind eq 'parameter';
+        my $name = $sym->{name} // next;
+        next unless $name =~ /^\$/;
+
+        my $bare = substr($name, 1);
+        next if $prefix ne '' && index($bare, $prefix) != 0;
+
+        if ($ppi_line && $sym->{scope_start} && $sym->{scope_end}) {
+            next unless $ppi_line >= $sym->{scope_start}
+                     && $ppi_line <= $sym->{scope_end};
+        }
+
+        next if $seen{$name}++;
+
+        push @items, +{
+            label  => $name,
+            kind   => 6,  # Variable
+            detail => $sym->{type} // '',
+        };
+    }
+
+    \@items;
+}
+
+sub _complete_functions ($class, $context, $doc, $registry) {
+    my $prefix = $context->{prefix} // '';
+    return [] unless $registry;
+
+    my $result = $doc->result // return [];
+    my $pkg    = $result->{extracted}{package} // 'main';
+
+    my %seen;
+    my @items;
+    my %functions = $registry->all_functions;
+
+    # Same-package functions
+    my $pkg_prefix = "${pkg}::";
+    for my $fqn (sort keys %functions) {
+        next unless index($fqn, $pkg_prefix) == 0;
+        my $name = substr($fqn, length($pkg_prefix));
+        next if $prefix ne '' && index($name, $prefix) != 0;
+        next if $seen{$name}++;
+        push @items, +{
+            label  => $name,
+            kind   => 3,  # Function
+            detail => _sig_detail($functions{$fqn}),
+        };
+    }
+
+    # Functions from use-imported packages
+    for my $used_pkg ($registry->package_uses($pkg)) {
+        my $used_prefix = "${used_pkg}::";
+        for my $fqn (sort keys %functions) {
+            next unless index($fqn, $used_prefix) == 0;
+            my $name = substr($fqn, length($used_prefix));
+            next if $prefix ne '' && index($name, $prefix) != 0;
+            next if $seen{$name}++;
+            push @items, +{
+                label  => $name,
+                kind   => 3,  # Function
+                detail => _sig_detail($functions{$fqn}),
+            };
+        }
+    }
+
+    \@items;
+}
+
 # Build a human-readable detail string from a function signature hash.
 sub _sig_detail ($sig) {
     my @params;
@@ -403,6 +491,10 @@ C<Document-E<gt>code_completion_at>) determines the completion kind:
 =item C<method> - Method names for C<$self-E<gt>> calls within the same package
 
 =item C<effect_op> - Effect operation names for C<Effect::> qualified calls
+
+=item C<variable> - Variable names (C<$> prefix) with types from analysis
+
+=item C<function> - Function names (bare word) from same and imported packages
 
 =back
 

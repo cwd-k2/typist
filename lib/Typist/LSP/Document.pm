@@ -1035,6 +1035,16 @@ sub code_completion_at ($self, $line, $col) {
         return +{ kind => 'effect_op', effect => $1, prefix => ($2 // '') };
     }
 
+    # $prefix → variable name completion
+    if ($text =~ /\$(\w*)\z/) {
+        return +{ kind => 'variable', prefix => $1, line => $line };
+    }
+
+    # bare word → function/constructor name completion
+    if ($text =~ /(?:^|[\s({,;=])([a-zA-Z_]\w*)\z/) {
+        return +{ kind => 'function', prefix => $1 };
+    }
+
     undef;
 }
 

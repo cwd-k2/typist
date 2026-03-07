@@ -619,4 +619,142 @@ PERL
     ok((grep { $_ eq 'Blue' }   @labels), 'Blue still available');
 };
 
+# ── Code Completion: variable name ─────────────────
+
+subtest 'code completion: variable name' => sub {
+    use Typist::LSP::Document;
+    use Typist::LSP::Completion;
+    use Typist::Registry;
+
+    my $source = <<'PERL';
+use v5.40;
+package VarPkg;
+sub greet :sig((Str, Int) -> Str) ($name, $age) {
+    my $msg :sig(Str) = "hello";
+    $
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(uri => 'file:///test_var.pm', content => $source);
+    my $reg = Typist::Registry->new;
+    $doc->analyze(workspace_registry => $reg);
+
+    # Context detection: $ at end of line 4
+    my $ctx = $doc->code_completion_at(4, length('    $'));
+    ok $ctx, 'detected variable context';
+    is $ctx->{kind}, 'variable', 'kind is variable';
+    is $ctx->{prefix}, '', 'empty prefix';
+
+    my $items = Typist::LSP::Completion->complete_code($ctx, $doc, $reg);
+    ok ref $items eq 'ARRAY', 'items is array';
+
+    my @labels = map { $_->{label} } @$items;
+    ok((grep { $_ eq '$name' } @labels), '$name in variable completions');
+    ok((grep { $_ eq '$age' }  @labels), '$age in variable completions');
+    ok((grep { $_ eq '$msg' }  @labels), '$msg in variable completions');
+
+    # Verify kind is Variable (6)
+    for my $item (@$items) {
+        is $item->{kind}, 6, "item '$item->{label}' has Variable kind";
+    }
+};
+
+subtest 'code completion: variable name with prefix' => sub {
+    my $source = <<'PERL';
+use v5.40;
+package VarPkg2;
+sub calc :sig((Int, Int) -> Int) ($amount, $rate) {
+    my $result :sig(Int) = 0;
+    my $remaining :sig(Int) = 0;
+    $re
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(uri => 'file:///test_var2.pm', content => $source);
+    my $reg = Typist::Registry->new;
+    $doc->analyze(workspace_registry => $reg);
+
+    my $ctx = $doc->code_completion_at(5, length('    $re'));
+    ok $ctx, 'detected variable context with prefix';
+    is $ctx->{prefix}, 're', 'prefix is re';
+
+    my $items = Typist::LSP::Completion->complete_code($ctx, $doc, $reg);
+    my @labels = map { $_->{label} } @$items;
+    ok((grep { $_ eq '$result' }    @labels), '$result in filtered completions');
+    ok((grep { $_ eq '$remaining' } @labels), '$remaining in filtered completions');
+    ok(!(grep { $_ eq '$rate' }     @labels), '$rate NOT in filtered (starts with ra)');
+    ok(!(grep { $_ eq '$amount' }   @labels), '$amount NOT in filtered completions');
+};
+
+# ── Code Completion: function name ─────────────────
+
+subtest 'code completion: function name' => sub {
+    use Typist::LSP::Workspace;
+
+    my $ws = Typist::LSP::Workspace->new;
+    my $source = <<'PERL';
+use v5.40;
+package FnPkg;
+
+sub greet :sig((Str) -> Str) ($name) { "Hello, $name" }
+sub goodbye :sig((Str) -> Str) ($name) { "Bye, $name" }
+sub helper :sig(() -> Void) () { }
+
+greet
+PERL
+    $ws->update_file('/fake/FnPkg.pm', $source);
+
+    my $doc = Typist::LSP::Document->new(uri => 'file:///fake/FnPkg.pm', content => $source);
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Context detection: bare word at end of line 7
+    my $ctx = $doc->code_completion_at(7, length('greet'));
+    ok $ctx, 'detected function context';
+    is $ctx->{kind}, 'function', 'kind is function';
+    is $ctx->{prefix}, 'greet', 'prefix is greet';
+
+    my $items = Typist::LSP::Completion->complete_code($ctx, $doc, $ws->registry);
+    my @labels = map { $_->{label} } @$items;
+    ok((grep { $_ eq 'greet' } @labels), 'greet in function completions');
+    ok(!(grep { $_ eq 'goodbye' } @labels), 'goodbye NOT with prefix greet');
+
+    # Verify kind is Function (3)
+    my ($greet_item) = grep { $_->{label} eq 'greet' } @$items;
+    is $greet_item->{kind}, 3, 'greet has Function kind';
+    like $greet_item->{detail}, qr/Str/, 'greet detail contains type info';
+};
+
+subtest 'code completion: function name includes imported' => sub {
+    my $ws = Typist::LSP::Workspace->new;
+
+    # Package that defines a function
+    my $lib_source = <<'PERL';
+use v5.40;
+package MathLib;
+sub add :sig((Int, Int) -> Int) ($a, $b) { $a + $b }
+sub multiply :sig((Int, Int) -> Int) ($a, $b) { $a * $b }
+PERL
+    $ws->update_file('/fake/MathLib.pm', $lib_source);
+
+    # Package that uses MathLib
+    my $main_source = <<'PERL';
+use v5.40;
+package Main;
+use MathLib;
+mul
+PERL
+    $ws->update_file('/fake/Main.pm', $main_source);
+
+    my $doc = Typist::LSP::Document->new(uri => 'file:///fake/Main.pm', content => $main_source);
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    my $ctx = $doc->code_completion_at(3, length('mul'));
+    ok $ctx, 'detected function context';
+
+    my $items = Typist::LSP::Completion->complete_code($ctx, $doc, $ws->registry);
+    my @labels = map { $_->{label} } @$items;
+    ok((grep { $_ eq 'multiply' } @labels), 'imported multiply in completions');
+    ok(!(grep { $_ eq 'add' }     @labels), 'add NOT in completions (prefix mul)');
+};
+
 done_testing;
