@@ -124,6 +124,9 @@ sub walk ($class, $type, $cb) {
     elsif ($type->is_struct) {
         $class->walk($type->record, $cb);
     }
+    elsif ($type->is_row) {
+        $class->walk($type->row_var, $cb) if $type->row_var;
+    }
     elsif ($type->is_eff) {
         $class->walk($type->row, $cb);
     }

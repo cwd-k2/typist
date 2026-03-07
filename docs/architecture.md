@@ -188,6 +188,12 @@ CHECK block fires (Typist.pm)
                        |  Register methods           |
                        +----------------------------+
                        |
+                       +--[ Visibility Phase ]------+
+                       |  ImportHint diagnostics     |
+                       |  (type provenance check:    |
+                       |   is_type_visible per ann)  |
+                       +----------------------------+
+                       |
                        +--[ Check Phase ]------------+
                        |  Checker->analyze()          |
                        |  TypeChecker->analyze()      |
@@ -688,8 +694,8 @@ Server (dispatch loop)
   +-- textDocument/didOpen    -> Document.analyze -> publish diagnostics
   +-- textDocument/didChange  -> Document.invalidate -> re-analyze
   +-- textDocument/didSave    -> re-diagnose all open docs (cross-file)
-  +-- textDocument/hover      -> Hover.provide(doc, position)
-  +-- textDocument/completion -> Completion.provide(doc, position)
+  +-- textDocument/hover      -> Hover.hover(symbol)
+  +-- textDocument/completion -> Completion.complete(ctx, typedefs, effects, ...)
   +-- textDocument/definition -> Definition lookup
   +-- textDocument/signatureHelp -> Signature display
   +-- textDocument/documentSymbol -> Symbol list

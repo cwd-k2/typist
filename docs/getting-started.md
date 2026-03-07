@@ -183,7 +183,7 @@ my $r :sig({ name => Str, age => Int }) = { name => "A", age => 1 };
 
 ```perl
 BEGIN {
-    struct Person => (name => Str, age => Int, email => optional(Str));
+    struct Person => (name => Str, age => Int, optional(email => Str));
 }
 
 my $p = Person(name => "Alice", age => 30);
@@ -365,7 +365,7 @@ BEGIN {
     struct Person => (
         name  => Str,
         age   => Int,
-        email => optional(Str),
+        optional(email => Str),
     );
 }
 
@@ -376,10 +376,10 @@ my $q = Person::derive($p, age => 31, email => "a@b.c");  # immutable derive
 
 ### optional Fields
 
-Use `optional(Type)` in struct definitions and `key? => Type` in record types:
+Use `optional(field => Type)` in struct definitions and `key? => Type` in record types:
 
 ```perl
-struct Item => (name => Str, desc => optional(Str));
+struct Item => (name => Str, optional(desc => Str));
 my $r :sig({ name => Str, desc? => Str }) = { name => "x" };   # desc omitted
 ```
 

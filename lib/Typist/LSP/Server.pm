@@ -235,7 +235,7 @@ sub _handle_did_save ($self, $params) {
         for my $other_doc (values $self->{documents}->%*) {
             $other_doc->invalidate;
             if ($other_doc->uri eq $uri && $extracted) {
-                $self->_publish_diagnostics_with_extracted($other_doc, $extracted);
+                $self->_publish_diagnostics($other_doc, $extracted);
             } else {
                 $self->_publish_diagnostics($other_doc);
             }
@@ -244,7 +244,7 @@ sub _handle_did_save ($self, $params) {
         # Body-only change — only re-diagnose the saved file
         $doc->invalidate;
         if ($extracted) {
-            $self->_publish_diagnostics_with_extracted($doc, $extracted);
+            $self->_publish_diagnostics($doc, $extracted);
         } else {
             $self->_publish_diagnostics($doc);
         }
@@ -621,31 +621,11 @@ sub _handle_code_action ($self, $params) {
 
 # ── Diagnostics Publishing ──────────────────────
 
-sub _publish_diagnostics_with_extracted ($self, $doc, $extracted) {
+sub _publish_diagnostics ($self, $doc, $extracted = undef) {
     my $result = eval {
         $doc->analyze(
             workspace_registry => $self->_ws_registry,
-            extracted          => $extracted,
-            gradual_hints      => 1,
-        );
-    };
-    if ($@) {
-        my $err = "$@";
-        chomp $err;
-        $self->{log}->error("analyze failed for @{[$doc->uri]}: $err");
-        $self->{transport}->send_notification('textDocument/publishDiagnostics', +{
-            uri         => $doc->uri,
-            diagnostics => [],
-        });
-        return;
-    }
-    $self->_emit_diagnostics($doc, $result);
-}
-
-sub _publish_diagnostics ($self, $doc) {
-    my $result = eval {
-        $doc->analyze(
-            workspace_registry => $self->_ws_registry,
+            ($extracted ? (extracted => $extracted) : ()),
             gradual_hints      => 1,
         );
     };

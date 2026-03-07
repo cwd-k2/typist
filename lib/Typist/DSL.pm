@@ -316,9 +316,13 @@ operation signatures. Used to type handler values passed to C<handle>.
 
 =head2 optional
 
-    optional(Str)
+    optional(email => Str)
 
 Mark a struct or record field as optional (may be omitted at construction).
+Returns a C<("field?", Type)> pair that is flattened into the field list.
+Use positionally in C<struct> definitions, not as a value for a key:
+
+    struct Person => (name => Str, age => Int, optional(email => Str));
 
 =head1 TYPE VARIABLE CONSTANTS
 

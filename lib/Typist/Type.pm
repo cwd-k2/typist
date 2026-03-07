@@ -96,7 +96,7 @@ Subclasses must implement all of the following methods:
 
 =over 4
 
-=item B<name> - Returns the type name
+=item B<name> - Returns the type name (identifier for named types, C<to_string> for compound types)
 
 =item B<to_string> - Returns a human-readable string representation
 

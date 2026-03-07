@@ -24,7 +24,7 @@ subtest 'Quantified: basic construction' => sub {
     );
 
     ok $q->is_quantified, 'is_quantified predicate';
-    is $q->name, 'Quantified', 'name';
+    is $q->name, 'forall A. (A) -> A', 'name delegates to to_string';
     is scalar($q->vars), 1, 'one var';
     ok $q->body->is_func, 'body is Func';
 };

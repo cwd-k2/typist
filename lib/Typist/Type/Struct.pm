@@ -28,6 +28,7 @@ sub type_params ($self) { $self->{type_params}->@* }
 sub type_args   ($self) { $self->{type_args}->@* }
 
 # Delegate field accessors to the inner Record
+sub fields          ($self) { $self->{record}->fields }
 sub required_fields ($self) { $self->{record}->required_fields }
 sub optional_fields ($self) { $self->{record}->optional_fields }
 sub required_ref    ($self) { $self->{record}->required_ref }

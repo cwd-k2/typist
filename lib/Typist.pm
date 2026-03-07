@@ -56,7 +56,7 @@ sub import ($class, @args) {
 
     for my $arg (@args) {
         if    ($arg eq '-runtime') { $Typist::RUNTIME = 1 }
-        elsif ($arg =~ /\A[A-Z]/ || $arg eq 'optional') {
+        elsif ($arg =~ /\A[A-Z]/) {
             die "Typist: DSL names cannot be imported via 'use Typist'. "
               . "Use 'use Typist::DSL qw($arg)' instead (at $caller)\n";
         }
@@ -106,7 +106,7 @@ sub import ($class, @args) {
     *{"${caller}::handle"}    = \&Typist::EffectDef::_handle;
     *{"${caller}::protocol"}  = \&Typist::EffectDef::_make_protocol;
     *{"${caller}::declare"}   = \&Typist::External::_declare;
-    *{"${caller}::optional"}  = sub ($name, $type) { ("${name}?", $type) };
+    *{"${caller}::optional"}  = \&Typist::DSL::optional;
 
 }
 
@@ -237,7 +237,7 @@ inner value.
 
 Define a nominal struct type with a constructor, field accessors,
 and immutable derive via C<< ${Name}::derive($obj, field => val) >>.
-Use C<optional(Type)> for optional fields.
+Use C<optional(field =E<gt> Type)> for optional fields (flattened into the field list).
 
 =head2 datatype
 

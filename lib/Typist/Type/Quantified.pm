@@ -21,7 +21,7 @@ sub vars         ($self) { $self->{vars}->@* }
 sub body         ($self) { $self->{body} }
 sub is_quantified ($self) { 1 }
 
-sub name ($self) { 'Quantified' }
+sub name ($self) { $self->to_string }
 
 sub to_string ($self) {
     my @var_strs = map {

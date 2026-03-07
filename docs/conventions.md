@@ -48,7 +48,7 @@ Union and Intersection constructors normalize their members by flattening nested
   - Constructors: `Name(field => val)`
   - Accessors: `$obj->field`
   - Immutable derive: `Name::derive($obj, field => val)`
-  - `optional(Type)` marks fields that can be omitted.
+  - `optional(field => Type)` marks fields that can be omitted (returns `("field?", Type)` pair, flattened into field list).
 - Subtyping: `Struct <: Record` (structural compatibility), but `Record </: Struct` (nominal barrier).
 
 ### Two-Tier Collection Types

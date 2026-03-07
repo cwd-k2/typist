@@ -209,7 +209,7 @@ sub greet :sig((Str) -> Str ![Console]) ($name) { "Hello, $name!" }
 
 ---
 
-## Struct Types
+## Record Types
 
 `{ key => Type, key? => Type }` — structural record types with optional fields.
 
@@ -439,7 +439,7 @@ Registry->lookup_type($name);    # Also resolves datatypes
 ```perl
 BEGIN {
     struct Point => (x => Int, y => Int);
-    struct Config => (host => Str, port => Int, debug => optional(Bool));
+    struct Config => (host => Str, port => Int, optional(debug => Bool));
 }
 
 my $p = Point(x => 1, y => 2);

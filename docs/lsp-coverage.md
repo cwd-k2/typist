@@ -65,6 +65,13 @@ All error kinds produced by static analysis and their LSP surface.
 
 ### Code Completion (in code body)
 
+Two context-detection APIs feed into code completion:
+
+1. **`completion_context(line, col)`** — annotation-level context (returns string: `type_expr` / `generic` / `effect` / `constraint`). Drives type-name completion inside `:sig(...)`.
+2. **`code_completion_at(line, col)`** — code-level context (returns hashref: `{ kind, var, prefix, ... }`). Drives struct-field, method, effect-op, and match-arm completion.
+
+The server tries annotation context first, then falls back to code context (see `Server._handle_completion`).
+
 | Context | Trigger Pattern | Candidates | Status |
 |---|---|---|---|
 | `record_field` | `$var->{` | Struct fields (filtered by prefix, with type detail) | Done |
