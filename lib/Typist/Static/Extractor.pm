@@ -29,6 +29,7 @@ sub extract ($class, $source) {
         use_modules    => [],
         special_words  => +{},
         assignment_ops => [],
+        call_words     => [],
         word_tokens    => [],
         package        => 'main',
         ppi_doc        => $doc,
@@ -86,6 +87,7 @@ sub extract ($class, $source) {
 sub _collect_special_words ($class, $doc, $result) {
     my %wanted = map { $_ => 1 } qw(match handle map grep sort);
     my %found;
+    my @call_words;
     my $words = $doc->find('PPI::Token::Word') || [];
     $result->{word_tokens} = $words;
     for my $word (@$words) {
@@ -93,7 +95,19 @@ sub _collect_special_words ($class, $doc, $result) {
         next unless $wanted{$name};
         push @{$found{$name} //= []}, $word;
     }
+    for my $word (@$words) {
+        my $prev = $word->sprevious_sibling;
+        if ($prev && ref($prev) && $prev->isa('PPI::Token::Operator') && $prev->content eq '->') {
+            push @call_words, $word;
+            next;
+        }
+
+        my $next = $word->snext_sibling // next;
+        next unless ref($next) && $next->isa('PPI::Structure::List');
+        push @call_words, $word;
+    }
     $result->{special_words} = \%found;
+    $result->{call_words} = \@call_words;
 }
 
 sub _collect_assignment_ops ($class, $stmts, $result) {
@@ -888,6 +902,9 @@ sub _extract_functions ($class, $subs, $result) {
                     $returns_expr = $type->to_string;
                 }
 
+                my $block = $sub_stmt->block;
+                my ($last_stmt, $last_first) = $class->_last_stmt_info($block);
+                my $block_words = $class->_collect_block_words($block);
                 $result->{functions}{$name} = +{
                     params_expr   => \@params_expr,
                     returns_expr  => $returns_expr,
@@ -902,13 +919,20 @@ sub _extract_functions ($class, $subs, $result) {
                     end_line      => $class->_end_line($sub_stmt),
                     col           => $sub_stmt->column_number,
                     name_col      => $name_col,
-                    block         => $sub_stmt->block,
+                    block         => $block,
+                    block_words   => $block_words,
+                    return_words  => $class->_collect_return_words($block),
+                    last_stmt     => $last_stmt,
+                    last_first    => $last_first,
                 };
             }
             # No :Type annotation — skip
         }
         else {
             # Unannotated function: no synthetic type info — gradual typing treats as unconstrained
+            my $block = $sub_stmt->block;
+            my ($last_stmt, $last_first) = $class->_last_stmt_info($block);
+            my $block_words = $class->_collect_block_words($block);
             $result->{functions}{$name} = +{
                 unannotated   => 1,
                 default_count => $default_count,
@@ -919,10 +943,34 @@ sub _extract_functions ($class, $subs, $result) {
                 end_line      => $class->_end_line($sub_stmt),
                 col           => $sub_stmt->column_number,
                 name_col      => $name_col,
-                block         => $sub_stmt->block,
+                block         => $block,
+                block_words   => $block_words,
+                return_words  => $class->_collect_return_words($block),
+                last_stmt     => $last_stmt,
+                last_first    => $last_first,
             };
         }
     }
+}
+
+sub _collect_return_words ($class, $block) {
+    return [] unless $block;
+    my $words = $class->_collect_block_words($block);
+    [ grep { $_->content eq 'return' } @$words ];
+}
+
+sub _collect_block_words ($class, $block) {
+    return [] unless $block;
+    return $block->find('PPI::Token::Word') || [];
+}
+
+sub _last_stmt_info ($class, $block) {
+    return (undef, undef) unless $block;
+    my @children = $block->schildren;
+    return (undef, undef) unless @children;
+    my $last_stmt = $children[-1];
+    my $last_first = $last_stmt->schild(0) // $last_stmt;
+    return ($last_stmt, $last_first);
 }
 
 # ── Loop Compound Parsing ─────────────────────────

@@ -37,7 +37,8 @@ sub _has_type_var ($self, $type) { $self->{has_type_var}->($type) }
 
 sub check_call_sites ($self) {
     my $ppi_doc = $self->{ppi_doc} // return;
-    my $words = $self->{extracted}{word_tokens}
+    my $words = $self->{extracted}{call_words}
+        // $self->{extracted}{word_tokens}
         // $ppi_doc->find('PPI::Token::Word')
         // [];
 
@@ -110,6 +111,7 @@ sub check_call_sites ($self) {
             next unless $cross_pkg;
             $fn = $cross_pkg;
         }
+        next unless $fn;
 
         # Skip unannotated local functions — no type info to check
         next if $fn->{unannotated};

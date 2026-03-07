@@ -9,7 +9,7 @@ use Typist::Error;
 use Typist::Error::Global;
 use Typist::Kind;
 use Typist::KindChecker;
-use Typist::Static::Timing qw(start_timing record_timing accumulate_timing);
+use Typist::Static::Timing qw(start_timing accumulate_timing);
 use Typist::Type::Fold;
 use Scalar::Util qw(refaddr);
 
@@ -25,29 +25,17 @@ sub new ($class, %args) {
         _fn_line_cache => +{},
         _type_wf_cache => +{},
         _free_vars_cache => +{},
+        _alias_defined_cache => +{},
     }, $class;
 }
 
 # ── CHECK-phase Static Analysis ─────────────────
 
 sub analyze ($self) {
-    my $timings = $self->{timings};
-
-    my $t0 = start_timing($timings);
     $self->_check_aliases;
-    record_timing($timings, aliases => $t0);
-
-    $t0 = start_timing($timings);
     $self->_check_functions;
-    record_timing($timings, functions => $t0);
-
-    $t0 = start_timing($timings);
     $self->_check_typeclasses;
-    record_timing($timings, typeclasses => $t0);
-
-    $t0 = start_timing($timings);
     $self->_check_protocols;
-    record_timing($timings, protocols => $t0);
 }
 
 # ── Source Location Helpers ─────────────────────
@@ -80,7 +68,7 @@ sub _tc_line ($self, $name) {
 # ── Alias Validation ────────────────────────────
 
 # Verify all aliases resolve without cycles.
-sub _check_aliases ($self) {
+sub _check_aliases :TIMED(aliases) ($self) {
     my %aliases = $self->{registry}->all_aliases;
 
     for my $name (sort keys %aliases) {
@@ -111,7 +99,7 @@ sub _check_aliases ($self) {
 # ── Function Signature Validation ───────────────
 
 # Verify all type vars in params/returns are declared in :Generic.
-sub _check_functions ($self) {
+sub _check_functions :TIMED(functions) ($self) {
     my %functions = $self->{registry}->all_functions;
     my $timings = $self->{timings};
 
@@ -122,19 +110,9 @@ sub _check_functions ($self) {
         my %declared = map { $_->{name} => 1 }
                        ($sig->{generics} // [])->@*;
 
-        # Collect unique free type variables from params and returns
-        my $t_phase = start_timing($timings);
-        my %seen_free;
-        for my $ptype (($sig->{params} // [])->@*) {
-            $seen_free{$_} = 1 for $self->_free_vars_of($ptype);
-        }
-        if ($sig->{returns}) {
-            $seen_free{$_} = 1 for $self->_free_vars_of($sig->{returns});
-        }
-        accumulate_timing($timings, 'functions.free_vars', $t_phase);
+        my %seen_free = $self->_collect_signature_free_vars($sig);
 
         # Check each free variable is declared
-        $t_phase = start_timing($timings);
         for my $var (sort keys %seen_free) {
             unless ($declared{$var}) {
                 $self->{errors}->collect(
@@ -146,81 +124,24 @@ sub _check_functions ($self) {
                 );
             }
         }
-        accumulate_timing($timings, 'functions.undeclared_vars', $t_phase);
 
-        # Validate effect annotations
-        $t_phase = start_timing($timings);
         if ($sig->{effects}) {
             $self->_check_effect_wellformed($sig->{effects}, $fqn, \%declared);
         }
-        accumulate_timing($timings, 'functions.effects', $t_phase);
 
-        # Validate bound expressions are well-formed
-        $t_phase = start_timing($timings);
-        for my $g (($sig->{generics} // [])->@*) {
-            next unless ref $g eq 'HASH' && $g->{bound_expr};
-            my $bound_type = eval { Typist::Parser->parse($g->{bound_expr}) };
-            if ($@) {
-                $self->{errors}->collect(
-                    kind    => 'InvalidBound',
-                    message => "Invalid bound expression '$g->{bound_expr}' for $g->{name} in $fqn: $@",
-                    file    => $fn_file,
-                    line    => $fn_line,
-                    col     => $fn_col,
-                );
-            } elsif ($bound_type) {
-                $self->_check_type_wellformed($bound_type, $fqn);
-            }
-        }
-        accumulate_timing($timings, 'functions.bounds', $t_phase);
+        $self->_check_function_bounds($sig, $fqn, $fn_line, $fn_file, $fn_col);
 
-        # Validate that param/return type expressions are well-formed
-        $t_phase = start_timing($timings);
         $self->_check_type_wellformed($_, $fqn) for ($sig->{params} // [])->@*;
         $self->_check_type_wellformed($sig->{returns}, $fqn) if $sig->{returns};
-        accumulate_timing($timings, 'functions.type_wellformed', $t_phase);
 
-        # Kind well-formedness: verify type expressions respect declared kinds
-        $t_phase = start_timing($timings);
-        my %var_kinds;
-        for my $g (($sig->{generics} // [])->@*) {
-            next unless ref $g eq 'HASH' && $g->{var_kind};
-            $var_kinds{$g->{name}} = $g->{var_kind};
-        }
-        if (%var_kinds) {
-            for my $ptype (($sig->{params} // [])->@*) {
-                eval { Typist::KindChecker->infer_kind($ptype, \%var_kinds) };
-                if ($@) {
-                    $self->{errors}->collect(
-                        kind    => 'KindError',
-                        message => "Kind error in parameter of $fqn: $@",
-                        file    => $fn_file,
-                        line    => $fn_line,
-                        col     => $fn_col,
-                    );
-                }
-            }
-            if ($sig->{returns}) {
-                eval { Typist::KindChecker->infer_kind($sig->{returns}, \%var_kinds) };
-                if ($@) {
-                    $self->{errors}->collect(
-                        kind    => 'KindError',
-                        message => "Kind error in return type of $fqn: $@",
-                        file    => $fn_file,
-                        line    => $fn_line,
-                        col     => $fn_col,
-                    );
-                }
-            }
-        }
-        accumulate_timing($timings, 'functions.kinds', $t_phase);
+        $self->_check_function_kinds($sig, $fqn, $fn_line, $fn_file, $fn_col);
         accumulate_timing($timings, 'functions.total', $t_sig);
     }
 }
 
 # ── Type Well-formedness ────────────────────────
 
-sub _check_type_wellformed ($self, $type, $context) {
+sub _check_type_wellformed :TIMED_ACC(functions.type_wellformed) ($self, $type, $context) {
     return unless $type;
 
     my ($ctx_line, $ctx_file, $ctx_col) = $self->_fn_line($context);
@@ -247,9 +168,7 @@ sub _unknown_aliases_in_type ($self, $type) {
     Typist::Type::Fold->walk($type, sub ($node) {
         return unless $node->is_alias;
         my $name = $node->alias_name;
-        return if $self->{registry}->has_alias($name);
-        return if $self->{registry}->has_typeclass($name);
-        return if $self->{registry}->lookup_effect($name);
+        return if $self->_alias_like_name_is_defined($name);
         push @unknown, $name;
     });
 
@@ -257,7 +176,7 @@ sub _unknown_aliases_in_type ($self, $type) {
     @unknown;
 }
 
-sub _free_vars_of ($self, $type) {
+sub _free_vars_of :TIMED_ACC(functions.free_vars) ($self, $type) {
     my $cache_key = ref $type ? refaddr($type) : "$type";
     if (exists $self->{_free_vars_cache}{$cache_key}) {
         return $self->{_free_vars_cache}{$cache_key}->@*;
@@ -268,9 +187,22 @@ sub _free_vars_of ($self, $type) {
     @free;
 }
 
+sub _alias_like_name_is_defined ($self, $name) {
+    if (exists $self->{_alias_defined_cache}{$name}) {
+        return $self->{_alias_defined_cache}{$name};
+    }
+
+    my $defined = $self->{registry}->has_alias($name)
+        || $self->{registry}->has_typeclass($name)
+        || $self->{registry}->lookup_effect($name)
+        ? 1 : 0;
+    $self->{_alias_defined_cache}{$name} = $defined;
+    return $defined;
+}
+
 # ── Effect Well-formedness ────────────────────────
 
-sub _check_effect_wellformed ($self, $eff, $context, $declared_vars) {
+sub _check_effect_wellformed :TIMED_ACC(functions.effects) ($self, $eff, $context, $declared_vars) {
     my $row = $eff->is_eff ? $eff->row : $eff;
     return unless $row->is_row;
 
@@ -306,7 +238,7 @@ sub _check_effect_wellformed ($self, $eff, $context, $declared_vars) {
 
 # ── TypeClass Superclass Validation ────────────
 
-sub _check_typeclasses ($self) {
+sub _check_typeclasses :TIMED(typeclasses) ($self) {
     my %typeclasses = $self->{registry}->all_typeclasses;
 
     # Check superclass references are valid
@@ -364,7 +296,7 @@ sub _eff_line ($self, $name) {
     ($info->{line}, $self->{file}, $info->{col} // 0);
 }
 
-sub _check_protocols ($self) {
+sub _check_protocols :TIMED(protocols) ($self) {
     my %effects = $self->{registry}->all_effects;
 
     for my $name (sort keys %effects) {
@@ -430,6 +362,72 @@ sub _check_protocols ($self) {
                 col     => $eff_col,
             );
         }
+    }
+}
+
+sub _collect_signature_free_vars ($self, $sig) {
+    my %seen_free;
+    for my $ptype (($sig->{params} // [])->@*) {
+        $seen_free{$_} = 1 for $self->_free_vars_of($ptype);
+    }
+    if ($sig->{returns}) {
+        $seen_free{$_} = 1 for $self->_free_vars_of($sig->{returns});
+    }
+
+    return %seen_free;
+}
+
+sub _check_function_bounds :TIMED_ACC(functions.bounds) ($self, $sig, $fqn, $fn_line, $fn_file, $fn_col) {
+    for my $g (($sig->{generics} // [])->@*) {
+        next unless ref $g eq 'HASH' && $g->{bound_expr};
+        my $bound_type = eval { Typist::Parser->parse($g->{bound_expr}) };
+        if ($@) {
+            $self->{errors}->collect(
+                kind    => 'InvalidBound',
+                message => "Invalid bound expression '$g->{bound_expr}' for $g->{name} in $fqn: $@",
+                file    => $fn_file,
+                line    => $fn_line,
+                col     => $fn_col,
+            );
+        } elsif ($bound_type) {
+            $self->_check_type_wellformed($bound_type, $fqn);
+        }
+    }
+}
+
+sub _check_function_kinds :TIMED_ACC(functions.kinds) ($self, $sig, $fqn, $fn_line, $fn_file, $fn_col) {
+    my %var_kinds;
+    for my $g (($sig->{generics} // [])->@*) {
+        next unless ref $g eq 'HASH' && $g->{var_kind};
+        $var_kinds{$g->{name}} = $g->{var_kind};
+    }
+
+    return unless %var_kinds;
+
+    for my $ptype (($sig->{params} // [])->@*) {
+        eval { Typist::KindChecker->infer_kind($ptype, \%var_kinds) };
+        if ($@) {
+            $self->{errors}->collect(
+                kind    => 'KindError',
+                message => "Kind error in parameter of $fqn: $@",
+                file    => $fn_file,
+                line    => $fn_line,
+                col     => $fn_col,
+            );
+        }
+    }
+
+    return unless $sig->{returns};
+
+    eval { Typist::KindChecker->infer_kind($sig->{returns}, \%var_kinds) };
+    if ($@) {
+        $self->{errors}->collect(
+            kind    => 'KindError',
+            message => "Kind error in return type of $fqn: $@",
+            file    => $fn_file,
+            line    => $fn_line,
+            col     => $fn_col,
+        );
     }
 }
 

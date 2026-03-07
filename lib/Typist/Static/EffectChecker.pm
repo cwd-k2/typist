@@ -3,6 +3,7 @@ use v5.40;
 
 our $VERSION = '0.01';
 
+use Typist::Static::Timing;
 use Typist::Type::Row;
 use Typist::Type::Eff;
 use Typist::Prelude;
@@ -22,6 +23,7 @@ sub new ($class, %args) {
         extracted => $args{extracted},
         ppi_doc   => $args{ppi_doc},
         file      => $args{file} // '(buffer)',
+        timings   => $args{timings},
     }, $class;
 }
 
@@ -29,7 +31,7 @@ sub _setup ($self) {
     $self->{_pkg} = $self->{extracted}{package};
 }
 
-sub check_function ($self, $name) {
+sub check_function :TIMED_ACC(function_checks.effects) ($self, $name) {
     my $fn    = $self->{extracted}{functions}{$name};
     my $block = $fn->{block} // return;
 
@@ -43,7 +45,7 @@ sub check_function ($self, $name) {
     my $caller_eff = $caller_sig->{effects};
 
     # Collect called functions and their effects
-    my @called = $self->_collect_called_effects($block, $self->{_pkg});
+    my @called = $self->_collect_called_effects($fn, $self->{_pkg});
 
     for my $call (@called) {
         my $callee_eff = $call->{effects};
@@ -92,9 +94,9 @@ sub analyze ($self) {
     }
 }
 
-sub _collect_called_effects ($self, $block, $pkg) {
+sub _collect_called_effects ($self, $fn, $pkg) {
     my @calls;
-    my $words = $block->find('PPI::Token::Word') || [];
+    my $words = $fn->{block_words} // [];
 
     for my $word (@$words) {
         my $callee_name = $word->content;
@@ -182,7 +184,7 @@ sub infer_effects ($class_or_self, $extracted, $registry) {
         next unless $fn->{unannotated};
         my $block = $fn->{block} // next;
 
-        my @called = $checker->_collect_called_effects($block, $pkg);
+        my @called = $checker->_collect_called_effects($fn, $pkg);
         my (%labels, $unknown);
 
         for my $call (@called) {

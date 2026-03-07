@@ -135,6 +135,7 @@ sub analyze ($class, $source, %opts) {
         extracted => $extracted,
         ppi_doc   => $extracted->{ppi_doc},
         file      => $file,
+        ($timings ? (timings => $timings) : ()),
     );
     my $protocol_checker = Typist::Static::ProtocolChecker->new(
         registry  => $registry,
@@ -142,6 +143,7 @@ sub analyze ($class, $source, %opts) {
         extracted => $extracted,
         ppi_doc   => $extracted->{ppi_doc},
         file      => $file,
+        ($timings ? (timings => $timings) : ()),
     );
     $effect_checker->_setup;
     $protocol_checker->_setup;
@@ -153,6 +155,9 @@ sub analyze ($class, $source, %opts) {
     }
     $protocol_checker->check_handle_blocks;
     record_timing($timings, function_checks => $t_phase);
+    if ($timings && $type_checker_timings && exists $type_checker_timings->{'function_checks.returns'}) {
+        $timings->{'function_checks.returns'} = $type_checker_timings->{'function_checks.returns'};
+    }
 
     # Phase 6: Collection (LSP hints)
     $t_phase = start_timing($timings);

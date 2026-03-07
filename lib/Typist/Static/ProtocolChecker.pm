@@ -3,6 +3,8 @@ use v5.40;
 
 our $VERSION = '0.01';
 
+use Typist::Static::Timing;
+
 # Static protocol state-machine checker.
 # Verifies that effect operations are called in the correct order
 # according to the protocol's finite state machine.
@@ -23,6 +25,7 @@ sub new ($class, %args) {
         extracted => $args{extracted},
         ppi_doc   => $args{ppi_doc},
         file      => $args{file} // '(buffer)',
+        timings   => $args{timings},
         hints     => [],
     }, $class;
 }
@@ -34,7 +37,7 @@ sub _setup ($self) {
     $self->{_checked_handles} = {};
 }
 
-sub check_function ($self, $name) {
+sub check_function :TIMED_ACC(function_checks.protocols) ($self, $name) {
     my $fn = $self->{extracted}{functions}{$name};
     return if $fn->{unannotated};
     my $block = $fn->{block} // return;
@@ -68,7 +71,7 @@ sub check_function ($self, $name) {
     }
 }
 
-sub check_handle_blocks ($self) {
+sub check_handle_blocks :TIMED(function_checks.handle_blocks) ($self) {
     $self->{_relaxed_handle} = 1;
     $self->_check_handle_blocks($self->{_pkg});
     delete $self->{_relaxed_handle};

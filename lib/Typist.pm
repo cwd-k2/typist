@@ -65,6 +65,10 @@ sub import ($class, @args) {
         require Typist::Subtype;
     }
 
+    # Prelude builtins/effects are part of the base Typist runtime contract.
+    require Typist::Prelude;
+    Typist::Prelude->install(Typist::Registry->_default);
+
     # Track this package
     Typist::Registry->register_package($caller);
 
@@ -113,11 +117,12 @@ sub import ($class, @args) {
 
 }
 
-CHECK {
+END {
+    return if ${^GLOBAL_PHASE} eq 'DESTRUCT';
     Typist::Error::Global->reset;
 
     # 0. Ensure Prelude effects (IO/Exn/Decl) + CORE builtins are in the default
-    #    Registry so CHECK-phase analysis can resolve them.  Idempotent.
+    #    Registry so static analysis can resolve them. Idempotent.
     require Typist::Prelude;
     Typist::Prelude->install(Typist::Registry->_default);
 
@@ -132,10 +137,9 @@ CHECK {
     if (Typist::Error::Global->has_errors && !$CHECK_QUIET) {
         warn Typist::Error::Global->report;
     }
-
 }
 
-# ── CHECK-Phase Static Analysis ──────────────────
+# ── Process-End Static Analysis ──────────────────
 
 sub _check_analyze () {
     require Typist::Static::Analyzer;

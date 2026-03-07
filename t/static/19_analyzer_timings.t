@@ -40,6 +40,10 @@ ok exists $result->{timings}{'file_checks.variables'}, 'variables timing exists'
 ok exists $result->{timings}{'file_checks.assignments'}, 'assignments timing exists';
 ok exists $result->{timings}{'file_checks.call_sites'}, 'call_sites timing exists';
 ok exists $result->{timings}{'file_checks.match_exhaustiveness'}, 'match timing exists';
+ok exists $result->{timings}{'function_checks.returns'}, 'returns timing exists';
+ok exists $result->{timings}{'function_checks.effects'}, 'effects timing exists';
+ok exists $result->{timings}{'function_checks.protocols'}, 'protocols timing exists';
+ok exists $result->{timings}{'function_checks.handle_blocks'}, 'handle_blocks timing exists';
 
 ok $result->{timings}{structural} >= 0, 'structural timing is numeric';
 ok $result->{timings}{'structural.functions.total'} >= 0, 'function total timing is numeric';

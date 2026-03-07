@@ -6,7 +6,7 @@ our $VERSION = '0.01';
 use List::Util 'any';
 use Typist::Static::CallChecker;
 use Typist::Static::Infer;
-use Typist::Static::Timing qw(start_timing record_timing);
+use Typist::Static::Timing;
 use Typist::Static::TypeEnv;
 use Typist::Subtype;
 use Typist::Type::Atom;
@@ -70,8 +70,7 @@ sub analyze ($self) {
 
 # ── Phase 4: File-Level Checks ──────────────────
 
-sub check_variables ($self) {
-    my $t0 = start_timing($self->{timings});
+sub check_variables :TIMED(variables) ($self) {
     for my $var ($self->{extracted}{variables}->@*) {
         my $init_node = $var->{init_node} // next;
 
@@ -105,11 +104,9 @@ sub check_variables ($self) {
             );
         }
     }
-    record_timing($self->{timings}, variables => $t0);
 }
 
-sub check_assignments ($self) {
-    my $t0 = start_timing($self->{timings});
+sub check_assignments :TIMED(assignments) ($self) {
 
     # Only check explicitly annotated variables (not inferred ones)
     my %annotated = map { $_->{name} => 1 }
@@ -162,11 +159,9 @@ sub check_assignments ($self) {
             );
         }
     }
-    record_timing($self->{timings}, assignments => $t0);
 }
 
-sub check_call_sites ($self) {
-    my $t0 = start_timing($self->{timings});
+sub check_call_sites :TIMED(call_sites) ($self) {
     my $te = $self->{type_env};
     Typist::Static::CallChecker->new(
         extracted     => $self->{extracted},
@@ -179,11 +174,9 @@ sub check_call_sites ($self) {
         has_type_var  => \&_has_type_var,
         gradual_hints => $self->{gradual_hints},
     )->check_call_sites;
-    record_timing($self->{timings}, call_sites => $t0);
 }
 
-sub check_match_exhaustiveness ($self) {
-    my $t0 = start_timing($self->{timings});
+sub check_match_exhaustiveness :TIMED(match_exhaustiveness) ($self) {
     my $words = $self->{extracted}{special_words}{match} // [];
 
     for my $word (@$words) {
@@ -219,12 +212,11 @@ sub check_match_exhaustiveness ($self) {
             ],
         );
     }
-    record_timing($self->{timings}, match_exhaustiveness => $t0);
 }
 
 # ── Phase 5: Function-Level Checks ──────────────
 
-sub check_function_returns ($self, $name) {
+sub check_function_returns :TIMED_ACC(function_checks.returns) ($self, $name) {
     my $fn = $self->{extracted}{functions}{$name};
     my $returns_expr = $fn->{returns_expr} // return;
     my $block = $fn->{block} // return;
@@ -237,10 +229,8 @@ sub check_function_returns ($self, $name) {
     my $env = $self->_fn_env($fn);
 
     # Find return statements within the block
-    my $returns = $block->find('PPI::Token::Word') || [];
+    my $returns = $fn->{return_words} // [];
     for my $ret (@$returns) {
-        next unless $ret->content eq 'return';
-
         my $val = $ret->snext_sibling or next;
         # skip 'return;' (bare return)
         next if $val->isa('PPI::Token::Structure') && $val->content eq ';';
@@ -279,12 +269,9 @@ sub check_function_returns ($self, $name) {
     # Void return type — implicit value is irrelevant
     return if $declared->is_atom && $declared->name eq 'Void';
 
-    my @children = $block->schildren;
-    return unless @children;
-
     # Use node-aware env for implicit return (accounts for early return narrowing)
-    my $last_stmt = $children[-1];
-    my $last_first = $last_stmt->schild(0) // $last_stmt;
+    my $last_stmt = $fn->{last_stmt} // return;
+    my $last_first = $fn->{last_first} // $last_stmt;
     my $impl_env = $self->_env_for_node($last_first);
     $self->_check_implicit_return_of_stmt($last_stmt, $impl_env, $declared, $name);
 }
@@ -350,15 +337,11 @@ sub collect_fn_return_types ($self) {
     for my $name (sort keys $self->{extracted}{functions}->%*) {
         my $fn = $self->{extracted}{functions}{$name};
         next unless $fn->{unannotated};
-        my $block = $fn->{block} // next;
-
         my $env = $self->_fn_env($fn);
         my @types;
 
         # Explicit returns
-        my $words = $block->find('PPI::Token::Word') || [];
-        for my $ret (@$words) {
-            next unless $ret->content eq 'return';
+        for my $ret (($fn->{return_words} // [])->@*) {
             my $val = $ret->snext_sibling or next;
             next if $val->isa('PPI::Token::Structure') && $val->content eq ';';
             my $t = Typist::Static::Infer->infer_expr($val, $self->_env_for_node($ret));
@@ -366,17 +349,14 @@ sub collect_fn_return_types ($self) {
         }
 
         # Implicit return (last expression)
-        my @stmts = $block->schildren;
-        if (@stmts) {
-            my $last = $stmts[-1];
-            my $first = $last->schild(0);
-            if ($first && !($first->isa('PPI::Token::Word') && $first->content eq 'return')) {
-                # Try statement-level first (ternary/binary), then first-child (match/handle/call)
-                my $impl_env = $self->_env_for_node($last);
-                my $t = Typist::Static::Infer->infer_expr($last, $impl_env)
-                     // Typist::Static::Infer->infer_expr($first, $impl_env);
-                push @types, $t if $t;
-            }
+        my $last = $fn->{last_stmt};
+        my $first = $fn->{last_first};
+        if ($last && $first && !($first->isa('PPI::Token::Word') && $first->content eq 'return')) {
+            # Try statement-level first (ternary/binary), then first-child (match/handle/call)
+            my $impl_env = $self->_env_for_node($last);
+            my $t = Typist::Static::Infer->infer_expr($last, $impl_env)
+                 // Typist::Static::Infer->infer_expr($first, $impl_env);
+            push @types, $t if $t;
         }
 
         next unless @types;
