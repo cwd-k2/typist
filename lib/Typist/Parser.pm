@@ -58,6 +58,12 @@ sub _cache_evict ($cache) {
 
 # ── Public API ────────────────────────────────────
 
+sub _clear_cache ($class) {
+    %_PARSE_CACHE      = ();
+    %_ANNOTATION_CACHE = ();
+    $_CACHE_EPOCH       = 0;
+}
+
 sub parse ($class, $expr) {
     die "Typist::Parser: input too long (" . length($expr) . " > $_MAX_INPUT_LENGTH)"
         if length($expr) > $_MAX_INPUT_LENGTH;
@@ -921,6 +927,6 @@ is a row variable. Returns a L<Typist::Type::Row> object.
 
 =head1 SEE ALSO
 
-L<Typist>, L<Typist::Type>, L<Typist::DSL>
+L<Typist>, L<Typist::Type>
 
 =cut

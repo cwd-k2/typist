@@ -32,7 +32,7 @@ run = "carton exec -- perl t/lsp/e2e_smoke.pl"
 
 [tasks.example]
 description = "Run all examples"
-depends = ["example:foundations", "example:composite", "example:generics", "example:nominal", "example:algebraic", "example:typeclasses", "example:effects", "example:gradual", "example:dsl", "example:hof", "example:chains"]
+depends = ["example:foundations", "example:composite", "example:generics", "example:nominal", "example:algebraic", "example:typeclasses", "example:effects", "example:gradual", "example:hof", "example:chains"]
 
 [tasks."example:foundations"]
 description = "Run foundations example (types, aliases, functions)"
@@ -66,10 +66,6 @@ run = "carton exec -- perl example/07_effects.pl"
 description = "Run gradual typing example (flow typing, inference)"
 run = "carton exec -- perl example/08_gradual_typing.pl"
 
-[tasks."example:dsl"]
-description = "Run DSL example (type constructors, operators)"
-run = "carton exec -- perl example/09_dsl.pl"
-
 [tasks."example:hof"]
 description = "Run higher-order function inference example"
 run = "carton exec -- perl example/10_higher_order.pl"
@@ -77,6 +73,19 @@ run = "carton exec -- perl example/10_higher_order.pl"
 [tasks."example:chains"]
 description = "Run method chain example (struct accessors, newtype ->base)"
 run = "carton exec -- perl example/12_method_chains.pl"
+
+[tasks.bench]
+description = "Run all benchmarks"
+run = """
+for f in bench/*.pl; do
+  echo ""
+  carton exec -- perl "$f"
+done
+"""
+
+[tasks."bench:quick"]
+description = "Run a single benchmark (e.g. mise run bench:quick bench/01_parser.pl)"
+run = "carton exec -- perl"
 
 [tasks."vscode:deps"]
 description = "Install VSCode extension dependencies"
