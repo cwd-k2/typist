@@ -3,9 +3,9 @@ use v5.40;
 
 our $VERSION = '0.01';
 our $RUNTIME     = $ENV{TYPIST_RUNTIME}     ? 1 : 0;
-our $STATIC      = $ENV{TYPIST_STATIC}      ? 1 : 0;
+our $CHECK       = $ENV{TYPIST_CHECK}       ? 1 : 0;
 our $CHECK_QUIET = $ENV{TYPIST_CHECK_QUIET} ? 1 : 0;
-our $STATIC_HOOK_INSTALLED = 0;
+our $CHECK_HOOK_INSTALLED = 0;
 
 # Core runtime — always needed
 use Typist::Type;
@@ -55,7 +55,7 @@ sub import ($class, @args) {
 
     for my $arg (@args) {
         if    ($arg eq '-runtime') { $Typist::RUNTIME = 1 }
-        elsif ($arg eq '-static')  { $Typist::STATIC  = 1 }
+        elsif ($arg eq '-check')   { $Typist::CHECK   = 1 }
         elsif ($arg =~ /\A[A-Z]/) {
             die "Typist: unknown import argument '$arg'. "
               . "Use :sig($arg) for type annotations (at $caller)\n";
@@ -72,9 +72,9 @@ sub import ($class, @args) {
     require Typist::Prelude;
     Typist::Prelude->install(Typist::Registry->_default);
 
-    if ($Typist::STATIC && !$Typist::STATIC_HOOK_INSTALLED && ${^GLOBAL_PHASE} ne 'RUN') {
+    if ($Typist::CHECK && !$Typist::CHECK_HOOK_INSTALLED && ${^GLOBAL_PHASE} ne 'RUN') {
         eval q{ CHECK { Typist::_run_static_checks() } 1 } or die $@;
-        $Typist::STATIC_HOOK_INSTALLED = 1;
+        $Typist::CHECK_HOOK_INSTALLED = 1;
     }
 
     # Track this package
@@ -200,7 +200,7 @@ Typist - A static-first type system for Perl 5
 
     use Typist;            # Runtime helpers only
     use Typist -runtime;   # Enable runtime enforcement
-    use Typist -static;    # Enable CHECK-phase static diagnostics
+    use Typist -check;     # Enable CHECK-phase static diagnostics
 
     # Type aliases
     BEGIN {
@@ -228,7 +228,7 @@ via the LSP server, with zero runtime overhead by default.
 
     use Typist;            # Runtime helpers only (default)
     use Typist -runtime;   # Enable runtime enforcement
-    use Typist -static;    # Enable CHECK-phase static diagnostics
+    use Typist -check;     # Enable CHECK-phase static diagnostics
 
 =head1 EXPORTS
 
@@ -335,7 +335,7 @@ L<Typist::Prelude> entries for the declared name.
 
 Set to C<1> to enable runtime type enforcement.
 
-=item C<TYPIST_STATIC>
+=item C<TYPIST_CHECK>
 
 Set to C<1> to enable CHECK-phase static diagnostics.
 

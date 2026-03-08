@@ -28,7 +28,7 @@ PERL
 subtest 'CHECK detects TypeMismatch in static-only mode' => sub {
     my $out = _run_perl_code(<<'PERL');
 use v5.40;
-use Typist -static;
+use Typist -check;
 
 sub greet :sig((Str) -> Str) ($name) { "Hello, $name!" }
 
@@ -44,7 +44,7 @@ PERL
 subtest 'CHECK detects EffectMismatch in static-only mode' => sub {
     my $out = _run_perl_code(<<'PERL');
 use v5.40;
-use Typist -static;
+use Typist -check;
 
 BEGIN {
     effect Console => +{ writeLine => 'CodeRef[Str -> Void]' };
@@ -133,7 +133,7 @@ PERL
 subtest 'CHECK_QUIET suppresses warn and skips Analyzer' => sub {
     my $code = <<'PERL';
 use v5.40;
-use Typist -static;
+use Typist -check;
 
 sub greet :sig((Str) -> Str) ($name) { "Hello, $name!" }
 

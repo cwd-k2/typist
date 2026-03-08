@@ -7,7 +7,7 @@ All environment variables recognized by Typist, its LSP server, and the `typist-
 | Variable | Values | Default | Description |
 |----------|--------|---------|-------------|
 | `TYPIST_RUNTIME` | `1` | off | Enable runtime type enforcement |
-| `TYPIST_STATIC` | `1` | off | Enable CHECK-phase static analysis |
+| `TYPIST_CHECK` | `1` | off | Enable CHECK-phase static analysis |
 | `TYPIST_CHECK_QUIET` | `1` | off | Silence CHECK-phase static diagnostics |
 | `TYPIST_LSP_LOG` | `off`, `error`, `warn`, `info`, `debug`, `trace` | `info` | LSP server log level |
 | `TYPIST_LSP_TRACE` | file path | (none) | Record LSP messages to JSONL file |
@@ -29,7 +29,7 @@ When unset or `0` (the default):
 
 - Only structural enforcement is active at runtime (unknown fields, required fields, arity checks in constructors).
 - No `Tie::Scalar` monitoring.
-- Static analysis is still opt-in via `-static` or `TYPIST_STATIC=1`.
+- Static analysis is still opt-in via `-check` or `TYPIST_CHECK=1`.
 
 ```bash
 # Enable via environment
@@ -48,9 +48,9 @@ use Typist -runtime;
 | Constructor type validation | OFF | ON |
 | `Tie::Scalar` variable monitoring | OFF | ON |
 
-### `TYPIST_STATIC`
+### `TYPIST_CHECK`
 
-Enables CHECK-phase static analysis. Equivalent to `use Typist -static;` in source code.
+Enables CHECK-phase static analysis. Equivalent to `use Typist -check;` in source code.
 
 When set to `1`:
 
@@ -66,10 +66,10 @@ When unset or `0` (the default):
 
 ```bash
 # Enable compile-time static analysis
-TYPIST_STATIC=1 perl my_app.pl
+TYPIST_CHECK=1 perl my_app.pl
 
 # Equivalent in source code
-use Typist -static;
+use Typist -check;
 ```
 
 ### `TYPIST_CHECK_QUIET`
@@ -83,7 +83,7 @@ This is useful when the LSP server is running, since the LSP provides the same d
 ```bash
 # Suppress CHECK output when LSP is active
 export TYPIST_CHECK_QUIET=1
-TYPIST_STATIC=1 perl my_app.pl    # No STDERR diagnostics from CHECK phase
+TYPIST_CHECK=1 perl my_app.pl    # No STDERR diagnostics from CHECK phase
 ```
 
 This does **not** affect:

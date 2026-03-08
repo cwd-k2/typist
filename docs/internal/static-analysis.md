@@ -889,7 +889,7 @@ sub handler :sig((Str) -> Str ![Console]) ($s) {
 
 ### TYPIST_CHECK_QUIET
 
-Setting `TYPIST_CHECK_QUIET=1` skips the `_check_analyze()` pass when CHECK-phase static analysis is enabled via `-static` or `TYPIST_STATIC=1`. Use this when `typist-lsp` provides diagnostics to avoid duplicate output.
+Setting `TYPIST_CHECK_QUIET=1` skips the `_check_analyze()` pass when CHECK-phase static analysis is enabled via `-check` or `TYPIST_CHECK=1`. Use this when `typist-lsp` provides diagnostics to avoid duplicate output.
 
 ---
 

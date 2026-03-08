@@ -370,7 +370,7 @@ risky_call();
 Setting `TYPIST_CHECK_QUIET=1` skips the analyzer portion of CHECK-phase static analysis when static mode is enabled. Use this when the LSP server provides diagnostics, to avoid duplicate output:
 
 ```bash
-export TYPIST_STATIC=1
+export TYPIST_CHECK=1
 export TYPIST_CHECK_QUIET=1
 ```
 

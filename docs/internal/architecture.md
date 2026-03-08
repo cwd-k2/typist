@@ -880,7 +880,7 @@ NEVER (unless LSP):
 
 ### Rationale
 
-PPI is the heaviest dependency (~1MB of code, creates full ASTs). By loading it lazily via opt-in static analysis paths, programs that just `use Typist;` avoid the PPI startup cost entirely. PPI and all `Static::*` modules are **never** loaded during normal program execution unless `-static`, `TYPIST_STATIC=1`, `typist-check`, or the LSP explicitly needs them.
+PPI is the heaviest dependency (~1MB of code, creates full ASTs). By loading it lazily via opt-in static analysis paths, programs that just `use Typist;` avoid the PPI startup cost entirely. PPI and all `Static::*` modules are **never** loaded during normal program execution unless `-check`, `TYPIST_CHECK=1`, `typist-check`, or the LSP explicitly needs them.
 
 The `Attribute` module defers its 8 heavy dependencies (Parser, Inference, Subtype, etc.) via `_ensure_deps()`, loading them only on the first `:sig()` annotation encountered. When no `:sig()` is used (e.g., a module that only defines types via `struct`/`datatype`), these modules are never loaded.
 

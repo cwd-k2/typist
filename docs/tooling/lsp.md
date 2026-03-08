@@ -174,7 +174,7 @@ This design balances responsiveness with performance: full PPI parse plus type c
 |----------|---------|-------------|
 | `TYPIST_LSP_LOG` | `info` | Log level: `off`, `error`, `warn`, `info`, `debug`, `trace`. Logs go to stderr. |
 | `TYPIST_LSP_TRACE` | (none) | Path to a JSONL file for recording all LSP messages with timestamps. Useful for debugging editor integration. |
-| `TYPIST_STATIC` | (unset) | Set to `1` to enable CHECK-phase output in direct `perl` runs. Usually unnecessary when using the LSP. |
+| `TYPIST_CHECK` | (unset) | Set to `1` to enable CHECK-phase output in direct `perl` runs. Usually unnecessary when using the LSP. |
 | `TYPIST_CHECK_QUIET` | (unset) | Set to `1` to suppress CHECK-phase output when static mode is enabled. Recommended when using the LSP, as it provides the same diagnostics inline. |
 
 ### Debugging

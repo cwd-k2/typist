@@ -82,7 +82,7 @@ our @EXPORT_OK = qw(calculate_total apply_discount format_price);
 # ... rest unchanged
 ```
 
-This does nothing visible. No diagnostics, and almost no runtime cost. It enables `:sig()` attributes, runtime helpers, and the prelude. Static analysis remains explicit via `typist-check`, the LSP, or `use Typist -static;`.
+This does nothing visible. No diagnostics, and almost no runtime cost. It enables `:sig()` attributes, runtime helpers, and the prelude. Static analysis remains explicit via `typist-check`, the LSP, or `use Typist -check;`.
 
 ---
 
@@ -253,7 +253,7 @@ Color is auto-disabled when stdout is not a TTY, so `--no-color` is optional in 
 
 Configure your editor to use `typist-lsp` for real-time feedback. See [Editor Setup](../getting-started/editor-setup.md) for Neovim, VS Code, and other editor configurations.
 
-If you opt into CHECK-phase analysis with `TYPIST_STATIC=1` or `use Typist -static;`, set `TYPIST_CHECK_QUIET=1` to suppress duplicate output when the LSP is providing the same diagnostics inline.
+If you opt into CHECK-phase analysis with `TYPIST_CHECK=1` or `use Typist -check;`, set `TYPIST_CHECK_QUIET=1` to suppress duplicate output when the LSP is providing the same diagnostics inline.
 
 ---
 

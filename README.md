@@ -114,7 +114,7 @@ For the complete type system reference, see the [Guide](docs/guide/index.md).
 
 | Feature | Description |
 |---------|-------------|
-| Opt-in CHECK analysis | Type/effect errors at compile time via `warn` when `-static` or `TYPIST_STATIC=1` is enabled |
+| Opt-in CHECK analysis | Type/effect errors at compile time via `warn` when `-check` or `TYPIST_CHECK=1` is enabled |
 | CLI checker | Terminal-based static analysis with colored output |
 | LSP server | Hover, completion, diagnostics, go-to-definition, references, rename, code actions, semantic tokens, and more |
 | Cross-file checking | Workspace-level type resolution across modules (aliases, newtypes, datatypes, structs, effects, typeclasses, instances) |
@@ -126,8 +126,8 @@ For the complete type system reference, see the [Guide](docs/guide/index.md).
 
 | Mode | Cost | Behavior |
 |------|------|----------|
-| Default (`use Typist`) | Near-zero runtime overhead | Runtime helpers only; use `typist-check`, LSP, or `-static` for static diagnostics |
-| Static (`-static`) | Compile-time analysis only | `warn` diagnostics at CHECK phase |
+| Default (`use Typist`) | Near-zero runtime overhead | Runtime helpers only; use `typist-check`, LSP, or `-check` for static diagnostics |
+| CHECK (`-check`) | Compile-time analysis only | `warn` diagnostics at CHECK phase |
 | Runtime (`-runtime`) | Per-call type checks via `tie` + sub wrapping | `die` on type violation |
 | Newtype boundary | Always active | Constructor validation regardless of mode |
 
@@ -495,7 +495,7 @@ severity = 2
 | Variable | Effect |
 |----------|--------|
 | `TYPIST_RUNTIME` | Enable runtime enforcement (`1` = on) |
-| `TYPIST_STATIC` | Enable CHECK-phase static analysis (`1` = on) |
+| `TYPIST_CHECK` | Enable CHECK-phase static analysis (`1` = on) |
 | `TYPIST_CHECK_QUIET` | Suppress CHECK-phase diagnostics when static analysis is enabled (`1` = quiet) |
 | `TYPIST_LSP_LOG` | LSP log level (`off`/`error`/`warn`/`info`/`debug`/`trace`) |
 | `TYPIST_LSP_TRACE` | Path to JSONL trace file for LSP message recording |

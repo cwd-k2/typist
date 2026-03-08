@@ -112,10 +112,10 @@ To override, open VS Code settings and set:
 
 ## Suppressing Redundant CHECK Output
 
-When the LSP server is running, it provides the same diagnostics that opt-in CHECK analysis would emit to STDERR. If you also enable CHECK analysis (`TYPIST_STATIC=1` or `use Typist -static;`), set `TYPIST_CHECK_QUIET` to avoid duplicate terminal warnings:
+When the LSP server is running, it provides the same diagnostics that opt-in CHECK analysis would emit to STDERR. If you also enable CHECK analysis (`TYPIST_CHECK=1` or `use Typist -check;`), set `TYPIST_CHECK_QUIET` to avoid duplicate terminal warnings:
 
 ```sh
-export TYPIST_STATIC=1
+export TYPIST_CHECK=1
 export TYPIST_CHECK_QUIET=1
 ```
 
@@ -127,7 +127,7 @@ The server recognizes several environment variables for debugging and logging:
 
 | Variable | Description |
 |----------|-------------|
-| `TYPIST_STATIC=1` | Enable CHECK-phase static diagnostics in direct `perl` runs |
+| `TYPIST_CHECK=1` | Enable CHECK-phase static diagnostics in direct `perl` runs |
 | `TYPIST_CHECK_QUIET=1` | Suppress CHECK-phase STDERR diagnostics when static analysis is enabled |
 | `TYPIST_LSP_LOG=LEVEL` | Set log level: `off`, `error`, `warn`, `info` (default), `debug`, `trace`. Logs go to STDERR |
 | `TYPIST_LSP_TRACE=/path/to.jsonl` | Record all LSP messages with timestamps to a JSONL file |
