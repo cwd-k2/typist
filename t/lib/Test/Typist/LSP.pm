@@ -6,11 +6,13 @@ use JSON::PP;
 
 use Typist::LSP::Transport;
 use Typist::LSP::Server;
+use Typist::LSP::Document;
 use Typist::LSP::Logger;
 
 our @EXPORT_OK = qw(
     frame  parse_responses  run_session
     lsp_request  lsp_notification  init_shutdown_wrap
+    make_doc
 );
 
 my $JSON = JSON::PP->new->utf8->canonical;
@@ -76,6 +78,17 @@ sub init_shutdown_wrap (@inner) {
         @inner,
         lsp_request(99, 'shutdown'),
         lsp_notification('exit'),
+    );
+}
+
+# ── Document Factory ─────────────────────────────
+
+# Create a lightweight Document from source text (no analysis).
+sub make_doc ($source) {
+    Typist::LSP::Document->new(
+        uri     => 'file:///test.pl',
+        content => $source,
+        version => 1,
     );
 }
 

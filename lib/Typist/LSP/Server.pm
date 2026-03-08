@@ -462,13 +462,7 @@ sub _handle_definition ($self, $params) {
 
     # Try same-file definition first
     if (my $def = $doc->definition_at($line, $col)) {
-        return +{
-            uri   => $def->{uri},
-            range => +{
-                start => +{ line => $def->{line}, character => $def->{col} },
-                end   => +{ line => $def->{line}, character => $def->{col} + length($def->{name}) },
-            },
-        };
+        return _make_location($def->{uri}, $def->{line}, $def->{col}, length($def->{name}));
     }
 
     # Fallback: workspace cross-file definition
@@ -480,13 +474,7 @@ sub _handle_definition ($self, $params) {
             # Qualified Effect::op → try effect name
             if ($bare =~ /\A([A-Z]\w*)::\w+\z/) {
                 if (my $def = $self->{workspace}->find_definition($1)) {
-                    return +{
-                        uri   => $def->{uri},
-                        range => +{
-                            start => +{ line => $def->{line}, character => $def->{col} },
-                            end   => +{ line => $def->{line}, character => $def->{col} + length($def->{name}) },
-                        },
-                    };
+                    return _make_location($def->{uri}, $def->{line}, $def->{col}, length($def->{name}));
                 }
             }
 
@@ -498,26 +486,14 @@ sub _handle_definition ($self, $params) {
                     if ($type_str) {
                         (my $type_name = $type_str) =~ s/\[.*\]//;
                         if (my $def = $self->{workspace}->find_definition($type_name)) {
-                            return +{
-                                uri   => $def->{uri},
-                                range => +{
-                                    start => +{ line => $def->{line}, character => $def->{col} },
-                                    end   => +{ line => $def->{line}, character => $def->{col} + length($def->{name}) },
-                                },
-                            };
+                            return _make_location($def->{uri}, $def->{line}, $def->{col}, length($def->{name}));
                         }
                     }
                 }
             }
 
             if (my $def = $self->{workspace}->find_definition($bare)) {
-                return +{
-                    uri   => $def->{uri},
-                    range => +{
-                        start => +{ line => $def->{line}, character => $def->{col} },
-                        end   => +{ line => $def->{line}, character => $def->{col} + length($def->{name}) },
-                    },
-                };
+                return _make_location($def->{uri}, $def->{line}, $def->{col}, length($def->{name}));
             }
         }
     }
@@ -558,17 +534,7 @@ sub _handle_references ($self, $params) {
             : $doc->find_references($bare);
     }
 
-    my @locations = map {
-        +{
-            uri   => $_->{uri},
-            range => +{
-                start => +{ line => $_->{line}, character => $_->{col} },
-                end   => +{ line => $_->{line}, character => $_->{col} + $_->{len} },
-            },
-        }
-    } @$refs;
-
-    \@locations;
+    [map { _make_location($_->{uri}, $_->{line}, $_->{col}, $_->{len}) } @$refs];
 }
 
 # ── Rename Handler ──────────────────────────────
@@ -597,11 +563,9 @@ sub _handle_rename ($self, $params) {
 
     my %changes;
     for my $ref (@$refs) {
+        my $loc = _make_location($ref->{uri}, $ref->{line}, $ref->{col}, $ref->{len});
         push @{$changes{$ref->{uri}}}, +{
-            range => +{
-                start => +{ line => $ref->{line}, character => $ref->{col} },
-                end   => +{ line => $ref->{line}, character => $ref->{col} + $ref->{len} },
-            },
+            range   => $loc->{range},
             newText => $new_name,
         };
     }
@@ -717,7 +681,17 @@ sub _lsp_severity ($internal) {
     $internal // 3;
 }
 
-# ── URI Utilities ───────────────────────────────
+# ── Location / URI Utilities ────────────────────
+
+sub _make_location ($uri, $line, $col, $len) {
+    +{
+        uri   => $uri,
+        range => +{
+            start => +{ line => $line, character => $col },
+            end   => +{ line => $line, character => $col + $len },
+        },
+    };
+}
 
 sub _uri_to_path ($uri) { Typist::LSP::Transport::uri_to_path($uri) }
 

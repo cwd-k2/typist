@@ -143,48 +143,8 @@ sub lines ($self) { $self->_lines }
 # Extract the word under cursor (0-indexed line/col).
 # Returns a string including sigil for variables ($foo, @bar, %baz).
 sub _word_at ($self, $line, $col) {
-    my $lines = $self->_lines;
-    return undef unless $line < @$lines;
-
-    my $text = $lines->[$line];
-    my $len  = length $text;
-    return undef unless $col < $len;
-
-    # Expand left from $col (consume word chars, sigils, and :: pairs)
-    my $start = $col;
-    while ($start > 0) {
-        my $ch = substr($text, $start - 1, 1);
-        if ($ch =~ /[\w\$\@%]/) {
-            $start--;
-        } elsif ($ch eq ':' && $start >= 2 && substr($text, $start - 2, 1) eq ':') {
-            $start -= 2;  # consume :: pair
-        } else {
-            last;
-        }
-    }
-
-    # Expand right from $col (consume word chars and :: pairs)
-    my $end = $col;
-    while ($end < $len) {
-        my $ch = substr($text, $end, 1);
-        if ($ch =~ /\w/) {
-            $end++;
-        } elsif ($ch eq ':' && $end + 1 < $len && substr($text, $end + 1, 1) eq ':') {
-            $end += 2;  # consume :: pair
-        } else {
-            last;
-        }
-    }
-
-    return undef if $start == $end;
-
-    my $word = substr($text, $start, $end - $start);
-    # Strip leading sigil noise if it's just a bare sigil
-    return undef if $word =~ /^[\$\@%]$/;
-    # Reject bare :: separator
-    return undef if $word eq '::';
-
-    $word;
+    my $result = $self->_word_range_at($line, $col) // return undef;
+    $result->{word};
 }
 
 # Like _word_at but also returns word boundaries as { word, start, end }.

@@ -26,77 +26,37 @@ sub hover ($class, $symbol) {
 
 # ── Formatting ───────────────────────────────────
 
-sub _format ($class, $sym) {
-    my $kind = $sym->{kind};
-
-    if ($kind eq 'parameter') {
+my %_FORMAT_DISPATCH = (
+    parameter    => sub ($class, $sym) {
         my $display = _display_type($sym->{type}, $sym->{name});
-        return _code("$sym->{name}: $display")
-             . _note("parameter of `$sym->{fn_name}`");
-    }
-
-    if ($kind eq 'variable') {
+        _code("$sym->{name}: $display")
+            . _note("parameter of `$sym->{fn_name}`");
+    },
+    variable     => sub ($class, $sym) {
         my $display = _display_type($sym->{type}, $sym->{name});
         my $md = _code("$sym->{name}: $display");
-        if ($sym->{unknown}) {
-            $md .= _note('type unknown');
-        } elsif ($sym->{narrowed}) {
-            $md .= _note('narrowed');
-        } elsif ($sym->{inferred}) {
-            $md .= _note('inferred');
-        }
-        return $md;
-    }
+        if    ($sym->{unknown})  { $md .= _note('type unknown') }
+        elsif ($sym->{narrowed}) { $md .= _note('narrowed')     }
+        elsif ($sym->{inferred}) { $md .= _note('inferred')     }
+        $md;
+    },
+    field        => sub ($class, $sym) { $class->_format_field($sym)        },
+    method       => sub ($class, $sym) { $class->_format_method($sym)       },
+    function     => sub ($class, $sym) { $class->_format_function($sym)     },
+    typedef      => sub ($class, $sym) { _code("type $sym->{name} = $sym->{type}") . _provenance($sym)    },
+    newtype      => sub ($class, $sym) { _code("newtype $sym->{name} = $sym->{type}") . _provenance($sym) },
+    effect       => sub ($class, $sym) { $class->_format_effect($sym)       },
+    typeclass    => sub ($class, $sym) { $class->_format_typeclass($sym)    },
+    datatype     => sub ($class, $sym) { $class->_format_datatype($sym)     },
+    struct       => sub ($class, $sym) { $class->_format_struct($sym)       },
+    builtin_type => sub ($class, $sym) { $class->_format_builtin_type($sym) },
+    match        => sub ($class, $sym) { $class->_format_match($sym)        },
+    handle       => sub ($class, $sym) { $class->_format_handle($sym)       },
+);
 
-    if ($kind eq 'field') {
-        return $class->_format_field($sym);
-    }
-
-    if ($kind eq 'method') {
-        return $class->_format_method($sym);
-    }
-
-    if ($kind eq 'function') {
-        return $class->_format_function($sym);
-    }
-
-    if ($kind eq 'typedef') {
-        return _code("type $sym->{name} = $sym->{type}") . _provenance($sym);
-    }
-
-    if ($kind eq 'newtype') {
-        return _code("newtype $sym->{name} = $sym->{type}") . _provenance($sym);
-    }
-
-    if ($kind eq 'effect') {
-        return $class->_format_effect($sym);
-    }
-
-    if ($kind eq 'typeclass') {
-        return $class->_format_typeclass($sym);
-    }
-
-    if ($kind eq 'datatype') {
-        return $class->_format_datatype($sym);
-    }
-
-    if ($kind eq 'struct') {
-        return $class->_format_struct($sym);
-    }
-
-    if ($kind eq 'builtin_type') {
-        return $class->_format_builtin_type($sym);
-    }
-
-    if ($kind eq 'match') {
-        return $class->_format_match($sym);
-    }
-
-    if ($kind eq 'handle') {
-        return $class->_format_handle($sym);
-    }
-
-    undef;
+sub _format ($class, $sym) {
+    my $handler = $_FORMAT_DISPATCH{$sym->{kind}} // return undef;
+    $handler->($class, $sym);
 }
 
 # ── Kind-specific formatters ─────────────────────

@@ -79,29 +79,18 @@ sub complete ($class, $context, $typedefs, $effects, $typeclasses = undef, $doc_
 #   context:  { kind => ..., ... } from Document->code_completion_at
 #   doc:      Typist::LSP::Document (analyzed)
 #   registry: Typist::Registry
+my %_CODE_DISPATCH = (
+    record_field => '_complete_record_fields',
+    method       => '_complete_methods',
+    effect_op    => '_complete_effect_ops',
+    match_arm    => '_complete_match_arms',
+    variable     => '_complete_variables',
+    function     => '_complete_functions',
+);
+
 sub complete_code ($class, $context, $doc, $registry) {
-    my $kind = $context->{kind};
-
-    if ($kind eq 'record_field') {
-        return $class->_complete_record_fields($context, $doc, $registry);
-    }
-    if ($kind eq 'method') {
-        return $class->_complete_methods($context, $doc, $registry);
-    }
-    if ($kind eq 'effect_op') {
-        return $class->_complete_effect_ops($context, $registry);
-    }
-    if ($kind eq 'match_arm') {
-        return $class->_complete_match_arms($context, $doc, $registry);
-    }
-    if ($kind eq 'variable') {
-        return $class->_complete_variables($context, $doc);
-    }
-    if ($kind eq 'function') {
-        return $class->_complete_functions($context, $doc, $registry);
-    }
-
-    [];
+    my $method = $_CODE_DISPATCH{$context->{kind}} // return [];
+    $class->$method($context, $doc, $registry);
 }
 
 sub _complete_record_fields ($class, $context, $doc, $registry) {
@@ -276,7 +265,7 @@ sub _complete_match_arms ($class, $context, $doc, $registry) {
     \@items;
 }
 
-sub _complete_effect_ops ($class, $context, $registry) {
+sub _complete_effect_ops ($class, $context, $, $registry) {
     my $effect_name = $context->{effect};
     my $prefix      = $context->{prefix} // '';
 
@@ -298,7 +287,7 @@ sub _complete_effect_ops ($class, $context, $registry) {
     \@items;
 }
 
-sub _complete_variables ($class, $context, $doc) {
+sub _complete_variables ($class, $context, $doc, $) {
     my $prefix = $context->{prefix} // '';
     my $line   = $context->{line};
 

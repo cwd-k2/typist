@@ -568,12 +568,7 @@ sub register_functions ($class, $extracted, $registry, %opts) {
         }
 
         my $effects;
-        if ($fn->{unannotated}) {
-            $effects = Typist::Type::Eff->new(
-                Typist::Type::Row->new(labels => [], row_var => '*'),
-            );
-        }
-        elsif ($fn->{eff_expr}) {
+        if ($fn->{eff_expr}) {
             $effects = eval {
                 my $row = Typist::Parser->parse_row($fn->{eff_expr});
                 Typist::Type::Eff->new($row);
