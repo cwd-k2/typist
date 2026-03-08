@@ -246,6 +246,36 @@ Multiple effects are comma-separated inside the brackets:
 
 A function with no `![ ]` clause is treated as pure (no effects). See [Algebraic Effects](effects.md) for the full effect system.
 
+### Method-style annotations and `$self`
+
+`:sig()` can annotate methods on blessed-hashref classes. The parameter list in the annotation describes only the **caller-visible arguments** -- `$self` and `$class` are excluded:
+
+```typist
+package Cart;
+
+sub new :sig((CustomerId) -> Any) ($class, $customer_id) {
+    bless { customer_id => $customer_id, items => [] }, $class;
+}
+
+sub item_count :sig(() -> Int) ($self) { scalar @{$self->{items}} }
+sub total      :sig(() -> Price) ($self) { $self->{_total} }
+```
+
+These annotations are valid and register correctly in the Registry. However, there is an important limitation for **static analysis**:
+
+The static analyzer resolves `->` accessor chains by examining the receiver's type. For Typist Structs (`struct Point => (...)`) the analyzer knows the type and its fields, so `$p->x` resolves to `Int`. For blessed-hashref objects, the receiver (`$self`) is typed as `Any`, so method return types **cannot be inferred** through the call chain:
+
+```typist
+my $cart = Cart->new(CustomerId(1));
+$cart->total;   # analyzer sees Any->total — cannot resolve to Price
+```
+
+If you need the static analyzer to track `->` accessor types, use Typist Structs. For traditional Perl OO classes, use qualified function calls (`Cart::total($self)`) or bind method results to typed locals:
+
+```typist
+my $t :sig(Price) = $cart->total;   # explicit annotation restores type info
+```
+
 ### String-based declarations
 
 All type declarations use strings for their type expressions:
