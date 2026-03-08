@@ -235,20 +235,9 @@ sub compute ($class, $doc) {
         _tokenize_annotation(\@tokens, $line0, $lines[$line0], +{});
     }
 
-    # ── Typist keywords (PPI-based) ──────────
+    # ── PPI-based tokens (keywords, usage sites, handle ops) ──
     if (my $ppi_doc = $extracted->{ppi_doc}) {
-        my $words = $ppi_doc->find('PPI::Token::Word') || [];
-        for my $w (@$words) {
-            next unless $TYPIST_KEYWORD_SET{$w->content};
-            my $line0 = $w->line_number - 1;
-            my $col   = $w->column_number - 1;
-            push @tokens, [$line0, $col, length($w->content), 'keyword', 0];
-        }
-    }
-
-    # ── Usage-site tokens (PPI-based) ────────
-    if (my $ppi_doc = $extracted->{ppi_doc}) {
-        # Collect known constructor names
+        # Build lookup tables for usage-site classification
         my %constructors;
         for my $dt_name (keys(($extracted->{datatypes} // +{})->%*)) {
             my $dt = $extracted->{datatypes}{$dt_name};
@@ -260,14 +249,21 @@ sub compute ($class, $doc) {
         my %effects;
         $effects{$_} = 1 for keys(($extracted->{effects} // +{})->%*);
 
-        # Definition keywords (to skip definition sites)
         my %def_kw = map { $_ => 1 } qw(datatype struct newtype effect typeclass typedef sub enum);
 
+        my $registry = $result->{registry};
         my $words = $ppi_doc->find('PPI::Token::Word') || [];
+
         for my $w (@$words) {
-            my $c = $w->content;
+            my $c     = $w->content;
             my $line0 = $w->line_number - 1;
             my $col   = $w->column_number - 1;
+
+            # Typist keywords
+            if ($TYPIST_KEYWORD_SET{$c}) {
+                push @tokens, [$line0, $col, length($c), 'keyword', 0];
+                next;
+            }
 
             # Constructor usage (Some, None, Point, UserId)
             if (my $tok_type = $constructors{$c}) {
@@ -280,36 +276,30 @@ sub compute ($class, $doc) {
             # Effect::op usage (Console::writeLine)
             if ($c =~ /\A([A-Z]\w*)::(\w+)\z/) {
                 my ($eff, $op) = ($1, $2);
-                next unless $effects{$eff};
-                push @tokens, [$line0, $col, length($eff), 'enum', 0];
-                push @tokens, [$line0, $col + length($eff) + 2, length($op), 'function', 0];
-            }
-        }
-    }
-
-    # ── handle expression tokens (effect name + handler ops) ──
-    if (my $ppi_doc = $extracted->{ppi_doc}) {
-        my $registry = $result->{registry};
-
-        my $words = $ppi_doc->find('PPI::Token::Word') || [];
-        for my $w (@$words) {
-            next unless $w->content eq 'handle';
-            my $block = $w->snext_sibling or next;
-            next unless $block->isa('PPI::Structure::Block');
-
-            # Walk siblings after the block for EffectName => +{ op => ... }
-            my $sib = $block->snext_sibling;
-            while ($sib) {
-                if ($sib->isa('PPI::Token::Word')) {
-                    my $eff_name = $sib->content;
-                    my $ops = _resolve_effect_ops($extracted, $registry, $eff_name);
-                    if ($ops) {
-                        push @tokens, [$sib->line_number - 1, $sib->column_number - 1,
-                                       length($eff_name), 'enum', 0];
-                        _tokenize_handle_ops(\@tokens, $sib, $ops);
-                    }
+                if ($effects{$eff}) {
+                    push @tokens, [$line0, $col, length($eff), 'enum', 0];
+                    push @tokens, [$line0, $col + length($eff) + 2, length($op), 'function', 0];
                 }
-                $sib = $sib->snext_sibling;
+                next;
+            }
+
+            # handle expression: effect name + handler ops
+            if ($c eq 'handle') {
+                my $block = $w->snext_sibling or next;
+                next unless $block->isa('PPI::Structure::Block');
+                my $sib = $block->snext_sibling;
+                while ($sib) {
+                    if ($sib->isa('PPI::Token::Word')) {
+                        my $eff_name = $sib->content;
+                        my $ops = _resolve_effect_ops($extracted, $registry, $eff_name);
+                        if ($ops) {
+                            push @tokens, [$sib->line_number - 1, $sib->column_number - 1,
+                                           length($eff_name), 'enum', 0];
+                            _tokenize_handle_ops(\@tokens, $sib, $ops);
+                        }
+                    }
+                    $sib = $sib->snext_sibling;
+                }
             }
         }
     }

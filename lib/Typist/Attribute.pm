@@ -188,6 +188,38 @@ sub _handle_code_attrs ($pkg, $coderef, @attrs) {
 
 # ── Sub Wrapping ─────────────────────────────────
 
+# Shared return-value dispatch: invoke $original, check result against $return_type.
+sub _dispatch_return ($original, $return_type, $pkg, $name, @args) {
+    # Void return — no value to check
+    if ($return_type && $return_type->is_atom && $return_type->name eq 'Void') {
+        $original->(@args);
+        return;
+    }
+
+    my @result;
+    if (wantarray) {
+        @result = $original->(@args);
+    } elsif (defined wantarray) {
+        $result[0] = $original->(@args);
+    } else {
+        $original->(@args);
+        return;
+    }
+
+    if ($return_type) {
+        my $retval = $result[0];
+        unless ($return_type->contains($retval)) {
+            my $got = defined $retval ? "'$retval'" : 'undef';
+            die sprintf(
+                "Typist: %s::%s — return expected %s, got %s\n",
+                $pkg, $name, $return_type->to_string, $got,
+            );
+        }
+    }
+
+    wantarray ? @result : $result[0];
+}
+
 sub _wrap_sub_simple ($coderef, $sig, $pkg, $name) {
     my $original    = $coderef;
     my @ptypes      = $sig->{params} ? $sig->{params}->@* : ();
@@ -225,34 +257,7 @@ sub _wrap_sub_simple ($coderef, $sig, $pkg, $name) {
             }
         }
 
-        # Void return — caller context is irrelevant, no value to check
-        if ($return_type && $return_type->is_atom && $return_type->name eq 'Void') {
-            $original->(@args);
-            return;
-        }
-
-        my @result;
-        if (wantarray) {
-            @result = $original->(@args);
-        } elsif (defined wantarray) {
-            $result[0] = $original->(@args);
-        } else {
-            $original->(@args);
-            return;
-        }
-
-        if ($return_type) {
-            my $retval = $result[0];
-            unless ($return_type->contains($retval)) {
-                my $got = defined $retval ? "'$retval'" : 'undef';
-                die sprintf(
-                    "Typist: %s::%s — return expected %s, got %s\n",
-                    $pkg, $name, $return_type->to_string, $got,
-                );
-            }
-        }
-
-        wantarray ? @result : $result[0];
+        _dispatch_return($original, $return_type, $pkg, $name, @args);
     };
 
     no strict 'refs';
@@ -337,35 +342,10 @@ sub _wrap_sub_generic ($coderef, $sig, $pkg, $name) {
             }
         }
 
-        # Void return — caller context is irrelevant, no value to check
-        if ($sig->{returns} && $sig->{returns}->is_atom && $sig->{returns}->name eq 'Void') {
-            $original->(@args);
-            return;
-        }
-
-        my @result;
-        if (wantarray) {
-            @result = $original->(@args);
-        } elsif (defined wantarray) {
-            $result[0] = $original->(@args);
-        } else {
-            $original->(@args);
-            return;
-        }
-
-        if ($sig->{returns}) {
-            my $rtype = $sig->{returns}->substitute(\%bindings);
-            my $retval = $result[0];
-            unless ($rtype->contains($retval)) {
-                my $got = defined $retval ? "'$retval'" : 'undef';
-                die sprintf(
-                    "Typist: %s::%s — return expected %s, got %s\n",
-                    $pkg, $name, $rtype->to_string, $got,
-                );
-            }
-        }
-
-        wantarray ? @result : $result[0];
+        my $rtype = $sig->{returns}
+            ? $sig->{returns}->substitute(\%bindings)
+            : undef;
+        _dispatch_return($original, $rtype, $pkg, $name, @args);
     };
 
     no strict 'refs';

@@ -512,10 +512,7 @@ sub _parse_quantified ($tokens, $pos, $depth = 0) {
             $$pos++;
             $effects = _parse_effect_row($tokens, $pos);
         }
-        # Wrap the body as params: if body is already a Func (from grouped parse),
-        # extract its params; otherwise treat body as a single param.
-        my @params = $body->is_func ? ($body) : ($body);
-        $body = Typist::Type::Func->new(\@params, $ret, $effects);
+        $body = Typist::Type::Func->new([$body], $ret, $effects);
     }
 
     Typist::Type::Quantified->new(vars => \@vars, body => $body);
