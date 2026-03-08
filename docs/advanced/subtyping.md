@@ -433,8 +433,8 @@ Eff types (the `![...]` annotation) delegate to their inner row:
 | 7 | Literal-Atom | `Literal(v, B) <: B` | Literals subtype their base |
 | 8 | Literal-Literal | `L1 <: L2` iff `val= && base<:` | Same value, base subtypes |
 | 9 | Alias | resolve then compare | Transparent resolution |
-| 10 | Union (sub) | `T\|U <: S` iff `T<:S` AND `U<:S` | All members must subtype |
-| 11 | Union (super) | `S <: T\|U` iff `S<:T` OR `S<:U` | Any member suffices |
+| 10 | Union (sub) | `T|U <: S` iff `T<:S` AND `U<:S` | All members must subtype |
+| 11 | Union (super) | `S <: T|U` iff `S<:T` OR `S<:U` | Any member suffices |
 | 12 | Intersection (sub) | `T&U <: S` iff `T<:S` OR `U<:S` | Any member suffices |
 | 13 | Intersection (super) | `S <: T&U` iff `S<:T` AND `S<:U` | All must subtype |
 | 14 | Param covariant | `P[A] <: P[B]` iff `A<:B` | Same base, covariant args |

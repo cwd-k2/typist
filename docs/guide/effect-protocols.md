@@ -58,7 +58,7 @@ protocol('(ArgTypes) -> ReturnType', 'FromState -> ToState')
 |--------|---------|
 | `*` | Ground state -- the protocol is inactive (session not started or fully complete) |
 | `StateName` | A specific named state from the declared states list |
-| `A \| B` | Superposition -- the operation is valid when in either state A or state B |
+| `A | B` | Superposition -- the operation is valid when in either state A or state B |
 
 ---
 
@@ -450,7 +450,7 @@ say "Total: $result";
 |---------|--------|
 | Define protocol effect | `effect Name => qw/States/ => +{ op => protocol('sig', 'transition'), ... }` |
 | Transition syntax | `'FromState -> ToState'` |
-| Superposition | `'A \| B -> C'` |
+| Superposition | `'A | B -> C'` |
 | Ground state | `*` (protocol inactive) |
 | Full session annotation | `![Effect]` or `![Effect<* -> *>]` |
 | Partial annotation | `![Effect<From -> To>]` |

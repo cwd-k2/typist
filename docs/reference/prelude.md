@@ -48,7 +48,7 @@ The subtyping relationships are:
 | `HashRef[K, V]` | `* -> * -> *` | Scalar reference to hash | -- |
 | `Tuple[T...]` | `* -> ... -> *` | Fixed-length array reference | -- |
 | `Ref[T]` | `* -> *` | Scalar reference | -- |
-| `Maybe[T]` | `* -> *` | Optional value | `T \| Undef` |
+| `Maybe[T]` | `* -> *` | Optional value | `T | Undef` |
 | `CodeRef[A -> R]` | `* -> *` | Function reference | `(A) -> R` |
 | `Array[T]` | `* -> *` | List type (list context) | -- |
 | `Hash[K, V]` | `* -> * -> *` | List type (list context) | -- |

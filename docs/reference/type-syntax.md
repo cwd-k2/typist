@@ -9,7 +9,7 @@ Complete reference for Typist's type expression language and `:sig()` annotation
 | Capitalized word | Type name (atom, alias, or constructor) | `Int`, `Str`, `ArrayRef`, `Person` |
 | Single uppercase letter | Type variable | `T`, `U`, `V` |
 | `[T, U]` | Type parameters | `ArrayRef[Int]`, `HashRef[Str, Int]` |
-| `\|` | Union | `Int \| Str` |
+| `|` | Union | `Int | Str` |
 | `&` | Intersection | `Readable & Writable` |
 | `+` | Intersection (alternative, used in constraints) | `Num + Show` |
 | `->` | Function arrow | `(Int) -> Str` |

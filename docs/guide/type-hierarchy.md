@@ -76,7 +76,7 @@ my $a :sig(Any)   = [1,2,3]; # ok: Any accepts everything
 | `HashRef[K, V]` | `HashRef[Str, Int]` | Reference to a hash with key type `K` and value type `V` |
 | `Tuple[T, U, ...]` | `Tuple[Int, Str]` | Fixed-length array ref with per-position types |
 | `Ref[T]` | `Ref[Int]` | Scalar reference to a value of type `T` |
-| `Maybe[T]` | `Maybe[Str]` | Sugar for `T \| Undef` -- nullable type |
+| `Maybe[T]` | `Maybe[Str]` | Sugar for `T | Undef` -- nullable type |
 | `CodeRef[A -> R]` | `CodeRef[Int -> Str]` | Function reference with signature `A -> R` |
 | `Array[T]` | `Array[Int]` | List type -- the result of list-producing expressions |
 | `Hash[K, V]` | `Hash[Str, Int]` | List type -- the result of hash-producing expressions |
@@ -408,8 +408,8 @@ The complete set of rules governs how types relate to each other:
 | Bottom | `Never <: T` | Always (for all types T) |
 | Atom chain | `Bool <: Int <: Double <: Num <: Any` | Fixed hierarchy |
 | Literal promotion | `Literal(v, Base) <: Base` | Always |
-| Union sub | `A \| B <: S` | `A <: S` and `B <: S` |
-| Union super | `S <: A \| B` | `S <: A` or `S <: B` |
+| Union sub | `A | B <: S` | `A <: S` and `B <: S` |
+| Union super | `S <: A | B` | `S <: A` or `S <: B` |
 | Intersection sub | `A & B <: S` | `A <: S` or `B <: S` |
 | Intersection super | `S <: A & B` | `S <: A` and `S <: B` |
 | Parameterized | `F[A] <: F[B]` | `A <: B` (covariant) |

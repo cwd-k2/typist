@@ -125,7 +125,7 @@ Typist also has a built-in `Maybe[T]` type, which is sugar for `T | Undef`. The 
 
 | Type | Representation | Pattern matching | Narrowing |
 |------|---------------|-----------------|-----------|
-| `Maybe[T]` | `T \| Undef` (union) | `defined($x)` check | Control-flow narrowing |
+| `Maybe[T]` | `T | Undef` (union) | `defined($x)` check | Control-flow narrowing |
 | `Option[T]` | ADT with `Some`/`None` | `match` with arms | Exhaustive match |
 
 Use `Maybe[T]` for simple nullable values where a `defined` check suffices. Use `Option[T]` when you want explicit `match` exhaustiveness and richer composition.
