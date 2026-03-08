@@ -59,7 +59,7 @@ sub equals ($self, $other) {
 
     my @sa = $self->{type_args}->@*;
     my @oa = $other->type_args;
-    return 0 if @sa != @oa;
+    return 0 unless @sa == @oa;
     for my $i (0 .. $#sa) {
         return 0 unless $sa[$i]->equals($oa[$i]);
     }
@@ -72,11 +72,9 @@ sub contains ($self, $value) {
     # If we have concrete type_args, substitute into record for validation
     my $record = $self->{record};
     if ($self->{type_args}->@* && $self->{type_params}->@*) {
-        my %bindings;
-        for my $i (0 .. $#{$self->{type_params}}) {
-            $bindings{$self->{type_params}[$i]} = $self->{type_args}[$i]
-                if $i < scalar $self->{type_args}->@*;
-        }
+        my %bindings = Typist::Type->_zip_type_bindings(
+            $self->{type_params}, $self->{type_args},
+        );
         $record = $record->substitute(\%bindings) if %bindings;
     }
 

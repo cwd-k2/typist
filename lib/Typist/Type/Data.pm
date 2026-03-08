@@ -87,7 +87,7 @@ sub equals ($self, $other) {
     # Compare type_args if present
     my @sa = $self->{type_args}->@*;
     my @oa = $other->type_args;
-    return 0 if @sa != @oa;
+    return 0 unless @sa == @oa;
     for my $i (0 .. $#sa) {
         return 0 unless $sa[$i]->equals($oa[$i]);
     }
@@ -97,7 +97,7 @@ sub equals ($self, $other) {
     my $ort = $other->return_types;
     my @sk = sort keys %$srt;
     my @ok = sort keys %$ort;
-    return 0 if @sk != @ok;
+    return 0 unless @sk == @ok;
     for my $i (0 .. $#sk) {
         return 0 unless $sk[$i] eq $ok[$i];
         return 0 unless $srt->{$sk[$i]}->equals($ort->{$ok[$i]});
@@ -118,10 +118,9 @@ sub contains ($self, $value) {
     # If we have concrete type_args, substitute into expected types
     my %bindings;
     if ($self->{type_args}->@* && $self->{type_params}->@*) {
-        for my $i (0 .. $#{$self->{type_params}}) {
-            $bindings{$self->{type_params}[$i]} = $self->{type_args}[$i]
-                if $i < scalar $self->{type_args}->@*;
-        }
+        %bindings = Typist::Type->_zip_type_bindings(
+            $self->{type_params}, $self->{type_args},
+        );
     }
 
     for my $i (0 .. $#expected) {

@@ -10,26 +10,8 @@ use List::Util 'any', 'all';
 # Constructor flattens nested unions and deduplicates members.
 
 sub new ($class, @members) {
-    # Flatten nested unions
-    my @flat;
-    for my $m (@members) {
-        if ($m->is_union) {
-            push @flat, $m->members;
-        } else {
-            push @flat, $m;
-        }
-    }
-
-    # Deduplicate by structural equality
-    my @unique;
-    for my $candidate (@flat) {
-        push @unique, $candidate
-            unless any { $_->equals($candidate) } @unique;
-    }
-
-    # A single-member union collapses to the member itself
+    my @unique = Typist::Type->_normalize_members('is_union', @members);
     return $unique[0] if @unique == 1;
-
     bless +{ members => \@unique }, $class;
 }
 

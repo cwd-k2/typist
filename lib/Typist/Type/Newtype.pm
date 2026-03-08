@@ -17,9 +17,7 @@ sub name      ($self) { $self->{name} }
 sub inner     ($self) { $self->{inner} }
 sub is_newtype ($self) { 1 }
 
-sub to_string ($self) {
-    "$self->{name}";
-}
+sub to_string ($self) { $self->{name} }
 
 sub equals ($self, $other) {
     $other->is_newtype && $self->{name} eq $other->name;

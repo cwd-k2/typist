@@ -10,29 +10,12 @@ use List::Util 'any', 'all';
 # A value must satisfy ALL member types.
 
 sub new ($class, @members) {
-    # Flatten nested intersections
-    my @flat;
-    for my $m (@members) {
-        if ($m->is_intersection) {
-            push @flat, $m->members;
-        } else {
-            push @flat, $m;
-        }
-    }
-
-    # Deduplicate
-    my @unique;
-    for my $candidate (@flat) {
-        push @unique, $candidate
-            unless any { $_->equals($candidate) } @unique;
-    }
-
+    my @unique = Typist::Type->_normalize_members('is_intersection', @members);
     return $unique[0] if @unique == 1;
-
     bless +{ members => \@unique }, $class;
 }
 
-sub members         ($self) { $self->{members}->@* }
+sub members        ($self) { $self->{members}->@* }
 sub is_intersection ($self) { 1 }
 
 sub name ($self) { $self->to_string }

@@ -28,13 +28,8 @@ sub is_func  ($self) { 1 }
 sub name ($self) { 'CodeRef' }
 
 sub to_string ($self) {
-    my @params = $self->{params}->@*;
-    my @strs;
-    for my $i (0 .. $#params) {
-        my $s = $params[$i]->to_string;
-        $s = "...$s" if $self->{variadic} && $i == $#params;
-        push @strs, $s;
-    }
+    my @strs = map { $_->to_string } $self->{params}->@*;
+    $strs[-1] = "...$strs[-1]" if $self->{variadic} && @strs;
     my $args = join ', ', @strs;
     my $ret  = $self->{returns}->to_string;
     my $str  = "($args) -> $ret";

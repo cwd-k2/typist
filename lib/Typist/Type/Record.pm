@@ -33,8 +33,7 @@ sub from_parts ($class, %parts) {
 
 sub fields ($self) {
     # Backward compat: return all fields (required + optional with '?' suffix)
-    my %all;
-    %all = %{$self->{required}};
+    my %all = %{$self->{required}};
     for my $key (keys %{$self->{optional}}) {
         $all{"${key}?"} = $self->{optional}{$key};
     }

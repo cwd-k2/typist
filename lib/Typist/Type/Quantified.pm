@@ -40,7 +40,7 @@ sub to_string ($self) {
 }
 
 sub equals ($self, $other) {
-    return 0 unless $other->isa(__PACKAGE__);
+    return 0 unless $other->is_quantified;
     my @sv = $self->{vars}->@*;
     my @ov = $other->vars;
     return 0 unless @sv == @ov;

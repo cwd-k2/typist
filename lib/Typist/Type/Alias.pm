@@ -32,17 +32,19 @@ sub name ($self) { $self->{name} }
 sub to_string ($self) { $self->{name} }
 
 sub equals ($self, $other) {
-    if ($other->is_alias) {
-        return 1 if $self->{name} eq $other->alias_name;
-    }
+    return 1 if $other->is_alias && $self->{name} eq $other->alias_name;
     if (my $r = $self->_resolve) {
         return $r->equals($other);
     }
     0;
 }
 
+# ── Cycle Detection Guards ─────────────────────
+
 my $MAX_CONTAINS_DEPTH = 50;
 my %_contains_depth;
+my %_free_vars_guard;
+my %_substitute_guard;
 
 sub contains ($self, $value) {
     my $r = $self->_resolve // return 0;
@@ -53,8 +55,6 @@ sub contains ($self, $value) {
     $r->contains($value);
 }
 
-my %_free_vars_guard;
-
 sub free_vars ($self) {
     my $r = $self->_resolve // return ();
     my $name = $self->{name};
@@ -62,8 +62,6 @@ sub free_vars ($self) {
     local $_free_vars_guard{$name} = 1;
     $r->free_vars;
 }
-
-my %_substitute_guard;
 
 sub substitute ($self, $bindings) {
     my $r = $self->_resolve // return $self;

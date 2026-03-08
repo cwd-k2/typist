@@ -92,8 +92,12 @@ sub equals ($self, $other) {
     return 0 unless @ssk == @osk;
     return 0 unless all { $ssk[$_] eq $osk[$_] } 0 .. $#ssk;
     for my $k (@ssk) {
-        return 0 unless "@{[sort $ss->{$k}{from}->@*]}" eq "@{[sort $os->{$k}{from}->@*]}"
-                      && "@{[sort $ss->{$k}{to}->@*]}"   eq "@{[sort $os->{$k}{to}->@*]}";
+        my @sf = sort $ss->{$k}{from}->@*;
+        my @of = sort $os->{$k}{from}->@*;
+        my @st = sort $ss->{$k}{to}->@*;
+        my @ot = sort $os->{$k}{to}->@*;
+        return 0 unless @sf == @of && all { $sf[$_] eq $of[$_] } 0 .. $#sf;
+        return 0 unless @st == @ot && all { $st[$_] eq $ot[$_] } 0 .. $#st;
     }
     1;
 }

@@ -43,6 +43,39 @@ sub coerce ($class, $expr) {
     Typist::Parser->parse($expr);
 }
 
+# ── Shared Helpers ──────────────────────────────
+
+# Flatten nested compound types and deduplicate members by structural equality.
+# Used by Union and Intersection constructors.
+sub _normalize_members ($class, $pred, @members) {
+    my @flat;
+    for my $m (@members) {
+        if ($m->$pred()) {
+            push @flat, $m->members;
+        } else {
+            push @flat, $m;
+        }
+    }
+    my @unique;
+    for my $candidate (@flat) {
+        require List::Util;
+        push @unique, $candidate
+            unless List::Util::any(sub { $_->equals($candidate) }, @unique);
+    }
+    @unique;
+}
+
+# Zip type_params and type_args into a binding hash.
+# Shared by Struct::contains and Data::contains.
+sub _zip_type_bindings ($class, $type_params, $type_args) {
+    my %bindings;
+    my $n = $type_params->@* < $type_args->@* ? $type_params->@* : $type_args->@*;
+    for my $i (0 .. $n - 1) {
+        $bindings{$type_params->[$i]} = $type_args->[$i];
+    }
+    %bindings;
+}
+
 # ── Operator Overloads ──────────────────────────
 
 sub _op_union {

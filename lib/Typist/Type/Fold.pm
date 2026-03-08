@@ -27,22 +27,22 @@ sub map_type ($class, $type, $cb) {
         my @new = map { $class->map_type($_, $cb) } $type->params;
         return $cb->(Typist::Type::Param->new($new_base, @new));
     }
-    if ($type->is_union) {
+    elsif ($type->is_union) {
         my @new = map { $class->map_type($_, $cb) } $type->members;
         return $cb->(Typist::Type::Union->new(@new));
     }
-    if ($type->is_intersection) {
+    elsif ($type->is_intersection) {
         my @new = map { $class->map_type($_, $cb) } $type->members;
         return $cb->(Typist::Type::Intersection->new(@new));
     }
-    if ($type->is_func) {
+    elsif ($type->is_func) {
         my @new_p = map { $class->map_type($_, $cb) } $type->params;
         my $new_r = $class->map_type($type->returns, $cb);
         my $new_e = $type->effects
             ? $class->map_type($type->effects, $cb) : undef;
         return $cb->(Typist::Type::Func->new(\@new_p, $new_r, $new_e));
     }
-    if ($type->is_record) {
+    elsif ($type->is_record) {
         my %req = $type->required_fields;
         my %opt = $type->optional_fields;
         my %new_req = map { $_ => $class->map_type($req{$_}, $cb) } keys %req;
@@ -51,7 +51,7 @@ sub map_type ($class, $type, $cb) {
             required => \%new_req, optional => \%new_opt,
         ));
     }
-    if ($type->is_struct) {
+    elsif ($type->is_struct) {
         my $new_record = $class->map_type($type->record, $cb);
         return $cb->(Typist::Type::Struct->new(
             name        => $type->name,
@@ -61,11 +61,11 @@ sub map_type ($class, $type, $cb) {
             type_args   => [map { $class->map_type($_, $cb) } $type->type_args],
         ));
     }
-    if ($type->is_eff) {
+    elsif ($type->is_eff) {
         my $new_row = $class->map_type($type->row, $cb);
         return $cb->(Typist::Type::Eff->new($new_row));
     }
-    if ($type->is_data) {
+    elsif ($type->is_data) {
         my %new_variants;
         for my $tag (keys $type->variants->%*) {
             $new_variants{$tag} = [
@@ -82,8 +82,7 @@ sub map_type ($class, $type, $cb) {
             return_types => \%new_rt,
         ));
     }
-
-    if ($type->is_quantified) {
+    elsif ($type->is_quantified) {
         my @new_vars = map {
             $_->{bound}
                 ? +{ name => $_->{name}, bound => $class->map_type($_->{bound}, $cb) }
