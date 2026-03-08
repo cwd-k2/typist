@@ -7,6 +7,7 @@ use List::Util 'any';
 use Typist::Attribute;
 use Typist::Static::Infer;
 use Typist::Static::Unify;
+use Typist::Static::TypeUtil qw(contains_any contains_placeholder);
 use Typist::Parser;
 use Typist::Subtype;
 use Typist::Transform;
@@ -164,10 +165,10 @@ sub check_call_sites ($self) {
 
             my $inferred = Typist::Static::Infer->infer_expr($args[$i], $env, $declared);
             next unless defined $inferred;
-            if (_contains_any($inferred)) {
+            if (contains_any($inferred)) {
                 # Skip hint when declared param is also Any — no useful info
                 $self->_emit_gradual_hint($name, $i, $word, $inferred)
-                    unless _contains_any($declared);
+                    unless contains_any($declared);
                 next;
             }
 
@@ -256,7 +257,7 @@ sub _check_struct_constructor_call ($self, $name, $fn, $list, $env, $word) {
         my $expected_type = $all{$field_name};
         my $inferred = Typist::Static::Infer->infer_expr($val_token, $env, $expected_type);
         next unless defined $inferred;
-        next if _contains_any($inferred);
+        next if contains_any($inferred);
 
         # Generic: collect bindings from field types
         if (@tp) {
@@ -375,7 +376,7 @@ sub _check_struct_derive_call ($self, $name, $fn, $list, $env, $word) {
 
     my $base = $args[0];
     my $base_type = Typist::Static::Infer->infer_expr($base, $env, $struct_type);
-    if (defined $base_type && !_contains_any($base_type)) {
+    if (defined $base_type && !contains_any($base_type)) {
         unless (Typist::Subtype->is_subtype($base_type, $struct_type, registry => $self->{registry})) {
             $self->{errors}->collect(
                 kind          => 'TypeMismatch',
@@ -398,7 +399,7 @@ sub _check_struct_derive_call ($self, $name, $fn, $list, $env, $word) {
     return unless @groups;
 
     my %bindings;
-    if (@tp && defined $base_type && !_contains_any($base_type)) {
+    if (@tp && defined $base_type && !contains_any($base_type)) {
         Typist::Static::Unify->collect_bindings($struct_type, $base_type, \%bindings);
     }
 
@@ -441,7 +442,7 @@ sub _check_struct_derive_call ($self, $name, $fn, $list, $env, $word) {
 
         my $inferred = Typist::Static::Infer->infer_expr($val_token, $env, $expected);
         next unless defined $inferred;
-        next if _contains_any($inferred);
+        next if contains_any($inferred);
 
         unless (Typist::Subtype->is_subtype($inferred, $expected, registry => $self->{registry})) {
             $self->{errors}->collect(
@@ -582,7 +583,7 @@ sub _check_method_call ($self, $word, $arrow) {
 
             my $inferred = Typist::Static::Infer->infer_expr($args[$i], $env, $declared);
             next unless defined $inferred;
-            next if _contains_any($inferred);
+            next if contains_any($inferred);
 
             unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
                 $self->{errors}->collect(
@@ -677,7 +678,7 @@ sub _check_chained_method ($self, $return_type, $arrow, $env) {
                 next if $self->_has_type_var($declared);
                 my $inferred = Typist::Static::Infer->infer_expr($args[$i], $env, $declared);
                 next unless defined $inferred;
-                next if _contains_any($inferred);
+                next if contains_any($inferred);
                 unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{registry})) {
                     $self->{errors}->collect(
                         kind          => 'TypeMismatch',
@@ -808,7 +809,7 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
     for my $arg (@$args) {
         my $inferred = Typist::Static::Infer->infer_expr($arg, $env);
         return unless defined $inferred;
-        return if _contains_any($inferred);
+        return if contains_any($inferred);
         push @arg_types, $inferred;
     }
 
@@ -892,7 +893,7 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
         next if $self->_has_type_var($concrete);
         my $inferred = Typist::Static::Infer->infer_expr($args->[$i], $env, $concrete)
             // $arg_types[$i];
-        next if _contains_any($inferred);
+        next if contains_any($inferred);
         unless (Typist::Subtype->is_subtype($inferred, $concrete, registry => $self->{registry})) {
             $self->{errors}->collect(
                 kind          => 'TypeMismatch',
@@ -1100,39 +1101,6 @@ sub _emit_gradual_hint ($self, $name, $arg_idx, $word, $inferred) {
         col     => $word->column_number,
         end_col => $word->column_number + length($word->content),
     );
-}
-
-# ── Type Utility Functions ───────────────────────
-
-# Check whether a type transitively contains Any (gradual typing marker).
-# Only checks Atom, Func, and Union — NOT Param, because Any inside
-# Param (e.g. ArrayRef[Any] from LUB) is a legitimate computed result.
-sub _contains_any ($type) {
-    return 1 if $type->is_atom && $type->name eq 'Any';
-    if ($type->is_func) {
-        return 1 if any { _contains_any($_) } $type->params;
-        return 1 if _contains_any($type->returns);
-    }
-    if ($type->is_union) {
-        return 1 if any { _contains_any($_) } $type->members;
-    }
-    return 1 if _contains_placeholder($type);
-    0;
-}
-
-sub _contains_placeholder ($type) {
-    return 1 if $type->is_atom && $type->name eq '_';
-    if ($type->is_param) {
-        return 1 if any { _contains_placeholder($_) } $type->params;
-    }
-    if ($type->is_func) {
-        return 1 if any { _contains_placeholder($_) } $type->params;
-        return 1 if _contains_placeholder($type->returns);
-    }
-    if ($type->is_union) {
-        return 1 if any { _contains_placeholder($_) } $type->members;
-    }
-    0;
 }
 
 1;

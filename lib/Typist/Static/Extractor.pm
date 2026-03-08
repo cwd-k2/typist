@@ -936,7 +936,7 @@ sub _extract_functions ($class, $subs, $result) {
                     name_col      => $name_col,
                     block         => $block,
                     block_words   => $block_words,
-                    return_words  => $class->_collect_return_words($block),
+                    return_words  => $class->_collect_return_words($block_words),
                     return_values => $class->_collect_return_values($block),
                     last_stmt     => $last_stmt,
                     last_first    => $last_first,
@@ -961,7 +961,7 @@ sub _extract_functions ($class, $subs, $result) {
                 name_col      => $name_col,
                 block         => $block,
                 block_words   => $block_words,
-                return_words  => $class->_collect_return_words($block),
+                return_words  => $class->_collect_return_words($block_words),
                 return_values => $class->_collect_return_values($block),
                 last_stmt     => $last_stmt,
                 last_first    => $last_first,
@@ -970,9 +970,11 @@ sub _extract_functions ($class, $subs, $result) {
     }
 }
 
-sub _collect_return_words ($class, $block) {
-    return [] unless $block;
-    my $words = $class->_collect_block_words($block);
+sub _collect_return_words ($class, $block_or_words = undef) {
+    return [] unless $block_or_words;
+    my $words = ref $block_or_words eq 'ARRAY'
+        ? $block_or_words
+        : $class->_collect_block_words($block_or_words);
     [ grep { $_->content eq 'return' } @$words ];
 }
 
@@ -1101,14 +1103,17 @@ sub _collect_rhs_expr ($class, @children) {
 # Returns an arrayref of symbol names (e.g., ['$a', '$b']).
 # Only considers direct-child Lists of the sub statement (before the block),
 # not Lists nested inside the function body.
-sub _extract_sig_params ($class, $sub_stmt) {
-    my $sig_list;
+# Find the signature list PPI node (before the block) in a sub statement.
+sub _find_sig_list ($class, $sub_stmt) {
     for my $child ($sub_stmt->schildren) {
         last if $child->isa('PPI::Structure::Block');
-        $sig_list = $child if $child->isa('PPI::Structure::List');
+        return $child if $child->isa('PPI::Structure::List');
     }
-    return [] unless $sig_list;
+    undef;
+}
 
+sub _extract_sig_params ($class, $sub_stmt) {
+    my $sig_list = $class->_find_sig_list($sub_stmt) // return [];
     my $inner = $sig_list->find('PPI::Token::Symbol') || [];
     [map { $_->content } @$inner];
 }
@@ -1120,12 +1125,7 @@ sub _count_sig_params ($class, $sub_stmt) {
 
 # Count default parameters in a subroutine signature (params with = expr).
 sub _count_sig_defaults ($class, $sub_stmt) {
-    my $sig_list;
-    for my $child ($sub_stmt->schildren) {
-        last if $child->isa('PPI::Structure::Block');
-        $sig_list = $child if $child->isa('PPI::Structure::List');
-    }
-    return 0 unless $sig_list;
+    my $sig_list = $class->_find_sig_list($sub_stmt) // return 0;
 
     my $ops = $sig_list->find(sub {
         $_[1]->isa('PPI::Token::Operator') && $_[1]->content eq '='

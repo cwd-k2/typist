@@ -26,6 +26,24 @@ sub new ($class, %args) {
 sub narrowed_vars      ($self) { $self->{_narrowed_vars} }
 sub narrowed_accessors ($self) { $self->{_narrowed_accessors} }
 
+# ── Narrowing Dispatch ─────────────────────────
+
+# Run narrowing candidates against condition children.
+# Returns ($rule_name, %narrowed) or (undef, ()) if no rule matched.
+sub _dispatch_narrowing ($self, $cond_children, $env) {
+    for my $candidate (
+        [defined    => sub { $self->_narrow_defined($cond_children, $env) }],
+        [isa        => sub { $self->_narrow_isa($cond_children, $env) }],
+        [ref        => sub { $self->_narrow_ref($cond_children, $env) }],
+        [truthiness => sub { $self->_narrow_truthiness($cond_children, $env) }],
+    ) {
+        my ($name, $cb) = @$candidate;
+        my %try = $cb->()->%*;
+        return ($name, %try) if %try;
+    }
+    return (undef);
+}
+
 # ── Type Resolution Helper ──────────────────────
 
 sub _resolve_type ($self, $expr) {
@@ -371,20 +389,7 @@ sub narrow_env_for_block ($self, $env, $node) {
     }
 
     # Dispatch through narrowing rules (order matters: most specific first)
-    my (%narrowing, $rule);
-    for my $candidate (
-        [defined    => sub { $self->_narrow_defined(\@cond_children, $env) }],
-        [isa        => sub { $self->_narrow_isa(\@cond_children, $env) }],
-        [ref        => sub { $self->_narrow_ref(\@cond_children, $env) }],
-        [truthiness => sub { $self->_narrow_truthiness(\@cond_children, $env) }],
-    ) {
-        my ($name, $cb) = @$candidate;
-        my %try = $cb->()->%*;
-        next unless %try;
-        %narrowing = %try;
-        $rule = $name;
-        last;
-    }
+    my ($rule, %narrowing) = $self->_dispatch_narrowing(\@cond_children, $env);
 
     # Accessor-defined: defined($var->field) narrows the field type,
     # even when _narrow_defined returns empty (no simple variable).
@@ -733,20 +738,7 @@ sub _compound_fallthrough_narrowed_vars ($self, $compound, $env) {
     my $expr = $cond_children[0];
     @cond_children = $expr->schildren if $expr && $expr->isa('PPI::Statement::Expression');
 
-    my (%narrowing, $rule);
-    for my $candidate (
-        [defined    => sub { $self->_narrow_defined(\@cond_children, $env) }],
-        [isa        => sub { $self->_narrow_isa(\@cond_children, $env) }],
-        [ref        => sub { $self->_narrow_ref(\@cond_children, $env) }],
-        [truthiness => sub { $self->_narrow_truthiness(\@cond_children, $env) }],
-    ) {
-        my ($name, $cb) = @$candidate;
-        my %try = $cb->()->%*;
-        next unless %try;
-        %narrowing = %try;
-        $rule = $name;
-        last;
-    }
+    my ($rule, %narrowing) = $self->_dispatch_narrowing(\@cond_children, $env);
     return +{} unless $rule;
 
     my ($keyword) = grep { $_->isa('PPI::Token::Word') } $compound->schildren;
@@ -833,20 +825,7 @@ sub _single_block_guard_narrowing ($self, $compound, $condition, $env) {
     my $expr = $cond_children[0];
     @cond_children = $expr->schildren if $expr && $expr->isa('PPI::Statement::Expression');
 
-    my (%narrowing, $rule);
-    for my $candidate (
-        [defined    => sub { $self->_narrow_defined(\@cond_children, $env) }],
-        [isa        => sub { $self->_narrow_isa(\@cond_children, $env) }],
-        [ref        => sub { $self->_narrow_ref(\@cond_children, $env) }],
-        [truthiness => sub { $self->_narrow_truthiness(\@cond_children, $env) }],
-    ) {
-        my ($name, $cb) = @$candidate;
-        my %try = $cb->()->%*;
-        next unless %try;
-        %narrowing = %try;
-        $rule = $name;
-        last;
-    }
+    my ($rule, %narrowing) = $self->_dispatch_narrowing(\@cond_children, $env);
     return +{} unless $rule;
 
     my ($keyword) = grep { $_->isa('PPI::Token::Word') } $compound->schildren;

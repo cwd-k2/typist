@@ -8,6 +8,7 @@ use Typist::Static::CallChecker;
 use Typist::Static::Infer;
 use Typist::Static::Timing;
 use Typist::Static::TypeEnv;
+use Typist::Static::TypeUtil qw(widen_literal contains_any contains_placeholder);
 use Typist::Subtype;
 use Typist::Type::Atom;
 use Typist::Type::Param;
@@ -85,7 +86,7 @@ sub check_variables :TIMED(variables) ($self) {
         my $env = $self->_env_for_node($init_node);
         my $inferred = Typist::Static::Infer->infer_expr($init_node, $env, $declared);
         next unless defined $inferred;
-        next if _contains_any($inferred);
+        next if contains_any($inferred);
 
         unless (Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{type_env}->registry)) {
             $self->{errors}->collect(
@@ -139,7 +140,7 @@ sub check_assignments :TIMED(assignments) ($self) {
         my $rhs = $op->snext_sibling or next;
         my $inferred = Typist::Static::Infer->infer_expr($rhs, $env, $declared_type);
         next unless defined $inferred;
-        next if _contains_any($inferred);
+        next if contains_any($inferred);
 
         unless (Typist::Subtype->is_subtype($inferred, $declared_type, registry => $self->{type_env}->registry)) {
             my $vi = $var_info{$var_name};
@@ -238,14 +239,14 @@ sub check_function_returns :TIMED_ACC(function_checks.returns) ($self, $name) {
         my $inferred = $self->_infer_expr_cached($val, $ret_env, $declared);
         # When basic inference fails the subtype check, try sibling-aware
         # inference for flat binary expressions like `return $port // default_port()`.
-        if (defined $inferred && !_contains_any($inferred)
+        if (defined $inferred && !contains_any($inferred)
             && !Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{type_env}->registry))
         {
             my $sibling_result = Typist::Static::Infer->infer_expr_with_siblings($val, $ret_env, $declared);
             $inferred = $sibling_result if defined $sibling_result;
         }
         next unless defined $inferred;
-        if (_contains_any($inferred)) {
+        if (contains_any($inferred)) {
             $self->_emit_gradual_hint($name, $val, $inferred, 'return value');
             next;
         }
@@ -367,7 +368,7 @@ sub collect_fn_return_types ($self) {
         for my $i (1 .. $#types) {
             $result = Typist::Subtype->common_super($result, $types[$i]);
         }
-        $result = _widen_literal($result);
+        $result = widen_literal($result);
         next if $result->is_atom && $result->name eq 'Any';
 
         $self->{_inferred_fn_returns}{$name} = +{
@@ -425,7 +426,7 @@ sub _check_implicit_return_of_stmt ($self, $stmt, $env, $declared, $name) {
     my $inferred = $self->_infer_expr_cached($stmt, $env, $declared)
                 // $self->_infer_expr_cached($first, $env, $declared);
     return unless defined $inferred;
-    if (_contains_any($inferred)) {
+    if (contains_any($inferred)) {
         $self->_emit_gradual_hint($name, $first, $inferred, 'implicit return');
         return;
     }
@@ -492,55 +493,6 @@ sub _emit_gradual_hint ($self, $name, $node, $inferred, $context) {
 sub _has_type_var ($type) {
     return 1 if $type->is_var;
     return scalar $type->free_vars;
-}
-
-# Widen literal types for mutable variable bindings.
-sub _widen_literal ($type) {
-    if ($type->is_literal) {
-        my $base = $type->base_type;
-        $base = 'Int' if $base eq 'Bool';
-        return Typist::Type::Atom->new($base);
-    }
-    if ($type->is_param && $type->params) {
-        my @args = $type->params;
-        my $changed;
-        my @widened = map {
-            my $w = _widen_literal($_);
-            $changed = 1 if !$w->equals($_);
-            $w;
-        } @args;
-        return Typist::Type::Param->new($type->base, @widened) if $changed;
-    }
-    $type;
-}
-
-# Check whether a type transitively contains Any (gradual typing marker).
-sub _contains_any ($type) {
-    return 1 if $type->is_atom && $type->name eq 'Any';
-    if ($type->is_func) {
-        return 1 if any { _contains_any($_) } $type->params;
-        return 1 if _contains_any($type->returns);
-    }
-    if ($type->is_union) {
-        return 1 if any { _contains_any($_) } $type->members;
-    }
-    return 1 if _contains_placeholder($type);
-    0;
-}
-
-sub _contains_placeholder ($type) {
-    return 1 if $type->is_atom && $type->name eq '_';
-    if ($type->is_param) {
-        return 1 if any { _contains_placeholder($_) } $type->params;
-    }
-    if ($type->is_func) {
-        return 1 if any { _contains_placeholder($_) } $type->params;
-        return 1 if _contains_placeholder($type->returns);
-    }
-    if ($type->is_union) {
-        return 1 if any { _contains_placeholder($_) } $type->members;
-    }
-    0;
 }
 
 1;

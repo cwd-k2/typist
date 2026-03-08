@@ -8,6 +8,7 @@ use Typist::Attribute;
 use Typist::Static::Extractor;
 use Typist::Static::Infer;
 use Typist::Static::NarrowingEngine;
+use Typist::Static::TypeUtil qw(widen_literal);
 use Typist::Parser;
 use Typist::Type::Atom;
 use Typist::Type::Param;
@@ -633,7 +634,7 @@ sub _infer_list_binding ($self, $cache, $init_node, $env, $count, $position) {
     my $status = !defined $inferred  ? 'undef'
                : ($inferred->is_atom && $inferred->name eq 'Any') ? 'Any_skip'
                : 'ok';
-    my $widened = ($status eq 'ok') ? _widen_literal($inferred) : $inferred;
+    my $widened = ($status eq 'ok') ? widen_literal($inferred) : $inferred;
     return ($inferred, $status, $widened);
 }
 
@@ -655,7 +656,7 @@ sub _infer_unannotated_value ($self, $var_name, $init_node, $env) {
     my $status = !defined $inferred  ? 'undef'
                : ($inferred->is_atom && $inferred->name eq 'Any') ? 'Any_skip'
                : 'ok';
-    my $widened = ($status eq 'ok') ? _widen_literal($inferred) : $inferred;
+    my $widened = ($status eq 'ok') ? widen_literal($inferred) : $inferred;
     $self->{_infer_value_cache}{$cache_key} = [$inferred, $status, $widened];
     return ($inferred, $status, $widened);
 }
@@ -671,27 +672,6 @@ sub _record_infer_log ($self, $name, $line, $widened, $status, $scope) {
 }
 
 # ── Pure Helpers ─────────────────────────────────
-
-# Widen literal types for mutable variable bindings.
-sub _widen_literal ($type) {
-    if ($type->is_literal) {
-        my $base = $type->base_type;
-        $base = 'Int' if $base eq 'Bool';
-        return Typist::Type::Atom->new($base);
-    }
-    # Recurse into Param types: Option[42] → Option[Int]
-    if ($type->is_param && $type->params) {
-        my @args = $type->params;
-        my $changed;
-        my @widened = map {
-            my $w = _widen_literal($_);
-            $changed = 1 if !$w->equals($_);
-            $w;
-        } @args;
-        return Typist::Type::Param->new($type->base, @widened) if $changed;
-    }
-    $type;
-}
 
 # Distribute a container type to list-assignment positions.
 sub _distribute_list_type ($type, $count) {
@@ -735,7 +715,7 @@ sub _infer_array_literal_type ($list_node, $env) {
     for my $child (@children) {
         next if $child->isa('PPI::Token::Operator') && $child->content eq ',';
         my $t = Typist::Static::Infer->infer_expr($child, $env);
-        $t = _widen_literal($t) if $t;
+        $t = widen_literal($t) if $t;
         push @elem_types, $t if $t;
     }
 
@@ -771,7 +751,7 @@ sub _infer_hash_literal_type ($list_node, $env) {
                  && $children[$i]->content eq '=>';
         next unless $i + 1 <= $#children;
         my $val = Typist::Static::Infer->infer_expr($children[$i + 1], $env);
-        $val = _widen_literal($val) if $val;
+        $val = widen_literal($val) if $val;
         push @value_types, $val if $val;
     }
     return undef unless @value_types;
