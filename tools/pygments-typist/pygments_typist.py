@@ -196,7 +196,7 @@ def _is_type_string(content):
     content = content.strip()
     if not content:
         return False
-    return content[0].isupper() or content[0] == '('
+    return content[0].isupper() or content[0] in ('(', '{')
 
 
 def _classify_type(val, builtins):
@@ -212,7 +212,7 @@ def _classify_type(val, builtins):
 
 _TYPE_RE = re.compile(r"""
     (?P<ws>     \s+)                  |
-    (?P<arrow>  ->)                   |
+    (?P<arrow>  ->|=>)                 |
     (?P<bang>   !)                    |
     (?P<dots>   \.\.\.)              |
     (?P<punct>  [(),\[\]<>:+&|{}?])  |

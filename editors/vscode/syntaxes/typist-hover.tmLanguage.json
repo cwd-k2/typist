@@ -33,7 +33,7 @@
       }
     },
     "type-declaration": {
-      "match": "\\b(type|struct|effect|typeclass|datatype|newtype)\\s+([A-Z]\\w*)",
+      "match": "\\b(typedef|type|struct|effect|typeclass|datatype|newtype)\\s+([A-Z]\\w*)",
       "captures": {
         "1": { "name": "keyword.control.typist" },
         "2": { "name": "entity.name.type.typist" }
