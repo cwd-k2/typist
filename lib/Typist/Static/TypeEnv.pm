@@ -538,14 +538,15 @@ sub _collect_local_var_types ($self) {
                     next unless defined $inferred;
                     next if $inferred->is_atom && $inferred->name eq 'Any';
 
+                    my ($sc_start, $sc_end) = _block_scope($stmt, $fn);
                     my $key = $sym->content . ':' . $sym->line_number;
                     $self->{_local_var_types}{$key} = +{
                         name        => $sym->content,
                         type        => $widened,
                         line        => $sym->line_number,
                         col         => $sym->column_number,
-                        scope_start => $fn->{line},
-                        scope_end   => $fn->{end_line},
+                        scope_start => $sc_start,
+                        scope_end   => $sc_end,
                     };
                 }
                 next;
@@ -563,17 +564,33 @@ sub _collect_local_var_types ($self) {
             next unless defined $inferred;
             next if $inferred->is_atom && $inferred->name eq 'Any';
 
+            my ($sc_start, $sc_end) = _block_scope($stmt, $fn);
             my $key = $var_name . ':' . $var_sym->line_number;
             $self->{_local_var_types}{$key} = +{
                 name        => $var_name,
                 type        => $widened,
                 line        => $var_sym->line_number,
                 col         => $var_sym->column_number,
-                scope_start => $fn->{line},
-                scope_end   => $fn->{end_line},
+                scope_start => $sc_start,
+                scope_end   => $sc_end,
             };
         }
     }
+}
+
+# Walk up from $stmt to find the nearest enclosing block's line range.
+# Returns ($start_line, $end_line) for the enclosing scope.
+sub _block_scope ($stmt, $fn) {
+    my $parent = $stmt->parent;
+    while ($parent) {
+        if ($parent->isa('PPI::Structure::Block')) {
+            my $first = $parent->first_token;
+            my $last  = $parent->last_token;
+            return ($first->line_number, $last->line_number) if $first && $last;
+        }
+        $parent = $parent->parent;
+    }
+    return ($fn->{line}, $fn->{end_line});
 }
 
 sub _local_infer_env ($self, $fn, $stmt, $block, $node) {
@@ -586,11 +603,20 @@ sub _local_infer_env ($self, $fn, $stmt, $block, $node) {
 sub _inject_local_var_types ($self, $env, $scope_start, $upto_line = undef) {
     return $env unless keys $self->{_local_var_types}->%*;
 
+    # Sort by declaration line (ascending) so that inner-scope
+    # declarations shadow outer-scope ones with the same name.
+    my @locals = sort { ($a->{line} // 0) <=> ($b->{line} // 0) }
+                 values $self->{_local_var_types}->%*;
+
     my %vars = $env->{variables}->%*;
-    for my $lv (values $self->{_local_var_types}->%*) {
-        next unless $lv->{scope_start} == $scope_start;
+    for my $lv (@locals) {
+        # Must be declared before the current line
         next if defined $upto_line && ($lv->{line} // 0) > $upto_line;
-        $vars{$lv->{name}} //= $lv->{type};
+        # Must be in scope at the current line
+        next if defined $upto_line && ($lv->{scope_end} // 9e9) < $upto_line;
+        # Must belong to the same function
+        next unless $lv->{scope_start} >= $scope_start;
+        $vars{$lv->{name}} = $lv->{type};
     }
     return +{ $env->%*, variables => \%vars };
 }

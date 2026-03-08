@@ -408,7 +408,8 @@ sub register_typeclasses ($class, $extracted, $registry, %opts) {
         my $methods = $tc_info->{methods} // +{};
 
         # Collect type variable names from var_spec (e.g. "T", "F: * -> *")
-        my %tc_var_names;
+        # Also include "Self" — the implicit type parameter for all typeclass methods.
+        my %tc_var_names = (Self => 1);
         if (my $vs = $tc_info->{var_spec}) {
             my ($vname) = $vs =~ /\A(\w+)/;
             $tc_var_names{$vname} = 1 if $vname;
@@ -444,7 +445,15 @@ sub register_typeclasses ($class, $extracted, $registry, %opts) {
             my %seen;
             $seen{$_} = 1 for map { $_->free_vars } @params;
             if ($returns) { $seen{$_} = 1 for $returns->free_vars }
-            my @generics = map { +{ name => $_, bound_expr => undef } } sort keys %seen;
+            my @generics = map {
+                my $name = $_;
+                +{
+                    name           => $name,
+                    bound_expr     => undef,
+                    # Self carries the typeclass as a constraint
+                    ($name eq 'Self' ? (tc_constraints => [$tc_name]) : ()),
+                }
+            } sort keys %seen;
 
             $registry->register_function($tc_name, $method_name, +{
                 params       => \@params,

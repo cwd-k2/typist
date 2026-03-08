@@ -465,7 +465,7 @@ sub _maybe_instantiate_return ($sig, $env, $list_element, $expected = undef) {
         return _instantiate_generic_struct($ret, $env, $list_element, $expected);
     }
 
-    return $ret unless $sig->{params} && @{$sig->{params}};
+    my @params = $sig->{params} && @{$sig->{params}} ? @{$sig->{params}} : ();
 
     # Extract PPI argument nodes
     # PPI wraps argument lists as Statement::Expression (multi-arg) or
@@ -474,46 +474,49 @@ sub _maybe_instantiate_return ($sig, $env, $list_element, $expected = undef) {
     # we keep only the 'sub' token and skip its continuations, since
     # infer_expr(sub_token) walks snext_sibling internally.
     my @arg_nodes;
-    my $expr = $list_element->schild(0);
-    if ($expr && $expr->isa('PPI::Statement')) {
-        my @children = $expr->schildren;
-        my $i = 0;
-        while ($i <= $#children) {
-            my $child = $children[$i];
-            if ($child->isa('PPI::Token::Operator') && $child->content eq ',') {
-                $i++; next;
-            }
-            push @arg_nodes, $child;
-            # Skip anonymous sub continuations (Prototype/List + Block)
-            if ($child->isa('PPI::Token::Word') && $child->content eq 'sub'
-                && !($child->parent && $child->parent->isa('PPI::Statement::Sub'))) {
+    if (@params) {
+        my $expr = $list_element->schild(0);
+        if ($expr && $expr->isa('PPI::Statement')) {
+            my @children = $expr->schildren;
+            my $i = 0;
+            while ($i <= $#children) {
+                my $child = $children[$i];
+                if ($child->isa('PPI::Token::Operator') && $child->content eq ',') {
+                    $i++; next;
+                }
+                push @arg_nodes, $child;
+                # Skip anonymous sub continuations (Prototype/List + Block)
+                if ($child->isa('PPI::Token::Word') && $child->content eq 'sub'
+                    && !($child->parent && $child->parent->isa('PPI::Statement::Sub'))) {
+                    $i++;
+                    # Skip signature (Prototype or List)
+                    if ($i <= $#children && ($children[$i]->isa('PPI::Token::Prototype')
+                                          || $children[$i]->isa('PPI::Structure::List'))) {
+                        $i++;
+                    }
+                    # Skip block
+                    if ($i <= $#children && $children[$i]->isa('PPI::Structure::Block')) {
+                        $i++;
+                    }
+                    next;
+                }
+                # Skip function call argument list: Word + List forms a single call.
+                # infer_expr(Word) follows snext_sibling to discover the List.
+                if ($child->isa('PPI::Token::Word') && $child->content ne 'sub'
+                    && $i + 1 <= $#children
+                    && $children[$i + 1]->isa('PPI::Structure::List'))
+                {
+                    $i += 2;
+                    next;
+                }
                 $i++;
-                # Skip signature (Prototype or List)
-                if ($i <= $#children && ($children[$i]->isa('PPI::Token::Prototype')
-                                      || $children[$i]->isa('PPI::Structure::List'))) {
-                    $i++;
-                }
-                # Skip block
-                if ($i <= $#children && $children[$i]->isa('PPI::Structure::Block')) {
-                    $i++;
-                }
-                next;
             }
-            # Skip function call argument list: Word + List forms a single call.
-            # infer_expr(Word) follows snext_sibling to discover the List.
-            if ($child->isa('PPI::Token::Word') && $child->content ne 'sub'
-                && $i + 1 <= $#children
-                && $children[$i + 1]->isa('PPI::Structure::List'))
-            {
-                $i += 2;
-                next;
-            }
-            $i++;
         }
-    }
-    return $ret unless @arg_nodes;
 
-    my @params = @{$sig->{params}};
+        # No args and no expected type to bind from → return as-is
+        return $ret unless @arg_nodes || $expected;
+    }
+
     my %bindings;
 
     # Pass 1: infer all args without expected, collect initial bindings

@@ -263,20 +263,17 @@ subtest 'effects: missing one effect from set' => sub {
 use v5.40;
 effect Logger  => +{ log  => '(Str) -> Void' };
 effect Counter => +{ tick => '() -> Int' };
-sub tick_and_log :sig(() -> Void ! Logger, Counter) () {
+sub tick_and_log :sig(() -> Void ![Logger, Counter]) () {
     Logger::log("tick");
     Counter::tick();
 }
-sub main :sig(() -> Void ! Logger) () {
+sub main :sig(() -> Void ![Logger]) () {
     tick_and_log();
 }
 PERL
 
     my @eff = grep { $_->{kind} eq 'EffectMismatch' } @$errs;
-    TODO: {
-        local $TODO = 'effect subset checking does not yet detect missing individual effects';
-        ok scalar @eff >= 1, 'missing Counter effect detected';
-    }
+    ok scalar @eff >= 1, 'missing Counter effect detected';
 };
 
 # ── 4.4 Unannotated callee is gradual-pure ──

@@ -102,13 +102,27 @@ sub analyze ($self, %opts) {
     # skipping PPI re-parse (~40-60% of analysis cost).
     my $extracted = $opts{extracted} // $self->{extracted};
 
-    $self->{result} = Typist::Static::Analyzer->analyze(
-        $self->{content},
-        file               => $file,
-        workspace_registry => $opts{workspace_registry},
-        ($extracted           ? (extracted      => $extracted)             : ()),
-        ($opts{gradual_hints} ? (gradual_hints  => $opts{gradual_hints})  : ()),
-    );
+    $self->{result} = eval {
+        Typist::Static::Analyzer->analyze(
+            $self->{content},
+            file               => $file,
+            workspace_registry => $opts{workspace_registry},
+            ($extracted           ? (extracted      => $extracted)             : ()),
+            ($opts{gradual_hints} ? (gradual_hints  => $opts{gradual_hints})  : ()),
+        );
+    };
+
+    # Analysis failed (e.g., PPI cannot parse non-Perl content).
+    # Cache a minimal empty result so subsequent requests short-circuit
+    # instead of retrying and failing on every hover/completion.
+    unless ($self->{result}) {
+        $self->{result} = +{
+            errors    => [],
+            symbols   => [],
+            extracted => +{ package => 'main', functions => +{} },
+        };
+        return $self->{result};
+    }
 
     # Cache extracted for potential reuse on invalidate()
     $self->{extracted} //= $self->{result}{extracted};

@@ -867,6 +867,8 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
     for my $g (@generics) {
         next unless $g->{tc_constraints};
         my $actual = $bindings->{$g->{name}} // next;
+        # Abstract Var: constraint will be checked at the concrete call site
+        next if $actual->is_var;
         for my $tc_name ($g->{tc_constraints}->@*) {
             my $inst = $self->{registry}->resolve_instance($tc_name, $actual);
             unless ($inst) {

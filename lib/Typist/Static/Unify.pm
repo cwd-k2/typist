@@ -156,9 +156,20 @@ sub unify ($class, $formal, $actual, $bindings = +{}, %opts) {
         return $class->unify($formal->body, $actual_body, $bindings, %opts);
     }
 
-    # ── Both Union → delegate to subtype ──────
-    # Union types are too complex for structural unification;
-    # fall through to the subtype check below.
+    # ── Union formal with Vars → extract bindings ──
+    # Union(T, Undef) vs Int → bind T to Int.
+    # Decomposes Maybe[T] = T | Undef and similar patterns.
+    if ($formal->is_union) {
+        my @members = $formal->members;
+        my @vars = grep { $_->is_var } @members;
+        if (@vars) {
+            for my $var (@vars) {
+                $bindings = $class->unify($var, $actual, $bindings, %opts);
+                return undef unless $bindings;
+            }
+            return $bindings;
+        }
+    }
 
     # ── Fallback: subtype compatibility ───────
     # If the formal type has no free variables and actual is a subtype, succeed.
@@ -264,6 +275,21 @@ sub collect_bindings ($class, $formal, $actual, $bindings) {
     # actual only Quantified: unwrap body
     if (!$formal->is_quantified && $actual->is_quantified) {
         return $class->collect_bindings($formal, $actual->body, $bindings);
+    }
+
+    # ── Union formal → extract Var bindings ─────
+    # Union(T, Undef) vs Int → bind T to Int.
+    # Used by Maybe[T] = T | Undef: strip concrete non-matching members,
+    # bind Var members to the actual type.
+    if ($formal->is_union) {
+        my @members = $formal->members;
+        my @vars = grep { $_->is_var } @members;
+        if (@vars) {
+            for my $var (@vars) {
+                $class->collect_bindings($var, $actual, $bindings) or return 0;
+            }
+            return 1;
+        }
     }
 
     # Non-variable leaf: must be structurally equal

@@ -987,10 +987,7 @@ sub test :sig(() -> Void) () {
 }
 PERL
 
-    TODO: {
-        local $TODO = 'typeclass Self vs generic T unification not yet implemented';
-        is scalar @$errs, 0, 'Int satisfies Show constraint';
-    }
+    is scalar @$errs, 0, 'Int satisfies Show constraint';
 };
 
 # ── 12.2 Typeclass constraint violation ──
@@ -1221,10 +1218,7 @@ sub test :sig(() -> Void) () {
 }
 PERL
 
-    TODO: {
-        local $TODO = 'Maybe[T] generic instantiation from literal arg not yet supported';
-        is scalar @$errs, 0, 'generic + defined narrowing';
-    }
+    is scalar @$errs, 0, 'generic + defined narrowing';
 };
 
 # ── 16.2 Struct + loop + narrowing ──

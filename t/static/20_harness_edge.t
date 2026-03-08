@@ -53,7 +53,7 @@ sub check :sig((Person) -> Void) ($p) {
 }
 PERL
 
-    is scalar @$errs, 2, 'one error inside branch and one after branch are both visible today';
+    is scalar @$errs, 1, 'accessor narrowing works inside branch, widened after merge';
     like $errs->[0]{message}, qr/Argument 1.*takes_str.*Str/, 'accessor is widened after branch merge';
 };
 
@@ -75,7 +75,6 @@ sub check :sig((Person) -> Void) ($p) {
 }
 PERL
 
-    local $TODO = 'accessor early-return narrowing is not yet propagated through flat scope';
     is scalar @$errs, 0, 'optional accessor narrowing survives flat scope after else-return';
 };
 

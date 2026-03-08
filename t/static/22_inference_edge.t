@@ -324,10 +324,7 @@ sub test :sig(() -> Void) () {
 }
 PERL
 
-    TODO: {
-        local $TODO = 'zero-arg ADT constructor does not infer type args from annotation';
-        is scalar @$errs, 0, 'Some(42) and None() both produce Option[Int]';
-    }
+    is scalar @$errs, 0, 'Some(42) and None() both produce Option[Int]';
 };
 
 # ── 4.2 Option with wrong inner type ──

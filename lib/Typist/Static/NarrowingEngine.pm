@@ -386,6 +386,12 @@ sub narrow_env_for_block ($self, $env, $node) {
         last;
     }
 
+    # Accessor-defined: defined($var->field) narrows the field type,
+    # even when _narrow_defined returns empty (no simple variable).
+    if (!$rule && $self->extract_defined_accessor(\@cond_children)) {
+        $rule = 'defined';
+    }
+
     return $self->{_block_env_cache}{$cache_key} = $env unless $rule;
 
     # Detect `unless` keyword — reverses narrowing polarity
