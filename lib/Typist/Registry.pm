@@ -15,18 +15,18 @@ sub _default ($class) { $DEFAULT //= $class->new }
 
 sub new ($class, %args) {
     bless +{
-        aliases   => +{},
-        resolved  => +{},
-        variables => +{},
-        functions => +{},
-        methods   => +{},
-        packages  => +{},
-        resolving  => +{},
-        newtypes   => +{},
-        typeclasses => +{},
-        instances   => +{},
-        datatypes   => +{},
-        structs     => +{},
+        aliases        => +{},
+        resolved       => +{},
+        variables      => +{},
+        functions      => +{},
+        methods        => +{},
+        packages       => +{},
+        resolving      => +{},
+        newtypes       => +{},
+        typeclasses    => +{},
+        instances      => +{},
+        datatypes      => +{},
+        structs        => +{},
         effects        => +{},
         name_index     => +{},
         instance_index => +{},
@@ -101,7 +101,10 @@ sub lookup_type ($invocant, $name) {
 
 sub has_alias ($invocant, $name) {
     my $self = _self($invocant);
-    exists $self->{aliases}{$name} || exists $self->{newtypes}{$name} || exists $self->{structs}{$name} || exists $self->{datatypes}{$name};
+    exists $self->{aliases}{$name}
+        || exists $self->{newtypes}{$name}
+        || exists $self->{structs}{$name}
+        || exists $self->{datatypes}{$name};
 }
 
 sub unregister_alias ($invocant, $name) {
@@ -402,9 +405,14 @@ sub is_ambient_effect ($invocant, $name) {
 # ── Merge ────────────────────────────────────────
 
 sub merge ($self, $other) {
-    for my $name (keys $other->{aliases}->%*) {
-        $self->{aliases}{$name} //= $other->{aliases}{$name};
+    # Simple stores: first-write-wins
+    for my $store (qw(aliases methods effects newtypes datatypes structs typeclasses defined_in)) {
+        for my $name (keys(($other->{$store} // +{})->%*)) {
+            $self->{$store}{$name} //= $other->{$store}{$name};
+        }
     }
+
+    # Functions: also update name_index
     for my $fqn (keys $other->{functions}->%*) {
         unless (exists $self->{functions}{$fqn}) {
             $self->{functions}{$fqn} = $other->{functions}{$fqn};
@@ -412,24 +420,8 @@ sub merge ($self, $other) {
             push @{$self->{name_index}{$name} //= []}, $fqn if $name;
         }
     }
-    for my $fqn (keys $other->{methods}->%*) {
-        $self->{methods}{$fqn} //= $other->{methods}{$fqn};
-    }
-    for my $name (keys $other->{effects}->%*) {
-        $self->{effects}{$name} //= $other->{effects}{$name};
-    }
-    for my $name (keys $other->{newtypes}->%*) {
-        $self->{newtypes}{$name} //= $other->{newtypes}{$name};
-    }
-    for my $name (keys $other->{datatypes}->%*) {
-        $self->{datatypes}{$name} //= $other->{datatypes}{$name};
-    }
-    for my $name (keys(($other->{structs} // +{})->%*)) {
-        $self->{structs}{$name} //= $other->{structs}{$name};
-    }
-    for my $name (keys $other->{typeclasses}->%*) {
-        $self->{typeclasses}{$name} //= $other->{typeclasses}{$name};
-    }
+
+    # Instances: accumulate arrays and index entries
     for my $class_name (keys $other->{instances}->%*) {
         $self->{instances}{$class_name} //= [];
         push $self->{instances}{$class_name}->@*, $other->{instances}{$class_name}->@*;
@@ -439,13 +431,13 @@ sub merge ($self, $other) {
             }
         }
     }
-    for my $name (keys(($other->{defined_in} // +{})->%*)) {
-        $self->{defined_in}{$name} //= $other->{defined_in}{$name};
-    }
+
+    # Package uses: accumulate arrays
     for my $pkg (keys(($other->{package_uses} // +{})->%*)) {
         my $uses = $other->{package_uses}{$pkg} // [];
         push @{$self->{package_uses}{$pkg} //= []}, @$uses;
     }
+
     # Clear resolved cache since new aliases may change resolution
     $self->{resolved} = +{};
     $self;
@@ -455,22 +447,12 @@ sub merge ($self, $other) {
 
 sub reset ($invocant) {
     if (ref $invocant) {
-        $invocant->{aliases}   = +{};
-        $invocant->{resolved}  = +{};
-        $invocant->{variables} = +{};
-        $invocant->{functions} = +{};
-        $invocant->{methods}   = +{};
-        $invocant->{packages}  = +{};
-        $invocant->{resolving} = +{};
-        $invocant->{newtypes}   = +{};
-        $invocant->{datatypes}  = +{};
-        $invocant->{typeclasses} = +{};
-        $invocant->{instances}      = +{};
-        $invocant->{effects}        = +{};
-        $invocant->{name_index}     = +{};
-        $invocant->{instance_index} = +{};
-        $invocant->{defined_in}     = +{};
-        $invocant->{package_uses}   = +{};
+        $invocant->{$_} = +{} for qw(
+            aliases   resolved    variables  functions
+            methods   packages    resolving  newtypes
+            datatypes typeclasses instances  effects
+            name_index instance_index defined_in package_uses
+        );
     } else {
         $DEFAULT = undef;
     }

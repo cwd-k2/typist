@@ -127,10 +127,8 @@ my $EXN_EFFECT = Typist::Effect->new(
     ambient    => 1,
 );
 
-my @TYPIST_BUILTINS = qw(
-    typedef newtype effect typeclass instance declare datatype enum struct
-);
-my %TYPIST_BUILTIN_SET = map { $_ => 1 } @TYPIST_BUILTINS;
+my %TYPIST_BUILTIN_SET = map { $_ => 1 }
+    qw(typedef newtype effect typeclass instance declare datatype enum struct);
 
 # ── Public API ───────────────────────────────────
 

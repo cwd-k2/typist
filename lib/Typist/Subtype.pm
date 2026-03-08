@@ -162,19 +162,18 @@ sub _check ($sub, $super, $registry = undef) {
     $result;
 }
 
+sub _resolve_alias ($type, $registry) {
+    return undef unless $type->is_alias;
+    ($registry // 'Typist::Registry')->lookup_type($type->alias_name);
+}
+
 sub _check_impl ($sub, $super, $registry = undef) {
     # Resolve aliases before comparison
-    if ($sub->is_alias) {
-        my $r = $registry
-            ? $registry->lookup_type($sub->alias_name)
-            : Typist::Registry->lookup_type($sub->alias_name);
-        return _check($r, $super, $registry) if $r;
+    if (my $r = _resolve_alias($sub, $registry)) {
+        return _check($r, $super, $registry);
     }
-    if ($super->is_alias) {
-        my $r = $registry
-            ? $registry->lookup_type($super->alias_name)
-            : Typist::Registry->lookup_type($super->alias_name);
-        return _check($sub, $r, $registry) if $r;
+    if (my $r = _resolve_alias($super, $registry)) {
+        return _check($sub, $r, $registry);
     }
 
     # Expand Handler[E] to Record before comparison
@@ -478,9 +477,7 @@ sub _expand_handler ($handler, $registry) {
         ? ($effect_ref->is_alias ? $effect_ref->alias_name : "$effect_ref")
         : "$effect_ref";
 
-    my $effect = $registry
-        ? $registry->lookup_effect($effect_name)
-        : Typist::Registry->lookup_effect($effect_name);
+    my $effect = ($registry // 'Typist::Registry')->lookup_effect($effect_name);
     return undef unless $effect;
 
     require Typist::Type::Record;

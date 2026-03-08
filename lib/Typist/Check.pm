@@ -43,8 +43,9 @@ sub run ($class, @argv) {
     my $ws = Typist::LSP::Workspace->new(root => $root);
 
     # Analyze each file
-    my (@error_files, $total_errors, $total_warnings);
-    $total_errors = $total_warnings = 0;
+    my @error_files;
+    my $total_errors   = 0;
+    my $total_warnings = 0;
 
     for my $file (sort @files) {
         open my $fh, '<:encoding(UTF-8)', $file or do {
