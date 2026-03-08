@@ -133,7 +133,7 @@ sub _trace_body ($self, $block, $fn_name, $label, $protocol, $from, $to, $pkg) {
     return if $result->{returns};
 
     my $current = $result->{state};
-    if (!_state_eq($current, $to)) {
+    unless (_state_eq($current, $to)) {
         $self->{errors}->collect(
             kind    => 'ProtocolMismatch',
             message => "Protocol $label: function $fn_name() ends in state '"
@@ -314,7 +314,7 @@ sub _trace_statement ($self, $stmt, $fn_name, $label, $protocol, $current, $pkg)
                 if (defined $handled && $handled eq $label) {
                     # Same effect: handle captures it → body traced at * -> *
                     my $r = $self->_trace_block($body, $fn_name, $label, $protocol, ['*'], $pkg);
-                    if (!$self->{_relaxed_handle} && !$r->{error} && !$r->{returns} && !_state_eq($r->{state}, ['*'])) {
+                    unless ($self->{_relaxed_handle} || $r->{error} || $r->{returns} || _state_eq($r->{state}, ['*'])) {
                         $self->{errors}->collect(
                             kind    => 'ProtocolMismatch',
                             message => "Protocol $label: handle body must end at '*' "
