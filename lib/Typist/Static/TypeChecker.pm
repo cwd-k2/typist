@@ -236,6 +236,14 @@ sub check_function_returns :TIMED_ACC(function_checks.returns) ($self, $name) {
 
         my $ret_env = $self->_env_for_node($ret);
         my $inferred = $self->_infer_expr_cached($val, $ret_env, $declared);
+        # When basic inference fails the subtype check, try sibling-aware
+        # inference for flat binary expressions like `return $port // default_port()`.
+        if (defined $inferred && !_contains_any($inferred)
+            && !Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{type_env}->registry))
+        {
+            my $sibling_result = Typist::Static::Infer->infer_expr_with_siblings($val, $ret_env, $declared);
+            $inferred = $sibling_result if defined $sibling_result;
+        }
         next unless defined $inferred;
         if (_contains_any($inferred)) {
             $self->_emit_gradual_hint($name, $val, $inferred, 'return value');

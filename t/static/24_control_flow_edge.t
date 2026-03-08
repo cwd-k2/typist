@@ -225,10 +225,7 @@ sub check :sig((Maybe[Int]) -> Int) ($n) {
 }
 PERL
 
-    TODO: {
-        local $TODO = 'unless block fallthrough does not yet narrow';
-        is scalar @$errs, 0, 'unless defined: else path narrows to concrete';
-    }
+    is scalar @$errs, 0, 'unless defined: else path narrows to concrete';
 };
 
 # ── 3.5 Multiple isa checks on same variable ──

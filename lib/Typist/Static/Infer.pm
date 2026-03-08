@@ -229,12 +229,12 @@ sub infer_expr ($class, $element, $env = undef, $expected = undef) {
 # PPI does NOT wrap the RHS of `my $x = expr op expr;` in a sub-statement,
 # so init_node is just the first token after `=`.  This method checks
 # for an adjacent operator and delegates to _infer_binop.
-sub infer_expr_with_siblings ($class, $element, $env = undef) {
+sub infer_expr_with_siblings ($class, $element, $env = undef, $expected = undef) {
     return undef unless defined $element;
 
     # Code reference: \&Package::func — Cast followed by &-sigil Symbol
     if ($element->isa('PPI::Token::Cast') && $element->content eq '\\') {
-        return $class->infer_expr($element, $env);
+        return $class->infer_expr($element, $env, $expected);
     }
 
     if ($element->isa('PPI::Token') && !$element->isa('PPI::Token::Operator')) {
@@ -287,7 +287,24 @@ sub infer_expr_with_siblings ($class, $element, $env = undef) {
         }
     }
 
-    $class->infer_expr($element, $env);
+    # Function call + operator: func(args) OP rhs (e.g., length($s) > 0)
+    if ($element->isa('PPI::Token::Word') && !$element->isa('PPI::Token::Operator')) {
+        my $next = $element->snext_sibling;
+        if ($next && $next->isa('PPI::Structure::List')) {
+            my $after_list = $next->snext_sibling;
+            if ($after_list && $after_list->isa('PPI::Token::Operator')) {
+                my $op = $after_list->content;
+                if ($op ne '=' && $op ne '->' && $op ne '=>' && $op ne '?') {
+                    my $rhs = $after_list->snext_sibling;
+                    if ($rhs) {
+                        return _infer_binop($op, $element, $rhs, $env);
+                    }
+                }
+            }
+        }
+    }
+
+    $class->infer_expr($element, $env, $expected);
 }
 
 # Infer the **container** type of a list-assignment RHS (before array deref).
@@ -1322,6 +1339,25 @@ sub _infer_operator_expr ($stmt, $env, $expected = undef) {
         return undef;
     }
 
+    # Function call + operator: func(args) OP rhs (e.g., length($s) > 0)
+    if (@children >= 4
+        && $children[0]->isa('PPI::Token::Word')
+        && $children[1]->isa('PPI::Structure::List')
+        && $children[2]->isa('PPI::Token::Operator'))
+    {
+        my $op = $children[2]->content;
+        if ($op ne '=' && $op ne '->' && $op ne '=>') {
+            return _infer_binop($op, $children[0], $children[3], $env) if @children == 4;
+            # 5+ children: might be func(args) OP rhs OP2 ... — use children_slice
+            my @right = @children[2 .. $#children];
+            my $lt = _infer_call($children[0]->content, $env, $children[1]);
+            if (defined $lt) {
+                my $rt = _infer_children_slice([@children[3 .. $#children]], $env);
+                return _result_type_for_op($op, $lt, $rt);
+            }
+        }
+    }
+
     # Binary: Expr Op Expr  (exactly 3 significant children)
     if (@children == 3 && $children[1]->isa('PPI::Token::Operator')) {
         return _infer_binop($children[1]->content, $children[0], $children[2], $env);
@@ -1556,10 +1592,18 @@ sub _infer_binop ($op, $lhs, $rhs, $env) {
     return Typist::Type::Atom->new('Bool')
         if $op eq '=~' || $op eq '!~';
 
-    # Defined-or → LUB of both sides (handles $x // "default")
+    # Defined-or → strip Undef from LHS, LUB with RHS
+    # ($port // default_port()) where $port: Maybe[Int] → Int
     if ($op eq '//') {
         my $lt = __PACKAGE__->infer_expr($lhs, $env);
         my $rt = __PACKAGE__->infer_expr($rhs, $env);
+        # // evaluates to LHS when defined: strip Undef from Union
+        if ($lt && $lt->is_union) {
+            my @non_undef = grep { !($_->is_atom && $_->name eq 'Undef') } $lt->members;
+            if (@non_undef < scalar($lt->members)) {
+                $lt = @non_undef == 1 ? $non_undef[0] : Typist::Type::Union->new(@non_undef);
+            }
+        }
         return $lt if $lt && !$rt;
         return $rt if $rt && !$lt;
         return Typist::Subtype->common_super($lt, $rt) if $lt && $rt;

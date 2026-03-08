@@ -712,6 +712,12 @@ sub _compound_fallthrough_narrowed_vars ($self, $compound, $env) {
     return +{} unless $condition;
 
     my @blocks = grep { $_->isa('PPI::Structure::Block') } $compound->schildren;
+
+    # Single-block guard: unless/if (COND) { return; }
+    if (@blocks == 1 && $self->_block_is_immediate_return($blocks[0])) {
+        return $self->_single_block_guard_narrowing($compound, $condition, $env);
+    }
+
     return +{} unless @blocks >= 2;
 
     my ($return_idx, $flow_idx) = $self->_compound_return_and_flow_indices(@blocks);
@@ -812,6 +818,47 @@ sub _block_is_immediate_return ($self, $block) {
     return 0 unless @children;
     return $children[0]->isa('PPI::Token::Word')
         && $children[0]->content eq 'return';
+}
+
+# Handle single-block guard: unless/if (COND) { return; }
+# Returns narrowing to apply after the guard statement.
+sub _single_block_guard_narrowing ($self, $compound, $condition, $env) {
+    my @cond_children = $condition->schildren;
+    my $expr = $cond_children[0];
+    @cond_children = $expr->schildren if $expr && $expr->isa('PPI::Statement::Expression');
+
+    my (%narrowing, $rule);
+    for my $candidate (
+        [defined    => sub { $self->_narrow_defined(\@cond_children, $env) }],
+        [isa        => sub { $self->_narrow_isa(\@cond_children, $env) }],
+        [ref        => sub { $self->_narrow_ref(\@cond_children, $env) }],
+        [truthiness => sub { $self->_narrow_truthiness(\@cond_children, $env) }],
+    ) {
+        my ($name, $cb) = @$candidate;
+        my %try = $cb->()->%*;
+        next unless %try;
+        %narrowing = %try;
+        $rule = $name;
+        last;
+    }
+    return +{} unless $rule;
+
+    my ($keyword) = grep { $_->isa('PPI::Token::Word') } $compound->schildren;
+    my $is_unless = $keyword && $keyword->content eq 'unless';
+    my $apply_direct = $is_unless ? 1 : 0;
+    if ($rule eq 'ref' && ($narrowing{_ref_op} // '') eq 'ne') {
+        $apply_direct = !$apply_direct;
+    }
+    delete $narrowing{_ref_op};
+    return +{ %narrowing } if $apply_direct;
+
+    my %applied;
+    for my $var_name (keys %narrowing) {
+        my $original = $env->{variables}{$var_name};
+        my %inv = $self->_inverse_narrowing($rule, $var_name, $original)->%*;
+        $applied{$_} = $inv{$_} for keys %inv;
+    }
+    return +{ %applied };
 }
 
 # ── Accessor Narrowing Collection ────────────────

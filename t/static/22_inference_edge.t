@@ -46,10 +46,7 @@ sub get_port :sig((Maybe[Int]) -> Int) ($port) {
 }
 PERL
 
-    TODO: {
-        local $TODO = '// does not yet narrow Undef from Maybe LHS';
-        is scalar @$errs, 0, 'defined-or: Maybe[Int] // Int → Int';
-    }
+    is scalar @$errs, 0, 'defined-or: Maybe[Int] // Int → Int';
 };
 
 # ── 1.4 String repetition ──
@@ -202,10 +199,7 @@ sub test :sig(() -> Void) () {
 }
 PERL
 
-    TODO: {
-        local $TODO = 'inferred locals do not yet scope-shadow';
-        is scalar @$errs, 0, 'inner $x shadows outer — Str checked correctly';
-    }
+    is scalar @$errs, 0, 'inner $x shadows outer — Str checked correctly';
 };
 
 # ── 2.4 Variable from function call ──
