@@ -98,7 +98,10 @@ sub analyze ($class, $source, %opts) {
     merge_prefixed_timings($timings, structural => $checker_timings);
 
     # Phase 3: Type environment construction
+    # Scope callback param collector before TypeEnv.build — it triggers
+    # _maybe_instantiate_return which records callback params.
     $t_phase = start_timing($timings);
+    local $Typist::Static::Infer::_CALLBACK_CTX = { params => [], seen => {} };
     my $type_env = Typist::Static::TypeEnv->new(
         registry  => $registry,
         extracted => $extracted,
@@ -108,9 +111,7 @@ sub analyze ($class, $source, %opts) {
     record_timing($timings, type_env => $t_phase);
 
     # Phase 4: File-level checks
-    # Scope callback param collector — reentrant-safe via local
     $t_phase = start_timing($timings);
-    local $Typist::Static::Infer::_CALLBACK_CTX = { params => [], seen => {} };
     my $type_checker_timings = $timings ? +{} : undef;
     my $type_checker = Typist::Static::TypeChecker->new(
         type_env      => $type_env,

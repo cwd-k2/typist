@@ -2299,8 +2299,9 @@ sub _enrich_env_with_params ($env, $sig_node, $expected_types, $block = undef) {
         my $type = $expected_types->[$i];
         $new_vars{$names->[$i]} = $type;
 
-        # Record for LSP hover/inlay hints (skip Any params — no useful info)
-        if ($block && !($type->is_atom && $type->name eq 'Any')) {
+        # Record for LSP hover/inlay hints (skip Any/unresolved params)
+        if ($block && !($type->is_atom && $type->name eq 'Any')
+                    && !$type->free_vars) {
             my $dedup_key = $names->[$i] . ':' . $sig_node->line_number;
             next if $_CALLBACK_CTX->{seen}{$dedup_key}++;
             push $_CALLBACK_CTX->{params}->@*, +{
