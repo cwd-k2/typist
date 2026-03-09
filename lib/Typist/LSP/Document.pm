@@ -691,7 +691,7 @@ sub _call_site_bindings ($self, $sig, $line, $col) {
     my $list = $ppi_word->snext_sibling;
     return undef unless $list && $list->isa('PPI::Structure::List');
 
-    # Build minimal env for inference from analysis result
+    # Build env for inference from analysis result (symbols + extracted functions)
     my $extracted = $result->{extracted} // return undef;
     my %functions;
     for my $name (keys $extracted->{functions}->%*) {
@@ -702,8 +702,24 @@ sub _call_site_bindings ($self, $sig, $line, $col) {
             $functions{$name} = $type if $type;
         }
     }
+
+    # Populate variables from analyzed symbols (scoped to call site line)
+    my $symbols = $result->{symbols} // [];
+    my $ppi_line = $line + 1;  # LSP 0-indexed → PPI 1-indexed
+    my %variables;
+    for my $sym (@$symbols) {
+        next unless ($sym->{kind} // '') eq 'variable';
+        next unless defined $sym->{type} && $sym->{type} ne 'Any';
+        # Scope check: variable must be visible at the call site
+        if ($sym->{scope_start} && $sym->{scope_end}) {
+            next unless $ppi_line >= $sym->{scope_start} && $ppi_line <= $sym->{scope_end};
+        }
+        my $type = eval { Typist::Parser->parse($sym->{type}) };
+        $variables{$sym->{name}} = $type if $type;
+    }
+
     my $env = +{
-        variables => +{},
+        variables => \%variables,
         functions => \%functions,
         registry  => $registry,
         package   => $extracted->{package} // 'main',
