@@ -720,4 +720,169 @@ PERL
     ok !$handler, 'handler has no inferred effects — Console discharged by handle';
 };
 
+# ══════════════════════════════════════════════════════
+# Multi-effect handle discharge
+# ══════════════════════════════════════════════════════
+
+subtest 'multi-effect handle — both effects discharged' => sub {
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Effect;
+    $ws_reg->register_effect('Console', Typist::Effect->new(
+        name => 'Console', operations => +{ log => '(Str) -> Void' },
+    ));
+    $ws_reg->register_effect('DB', Typist::Effect->new(
+        name => 'DB', operations => +{ query => '(Str) -> Str' },
+    ));
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws_reg);
+package MultiDischarge;
+use v5.40;
+
+sub log_fn :sig((Str) -> Void ![Console]) ($msg) { return }
+sub db_fn  :sig((Str) -> Str ![DB]) ($q) { return $q }
+
+sub both_fn :sig((Str) -> Str ![Console, DB]) ($x) {
+    log_fn($x);
+    db_fn($x);
+}
+
+sub handler :sig(() -> Void) () {
+    handle {
+        both_fn("hello");
+    } Console => +{ log => sub ($msg) { } },
+      DB      => +{ query => sub ($q) { $q } };
+}
+PERL
+
+    my @eff = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
+    is scalar @eff, 0, 'both Console and DB discharged by multi-effect handle';
+};
+
+subtest 'multi-effect handle — one remaining undeclared' => sub {
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Effect;
+    $ws_reg->register_effect('Console', Typist::Effect->new(
+        name => 'Console', operations => +{},
+    ));
+    $ws_reg->register_effect('DB', Typist::Effect->new(
+        name => 'DB', operations => +{},
+    ));
+    $ws_reg->register_effect('Net', Typist::Effect->new(
+        name => 'Net', operations => +{},
+    ));
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws_reg);
+package MultiPartial;
+use v5.40;
+
+sub all_three :sig(() -> Void ![Console, DB, Net]) () { return }
+
+sub handler :sig(() -> Void) () {
+    handle {
+        all_three();
+    } Console => +{ log => sub { } },
+      DB      => +{ query => sub { } };
+}
+PERL
+
+    my @eff = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
+    ok @eff > 0, 'Net not discharged — EffectMismatch reported';
+    like $eff[0]{message}, qr/Net/, 'reports missing Net effect';
+};
+
+subtest 'multi-effect handle — remaining declared on caller' => sub {
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Effect;
+    $ws_reg->register_effect('Console', Typist::Effect->new(
+        name => 'Console', operations => +{},
+    ));
+    $ws_reg->register_effect('DB', Typist::Effect->new(
+        name => 'DB', operations => +{},
+    ));
+    $ws_reg->register_effect('Net', Typist::Effect->new(
+        name => 'Net', operations => +{},
+    ));
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws_reg);
+package MultiDeclared;
+use v5.40;
+
+sub all_three :sig(() -> Void ![Console, DB, Net]) () { return }
+
+sub handler :sig(() -> Void ![Net]) () {
+    handle {
+        all_three();
+    } Console => +{ log => sub { } },
+      DB      => +{ query => sub { } };
+}
+PERL
+
+    my @eff = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
+    is scalar @eff, 0, 'Console+DB discharged, Net declared on caller — clean';
+};
+
+subtest 'infer_effects: multi-effect handle discharge in inference' => sub {
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Effect;
+    $ws_reg->register_effect('Console', Typist::Effect->new(
+        name => 'Console', operations => +{ log => '(Str) -> Void' },
+    ));
+    $ws_reg->register_effect('DB', Typist::Effect->new(
+        name => 'DB', operations => +{ query => '(Str) -> Str' },
+    ));
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws_reg);
+package InferMulti;
+use v5.40;
+
+sub log_fn :sig((Str) -> Void ![Console]) ($msg) { return }
+sub db_fn  :sig((Str) -> Str ![DB]) ($q) { return $q }
+
+sub handler () {
+    handle {
+        log_fn("hello");
+        db_fn("SELECT 1");
+    } Console => +{ log => sub ($msg) { } },
+      DB      => +{ query => sub ($q) { $q } };
+}
+PERL
+
+    my $ie = $result->{inferred_effects} // [];
+    my ($handler) = grep { $_->{name} eq 'handler' } @$ie;
+    ok !$handler, 'both effects discharged — no inferred effects for handler';
+};
+
+subtest 'infer_effects: multi-effect handle partial — remaining inferred' => sub {
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Effect;
+    $ws_reg->register_effect('Console', Typist::Effect->new(
+        name => 'Console', operations => +{},
+    ));
+    $ws_reg->register_effect('DB', Typist::Effect->new(
+        name => 'DB', operations => +{},
+    ));
+    $ws_reg->register_effect('Net', Typist::Effect->new(
+        name => 'Net', operations => +{},
+    ));
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws_reg);
+package InferMultiPartial;
+use v5.40;
+
+sub all_three :sig(() -> Void ![Console, DB, Net]) () { return }
+
+sub handler () {
+    handle {
+        all_three();
+    } Console => +{ log => sub { } },
+      DB      => +{ query => sub { } };
+}
+PERL
+
+    my $ie = $result->{inferred_effects} // [];
+    my ($handler) = grep { $_->{name} eq 'handler' } @$ie;
+    ok $handler, 'handler has inferred effects (Net remains)';
+    is_deeply $handler->{labels}, ['Net'], 'only Net is inferred — Console+DB discharged';
+};
+
 done_testing;

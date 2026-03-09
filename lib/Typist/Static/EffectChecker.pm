@@ -259,16 +259,18 @@ sub _scan_handle_scopes ($self, $block) {
         next unless $word->content eq 'handle';
         my $body = $word->snext_sibling;
         next unless $body && ref $body && $body->isa('PPI::Structure::Block');
-        my $label = _detect_handle_effect($body);
-        next unless defined $label;
-        push @scopes, +{ body => $body, effect => $label };
+        my @labels = _detect_handle_effects($body);
+        for my $label (@labels) {
+            push @scopes, +{ body => $body, effect => $label };
+        }
     }
     @scopes;
 }
 
-# Detect which effect a handle block captures.
-# Walks siblings after the body block for 'Word =>' pattern.
-sub _detect_handle_effect ($body) {
+# Detect which effects a handle block captures.
+# Walks siblings after the body block for all 'Word =>' patterns.
+sub _detect_handle_effects ($body) {
+    my @effects;
     my $sib = $body->snext_sibling;
     while ($sib) {
         if (ref $sib && $sib->isa('PPI::Token::Word')) {
@@ -276,12 +278,12 @@ sub _detect_handle_effect ($body) {
             if ($next && ref $next && $next->isa('PPI::Token::Operator')
                 && $next->content eq '=>')
             {
-                return $sib->content;
+                push @effects, $sib->content;
             }
         }
         $sib = $sib->snext_sibling;
     }
-    undef;
+    @effects;
 }
 
 # Check if a PPI word node is inside a handle body that discharges the given effect label.
