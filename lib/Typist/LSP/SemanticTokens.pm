@@ -79,7 +79,8 @@ sub compute ($class, $doc) {
         my $info = $extracted->{effects}{$name};
         my $line0 = ($info->{line} // 1) - 1;
         _scan_defined_name(\@tokens, \@lines, $line0, $name, 'enum');
-        _tokenize_sig_strings(\@tokens, \@lines, $line0, $info->{operations} // +{});
+        my %eff_tp = map { $_ => 1 } @{$info->{type_params} // []};
+        _tokenize_sig_strings(\@tokens, \@lines, $line0, $info->{operations} // +{}, \%eff_tp);
     }
 
     # ── typeclass declarations ────────────────

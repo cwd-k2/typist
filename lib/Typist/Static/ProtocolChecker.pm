@@ -52,18 +52,19 @@ sub check_function :TIMED_ACC(function_checks.protocols) ($self, $name) {
 
     # For each label with protocol state annotation, trace the body
     for my $label ($row->labels) {
+        my $base = Typist::Type::Row->label_base_name($label);
         my $state_range = $row->label_state($label);
         unless ($state_range) {
-            my $effect = $self->{registry}->lookup_effect($label);
+            my $effect = $self->{registry}->lookup_effect($base);
             next unless $effect && $effect->has_protocol;
             # ![DB] without state annotation defaults to * -> *
             $state_range = { from => ['*'], to => ['*'] };
         }
-        my $effect = $self->{registry}->lookup_effect($label);
+        my $effect = $self->{registry}->lookup_effect($base);
         next unless $effect && $effect->has_protocol;
 
         my $protocol = $effect->protocol;
-        $self->{_checked_handles}{"$name\0$label"} = 1;
+        $self->{_checked_handles}{"$name\0$base"} = 1;
         $self->_trace_body(
             $block, $name, $label, $protocol,
             $state_range->{from}, $state_range->{to}, $self->{_pkg},
@@ -112,7 +113,8 @@ sub _scan_handles ($self, $block, $fn_name, $pkg) {
             next unless defined $label;
             next if $self->{_checked_handles}{"$fn_name\0$label"};
 
-            my $effect = $self->{registry}->lookup_effect($label);
+            my $base_label = Typist::Type::Row->label_base_name($label);
+            my $effect = $self->{registry}->lookup_effect($base_label);
             next unless $effect && $effect->has_protocol;
 
             my $protocol = $effect->protocol;
@@ -271,12 +273,13 @@ sub _detect_handle_effect ($body) {
 # $current is an arrayref of state names.
 sub _trace_statement ($self, $stmt, $fn_name, $label, $protocol, $current, $pkg) {
     my @words = grep { $_->isa('PPI::Token::Word') } $stmt->schildren;
+    my $label_base = Typist::Type::Row->label_base_name($label);
 
     for my $word (@words) {
         my $content = $word->content;
 
         # Pattern 1: Direct effect operation — Label::op(...)
-        if ($content =~ /\A${label}::(\w+)\z/) {
+        if ($content =~ /\A\Q${label_base}\E::(\w+)\z/) {
             my $op = $1;
             my $next = $word->snext_sibling;
             next unless $next && ref $next && $next->isa('PPI::Structure::List');
@@ -311,7 +314,7 @@ sub _trace_statement ($self, $stmt, $fn_name, $label, $protocol, $current, $pkg)
             my $body = $word->snext_sibling;
             if ($body && ref $body && $body->isa('PPI::Structure::Block')) {
                 my $handled = _detect_handle_effect($body);
-                if (defined $handled && $handled eq $label) {
+                if (defined $handled && $handled eq $label_base) {
                     # Same effect: handle captures it → body traced at * -> *
                     my $r = $self->_trace_block($body, $fn_name, $label, $protocol, ['*'], $pkg);
                     unless ($self->{_relaxed_handle} || $r->{error} || $r->{returns} || _state_eq($r->{state}, ['*'])) {
