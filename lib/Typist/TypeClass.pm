@@ -24,6 +24,23 @@ sub new_class ($class, %args) {
     my @supers    = map { split /\s*\+\s*/, $_->{constraint_expr} }
                     grep { $_->{constraint_expr} } @decls;
 
+    # Inherit var_kind from superclass when not explicitly annotated.
+    # e.g., Applicative 'F: Functor' inherits * -> * from Functor's var_kind.
+    my $registry = $args{registry};
+    if ($registry && @supers) {
+        for my $i (0 .. $#decls) {
+            next if $decls[$i]{var_kind};
+            for my $super (@supers) {
+                my $super_def = $registry->lookup_typeclass($super) // next;
+                my $super_kind = $super_def->var_kind;
+                if ($super_kind) {
+                    $decls[$i]{var_kind} = $super_kind;
+                    last;
+                }
+            }
+        }
+    }
+
     # var_kinds: set only for multi-param or explicit kind annotation
     my @var_kinds;
     my $has_explicit_kind = grep { $_->{var_kind} } @decls;

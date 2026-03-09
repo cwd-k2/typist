@@ -794,7 +794,29 @@ sub parse_param_decls ($class, $spec) {
                     var_kind => Typist::Kind->parse($constraint),
                 };
             } else {
-                push @result, +{ name => $name, constraint_expr => $constraint };
+                # Mixed kind + constraint (e.g., "* -> * + Functor")
+                # or pure constraint (e.g., "Num", "Show + Ord").
+                my @parts = split /\s*\+\s*/, $constraint;
+                my (@kind_parts, @rest);
+                for my $part (@parts) {
+                    if ($part =~ /\A[\s\*\-\>\(\)]+\z/ || $part eq 'Row') {
+                        push @kind_parts, $part;
+                    } else {
+                        push @rest, $part;
+                    }
+                }
+                my %entry = (name => $name);
+                if (@kind_parts) {
+                    my $kp = $kind_parts[0];
+                    if ($kp eq 'Row') {
+                        $entry{is_row_var} = 1;
+                        $entry{var_kind}   = Typist::Kind->Row;
+                    } else {
+                        $entry{var_kind} = Typist::Kind->parse($kp);
+                    }
+                }
+                $entry{constraint_expr} = join(' + ', @rest) if @rest;
+                push @result, \%entry;
             }
         } else {
             push @result, +{ name => $decl };

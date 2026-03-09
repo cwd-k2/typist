@@ -186,6 +186,72 @@ subtest 'HKT kind not confused with superclass' => sub {
     is_deeply [$def->supers], [], 'no superclasses';
 };
 
+subtest 'mixed HKT kind + superclass constraint' => sub {
+    Typist::Registry->reset;
+
+    # Register Functor so it can be used as superclass
+    my $functor_def = Typist::TypeClass->new_class(
+        name    => 'Functor',
+        var     => 'F: * -> *',
+        methods => +{ fmap => '(CodeRef[A -> B], F[A]) -> F[B]' },
+    );
+    Typist::Registry->register_typeclass('Functor', $functor_def);
+
+    # Applicative with mixed kind + superclass: F: * -> * + Functor
+    my $app_def = Typist::TypeClass->new_class(
+        name    => 'Applicative',
+        var     => 'F: * -> * + Functor',
+        methods => +{
+            pure => '(A) -> F[A]',
+            ap   => '(F[CodeRef[A -> B]], F[A]) -> F[B]',
+        },
+    );
+
+    is $app_def->var, 'F', 'type variable extracted';
+    is $app_def->var_kind_str, '* -> *', 'HKT kind parsed from mixed constraint';
+    is_deeply [$app_def->supers], ['Functor'], 'superclass extracted';
+};
+
+subtest 'mixed HKT kind + multiple superclasses' => sub {
+    Typist::Registry->reset;
+
+    my $def = Typist::TypeClass->new_class(
+        name    => 'Traversable',
+        var     => 'F: * -> * + Functor + Foldable',
+        methods => +{},
+    );
+
+    is $def->var, 'F', 'type variable';
+    is $def->var_kind_str, '* -> *', 'kind parsed';
+    is_deeply [sort $def->supers], ['Foldable', 'Functor'], 'both superclasses';
+};
+
+subtest 'superclass var_kind inheritance' => sub {
+    Typist::Registry->reset;
+
+    # Functor declares F: * -> *
+    my $functor_def = Typist::TypeClass->new_class(
+        name    => 'Functor',
+        var     => 'F: * -> *',
+        methods => +{ fmap => '(CodeRef[A -> B], F[A]) -> F[B]' },
+    );
+    Typist::Registry->register_typeclass('Functor', $functor_def);
+
+    # Applicative with only superclass (no explicit kind)
+    # Should inherit var_kind from Functor
+    my $app_def = Typist::TypeClass->new_class(
+        name     => 'Applicative',
+        var      => 'F: Functor',
+        methods  => +{ pure => '(A) -> F[A]' },
+        registry => 'Typist::Registry',
+    );
+    Typist::Registry->register_typeclass('Applicative', $app_def);
+
+    is $app_def->var, 'F', 'type variable';
+    is $app_def->var_kind_str, '* -> *', 'kind inherited from superclass Functor';
+    is_deeply [$app_def->supers], ['Functor'], 'superclass preserved';
+};
+
 # ── Superclass instance validation ──────────────
 
 subtest 'superclass instance check passes when super instance exists' => sub {

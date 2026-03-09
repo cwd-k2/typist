@@ -37,9 +37,10 @@ sub _typeclass ($caller, $name, $var_spec_arg, $methods_ref) {
     my %method_sigs = _coerce_method_sigs($methods_ref);
 
     my $def = Typist::TypeClass->new_class(
-        name    => $name,
-        var     => $var_spec,
-        methods => \%method_sigs,
+        name     => $name,
+        var      => $var_spec,
+        methods  => \%method_sigs,
+        registry => 'Typist::Registry',
     );
     Typist::Registry->register_typeclass($name, $def);
     $def->install_dispatch($caller);

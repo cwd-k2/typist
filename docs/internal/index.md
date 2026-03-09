@@ -13,3 +13,10 @@ Documentation for contributors working on Typist itself. These documents describ
 | [Static Analysis](static-analysis.md) | Analyzer pipeline, extractor, structural checker, TypeChecker, EffectChecker, type inference, gradual typing semantics, cross-file support, diagnostic infrastructure |
 | [Conventions](conventions.md) | Language and module conventions, type system patterns, syntax conventions, feature reference, namespace model, design principles, Perl gotchas |
 | [LSP Coverage](lsp-coverage.md) | Analyzer output → LSP consumer map, diagnostic kinds, completion contexts, hover, definition, signature help, inlay hints, code actions, semantic tokens, references/rename |
+
+## Design Plans
+
+| Document | Content |
+|----------|---------|
+| [Scoped Effects](scoped-effects-plan.md) | Per-effect generics, effect discharge, scoped capability-based effects (completed) |
+| [HKT Generics](hkt-generics-plan.md) | Higher-kinded type parameters on datatype, struct, effect declarations |
