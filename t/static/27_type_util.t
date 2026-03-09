@@ -1,5 +1,6 @@
 use v5.40;
 use Test::More;
+use lib 'lib';
 
 use Typist::Static::TypeUtil qw(widen_literal contains_any contains_placeholder);
 use Typist::Type::Atom;
