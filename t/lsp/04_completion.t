@@ -757,4 +757,53 @@ PERL
     ok(!(grep { $_ eq 'add' }     @labels), 'add NOT in completions (prefix mul)');
 };
 
+# ── Completion on EffectScope methods ──────────────
+
+subtest 'code completion: EffectScope methods' => sub {
+    require Typist::LSP::Document;
+    require Typist::LSP::Completion;
+    require Typist::Registry;
+    require Typist::Effect;
+
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Prelude;
+    Typist::Prelude->install($ws_reg);
+
+    $ws_reg->register_effect('State',
+        Typist::Effect->new(
+            name        => 'State',
+            operations  => +{ get => '() -> Int', put => '(Int) -> Void' },
+            type_params => ['S'],
+        ),
+    );
+
+    my $source = <<'PERL';
+package ScopedCompletionTest;
+use v5.40;
+
+sub use_counter :sig(() -> Int) () {
+    my $counter = scoped('State[Int]');
+    $counter->
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///test_scoped_comp.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws_reg);
+
+    my $ctx = $doc->code_completion_at(5, length('    $counter->'));
+    ok $ctx, 'detected method context for EffectScope';
+
+    if ($ctx) {
+        is $ctx->{kind}, 'method', 'context kind is method';
+        my $items = Typist::LSP::Completion->complete_code($ctx, $doc, $ws_reg);
+        my @labels = map { $_->{label} } @$items;
+        ok((grep { $_ eq 'get' } @labels), 'get in completions');
+        ok((grep { $_ eq 'put' } @labels), 'put in completions');
+    }
+};
+
 done_testing;

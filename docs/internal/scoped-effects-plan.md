@@ -23,7 +23,7 @@ Stage 1: Effect Discharge                Stage 2: Per-Effect Generics
 | 1. Effect Discharge | ✅ done | EffectChecker handle-aware. 7 tests added (33 total). 952 static tests pass |
 | 2. Per-Effect Generics | ✅ done | Parser, Effect, EffectDef, Extractor, Registration, Checker, Row updated. 17 tests (10 type-level + 7 static). All 2917 tests pass |
 | 3a. Scoped Runtime | ✅ done | EffectScope, Handler dual dispatch, handle scoped. 9 tests. All 2926 tests pass |
-| 3b. Scoped Static | ✅ done (core) | TypeEnv inference + method resolution. 4 tests. LSP hover/completion deferred. All 2930 tests pass |
+| 3b. Scoped Static | ✅ done | TypeEnv inference + method resolution + LSP hover/completion. 4+2 tests. All tests pass |
 
 ---
 
@@ -154,8 +154,12 @@ Stage 1: Effect Discharge                Stage 2: Per-Effect Generics
 - [x] 3b.2 `Infer._infer_method_access` — `$ref->get()` → effect op return type via registry
 - [x] 3b.3 `Infer._extract_first_string_arg` — PPI Quote extraction from List node
 - [x] 3b.4 Tests: `t/static/04c_scoped_effects.t` (4 tests)
-- [ ] 3b.5 EffectChecker — `handle { } $ref => +{...}` scoped discharge (deferred)
-- [ ] 3b.6 LSP Hover/Completion — EffectScope method support (deferred)
+- [x] 3b.5 LSP Hover — `$ref->op()` resolves to effect operation via Resolver.walk_accessor_chain
+- [x] 3b.6 LSP Completion — `$ref->` lists effect operations via Completion._complete_cross_package_methods
+- [x] 3b.7 SemanticTokens — `scoped` in @TYPIST_KEYWORDS
+- [x] 3b.8 TextMate grammar — `scoped` and other missing keywords
+- [x] 3b.9 Documentation — effects.md scoped section, Typist.pm POD
+- [ ] 3b.10 EffectChecker — `handle { } $ref => +{...}` scoped discharge (deferred)
 
 ### Files
 

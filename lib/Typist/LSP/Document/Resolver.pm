@@ -135,6 +135,24 @@ sub walk_accessor_chain ($self, $type, $chain, $word, $registry, $narrowed = 0) 
         # Resolve alias → concrete type (newtype, struct, or datatype)
         my $resolved = $self->resolve_type_deep($type, $registry) // return undef;
 
+        # EffectScope: method calls dispatch to effect operations
+        if ($resolved->to_string =~ /\AEffectScope\[(\w+)\]\z/) {
+            my $effect_name = $1;
+            return undef unless $registry;
+            my $eff = $registry->lookup_effect($effect_name) // return undef;
+            if ($i == $#$chain) {
+                my $op_type = $eff->get_op_type($field);
+                my $returns = $op_type && $op_type->is_func
+                    ? $op_type->returns->to_string : 'Any';
+                return sym_method(
+                    name        => $field,
+                    struct_name => "EffectScope[$effect_name]",
+                    returns     => $returns,
+                );
+            }
+            return undef;  # EffectScope ops don't chain
+        }
+
         # Newtype: no instance methods
         if ($resolved->is_newtype) {
             return undef;

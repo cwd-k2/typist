@@ -5,6 +5,7 @@
   "patterns": [
     { "include": "#sub-declaration" },
     { "include": "#type-declaration" },
+    { "include": "#typist-keywords" },
     { "include": "#generics-block" },
     { "include": "#strings" },
     { "include": "#numbers" },
@@ -38,6 +39,10 @@
         "1": { "name": "keyword.control.typist" },
         "2": { "name": "entity.name.type.typist" }
       }
+    },
+    "typist-keywords": {
+      "match": "\\b(handle|match|scoped|declare|instance|protocol|optional)\\b",
+      "name": "keyword.control.typist"
     },
     "generics-block": {
       "begin": "(?<=\\w)<",

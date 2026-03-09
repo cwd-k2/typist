@@ -371,6 +371,148 @@ sub pure_fn :sig((Str) -> Str) ($s) {
 
 ---
 
+## Per-Effect Generics
+
+Effects can be parameterized with type variables using bracket syntax:
+
+```typist
+BEGIN {
+    effect 'State[S]' => +{
+        get => '() -> S',
+        put => '(S) -> Void',
+    };
+}
+```
+
+When used in annotations, provide the concrete type argument:
+
+```typist
+sub increment :sig(() -> Int ![State[Int]]) () {
+    my $n = State::get();
+    State::put($n + 1);
+    $n + 1;
+}
+```
+
+The static checker treats `State[Int]` and `State[Str]` as distinct effect labels. A function annotated with `![State[Int]]` cannot satisfy a caller expecting `![State[Str]]`.
+
+---
+
+## Scoped Effects
+
+Name-based effects (`State::get()`, `Console::log()`) use a single global handler stack per effect name. This means you cannot have two independent `State` instances in the same scope. **Scoped effects** solve this with identity-based dispatch.
+
+### Creating a scoped capability
+
+Use `scoped` to create a capability token for a parameterized effect:
+
+```typist
+my $counter = scoped 'State[Int]';
+my $flags   = scoped 'State[Bool]';
+```
+
+Each call returns a unique `Typist::EffectScope` object. Even two tokens of the same effect type are independent:
+
+```typist
+my $a = scoped 'State[Int]';
+my $b = scoped 'State[Int]';
+# $a and $b have different identities
+```
+
+### Calling operations on scoped effects
+
+Instead of `State::get()`, call operations as methods on the capability token:
+
+```typist
+$counter->put(42);
+my $val = $counter->get();    # 42
+```
+
+### Handling scoped effects
+
+Pass the capability token (instead of a string name) to `handle`:
+
+```typist
+my $counter = scoped 'State[Int]';
+my $state = 0;
+
+my $result = handle {
+    $counter->put(42);
+    $counter->get();
+} $counter => +{
+    get => sub { $state },
+    put => sub ($v) { $state = $v },
+};
+# $result is 42, $state is 42
+```
+
+### Independent instances
+
+The key benefit: multiple instances of the same effect with independent state.
+
+```typist
+my $a = scoped 'State[Int]';
+my $b = scoped 'State[Int]';
+my ($state_a, $state_b) = (0, 0);
+
+handle {
+    handle {
+        $a->put(10);
+        $b->put(20);
+        $a->get();   # 10, not 20
+        $b->get();   # 20, not 10
+    } $b => +{
+        get => sub { $state_b },
+        put => sub ($v) { $state_b = $v },
+    };
+} $a => +{
+    get => sub { $state_a },
+    put => sub ($v) { $state_a = $v },
+};
+```
+
+### Mixing scoped and name-based handlers
+
+Scoped and name-based handlers coexist in the same `handle` block:
+
+```typist
+my $counter = scoped 'State[Int]';
+my $state = 0;
+my @log;
+
+handle {
+    Logger::log("before");
+    $counter->put(99);
+    Logger::log("after: " . $counter->get());
+} $counter => +{
+    get => sub { $state },
+    put => sub ($v) { $state = $v },
+},
+Logger => +{
+    log => sub ($msg) { push @log, $msg },
+};
+```
+
+### Exception cleanup
+
+Scoped handlers are cleaned up on exceptions, just like name-based handlers:
+
+```typist
+my $counter = scoped 'State[Int]';
+eval {
+    handle {
+        $counter->put(1);
+        die "boom\n";
+    } $counter => +{
+        get => sub { 0 },
+        put => sub ($) { },
+    };
+};
+# Handler is gone — $counter->get() would die "No scoped handler..."
+```
+
+---
+
 ## A Complete Example
 
 ```typist
@@ -426,9 +568,13 @@ handle {
 | Concept | Syntax |
 |---------|--------|
 | Define effect | `effect Name => +{ op => 'sig', ... }` |
+| Parameterized effect | `effect 'State[S]' => +{ get => '() -> S' }` |
 | Call operation | `Name::op(args)` |
 | Annotate effects | `:sig((Params) -> Return ![E1, E2])` |
 | Handle effects | `handle { body } E => +{ op => sub { ... } }` |
+| Scoped capability | `my $ref = scoped 'State[Int]'` |
+| Scoped call | `$ref->get()`, `$ref->put(42)` |
+| Scoped handle | `handle { body } $ref => +{ op => sub { ... } }` |
 | Catch exceptions | `handle { body } Exn => +{ throw => sub ($e) { ... } }` |
 | Override builtin | `declare say => '(Str) -> Void ![Console]'` |
 | Suppress check | `# @typist-ignore` |

@@ -315,6 +315,25 @@ With protocol (stateful effects):
         query   => protocol('(Str) -> Str',  'Authed -> Authed'),
     };
 
+=head2 scoped
+
+    my $counter = scoped 'State[Int]';
+    handle {
+        $counter->put(42);
+        $counter->get();
+    } $counter => +{
+        get => sub { $state },
+        put => sub ($v) { $state = $v },
+    };
+
+Create a scoped effect capability token. Unlike name-based effects
+(C<< State::get() >>), scoped effects dispatch by identity: you can have
+multiple independent instances of the same effect type.
+
+Returns a blessed C<Typist::EffectScope> object whose methods correspond
+to the effect's operations. Pass the object to C<handle> instead of a
+string effect name to install a scoped handler.
+
 =head2 protocol
 
     protocol('(Str) -> Void', '* -> Connected')

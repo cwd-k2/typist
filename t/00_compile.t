@@ -56,6 +56,7 @@ my @modules = qw(
     Typist::Type::Struct
     Typist::Protocol
     Typist::Static::ProtocolChecker
+    Typist::EffectScope
 );
 
 for my $mod (@modules) {

@@ -199,6 +199,24 @@ sub _complete_cross_package_methods ($class, $context, $doc, $registry) {
 
     my $resolved = $doc->resolve_type_deep($type, $registry);
 
+    # EffectScope: complete effect operation names
+    if ($resolved && $resolved->to_string =~ /\AEffectScope\[(\w+)\]\z/) {
+        my $effect_name = $1;
+        my $eff = $registry->lookup_effect($effect_name) // return [];
+        my @items;
+        for my $op ($eff->op_names) {
+            next if $prefix ne '' && index($op, $prefix) != 0;
+            my $op_type = $eff->get_op_type($op);
+            my $detail = $op_type ? $op_type->to_string : ($eff->get_op($op) // '');
+            push @items, +{
+                label  => $op,
+                kind   => 2,  # Method
+                detail => "EffectScope[$effect_name]::$op $detail",
+            };
+        }
+        return \@items;
+    }
+
     # Must resolve to a struct for field/method completion
     my $struct = ($resolved && $resolved->is_struct) ? $resolved
                : $registry->lookup_struct($type_str =~ s/\[.*//r) // return [];

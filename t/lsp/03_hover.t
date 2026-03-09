@@ -2236,4 +2236,57 @@ PERL
     like $hover->{contents}{value}, qr/\(Point\)\s*x:\s*Int/, 'shows field type info';
 };
 
+# ── Hover on EffectScope method ──────────────────
+
+subtest 'hover shows EffectScope method info' => sub {
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+    require Typist::Registry;
+    require Typist::Effect;
+
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Prelude;
+    Typist::Prelude->install($ws_reg);
+
+    $ws_reg->register_effect('State',
+        Typist::Effect->new(
+            name        => 'State',
+            operations  => +{ get => '() -> Int', put => '(Int) -> Void' },
+            type_params => ['S'],
+        ),
+    );
+
+    my $source = <<'PERL';
+package ScopedHoverTest;
+use v5.40;
+
+sub use_counter :sig(() -> Int) () {
+    my $counter = scoped('State[Int]');
+    $counter->get();
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///test_scoped.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws_reg);
+
+    # Hover on 'get' at line 5: "    $counter->get();"
+    #                             0123456789012345678
+    my $sym = $doc->symbol_at(5, 15);
+    ok $sym, 'found symbol for EffectScope method';
+    if ($sym) {
+        is $sym->{kind}, 'method', 'kind is method';
+        is $sym->{name}, 'get', 'method name is get';
+        like $sym->{returns}, qr/Int/, 'returns Int';
+        like $sym->{struct_name}, qr/EffectScope/, 'struct_name contains EffectScope';
+
+        my $hover = Typist::LSP::Hover->hover($sym);
+        ok $hover, 'hover response for EffectScope method';
+        like $hover->{contents}{value}, qr/get/, 'shows method name';
+    }
+};
+
 done_testing;

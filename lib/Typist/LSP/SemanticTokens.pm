@@ -36,7 +36,7 @@ $MOD_BIT{$TOKEN_MODIFIERS[$_]} = 1 << $_ for 0 .. $#TOKEN_MODIFIERS;
 my @TYPIST_KEYWORDS = qw(
     typedef newtype effect typeclass instance
     datatype enum struct declare
-    handle match protocol sub
+    handle match protocol scoped sub
 );
 my %TYPIST_KEYWORD_SET = map { $_ => 1 } @TYPIST_KEYWORDS;
 
@@ -548,7 +548,7 @@ The following token types are registered:
 
 =item C<function> - Function name definitions
 
-=item C<keyword> - Keywords (C<sub>, C<typedef>, C<newtype>, C<effect>, C<typeclass>, C<instance>, C<datatype>, C<enum>, C<struct>, C<declare>, C<handle>, C<match>, C<protocol>)
+=item C<keyword> - Keywords (C<sub>, C<typedef>, C<newtype>, C<effect>, C<typeclass>, C<instance>, C<datatype>, C<enum>, C<struct>, C<declare>, C<handle>, C<match>, C<protocol>, C<scoped>)
 
 =item C<class> - Typeclass names
 
