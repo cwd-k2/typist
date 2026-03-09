@@ -136,7 +136,7 @@ sub walk_accessor_chain ($self, $type, $chain, $word, $registry, $narrowed = 0) 
         my $resolved = $self->resolve_type_deep($type, $registry) // return undef;
 
         # EffectScope: method calls dispatch to effect operations
-        if ($resolved->to_string =~ /\AEffectScope\[(\w+)\]\z/) {
+        if ($resolved->to_string =~ /\AEffectScope\[(\w+)/) {
             my $effect_name = $1;
             return undef unless $registry;
             my $eff = $registry->lookup_effect($effect_name) // return undef;

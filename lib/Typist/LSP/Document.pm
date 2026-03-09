@@ -384,26 +384,30 @@ sub symbol_at ($self, $line, $col) {
     if (my $registry = $result->{registry}) {
         my $lookup_name = $bare // $word;
 
-        if ($word =~ /::/) {
-            # Qualified name: Pkg::func — only show hover on function name part
-            return undef unless $self->_cursor_on_func_part($line, $col, $word);
+        # Function lookup: skip hash keys (read => sub { } should not
+        # resolve to CORE::read).  Type-level lookups below still apply.
+        if (!$is_hash_key) {
+            if ($word =~ /::/) {
+                # Qualified name: Pkg::func — only show hover on function name part
+                return undef unless $self->_cursor_on_func_part($line, $col, $word);
 
-            my ($pkg, $fname) = $word =~ /\A(.+)::(\w+)\z/;
-            if ($pkg && $fname) {
-                if (my $sig = $registry->lookup_function($pkg, $fname)) {
-                    return $with_range->(_synthesize_function_symbol($fname, $sig));
+                my ($pkg, $fname) = $word =~ /\A(.+)::(\w+)\z/;
+                if ($pkg && $fname) {
+                    if (my $sig = $registry->lookup_function($pkg, $fname)) {
+                        return $with_range->(_synthesize_function_symbol($fname, $sig));
+                    }
                 }
-            }
-        } else {
-            # Unqualified: try current package first
-            my $pkg = $result->{extracted}{package} // 'main';
-            if (my $sig = $registry->lookup_function($pkg, $lookup_name)) {
-                return $with_range->(_synthesize_function_symbol($lookup_name, $sig));
-            }
+            } else {
+                # Unqualified: try current package first
+                my $pkg = $result->{extracted}{package} // 'main';
+                if (my $sig = $registry->lookup_function($pkg, $lookup_name)) {
+                    return $with_range->(_synthesize_function_symbol($lookup_name, $sig));
+                }
 
-            # Then search all packages (Exporter-imported constructors, etc.)
-            if (my $sig = $registry->search_function_by_name($lookup_name)) {
-                return $with_range->(_synthesize_function_symbol($lookup_name, $sig));
+                # Then search all packages (Exporter-imported constructors, etc.)
+                if (my $sig = $registry->search_function_by_name($lookup_name)) {
+                    return $with_range->(_synthesize_function_symbol($lookup_name, $sig));
+                }
             }
         }
 

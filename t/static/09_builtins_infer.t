@@ -143,6 +143,27 @@ PERL
     is scalar @$errs, 0, 'handler body type checked with propagated param types — no error';
 };
 
+subtest 'handle: scoped handler params get effect operation types' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+use v5.40;
+effect 'Counter[S]' => +{ add => '(S) -> Void', get => '() -> S' };
+sub run :sig(() -> Void) () {
+    my $c = scoped('Counter[Int]');
+    handle {
+        $c->add(1);
+    } $c => +{
+        add => sub ($v) { },
+        get => sub ()   { 0 },
+    };
+}
+PERL
+
+    my @cb = grep { $_->{kind} eq 'variable' && $_->{inferred} && $_->{name} eq '$v' }
+             $result->{symbols}->@*;
+    ok @cb, 'found $v callback param in scoped handler';
+    is $cb[0]{type}, 'Int', '$v gets Int from Counter::add(S) with S=Int';
+};
+
 # ── declaration functions return Void ────────────
 
 subtest 'typedef: registered as CORE builtin' => sub {

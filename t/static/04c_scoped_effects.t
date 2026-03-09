@@ -44,7 +44,7 @@ PERL
     my ($entry) = grep { $_->{name} eq '$counter' } @log;
     ok $entry, 'infer_log has $counter entry';
     if ($entry) {
-        like $entry->{type}, qr/EffectScope\[State\]/, 'inferred as EffectScope[State]';
+        like $entry->{type}, qr/EffectScope\[State/, 'inferred as EffectScope[State[Int]]';
     }
 };
 

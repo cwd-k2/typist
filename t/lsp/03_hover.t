@@ -2507,4 +2507,60 @@ PERL
     }
 };
 
+# ── Hash key should not resolve to CORE function ──
+
+subtest 'hash key "read" does not resolve to CORE::read' => sub {
+    require Typist::LSP::Document;
+    require Typist::Registry;
+    require Typist::Effect;
+
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Prelude;
+    Typist::Prelude->install($ws_reg);
+
+    $ws_reg->register_effect('Accumulator',
+        Typist::Effect->new(
+            name        => 'Accumulator',
+            operations  => +{ read => '() -> Int', add => '(Int) -> Void' },
+            type_params => ['S'],
+        ),
+    );
+
+    my $source = <<'PERL';
+package HashKeyTest;
+use v5.40;
+
+sub run :sig(() -> Void) () {
+    my $acc = scoped('Accumulator[Int]');
+    handle {
+        $acc->add(1);
+    } $acc => +{
+        read => sub ()   { 0 },
+        add  => sub ($v) { },
+    };
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///hashkey.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws_reg);
+
+    # Line 8 (0-indexed): "        read => sub ()   { 0 },"
+    #                       01234567890
+    my $sym = $doc->symbol_at(8, 9);
+
+    # Should NOT show CORE::read (Any, Any, Int) -> Int ![IO]
+    if ($sym) {
+        isnt $sym->{kind}, 'function',
+            'hash key "read" should not resolve as function';
+        unlike($sym->{params_expr} // '', qr/Any.*Any.*Int/,
+            'should not show CORE::read signature');
+    } else {
+        pass 'hash key "read" returns undef (no false match)';
+    }
+};
+
 done_testing;

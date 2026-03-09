@@ -200,7 +200,7 @@ sub _complete_cross_package_methods ($class, $context, $doc, $registry) {
     my $resolved = $doc->resolve_type_deep($type, $registry);
 
     # EffectScope: complete effect operation names
-    if ($resolved && $resolved->to_string =~ /\AEffectScope\[(\w+)\]\z/) {
+    if ($resolved && $resolved->to_string =~ /\AEffectScope\[(\w+)/) {
         my $effect_name = $1;
         my $eff = $registry->lookup_effect($effect_name) // return [];
         my @items;
