@@ -36,7 +36,7 @@ $MOD_BIT{$TOKEN_MODIFIERS[$_]} = 1 << $_ for 0 .. $#TOKEN_MODIFIERS;
 my @TYPIST_KEYWORDS = qw(
     typedef newtype effect typeclass instance
     datatype enum struct declare
-    handle match protocol sub
+    handle match protocol scoped sub
 );
 my %TYPIST_KEYWORD_SET = map { $_ => 1 } @TYPIST_KEYWORDS;
 
@@ -79,7 +79,8 @@ sub compute ($class, $doc) {
         my $info = $extracted->{effects}{$name};
         my $line0 = ($info->{line} // 1) - 1;
         _scan_defined_name(\@tokens, \@lines, $line0, $name, 'enum');
-        _tokenize_sig_strings(\@tokens, \@lines, $line0, $info->{operations} // +{});
+        my %eff_tp = map { $_ => 1 } @{$info->{type_params} // []};
+        _tokenize_sig_strings(\@tokens, \@lines, $line0, $info->{operations} // +{}, \%eff_tp);
     }
 
     # ── typeclass declarations ────────────────
@@ -262,7 +263,8 @@ sub compute ($class, $doc) {
             # Typist keywords
             if ($TYPIST_KEYWORD_SET{$c}) {
                 push @tokens, [$line0, $col, length($c), 'keyword', 0];
-                next;
+                # scoped/handle need post-processing below — don't skip
+                next unless $c eq 'scoped' || $c eq 'handle';
             }
 
             # Constructor usage (Some, None, Point, UserId)
@@ -281,6 +283,26 @@ sub compute ($class, $doc) {
                     push @tokens, [$line0, $col + length($eff) + 2, length($op), 'function', 0];
                 }
                 next;
+            }
+
+            # scoped expression: highlight type string
+            if ($c eq 'scoped') {
+                my $sib = $w->snext_sibling or next;
+                # scoped 'Effect[Type]' or scoped('Effect[Type]')
+                my $quote;
+                if ($sib->isa('PPI::Token::Quote')) {
+                    $quote = $sib;
+                } elsif ($sib->isa('PPI::Structure::List')) {
+                    my $quotes = $sib->find('PPI::Token::Quote');
+                    $quote = $quotes->[0] if $quotes && @$quotes;
+                }
+                if ($quote) {
+                    my $str = $quote->string;
+                    my $q_line = $quote->line_number - 1;
+                    # +1 for opening quote character
+                    my $q_col  = $quote->column_number;  # column_number is 1-based, +1 for quote = col inside string
+                    _tokenize_content(\@tokens, $q_line, $q_col, $str, +{});
+                }
             }
 
             # handle expression: effect name + handler ops
@@ -548,7 +570,7 @@ The following token types are registered:
 
 =item C<function> - Function name definitions
 
-=item C<keyword> - Keywords (C<sub>, C<typedef>, C<newtype>, C<effect>, C<typeclass>, C<instance>, C<datatype>, C<enum>, C<struct>, C<declare>, C<handle>, C<match>, C<protocol>)
+=item C<keyword> - Keywords (C<sub>, C<typedef>, C<newtype>, C<effect>, C<typeclass>, C<instance>, C<datatype>, C<enum>, C<struct>, C<declare>, C<handle>, C<match>, C<protocol>, C<scoped>)
 
 =item C<class> - Typeclass names
 

@@ -13,13 +13,19 @@ our $VERSION = '0.01';
 
 sub new ($class, %args) {
     bless +{
-        name       => ($args{name}       // die("Effect requires name\n")),
-        operations => ($args{operations} // +{}),
-        protocol   => $args{protocol},
-        ambient    => $args{ambient} ? 1 : 0,
-        _parsed    => +{},
+        name             => ($args{name}       // die("Effect requires name\n")),
+        operations       => ($args{operations} // +{}),
+        protocol         => $args{protocol},
+        ambient          => $args{ambient} ? 1 : 0,
+        type_params      => ($args{type_params} // []),
+        type_param_specs => ($args{type_param_specs} // []),
+        _parsed          => +{},
     }, $class;
 }
+
+sub type_params      ($self) { $self->{type_params}->@* }
+sub type_param_specs ($self) { $self->{type_param_specs}->@* }
+sub is_generic       ($self) { scalar $self->{type_params}->@* }
 
 sub name         ($self) { $self->{name} }
 sub operations   ($self) { $self->{operations}->%* }

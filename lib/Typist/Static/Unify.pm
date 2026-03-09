@@ -36,7 +36,11 @@ sub unify ($class, $formal, $actual, $bindings = +{}, %opts) {
         # Occurs check: reject infinite types (e.g. T = ArrayRef[T])
         # Only applies to compound types — Var-to-Var binding (T = T) is harmless.
         return undef if !$actual->is_var && grep { $_ eq $name } $actual->free_vars;
-        return +{ %$bindings, $name => $actual };
+        # Widen literals to base atom for generic binding
+        my $bound = ($actual->is_literal)
+            ? Typist::Type::Atom->new($actual->base_type)
+            : $actual;
+        return +{ %$bindings, $name => $bound };
     }
 
     # ── Both Atom → name equality ─────────────
@@ -198,7 +202,12 @@ sub collect_bindings ($class, $formal, $actual, $bindings) {
         # Occurs check: reject infinite types (e.g. T = ArrayRef[T])
         # Only applies to compound types — Var-to-Var binding (T = T) is harmless.
         return 0 if !$actual->is_var && grep { $_ eq $name } $actual->free_vars;
-        $bindings->{$name} = $actual;
+        # Widen literals to base atom: Literal(42, Int) → Int.
+        # Generic type variables represent types, not literal values.
+        my $bound = ($actual->is_literal)
+            ? Typist::Type::Atom->new($actual->base_type)
+            : $actual;
+        $bindings->{$name} = $bound;
         return 1;
     }
     if ($formal->is_func && $actual->is_func) {

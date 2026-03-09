@@ -39,6 +39,10 @@ sub row_var      ($self) { $self->{row_var} }
 sub is_row       ($self) { 1 }
 sub label_states ($self) { $self->{label_states} }
 
+# Extract base name from a (possibly parameterized) label string.
+#   'State[Int]' → 'State',  'Console' → 'Console'
+sub label_base_name ($, $label) { ($label =~ /\A(\w+)/)[0] // $label }
+
 # State range for a label, or undef if no protocol state annotated.
 sub label_state ($self, $label) { $self->{label_states}{$label} }
 

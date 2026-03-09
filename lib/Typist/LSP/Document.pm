@@ -336,7 +336,22 @@ sub symbol_at ($self, $line, $col) {
     }
 
     my $sym = $self->_find_best_symbol($symbols, $word, $line);
-    return $with_range->($sym) if $sym;
+    if ($sym) {
+        # For generic functions at call sites, add instantiation info
+        if (($sym->{kind} // '') eq 'function' && $sym->{generics} && @{$sym->{generics}}) {
+            if (my $registry = ($self->{result} // +{})->{registry}) {
+                my $pkg = ($self->{result}{extracted}{package} // 'main');
+                my $sig = $registry->lookup_function($pkg, $word)
+                       // $registry->search_function_by_name($word);
+                if ($sig && $sig->{generics} && @{$sig->{generics}}) {
+                    if (my $bindings = $self->_call_site_bindings($sig, $line, $col)) {
+                        $sym = _apply_bindings_to_symbol($sym, $bindings);
+                    }
+                }
+            }
+        }
+        return $with_range->($sym);
+    }
 
     # Try without sigil (e.g. cursor on "foo" matches function "foo")
     (my $bare = $word) =~ s/^[\$\@%]//;
@@ -356,6 +371,10 @@ sub symbol_at ($self, $line, $col) {
     if ($is_hash_key) {
         if (my $field_sym = $self->_resolve_struct_key_hover($word, $line, $col)) {
             return $with_range->($field_sym);
+        }
+        # Handler operation key: Effect => +{ read => sub { }, ... }
+        if (my $op_sym = $self->_resolve_handler_op_hover($word, $line, $col)) {
+            return $with_range->($op_sym);
         }
     }
 
@@ -384,26 +403,33 @@ sub symbol_at ($self, $line, $col) {
     if (my $registry = $result->{registry}) {
         my $lookup_name = $bare // $word;
 
-        if ($word =~ /::/) {
-            # Qualified name: Pkg::func — only show hover on function name part
-            return undef unless $self->_cursor_on_func_part($line, $col, $word);
+        # Function lookup: skip hash keys (read => sub { } should not
+        # resolve to CORE::read).  Type-level lookups below still apply.
+        if (!$is_hash_key) {
+            if ($word =~ /::/) {
+                # Qualified name: Pkg::func — only show hover on function name part
+                return undef unless $self->_cursor_on_func_part($line, $col, $word);
 
-            my ($pkg, $fname) = $word =~ /\A(.+)::(\w+)\z/;
-            if ($pkg && $fname) {
-                if (my $sig = $registry->lookup_function($pkg, $fname)) {
-                    return $with_range->(_synthesize_function_symbol($fname, $sig));
+                my ($pkg, $fname) = $word =~ /\A(.+)::(\w+)\z/;
+                if ($pkg && $fname) {
+                    if (my $sig = $registry->lookup_function($pkg, $fname)) {
+                        my $bindings = $self->_call_site_bindings($sig, $line, $col);
+                        return $with_range->(_synthesize_function_symbol($fname, $sig, $bindings));
+                    }
                 }
-            }
-        } else {
-            # Unqualified: try current package first
-            my $pkg = $result->{extracted}{package} // 'main';
-            if (my $sig = $registry->lookup_function($pkg, $lookup_name)) {
-                return $with_range->(_synthesize_function_symbol($lookup_name, $sig));
-            }
+            } else {
+                # Unqualified: try current package first
+                my $pkg = $result->{extracted}{package} // 'main';
+                if (my $sig = $registry->lookup_function($pkg, $lookup_name)) {
+                    my $bindings = $self->_call_site_bindings($sig, $line, $col);
+                    return $with_range->(_synthesize_function_symbol($lookup_name, $sig, $bindings));
+                }
 
-            # Then search all packages (Exporter-imported constructors, etc.)
-            if (my $sig = $registry->search_function_by_name($lookup_name)) {
-                return $with_range->(_synthesize_function_symbol($lookup_name, $sig));
+                # Then search all packages (Exporter-imported constructors, etc.)
+                if (my $sig = $registry->search_function_by_name($lookup_name)) {
+                    my $bindings = $self->_call_site_bindings($sig, $line, $col);
+                    return $with_range->(_synthesize_function_symbol($lookup_name, $sig, $bindings));
+                }
             }
         }
 
@@ -509,8 +535,8 @@ sub symbol_at ($self, $line, $col) {
         }
     }
 
-    # Keyword hover: match / handle
-    if ($word eq 'match' || $word eq 'handle') {
+    # Keyword hover: match / handle / scoped
+    if ($word eq 'match' || $word eq 'handle' || $word eq 'scoped') {
         if (my $kw_sym = $self->_resolve_keyword_hover($word, $line, $col)) {
             return $with_range->($kw_sym);
         }
@@ -579,6 +605,251 @@ sub _resolve_struct_key_hover ($self, $word, $line, $col) {
     undef;
 }
 
+# Resolve handler operation key hover: read => sub { } inside Effect => +{ ... }
+sub _resolve_handler_op_hover ($self, $word, $line, $col) {
+    my $result   = $self->{result} // return undef;
+    my $registry = $result->{registry} // return undef;
+
+    my $ppi_word = $self->_ppi_word_at($line, $col) // return undef;
+    return undef unless $ppi_word->content eq $word;
+
+    # Walk up to find enclosing +{...} (PPI::Structure::Constructor or Block)
+    my $constr = $ppi_word->parent;
+    while ($constr && !$constr->isa('PPI::Structure::Block')
+                   && !($constr->isa('PPI::Structure::Constructor'))) {
+        $constr = $constr->parent;
+    }
+    return undef unless $constr;
+
+    # Look for Effect => +{...} pattern.
+    # PPI parses +{...} as Operator(+) + Constructor({...}), so skip the '+'.
+    my $prev = $constr->sprevious_sibling or return undef;
+    if ($prev->isa('PPI::Token::Operator') && $prev->content eq '+') {
+        $prev = $prev->sprevious_sibling or return undef;
+    }
+    my $arrow = $prev;
+    return undef unless $arrow->isa('PPI::Token::Operator') && $arrow->content eq '=>';
+    my $effect_token = $arrow->sprevious_sibling or return undef;
+
+    my ($effect_name, @type_args_str);
+    if ($effect_token->isa('PPI::Token::Word')) {
+        $effect_name = $effect_token->content;
+    } elsif ($effect_token->isa('PPI::Token::Symbol')) {
+        # Scoped: $var => +{...} — resolve variable type to extract effect name and type args
+        my $resolver = $self->_resolver;
+        my $var_type = $resolver->resolve_var_type($effect_token->content, $line);
+        if ($var_type && $var_type =~ /EffectScope\[(\w+)(?:\[(.+)\])?\]/) {
+            $effect_name = $1;
+            @type_args_str = split /,\s*/, ($2 // '');
+        }
+    }
+    return undef unless $effect_name;
+
+    my $eff = $registry->lookup_effect($effect_name) // return undef;
+    my $op_type = $eff->get_op_type($word) // return undef;
+
+    # Substitute type params with concrete type args if available
+    my @type_params = $eff->type_params;
+    if (@type_params && @type_args_str) {
+        my %subst;
+        for my $i (0 .. $#type_params) {
+            last if $i > $#type_args_str;
+            my $concrete = eval { Typist::Parser->parse($type_args_str[$i]) };
+            $subst{$type_params[$i]} = $concrete if $concrete;
+        }
+        $op_type = $op_type->substitute(\%subst) if %subst;
+    }
+
+    # Include effect type params as generics when not substituted
+    my @generics;
+    if (@type_params && !@type_args_str) {
+        @generics = @type_params;
+    }
+
+    sym_function(
+        name         => $word,
+        params_expr  => [$op_type->is_func ? (map { $_->to_string } $op_type->params) : ()],
+        returns_expr => $op_type->is_func ? $op_type->returns->to_string : $op_type->to_string,
+        (@generics ? (generics => \@generics) : ()),
+    );
+}
+
+# Collect generic type bindings at a call site for instantiation display.
+# Returns { VarName => Type } or undef if not a generic call site.
+sub _call_site_bindings ($self, $sig, $line, $col) {
+    # Only for generic functions
+    return undef unless $sig->{generics} && @{$sig->{generics}};
+
+    my $result   = $self->{result} // return undef;
+    my $registry = $result->{registry} // return undef;
+
+    # Find PPI word at this position
+    my $ppi_word = $self->_ppi_word_at($line, $col) // return undef;
+
+    # Find the argument list: func(...) — next sibling should be Structure::List
+    my $list = $ppi_word->snext_sibling;
+    return undef unless $list && $list->isa('PPI::Structure::List');
+
+    # Build env for inference from analysis result (symbols + extracted functions)
+    my $extracted = $result->{extracted} // return undef;
+    my %functions;
+    for my $name (keys $extracted->{functions}->%*) {
+        my $fn = $extracted->{functions}{$name};
+        next if $fn->{unannotated};
+        if (my $ret_expr = $fn->{returns_expr}) {
+            my $type = eval { Typist::Parser->parse($ret_expr) };
+            $functions{$name} = $type if $type;
+        }
+    }
+
+    # Populate variables from analyzed symbols (scoped to call site line)
+    my $symbols = $result->{symbols} // [];
+    my $ppi_line = $line + 1;  # LSP 0-indexed → PPI 1-indexed
+    my %variables;
+    for my $sym (@$symbols) {
+        next unless ($sym->{kind} // '') =~ /\A(?:variable|parameter)\z/;
+        next unless defined $sym->{type} && $sym->{type} ne 'Any';
+        # Scope check: variable must be visible at the call site
+        if ($sym->{scope_start} && $sym->{scope_end}) {
+            next unless $ppi_line >= $sym->{scope_start} && $ppi_line <= $sym->{scope_end};
+        }
+        my $type = eval { Typist::Parser->parse($sym->{type}) };
+        $variables{$sym->{name}} = $type if $type;
+    }
+
+    my $env = +{
+        variables => \%variables,
+        functions => \%functions,
+        registry  => $registry,
+        package   => $extracted->{package} // 'main',
+    };
+
+    # Extract arg nodes (simplified: just get immediate children)
+    my $expr = $list->schild(0);
+    return undef unless $expr && $expr->isa('PPI::Statement');
+
+    my @arg_nodes;
+    my @children = $expr->schildren;
+    my $i = 0;
+    while ($i <= $#children) {
+        my $child = $children[$i];
+        if ($child->isa('PPI::Token::Operator') && $child->content eq ',') {
+            $i++; next;
+        }
+        push @arg_nodes, $child;
+        # Skip anonymous sub continuations
+        if ($child->isa('PPI::Token::Word') && $child->content eq 'sub'
+            && !($child->parent && $child->parent->isa('PPI::Statement::Sub'))) {
+            $i++;
+            $i++ if $i <= $#children && ($children[$i]->isa('PPI::Token::Prototype')
+                                       || $children[$i]->isa('PPI::Structure::List'));
+            $i++ if $i <= $#children && $children[$i]->isa('PPI::Structure::Block');
+            next;
+        }
+        # Skip function call arg list
+        if ($child->isa('PPI::Token::Word') && $child->content ne 'sub'
+            && $i + 1 <= $#children
+            && $children[$i + 1]->isa('PPI::Structure::List')) {
+            $i += 2; next;
+        }
+        $i++;
+    }
+
+    return undef unless @arg_nodes;
+
+    # 2-pass binding: Pass 1 collects from non-callback args,
+    # Pass 2 re-infers callbacks with expected types from Pass 1 bindings.
+    require Typist::Static::Unify;
+    require Typist::Static::Infer;
+    my @params = @{$sig->{params}};
+    my %bindings;
+    my @callback_indices;
+
+    # Pass 1: non-callback args
+    for my $j (0 .. $#params) {
+        last if $j > $#arg_nodes;
+        if ($arg_nodes[$j]->isa('PPI::Token::Word') && $arg_nodes[$j]->content eq 'sub') {
+            push @callback_indices, $j;
+            next;
+        }
+        my $inferred = Typist::Static::Infer->infer_expr($arg_nodes[$j], $env);
+        next unless $inferred;
+        Typist::Static::Unify->collect_bindings($params[$j], $inferred, \%bindings);
+    }
+
+    # Pass 2: callback args with expected type (substitute Pass 1 bindings)
+    if (%bindings && @callback_indices) {
+        for my $j (@callback_indices) {
+            next if $j > $#arg_nodes;
+            my $expected = $params[$j]->substitute(\%bindings);
+            my $inferred = Typist::Static::Infer->infer_expr(
+                $arg_nodes[$j], $env, $expected);
+            next unless $inferred;
+            Typist::Static::Unify->collect_bindings($params[$j], $inferred, \%bindings);
+        }
+    }
+
+    # Pass 3: unify return type with enclosing function's expected return type
+    # Resolves e.g. Err<T>(Str) -> Result[T] when enclosing returns Result[Customer]
+    if ($sig->{returns} && $sig->{returns}->free_vars) {
+        my $expected_ret = $self->_enclosing_return_type($line);
+        if ($expected_ret) {
+            Typist::Static::Unify->collect_bindings(
+                $sig->{returns}, $expected_ret, \%bindings);
+        }
+    }
+
+    %bindings ? \%bindings : undef;
+}
+
+# Find the return type of the function enclosing the given LSP line.
+sub _enclosing_return_type ($self, $line) {
+    my $extracted = ($self->{result} // return undef)->{extracted} // return undef;
+    my $ppi_line = $line + 1;
+    my ($best_fn, $best_span);
+    for my $name (keys $extracted->{functions}->%*) {
+        my $fn = $extracted->{functions}{$name};
+        next unless $fn->{line} && $fn->{end_line} && $fn->{returns_expr};
+        next if $fn->{unannotated};
+        next unless $ppi_line >= $fn->{line} && $ppi_line <= $fn->{end_line};
+        my $span = $fn->{end_line} - $fn->{line};
+        if (!defined $best_span || $span < $best_span) {
+            $best_fn   = $fn;
+            $best_span = $span;
+        }
+    }
+    return undef unless $best_fn;
+    eval { Typist::Parser->parse($best_fn->{returns_expr}) };
+}
+
+# Apply generic bindings to an extracted symbol's generics and signature for display.
+# generics in extracted symbols are strings like "T", "T: Num", etc.
+sub _apply_bindings_to_symbol ($sym, $bindings) {
+    my @new_generics = map {
+        my ($var_name) = /\A(\w+)/;
+        if ($var_name && exists $bindings->{$var_name}) {
+            $_ . ' = ' . $bindings->{$var_name}->to_string;
+        } else {
+            $_;
+        }
+    } @{$sym->{generics}};
+
+    # Substitute bound type variables in params_expr and returns_expr strings
+    my $subst_str = sub ($s) {
+        for my $var (keys %$bindings) {
+            my $repl = $bindings->{$var}->to_string;
+            $s =~ s/\b\Q$var\E\b/$repl/g;
+        }
+        $s;
+    };
+    my @new_params = map { $subst_str->($_) } ($sym->{params_expr} // [])->@*;
+    my $new_returns = defined $sym->{returns_expr}
+        ? $subst_str->($sym->{returns_expr}) : $sym->{returns_expr};
+
+    +{ %$sym, generics => \@new_generics, params_expr => \@new_params,
+       returns_expr => $new_returns };
+}
+
 # Dispatch keyword hover for match/handle.
 sub _resolve_keyword_hover ($self, $word, $line, $col) {
     my $ppi_word = $self->_ppi_word_at($line, $col) // return undef;
@@ -586,6 +857,7 @@ sub _resolve_keyword_hover ($self, $word, $line, $col) {
 
     return $self->_resolve_match_hover($ppi_word, $line) if $word eq 'match';
     return $self->_resolve_handle_hover($ppi_word)       if $word eq 'handle';
+    return $self->_resolve_scoped_hover($ppi_word)       if $word eq 'scoped';
     undef;
 }
 
@@ -628,7 +900,7 @@ sub _resolve_handle_hover ($self, $ppi_word) {
     my $result   = $self->{result} // return undef;
     my $registry = $result->{registry} // return undef;
 
-    # handle { BLOCK } EffectName => +{ ... }, EffectName2 => +{ ... }
+    # handle { BLOCK } EffectName => +{ ... }, $scoped => +{ ... }
     my $sib = $ppi_word->next_sibling;
 
     # Skip whitespace
@@ -640,11 +912,24 @@ sub _resolve_handle_hover ($self, $ppi_word) {
     # Walk siblings after the block to collect effect names
     $sib = $sib->next_sibling;
     my @effects;
+    my $resolver = $self->_resolver;
+    my $handle_line = $ppi_word->line_number - 1;  # PPI 1-indexed → LSP 0-indexed
+
     while ($sib) {
         if ($sib->isa('PPI::Token::Word')) {
             my $name = $sib->content;
             if ($registry->lookup_effect($name)) {
                 push @effects, +{ name => $name };
+            }
+        }
+        # Scoped effect: $var => +{...} — resolve variable type to find effect name
+        elsif ($sib->isa('PPI::Token::Symbol')) {
+            my $next = $sib->snext_sibling;
+            if ($next && $next->isa('PPI::Token::Operator') && $next->content eq '=>') {
+                my $type_str = $resolver->resolve_var_type($sib->content, $handle_line);
+                if ($type_str && $type_str =~ /EffectScope\[(\w+)/) {
+                    push @effects, +{ name => $1, scoped => 1, var => $sib->content };
+                }
             }
         }
         $sib = $sib->next_sibling;
@@ -657,6 +942,38 @@ sub _resolve_handle_hover ($self, $ppi_word) {
         name        => join(', ', map { $_->{name} } @effects),
         effects     => \@effects,
         result_type => $self->_infer_keyword_result_type($ppi_word) // '_',
+    };
+}
+
+# Resolve scoped keyword: scoped('Effect[T]') or scoped 'Effect[T]'.
+sub _resolve_scoped_hover ($self, $ppi_word) {
+    my $result   = $self->{result} // return undef;
+    my $registry = $result->{registry} // return undef;
+
+    my $sib = $ppi_word->snext_sibling;
+    return undef unless $sib;
+
+    my $arg;
+    if ($sib->isa('PPI::Structure::List')) {
+        # scoped('Effect[T]')
+        my $quotes = $sib->find('PPI::Token::Quote');
+        $arg = $quotes->[0]->string if $quotes && @$quotes;
+    }
+    elsif ($sib->isa('PPI::Token::Quote')) {
+        # scoped 'Effect[T]'
+        $arg = $sib->string;
+    }
+    return undef unless $arg;
+
+    my ($base) = $arg =~ /\A(\w+)/;
+    return undef unless $base;
+
+    +{
+        kind        => 'scoped',
+        name        => $arg,
+        effect_name => $base,
+        has_effect  => $registry->lookup_effect($base) ? 1 : 0,
+        result_type => "EffectScope[$base]",
     };
 }
 
@@ -915,6 +1232,8 @@ sub inlay_hints ($self, $start_line, $end_line) {
         next unless $sym->{inferred};
         next if $sym->{unknown};
         next if $sym->{narrowed};
+        # Skip bare type variables (A, T, _) — no useful information
+        next if ($sym->{type} // '') =~ /\A[A-Z_]\z/;
 
         my $line = ($sym->{line} // 1) - 1;
         next if $line < $start_line || $line > $end_line;
@@ -1228,16 +1547,22 @@ sub completion_context ($self, $line, $col) {
 
 # ── Registry Symbol Synthesis ───────────────────
 
-sub _synthesize_function_symbol ($name, $sig) {
+sub _synthesize_function_symbol ($name, $sig, $bindings = undef) {
     my @params_expr;
     if ($sig->{params}) {
-        @params_expr = map { ref $_ ? $_->to_string : $_ } @{$sig->{params}};
+        @params_expr = map {
+            my $t = $_;
+            $t = $t->substitute($bindings) if ref $t && $bindings;
+            ref $t ? $t->to_string : $t;
+        } @{$sig->{params}};
     }
     @params_expr = @{$sig->{params_expr}} if $sig->{params_expr} && !@params_expr;
 
     my $returns_expr;
     if ($sig->{returns}) {
-        $returns_expr = ref $sig->{returns} ? $sig->{returns}->to_string : $sig->{returns};
+        my $r = $sig->{returns};
+        $r = $r->substitute($bindings) if ref $r && $bindings;
+        $returns_expr = ref $r ? $r->to_string : $r;
     }
     $returns_expr //= $sig->{returns_expr};
 
@@ -1250,9 +1575,17 @@ sub _synthesize_function_symbol ($name, $sig) {
                 push @constraints, $_->{bound_expr}          if $_->{bound_expr};
                 push @constraints, $_->{tc_constraints}->@*  if $_->{tc_constraints};
                 $g .= ': ' . join(' + ', @constraints) if @constraints;
+                # Append call-site instantiation: A = Int
+                if ($bindings && exists $bindings->{$_->{name}}) {
+                    $g .= ' = ' . $bindings->{$_->{name}}->to_string;
+                }
                 $g;
             } else {
-                $_;
+                my $g = $_;
+                if ($bindings && exists $bindings->{$_}) {
+                    $g .= ' = ' . $bindings->{$_}->to_string;
+                }
+                $g;
             }
         } @{$sig->{generics}};
     }

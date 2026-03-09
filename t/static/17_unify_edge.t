@@ -65,8 +65,8 @@ subtest 'atom formal vs literal actual' => sub {
 subtest 'variable binding to literal' => sub {
     my $lit = Typist::Type::Literal->new("hello", 'Str');
     my $result = Typist::Static::Unify->unify(var('T'), $lit);
-    ok $result, 'T binds to literal';
-    ok $result->{T}->is_literal, 'bound type is literal';
+    ok $result, 'T binds to literal (widened)';
+    is $result->{T}->to_string, 'Str', 'literal widened to base atom for generic binding';
 };
 
 # ── Param unification ──────────────────────────

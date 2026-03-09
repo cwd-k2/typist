@@ -207,6 +207,14 @@ sub infer_expr ($class, $element, $env = undef, $expected = undef) {
             }
             return undef;
         }
+        # scoped 'Effect[T]' — bareword + quote (no parens)
+        if ($element->content eq 'scoped'
+            && $next && $next->isa('PPI::Token::Quote')) {
+            my $arg_str = $next->string;
+            if ($arg_str && $arg_str =~ /\A\w+/) {
+                return Typist::Type::Atom->new("EffectScope[$arg_str]");
+            }
+        }
     }
 
     # ── Operator expressions (Statement-level) ────
@@ -344,6 +352,14 @@ sub infer_list_rhs_type ($class, $init_node, $env) {
         if ($next && $next->isa('PPI::Structure::List')) {
             return _infer_call($init_node->content, $env, $next);
         }
+        # Pattern 3b: scoped 'Effect[T]' → bareword + quote (no parens)
+        if ($init_node->content eq 'scoped'
+            && $next && $next->isa('PPI::Token::Quote')) {
+            my $arg_str = $next->string;
+            if ($arg_str && $arg_str =~ /\A\w+/) {
+                return Typist::Type::Atom->new("EffectScope[$arg_str]");
+            }
+        }
     }
 
     # Pattern 4: List literal (...) → Tuple from element-wise inference
@@ -370,8 +386,24 @@ sub infer_list_rhs_type ($class, $init_node, $env) {
 
 # ── Function Call Inference ──────────────────────
 
+# Extract the first string argument from a PPI::Structure::List.
+# Returns the unquoted string or undef.
+sub _extract_first_string_arg ($list_node) {
+    my $expr = $list_node->find_first('PPI::Token::Quote') || return undef;
+    $expr->string;
+}
+
 sub _infer_call ($name, $env, $list_element = undef, $expected = undef) {
     return undef unless $env;
+
+    # scoped('State[Int]') → Atom('EffectScope[State[Int]]')
+    if ($name eq 'scoped' && $list_element) {
+        my $arg_str = _extract_first_string_arg($list_element);
+        if ($arg_str && $arg_str =~ /\A\w+/) {
+            return Typist::Type::Atom->new("EffectScope[$arg_str]");
+        }
+        return Typist::Type::Atom->new('Any');
+    }
 
     # Local function with known return type
     if (my $ret = $env->{functions}{$name}) {
@@ -678,6 +710,7 @@ sub _infer_handle_handlers ($body_block, $env) {
     my $registry = ($env // +{})->{registry} // return;
     my $sib = $body_block->snext_sibling;
     my $current_effect;
+    my $current_type_args;  # type arg substitution map for parameterized effects
 
     while ($sib) {
         last if $sib->isa('PPI::Token::Structure') && $sib->content eq ';';
@@ -687,19 +720,50 @@ sub _infer_handle_handlers ($body_block, $env) {
             my $after = $sib->snext_sibling;
             if ($after && $after->isa('PPI::Token::Operator') && $after->content eq '=>') {
                 $current_effect = $sib->content;
+                $current_type_args = undef;
+            }
+        }
+        # Scoped effect: $var followed by => — resolve via env
+        elsif ($sib->isa('PPI::Token::Symbol')) {
+            my $after = $sib->snext_sibling;
+            if ($after && $after->isa('PPI::Token::Operator') && $after->content eq '=>') {
+                my $var_type = ($env->{variables} // +{})->{$sib->content};
+                if ($var_type && $var_type =~ /EffectScope\[(\w+)(?:\[(.+)\])?\]/) {
+                    $current_effect = $1;
+                    $current_type_args = _build_effect_type_args($1, $2, $registry);
+                }
             }
         }
 
         # Handler map: Constructor +{...}
         if ($sib->isa('PPI::Structure::Constructor') && $current_effect) {
-            _infer_handler_map($sib, $current_effect, $env);
+            _infer_handler_map($sib, $current_effect, $env, $current_type_args);
         }
 
         $sib = $sib->snext_sibling;
     }
 }
 
-sub _infer_handler_map ($constructor, $effect_name, $env) {
+# Build type param → type arg substitution map for parameterized effects.
+# e.g., effect 'Counter[S]' with args 'Int' → { S => Int }
+sub _build_effect_type_args ($effect_name, $args_str, $registry) {
+    return undef unless $args_str;
+    my $eff = $registry->lookup_effect($effect_name) // return undef;
+    my @type_params = ($eff->{type_params} // [])->@*;
+    return undef unless @type_params;
+
+    my @type_args = split /,\s*/, $args_str;
+    return undef unless @type_params == @type_args;
+
+    require Typist::Parser;
+    my %subst;
+    for my $i (0 .. $#type_params) {
+        $subst{$type_params[$i]} = Typist::Parser->parse($type_args[$i]);
+    }
+    \%subst;
+}
+
+sub _infer_handler_map ($constructor, $effect_name, $env, $type_args = undef) {
     my $registry = $env->{registry} // return;
     my $expr = $constructor->find_first('PPI::Statement::Expression') // return;
     my $current_op;
@@ -717,9 +781,16 @@ sub _infer_handler_map ($constructor, $effect_name, $env) {
         if ($child->isa('PPI::Token::Word') && $child->content eq 'sub' && $current_op) {
             my $sig = $registry->lookup_function($effect_name, $current_op);
             if ($sig && $sig->{params}) {
-                my $expected = Typist::Type::Func->new(
-                    $sig->{params}, $sig->{returns} // Typist::Type::Atom->new('Any'),
-                );
+                my @params  = $sig->{params}->@*;
+                my $returns = $sig->{returns} // Typist::Type::Atom->new('Any');
+
+                # Substitute type params for scoped effects (e.g., S → Int)
+                if ($type_args) {
+                    @params  = map { $_->substitute($type_args) } @params;
+                    $returns = $returns->substitute($type_args);
+                }
+
+                my $expected = Typist::Type::Func->new(\@params, $returns);
                 _infer_anon_sub($child, $env, $expected);
             }
         }
@@ -1817,6 +1888,21 @@ sub _infer_method_access ($receiver_type, $method_word, $env = undef) {
         return undef;
     }
 
+    # EffectScope: resolve method to effect operation return type
+    if ($resolved->is_atom && $resolved->name =~ /\AEffectScope\[(\w+)/) {
+        my $effect_name = $1;
+        if ($env && $env->{registry}) {
+            my $eff = $env->{registry}->lookup_effect($effect_name);
+            if ($eff) {
+                my $op_type = $eff->get_op_type($method_name);
+                return $op_type->returns if $op_type && $op_type->is_func;
+                # Operation exists but unparseable → Any
+                return Typist::Type::Atom->new('Any') if $eff->get_op($method_name);
+            }
+        }
+        return undef;
+    }
+
     # Struct accessor: resolve field type from the inner record
     if ($resolved->is_struct) {
         my $record = $resolved->record;
@@ -2213,8 +2299,9 @@ sub _enrich_env_with_params ($env, $sig_node, $expected_types, $block = undef) {
         my $type = $expected_types->[$i];
         $new_vars{$names->[$i]} = $type;
 
-        # Record for LSP hover/inlay hints (skip Any params — no useful info)
-        if ($block && !($type->is_atom && $type->name eq 'Any')) {
+        # Record for LSP hover/inlay hints (skip Any/unresolved params)
+        if ($block && !($type->is_atom && $type->name eq 'Any')
+                    && !$type->free_vars) {
             my $dedup_key = $names->[$i] . ':' . $sig_node->line_number;
             next if $_CALLBACK_CTX->{seen}{$dedup_key}++;
             push $_CALLBACK_CTX->{params}->@*, +{

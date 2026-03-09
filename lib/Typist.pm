@@ -116,12 +116,14 @@ sub import ($class, @args) {
     };
     *{"${caller}::effect"}    = sub ($name, @rest) {
         Typist::EffectDef::_effect($name, @rest);
-        Typist::Registry->set_defined_in($name, $caller);
+        my ($base_name) = $name =~ /\A(\w+)/;
+        Typist::Registry->set_defined_in($base_name, $caller) if $base_name;
     };
-    *{"${caller}::handle"}    = \&Typist::EffectDef::_handle;
-    *{"${caller}::protocol"}  = \&Typist::EffectDef::_make_protocol;
-    *{"${caller}::declare"}   = \&Typist::External::_declare;
-    *{"${caller}::optional"}  = sub :prototype($$) ($name, $type) { ("${name}?", $type) };
+    *{"${caller}::handle"}     = \&Typist::EffectDef::_handle;
+    *{"${caller}::protocol"}   = \&Typist::EffectDef::_make_protocol;
+    *{"${caller}::scoped"}     = \&Typist::EffectDef::_scoped;
+    *{"${caller}::declare"}    = \&Typist::External::_declare;
+    *{"${caller}::optional"}   = sub :prototype($$) ($name, $type) { ("${name}?", $type) };
 
 }
 
@@ -312,6 +314,25 @@ With protocol (stateful effects):
         connect => protocol('(Str) -> Void', '* -> Connected'),
         query   => protocol('(Str) -> Str',  'Authed -> Authed'),
     };
+
+=head2 scoped
+
+    my $counter = scoped 'State[Int]';
+    handle {
+        $counter->put(42);
+        $counter->get();
+    } $counter => +{
+        get => sub { $state },
+        put => sub ($v) { $state = $v },
+    };
+
+Create a scoped effect capability token. Unlike name-based effects
+(C<< State::get() >>), scoped effects dispatch by identity: you can have
+multiple independent instances of the same effect type.
+
+Returns a blessed C<Typist::EffectScope> object whose methods correspond
+to the effect's operations. Pass the object to C<handle> instead of a
+string effect name to install a scoped handler.
 
 =head2 protocol
 

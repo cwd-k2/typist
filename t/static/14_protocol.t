@@ -989,4 +989,80 @@ PERL
     is scalar @errors, 0, 'unannotated function with partial handle use: no error';
 };
 
+# ══ Generic effects with protocols ════════════════
+
+subtest 'generic protocol — correct sequence with parameterized label' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package ProtoGeneric1;
+use v5.40;
+
+effect 'Store[S]' => qw/Empty Loaded/ => +{
+    save  => protocol('(S) -> Void',  'Empty -> Loaded'),
+    load  => protocol('() -> S',      'Loaded -> Loaded'),
+    clear => protocol('() -> Void',   'Loaded -> Empty'),
+};
+
+sub cache_cycle :sig((Int) -> Int ![Store[Int]<Empty -> Empty>]) ($val) {
+    Store::save($val);
+    my $x = Store::load();
+    Store::clear();
+    $x;
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    is scalar @errors, 0, 'correct generic protocol sequence produces no error';
+};
+
+subtest 'generic protocol — wrong operation order detected' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package ProtoGeneric2;
+use v5.40;
+
+effect 'Store[S]' => qw/Empty Loaded/ => +{
+    save  => protocol('(S) -> Void',  'Empty -> Loaded'),
+    load  => protocol('() -> S',      'Loaded -> Loaded'),
+    clear => protocol('() -> Void',   'Loaded -> Empty'),
+};
+
+sub bad_order :sig((Int) -> Int ![Store[Int]<Empty -> Loaded>]) ($val) {
+    Store::load();
+    Store::save($val);
+    $val;
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    ok @errors > 0, 'wrong operation order on generic effect detected';
+    like $errors[0]{message}, qr/load.*not allowed.*Empty/i, 'error mentions disallowed op in state';
+};
+
+subtest 'generic protocol — handle block with parameterized effect' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL');
+package ProtoGeneric3;
+use v5.40;
+
+effect 'Store[S]' => qw/Loaded/ => +{
+    save  => protocol('(S) -> Void',  '* -> Loaded'),
+    load  => protocol('() -> S',      'Loaded -> Loaded'),
+    clear => protocol('() -> Void',   'Loaded -> *'),
+};
+
+sub with_store :sig(() -> Void ![Store[Int]<* -> *>]) () {
+    handle {
+        Store::save(42);
+        Store::load();
+        Store::clear();
+    } Store => +{
+        save  => sub ($v) { },
+        load  => sub ()   { 0 },
+        clear => sub ()   { },
+    };
+}
+PERL
+
+    my @errors = grep { $_->{kind} eq 'ProtocolMismatch' } $result->{diagnostics}->@*;
+    is scalar @errors, 0, 'handle block with generic protocol effect works correctly';
+};
+
 done_testing;

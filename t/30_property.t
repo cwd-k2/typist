@@ -5,6 +5,7 @@
 
 use v5.40;
 use Test::More;
+use lib 'lib';
 use lib 't/lib';
 
 use Typist::Type::Atom;
@@ -185,7 +186,10 @@ subtest 'unify: variable binding' => sub {
         my $result = unify($var, $t);
         ok defined $result, "var binding succeeds: X ~ $t"
             or last;
-        ok type_eq($result->{X}, $t), "binding: X => $t (got $result->{X})"
+        # Literals are widened to base atom for generic binding
+        my $expected = $t->is_literal
+            ? Typist::Type::Atom->new($t->base_type) : $t;
+        ok type_eq($result->{X}, $expected), "binding: X => $expected (got $result->{X})"
             or last;
     }
 };

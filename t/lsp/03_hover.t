@@ -2001,8 +2001,9 @@ PERL
     my $hover = Typist::LSP::Hover->hover($sym);
     ok $hover, 'got hover response';
     my $value = $hover->{contents}{value};
-    like $value, qr/sort_by<T: Ord>/, 'shows T: Ord constraint in generics';
-    like $value, qr/ArrayRef\[T\].*->.*ArrayRef\[T\]/, 'shows parameter and return type';
+    like $value, qr/sort_by<T: Ord/, 'shows T: Ord constraint in generics';
+    # At call site, T is instantiated to Int — signature is substituted
+    like $value, qr/ArrayRef\[Int\].*->.*ArrayRef\[Int\]/, 'shows substituted parameter and return type';
 };
 
 # ── Hover on built-in type names ─────────────────
@@ -2234,6 +2235,364 @@ PERL
     my $hover = Typist::LSP::Hover->hover($sym);
     ok $hover, 'got hover response';
     like $hover->{contents}{value}, qr/\(Point\)\s*x:\s*Int/, 'shows field type info';
+};
+
+# ── Hover on EffectScope method ──────────────────
+
+subtest 'hover shows EffectScope method info' => sub {
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+    require Typist::Registry;
+    require Typist::Effect;
+
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Prelude;
+    Typist::Prelude->install($ws_reg);
+
+    $ws_reg->register_effect('State',
+        Typist::Effect->new(
+            name        => 'State',
+            operations  => +{ get => '() -> Int', put => '(Int) -> Void' },
+            type_params => ['S'],
+        ),
+    );
+
+    my $source = <<'PERL';
+package ScopedHoverTest;
+use v5.40;
+
+sub use_counter :sig(() -> Int) () {
+    my $counter = scoped('State[Int]');
+    $counter->get();
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///test_scoped.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws_reg);
+
+    # Hover on 'get' at line 5: "    $counter->get();"
+    #                             0123456789012345678
+    my $sym = $doc->symbol_at(5, 15);
+    ok $sym, 'found symbol for EffectScope method';
+    if ($sym) {
+        is $sym->{kind}, 'method', 'kind is method';
+        is $sym->{name}, 'get', 'method name is get';
+        like $sym->{returns}, qr/Int/, 'returns Int';
+        like $sym->{struct_name}, qr/EffectScope/, 'struct_name contains EffectScope';
+
+        my $hover = Typist::LSP::Hover->hover($sym);
+        ok $hover, 'hover response for EffectScope method';
+        like $hover->{contents}{value}, qr/get/, 'shows method name';
+    }
+};
+
+# ── Nested handle hover ─────────────────────────
+
+subtest 'nested handle hover — inner and outer' => sub {
+    require File::Temp;
+    require File::Path;
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib");
+
+    open my $fh, '>', "$dir/lib/Effects.pm" or die;
+    print $fh <<'PERL';
+package Effects;
+use v5.40;
+use Typist;
+effect Console => +{ log => '(Str) -> Void' };
+effect DB      => +{ query => '(Str) -> Str' };
+1;
+PERL
+    close $fh;
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source = <<'PERL';
+package NestedApp;
+use v5.40;
+use Typist;
+use Effects;
+sub run :sig(() -> Void) () {
+    handle {
+        handle {
+            Console::log("hello");
+        } Console => +{
+            log => sub ($s) { print $s },
+        };
+    } DB => +{
+        query => sub ($q) { $q },
+    };
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///nested.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Inner handle — line 6 (0-indexed): "        handle {"
+    my $inner_sym = $doc->symbol_at(6, 9);
+    ok $inner_sym, 'found symbol for inner handle';
+    if ($inner_sym) {
+        is $inner_sym->{kind}, 'handle', 'inner handle kind';
+        like $inner_sym->{name}, qr/Console/, 'inner handle shows Console';
+    }
+
+    # Outer handle — line 5 (0-indexed): "    handle {"
+    my $outer_sym = $doc->symbol_at(5, 5);
+    ok $outer_sym, 'found symbol for outer handle';
+    if ($outer_sym) {
+        is $outer_sym->{kind}, 'handle', 'outer handle kind';
+        like $outer_sym->{name}, qr/DB/, 'outer handle shows DB';
+    }
+};
+
+# ── Scoped handle hover ────────────────────────
+
+subtest 'scoped handle hover — shows effect from variable type' => sub {
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+    require Typist::Registry;
+    require Typist::Effect;
+
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Prelude;
+    Typist::Prelude->install($ws_reg);
+
+    $ws_reg->register_effect('Accumulator',
+        Typist::Effect->new(
+            name        => 'Accumulator',
+            operations  => +{ read => '() -> Int', add => '(Int) -> Void' },
+            type_params => ['S'],
+        ),
+    );
+
+    my $source = <<'PERL';
+package ScopedHandleTest;
+use v5.40;
+
+sub run :sig(() -> Void) () {
+    my $acc = scoped('Accumulator[Int]');
+    handle {
+        $acc->add(100);
+    } $acc => +{
+        read => sub ()   { 0 },
+        add  => sub ($v) { },
+    };
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///scoped_handle.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws_reg);
+
+    # Line 5 (0-indexed): "    handle {"
+    my $sym = $doc->symbol_at(5, 5);
+    ok $sym, 'found symbol for scoped handle';
+    if ($sym) {
+        is $sym->{kind}, 'handle', 'scoped handle kind';
+        like $sym->{name}, qr/Accumulator/, 'scoped handle shows Accumulator';
+
+        my $hover = Typist::LSP::Hover->hover($sym);
+        ok $hover, 'hover response for scoped handle';
+        like $hover->{contents}{value}, qr/Accumulator/, 'hover shows Accumulator';
+    }
+};
+
+# ── scoped keyword hover ───────────────────────
+
+subtest 'scoped keyword hover' => sub {
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+    require Typist::Registry;
+    require Typist::Effect;
+
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Prelude;
+    Typist::Prelude->install($ws_reg);
+
+    $ws_reg->register_effect('State',
+        Typist::Effect->new(
+            name        => 'State',
+            operations  => +{ get => '() -> Int', put => '(Int) -> Void' },
+            type_params => ['S'],
+        ),
+    );
+
+    my $source = <<'PERL';
+package ScopedKwTest;
+use v5.40;
+
+sub run :sig(() -> Void) () {
+    my $s = scoped('State[Int]');
+    $s->get();
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///scoped_kw.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws_reg);
+
+    # Line 4 (0-indexed): "    my $s = scoped('State[Int]');"
+    #                       0123456789012
+    my $sym = $doc->symbol_at(4, 13);
+    ok $sym, 'found symbol for scoped keyword';
+    if ($sym) {
+        is $sym->{kind}, 'scoped', 'kind is scoped';
+        like $sym->{name}, qr/State/, 'shows State effect';
+
+        my $hover = Typist::LSP::Hover->hover($sym);
+        ok $hover, 'hover response for scoped keyword';
+        like $hover->{contents}{value}, qr/EffectScope/, 'hover shows EffectScope';
+    }
+};
+
+subtest 'scoped keyword hover — bareword syntax' => sub {
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+    require Typist::Registry;
+    require Typist::Effect;
+
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Prelude;
+    Typist::Prelude->install($ws_reg);
+
+    $ws_reg->register_effect('Counter',
+        Typist::Effect->new(
+            name        => 'Counter',
+            operations  => +{ inc => '() -> Void', get => '() -> Int' },
+            type_params => ['S'],
+        ),
+    );
+
+    my $source = <<'PERL';
+package ScopedBareword;
+use v5.40;
+
+sub run :sig(() -> Void) () {
+    my $c = scoped 'Counter[Int]';
+    $c->inc();
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///scoped_bare.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws_reg);
+
+    # Line 4: "    my $c = scoped 'Counter[Int]';"
+    #                       01234567890123
+    my $sym = $doc->symbol_at(4, 13);
+    ok $sym, 'found symbol for scoped bareword';
+    if ($sym) {
+        is $sym->{kind}, 'scoped', 'kind is scoped';
+        like $sym->{name}, qr/Counter/, 'shows Counter effect';
+    }
+};
+
+# ── Hash key should not resolve to CORE function ──
+
+subtest 'hash key "read" does not resolve to CORE::read' => sub {
+    require Typist::LSP::Document;
+    require Typist::Registry;
+    require Typist::Effect;
+
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Prelude;
+    Typist::Prelude->install($ws_reg);
+
+    $ws_reg->register_effect('Accumulator',
+        Typist::Effect->new(
+            name        => 'Accumulator',
+            operations  => +{ read => '() -> Int', add => '(Int) -> Void' },
+            type_params => ['S'],
+        ),
+    );
+
+    my $source = <<'PERL';
+package HashKeyTest;
+use v5.40;
+
+sub run :sig(() -> Void) () {
+    my $acc = scoped('Accumulator[Int]');
+    handle {
+        $acc->add(1);
+    } $acc => +{
+        read => sub ()   { 0 },
+        add  => sub ($v) { },
+    };
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///hashkey.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws_reg);
+
+    # Line 8 (0-indexed): "        read => sub ()   { 0 },"
+    #                       01234567890
+    my $sym = $doc->symbol_at(8, 9);
+
+    # Should resolve as effect operation, NOT as CORE::read
+    ok $sym, 'hash key "read" resolves to effect operation';
+    if ($sym) {
+        is $sym->{kind}, 'function', 'kind is function';
+        is $sym->{returns_expr}, 'Int', 'returns Int (from effect op)';
+        # Must NOT have the CORE::read (Any, Any, Int) -> Int ![IO] signature
+        my $params_str = join(', ', ($sym->{params_expr} // [])->@*);
+        unlike $params_str, qr/Any.*Any.*Int/,
+            'should not show CORE::read signature';
+    }
+};
+
+# ── Call-site generic instantiation ──────────────
+
+subtest 'hover shows call-site generic bindings (A = Int)' => sub {
+    my $source = <<'PERL';
+package TestInst;
+use v5.40;
+sub identity :sig(<A>(A) -> A) ($x) { $x }
+my $result = identity(42);
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            # Line 3 (0-indexed): "my $result = identity(42);"
+            #                      0         1
+            #                      0123456789012345
+            position => +{ line => 3, character => 14 },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got hover response';
+    my $value = $resp->{result}{contents}{value} // '';
+    like $value, qr/identity/, 'hover shows function name';
+    like $value, qr/A\s*=\s*Int/, 'hover shows A = Int instantiation';
 };
 
 done_testing;

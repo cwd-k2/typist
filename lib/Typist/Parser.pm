@@ -576,7 +576,32 @@ sub _parse_effect_row ($tokens, $pos, $close = undef) {
         if ($tok =~ /\A[a-z]/) {
             $row_var = $tok;
         } else {
-            push @labels, $tok;
+            my $label = $tok;
+            # Parameterized effect label: State[Int], State[S]
+            if ($$pos < @$tokens && $tokens->[$$pos] eq '[') {
+                $$pos++;  # consume '['
+                my $depth = 1;
+                my @param_tokens;
+                while ($$pos < @$tokens && $depth > 0) {
+                    if ($tokens->[$$pos] eq '[') { $depth++ }
+                    elsif ($tokens->[$$pos] eq ']') {
+                        $depth--;
+                        last if $depth == 0;
+                    }
+                    push @param_tokens, $tokens->[$$pos];
+                    $$pos++;
+                }
+                die "Typist::Parser: unbalanced '[' in effect label '$label'"
+                    unless $$pos < @$tokens && $tokens->[$$pos] eq ']';
+                $$pos++;  # consume closing ']'
+                my $params_str = '';
+                for my $pt (@param_tokens) {
+                    if ($pt eq ',') { $params_str .= ', ' }
+                    else            { $params_str .= $pt  }
+                }
+                $label .= "[$params_str]";
+            }
+            push @labels, $label;
             # Optional protocol state: Label<From | A -> To | B> or Label<State>
             if ($$pos < @$tokens && $tokens->[$$pos] eq '<') {
                 $$pos++;  # consume '<'
@@ -591,7 +616,7 @@ sub _parse_effect_row ($tokens, $pos, $close = undef) {
                 die "Typist::Parser: expected '>' after state in effect label"
                     unless $$pos < @$tokens && $tokens->[$$pos] eq '>';
                 $$pos++;  # consume '>'
-                $label_states{$tok} = +{ from => $from, to => $to };
+                $label_states{$label} = +{ from => $from, to => $to };
             }
         }
         last unless $$pos < @$tokens && $tokens->[$$pos] eq ',';
@@ -626,7 +651,7 @@ sub parse_row ($class, $expr) {
             die "Typist::Parser: row variable '$tok' must be the last element in '$expr'"
                 unless $i == $#tokens;
             $row_var = $tok;
-        } elsif ($tok =~ /\A(\w+)<(.+)>\z/) {
+        } elsif ($tok =~ /\A(\w+(?:\[.+?\])?)<(.+)>\z/) {
             my ($label, $state_str) = ($1, $2);
             push @labels, $label;
             if ($state_str =~ /\A(.+?)\s*->\s*(.+)\z/) {

@@ -210,6 +210,17 @@ effect Console => +{ writeLine => '(Str) -> Void' };
 
 Operations are auto-installed as qualified subs (`Console::writeLine(@args)`), dispatching to the nearest handler on the runtime stack.
 
+### Bounded Effect Generics
+
+```typist
+effect 'Counter[S: Num]' => +{
+    get => '() -> S',
+    add => '(S) -> Void',
+};
+```
+
+Type parameters on effects support the same bound syntax as functions and structs: type bounds (`S: Num`), typeclass constraints (`T: Show`), or compound (`T: Num + Ord`). The Checker validates type arguments against bounds at the annotation site — `![Counter[Str]]` produces a `TypeMismatch` because `Str` is not a subtype of `Num`.
+
 ### Effect Protocols
 
 ```typist

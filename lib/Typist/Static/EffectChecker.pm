@@ -7,6 +7,7 @@ use Typist::Static::Timing;
 use Typist::Type::Row;
 use Typist::Type::Eff;
 use Typist::Prelude;
+use Scalar::Util 'refaddr';
 
 # ── Perl Builtins ────────────────────────────
 
@@ -47,16 +48,43 @@ sub check_function :TIMED_ACC(function_checks.effects) ($self, $name) {
     # Collect called functions and their effects
     my @called = $self->_collect_called_effects($fn, $self->{_pkg});
 
+    # Scan for handle blocks that discharge effects
+    my @handle_scopes = $self->_scan_handle_scopes($block);
+
     for my $call (@called) {
         my $callee_eff = $call->{effects};
         next unless $callee_eff;
 
+        # Filter out discharged labels: if the call is inside a handle block
+        # that handles a given effect, that label is consumed and need not
+        # appear in the caller's annotation.
+        my $effective_eff = $callee_eff;
+        if (@handle_scopes && $call->{word}) {
+            my $callee_row = $callee_eff->is_eff ? $callee_eff->row : $callee_eff;
+            if ($callee_row->is_row) {
+                my @remaining = grep {
+                    $self->{registry}->is_ambient_effect($_)
+                    || !$self->_is_discharged($call->{word}, $_, \@handle_scopes)
+                } $callee_row->labels;
+                # All labels discharged or ambient → skip this call entirely
+                next if !@remaining;
+                # Some labels remain → build a reduced row for checking
+                if (@remaining < scalar($callee_row->labels)) {
+                    my $reduced_row = Typist::Type::Row->new(
+                        labels  => \@remaining,
+                        row_var => $callee_row->row_var,
+                    );
+                    $effective_eff = Typist::Type::Eff->new($reduced_row);
+                }
+            }
+        }
+
         # Caller has no effects declared but callee does
         unless ($caller_eff) {
             # Skip if all callee labels are ambient (IO/Exn/Decl — no handler needed)
-            my $callee_row = $callee_eff->is_eff ? $callee_eff->row : $callee_eff;
-            if ($callee_row->is_row) {
-                my @labels = $callee_row->labels;
+            my $eff_row = $effective_eff->is_eff ? $effective_eff->row : $effective_eff;
+            if ($eff_row->is_row) {
+                my @labels = $eff_row->labels;
                 my $all_ambient = @labels && !grep { !$self->{registry}->is_ambient_effect($_) } @labels;
                 next if $all_ambient;
             }
@@ -64,7 +92,7 @@ sub check_function :TIMED_ACC(function_checks.effects) ($self, $name) {
             $self->{errors}->collect(
                 kind    => 'EffectMismatch',
                 message => "Function $name() calls $call->{name}() which requires "
-                         . $callee_eff->to_string
+                         . $effective_eff->to_string
                          . ", but $name() has no effect annotation",
                 file    => $self->{file},
                 line    => $call->{line},
@@ -72,7 +100,7 @@ sub check_function :TIMED_ACC(function_checks.effects) ($self, $name) {
                 end_col => ($call->{col} // 0) + length($call->{name}),
                 explanation => [
                     "Caller: $name() has no declared effect row",
-                    "Callee: $call->{name}() requires " . $callee_eff->to_string,
+                    "Callee: $call->{name}() requires " . $effective_eff->to_string,
                     "Add the callee effects to the caller annotation or route the call through a handler",
                 ],
             );
@@ -81,7 +109,7 @@ sub check_function :TIMED_ACC(function_checks.effects) ($self, $name) {
 
         # Check effect inclusion: callee's labels ⊆ caller's labels
         $self->_check_effect_inclusion(
-            $caller_eff, $callee_eff,
+            $caller_eff, $effective_eff,
             $name, $call->{name}, $call->{line}, $call->{col} // 0,
         );
     }
@@ -131,6 +159,7 @@ sub _collect_called_effects ($self, $fn, $pkg) {
                         effects => $eff,
                         line    => $word->line_number,
                         col     => $word->column_number,
+                        word    => $word,
                     };
                 }
             }
@@ -162,6 +191,7 @@ sub _collect_called_effects ($self, $fn, $pkg) {
             effects => $eff,
             line    => $word->line_number,
             col     => $word->column_number,
+            word    => $word,
         };
     }
 
@@ -185,6 +215,7 @@ sub infer_effects ($class_or_self, $extracted, $registry) {
         my $block = $fn->{block} // next;
 
         my @called = $checker->_collect_called_effects($fn, $pkg);
+        my @handle_scopes = $checker->_scan_handle_scopes($block);
         my (%labels, $unknown);
 
         for my $call (@called) {
@@ -192,7 +223,11 @@ sub infer_effects ($class_or_self, $extracted, $registry) {
             next unless ref $eff;
             my $row = $eff->is_eff ? $eff->row : $eff;
             next unless $row->is_row;
-            $labels{$_} = 1 for $row->labels;
+            for my $label ($row->labels) {
+                next if @handle_scopes && $call->{word}
+                    && $checker->_is_discharged($call->{word}, $label, \@handle_scopes);
+                $labels{$label} = 1;
+            }
         }
 
         my @sorted = sort keys %labels;
@@ -209,6 +244,60 @@ sub infer_effects ($class_or_self, $extracted, $registry) {
     }
 
     \@results;
+}
+
+# ── Handle-aware effect discharge ──────────────
+#
+# Scan a function's block for `handle { BODY } Effect => +{...}` patterns.
+# Returns a list of { body => PPI::Structure::Block, effect => $label }.
+# Used to determine which effect labels are discharged within handle scopes.
+
+sub _scan_handle_scopes ($self, $block) {
+    my @scopes;
+    my $words = $block->find('PPI::Token::Word') || [];
+    for my $word (@$words) {
+        next unless $word->content eq 'handle';
+        my $body = $word->snext_sibling;
+        next unless $body && ref $body && $body->isa('PPI::Structure::Block');
+        my @labels = _detect_handle_effects($body);
+        for my $label (@labels) {
+            push @scopes, +{ body => $body, effect => $label };
+        }
+    }
+    @scopes;
+}
+
+# Detect which effects a handle block captures.
+# Walks siblings after the body block for all 'Word =>' patterns.
+sub _detect_handle_effects ($body) {
+    my @effects;
+    my $sib = $body->snext_sibling;
+    while ($sib) {
+        if (ref $sib && $sib->isa('PPI::Token::Word')) {
+            my $next = $sib->snext_sibling;
+            if ($next && ref $next && $next->isa('PPI::Token::Operator')
+                && $next->content eq '=>')
+            {
+                push @effects, $sib->content;
+            }
+        }
+        $sib = $sib->snext_sibling;
+    }
+    @effects;
+}
+
+# Check if a PPI word node is inside a handle body that discharges the given effect label.
+sub _is_discharged ($self, $word, $label, $scopes) {
+    for my $scope (@$scopes) {
+        next unless $scope->{effect} eq $label;
+        my $body_addr = refaddr($scope->{body});
+        my $node = $word->parent;
+        while ($node) {
+            return 1 if refaddr($node) == $body_addr;
+            $node = $node->parent;
+        }
+    }
+    0;
 }
 
 sub _check_effect_inclusion ($self, $caller_eff, $callee_eff, $caller_name, $callee_name, $line, $col = 0) {

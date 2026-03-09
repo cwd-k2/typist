@@ -18,16 +18,14 @@ our $VERSION = '0.01';
 # inner handlers shadow outer ones for the same effect.
 
 my %EFFECT_STACKS;   # effect_name => [handlers, ...]
-my @POP_ORDER;       # effect_names in push order (for zero-arg pop)
+my %SCOPED_STACKS;   # ref_id => [handlers, ...]
+my @POP_ORDER;       # push order entries: string (name-based) or ['scoped', ref_id]
+
+# ── Name-based dispatch (existing) ──────────────
 
 sub push_handler ($class, $effect_name, $handlers) {
     push @{$EFFECT_STACKS{$effect_name} //= []}, $handlers;
     push @POP_ORDER, $effect_name;
-}
-
-sub pop_handler ($class) {
-    my $name = pop @POP_ORDER // return;
-    pop @{$EFFECT_STACKS{$name}};
 }
 
 sub find_handler ($class, $effect_name) {
@@ -35,9 +33,33 @@ sub find_handler ($class, $effect_name) {
     @$stack ? $stack->[-1] : undef;
 }
 
+# ── Scoped dispatch (identity-based) ────────────
+
+sub push_scoped_handler ($class, $ref_id, $handlers) {
+    push @{$SCOPED_STACKS{$ref_id} //= []}, $handlers;
+    push @POP_ORDER, ['scoped', $ref_id];
+}
+
+sub find_scoped_handler ($class, $ref_id) {
+    my $stack = $SCOPED_STACKS{$ref_id} // return undef;
+    @$stack ? $stack->[-1] : undef;
+}
+
+# ── Unified pop (handles both dispatch types) ───
+
+sub pop_handler ($class) {
+    my $entry = pop @POP_ORDER // return;
+    if (ref $entry eq 'ARRAY') {
+        pop @{$SCOPED_STACKS{$entry->[1]}};
+    } else {
+        pop @{$EFFECT_STACKS{$entry}};
+    }
+}
+
 # Reset the handler stack (for testing).
 sub reset ($class) {
     %EFFECT_STACKS = ();
+    %SCOPED_STACKS = ();
     @POP_ORDER     = ();
 }
 

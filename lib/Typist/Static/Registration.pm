@@ -326,7 +326,13 @@ sub register_effects ($class, $extracted, $registry, %opts) {
         }
 
         $registry->register_effect($name,
-            Typist::Effect->new(name => $name, operations => $ops, protocol => $protocol),
+            Typist::Effect->new(
+                name             => $name,
+                operations       => $ops,
+                protocol         => $protocol,
+                type_params      => ($eff_info->{type_params} // []),
+                type_param_specs => ($eff_info->{type_param_specs} // []),
+            ),
         );
         my $pkg = $extracted->{package} // 'main';
         $registry->set_defined_in($name, $pkg);
@@ -368,10 +374,25 @@ sub register_effects ($class, $extracted, $registry, %opts) {
             );
             my $effects = Typist::Type::Eff->new($eff_row);
 
+            # Propagate effect type_params as generics so Checker
+            # does not flag them as UndeclaredTypeVar.
+            # Parse bounded specs (e.g. 'S: Num') into structured generics.
+            my @tp_specs = ($eff_info->{type_param_specs} // [])->@*;
+            my @op_generics;
+            if (@tp_specs) {
+                my $spec_str = join(', ', @tp_specs);
+                @op_generics = Typist::Attribute->parse_generic_decl(
+                    $spec_str, registry => $registry,
+                );
+            } else {
+                @op_generics = map { +{ name => $_, bound_expr => undef } }
+                               ($eff_info->{type_params} // [])->@*;
+            }
+
             my $sig = +{
                 params       => \@params,
                 returns      => $returns,
-                generics     => [],
+                generics     => \@op_generics,
                 effects      => $effects,
                 params_expr  => [map { $_->to_string } @params],
                 returns_expr => $returns->to_string,

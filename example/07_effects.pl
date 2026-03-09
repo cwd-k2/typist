@@ -150,6 +150,71 @@ my $final = handle {
 
 say "  final state: $final";
 
+# ── Parameterized Effects ────────────────────────────────
+#
+# effect 'Name[S]' defines a generic effect.  The type
+# parameter S is instantiated at use sites via the label:
+# ![Store[Int]] or ![Store[Str]].
+
+BEGIN {
+    effect 'Store[S]' => +{
+        load  => '() -> S',
+        save  => '(S) -> Void',
+    };
+}
+
+sub load_save :sig(() -> Int ![Store[Int]]) () {
+    Store::save(42);
+    Store::load();
+}
+
+say "";
+say "── Parameterized effect ───────────────────────";
+
+my $data = 0;
+my $loaded = handle {
+    load_save();
+} Store => +{
+    load => sub        { $data },
+    save => sub ($val) { $data = $val },
+};
+say "  loaded: $loaded";
+
+# ── Bounded Parameterized Effects ────────────────────────
+#
+# Type parameters can have bounds, just like generic functions
+# and structs.  effect 'Name[S: Num]' constrains S to Num.
+# The static analyzer enforces: ![NumStore[Str]] → error
+# because Str is not a subtype of Num.
+
+BEGIN {
+    effect 'NumStore[S: Num]' => +{
+        fetch => '() -> S',
+        store => '(S) -> Void',
+    };
+}
+
+sub fetch_store :sig(() -> Int ![NumStore[Int]]) () {
+    NumStore::store(99);
+    NumStore::fetch();
+}
+
+say "";
+say "── Bounded parameterized effect ───────────────";
+
+my $num_data = 0;
+my $fetched = handle {
+    fetch_store();
+} NumStore => +{
+    fetch => sub        { $num_data },
+    store => sub ($val) { $num_data = $val },
+};
+say "  fetched: $fetched";
+
+# Static analysis catches bound violations:
+#   sub bad :sig(() -> Str ![NumStore[Str]]) () { ... }
+#   → Effect NumStore: type Str does not satisfy bound Num for S
+
 # ── Row Polymorphism ──────────────────────────────────────
 #
 # <r: Row> declares a row variable — an open-ended set of

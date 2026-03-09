@@ -1,5 +1,6 @@
 use v5.40;
 use Test::More;
+use lib 'lib';
 
 my @modules = qw(
     Typist
@@ -56,6 +57,7 @@ my @modules = qw(
     Typist::Type::Struct
     Typist::Protocol
     Typist::Static::ProtocolChecker
+    Typist::EffectScope
 );
 
 for my $mod (@modules) {

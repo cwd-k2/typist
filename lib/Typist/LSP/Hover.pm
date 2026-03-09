@@ -52,6 +52,7 @@ my %_FORMAT_DISPATCH = (
     builtin_type => sub ($class, $sym) { $class->_format_builtin_type($sym) },
     match        => sub ($class, $sym) { $class->_format_match($sym)        },
     handle       => sub ($class, $sym) { $class->_format_handle($sym)       },
+    scoped       => sub ($class, $sym) { $class->_format_scoped($sym)       },
 );
 
 sub _format ($class, $sym) {
@@ -150,8 +151,14 @@ sub _format_handle ($class, $sym) {
     my $effects = $sym->{effects} // [];
     return undef unless @$effects;
 
-    my $names = join(', ', map { $_->{name} } @$effects);
+    my $names = join(', ', map {
+        $_->{scoped} ? "$_->{var}: $_->{name}" : $_->{name}
+    } @$effects);
     _code("handle: $sym->{result_type} ![$names]");
+}
+
+sub _format_scoped ($class, $sym) {
+    _code("scoped $sym->{name} -> $sym->{result_type}");
 }
 
 sub _format_builtin_type ($class, $sym) {
