@@ -631,27 +631,46 @@ sub _resolve_handler_op_hover ($self, $word, $line, $col) {
     return undef unless $arrow->isa('PPI::Token::Operator') && $arrow->content eq '=>';
     my $effect_token = $arrow->sprevious_sibling or return undef;
 
-    my $effect_name;
+    my ($effect_name, @type_args_str);
     if ($effect_token->isa('PPI::Token::Word')) {
         $effect_name = $effect_token->content;
     } elsif ($effect_token->isa('PPI::Token::Symbol')) {
-        # Scoped: $var => +{...} — resolve variable type
+        # Scoped: $var => +{...} — resolve variable type to extract effect name and type args
         my $resolver = $self->_resolver;
         my $var_type = $resolver->resolve_var_type($effect_token->content, $line);
-        if ($var_type && $var_type =~ /EffectScope\[(\w+)/) {
+        if ($var_type && $var_type =~ /EffectScope\[(\w+)(?:\[(.+)\])?\]/) {
             $effect_name = $1;
+            @type_args_str = split /,\s*/, ($2 // '');
         }
     }
     return undef unless $effect_name;
 
     my $eff = $registry->lookup_effect($effect_name) // return undef;
     my $op_type = $eff->get_op_type($word) // return undef;
-    my $sig_str = $eff->get_op($word) // $op_type->to_string;
+
+    # Substitute type params with concrete type args if available
+    my @type_params = $eff->type_params;
+    if (@type_params && @type_args_str) {
+        my %subst;
+        for my $i (0 .. $#type_params) {
+            last if $i > $#type_args_str;
+            my $concrete = eval { Typist::Parser->parse($type_args_str[$i]) };
+            $subst{$type_params[$i]} = $concrete if $concrete;
+        }
+        $op_type = $op_type->substitute(\%subst) if %subst;
+    }
+
+    # Include effect type params as generics when not substituted
+    my @generics;
+    if (@type_params && !@type_args_str) {
+        @generics = @type_params;
+    }
 
     sym_function(
         name         => $word,
         params_expr  => [$op_type->is_func ? (map { $_->to_string } $op_type->params) : ()],
-        returns_expr => $op_type->is_func ? $op_type->returns->to_string : $sig_str,
+        returns_expr => $op_type->is_func ? $op_type->returns->to_string : $op_type->to_string,
+        (@generics ? (generics => \@generics) : ()),
     );
 }
 
