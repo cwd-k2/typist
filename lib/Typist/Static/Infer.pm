@@ -207,6 +207,15 @@ sub infer_expr ($class, $element, $env = undef, $expected = undef) {
             }
             return undef;
         }
+        # scoped 'Effect[T]' — bareword + quote (no parens)
+        if ($element->content eq 'scoped'
+            && $next && $next->isa('PPI::Token::Quote')) {
+            my $arg_str = $next->string;
+            if ($arg_str) {
+                my ($base) = $arg_str =~ /\A(\w+)/;
+                return Typist::Type::Atom->new("EffectScope[$base]") if $base;
+            }
+        }
     }
 
     # ── Operator expressions (Statement-level) ────
@@ -343,6 +352,15 @@ sub infer_list_rhs_type ($class, $init_node, $env) {
         my $next = $init_node->snext_sibling;
         if ($next && $next->isa('PPI::Structure::List')) {
             return _infer_call($init_node->content, $env, $next);
+        }
+        # Pattern 3b: scoped 'Effect[T]' → bareword + quote (no parens)
+        if ($init_node->content eq 'scoped'
+            && $next && $next->isa('PPI::Token::Quote')) {
+            my $arg_str = $next->string;
+            if ($arg_str) {
+                my ($base) = $arg_str =~ /\A(\w+)/;
+                return Typist::Type::Atom->new("EffectScope[$base]") if $base;
+            }
         }
     }
 

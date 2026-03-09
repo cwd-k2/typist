@@ -373,10 +373,15 @@ sub register_effects ($class, $extracted, $registry, %opts) {
             );
             my $effects = Typist::Type::Eff->new($eff_row);
 
+            # Propagate effect type_params as generics so Checker
+            # does not flag them as UndeclaredTypeVar
+            my @op_generics = map { +{ name => $_ } }
+                              ($eff_info->{type_params} // [])->@*;
+
             my $sig = +{
                 params       => \@params,
                 returns      => $returns,
-                generics     => [],
+                generics     => \@op_generics,
                 effects      => $effects,
                 params_expr  => [map { $_->to_string } @params],
                 returns_expr => $returns->to_string,
