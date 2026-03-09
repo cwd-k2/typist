@@ -2002,7 +2002,8 @@ PERL
     ok $hover, 'got hover response';
     my $value = $hover->{contents}{value};
     like $value, qr/sort_by<T: Ord/, 'shows T: Ord constraint in generics';
-    like $value, qr/ArrayRef\[T\].*->.*ArrayRef\[T\]/, 'shows parameter and return type';
+    # At call site, T is instantiated to Int — signature is substituted
+    like $value, qr/ArrayRef\[Int\].*->.*ArrayRef\[Int\]/, 'shows substituted parameter and return type';
 };
 
 # ── Hover on built-in type names ─────────────────

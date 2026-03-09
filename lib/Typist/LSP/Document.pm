@@ -757,11 +757,10 @@ sub _call_site_bindings ($self, $sig, $line, $col) {
     %bindings ? \%bindings : undef;
 }
 
-# Apply generic bindings to an extracted symbol's generics for display.
+# Apply generic bindings to an extracted symbol's generics and signature for display.
 # generics in extracted symbols are strings like "T", "T: Num", etc.
 sub _apply_bindings_to_symbol ($sym, $bindings) {
     my @new_generics = map {
-        # Extract the variable name (first word, before any ': bound')
         my ($var_name) = /\A(\w+)/;
         if ($var_name && exists $bindings->{$var_name}) {
             $_ . ' = ' . $bindings->{$var_name}->to_string;
@@ -769,7 +768,21 @@ sub _apply_bindings_to_symbol ($sym, $bindings) {
             $_;
         }
     } @{$sym->{generics}};
-    +{ %$sym, generics => \@new_generics };
+
+    # Substitute bound type variables in params_expr and returns_expr strings
+    my $subst_str = sub ($s) {
+        for my $var (keys %$bindings) {
+            my $repl = $bindings->{$var}->to_string;
+            $s =~ s/\b\Q$var\E\b/$repl/g;
+        }
+        $s;
+    };
+    my @new_params = map { $subst_str->($_) } ($sym->{params_expr} // [])->@*;
+    my $new_returns = defined $sym->{returns_expr}
+        ? $subst_str->($sym->{returns_expr}) : $sym->{returns_expr};
+
+    +{ %$sym, generics => \@new_generics, params_expr => \@new_params,
+       returns_expr => $new_returns };
 }
 
 # Dispatch keyword hover for match/handle.
@@ -1472,13 +1485,19 @@ sub completion_context ($self, $line, $col) {
 sub _synthesize_function_symbol ($name, $sig, $bindings = undef) {
     my @params_expr;
     if ($sig->{params}) {
-        @params_expr = map { ref $_ ? $_->to_string : $_ } @{$sig->{params}};
+        @params_expr = map {
+            my $t = $_;
+            $t = $t->substitute($bindings) if ref $t && $bindings;
+            ref $t ? $t->to_string : $t;
+        } @{$sig->{params}};
     }
     @params_expr = @{$sig->{params_expr}} if $sig->{params_expr} && !@params_expr;
 
     my $returns_expr;
     if ($sig->{returns}) {
-        $returns_expr = ref $sig->{returns} ? $sig->{returns}->to_string : $sig->{returns};
+        my $r = $sig->{returns};
+        $r = $r->substitute($bindings) if ref $r && $bindings;
+        $returns_expr = ref $r ? $r->to_string : $r;
     }
     $returns_expr //= $sig->{returns_expr};
 
