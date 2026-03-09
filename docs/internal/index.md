@@ -20,3 +20,4 @@ Documentation for contributors working on Typist itself. These documents describ
 |----------|---------|
 | [Scoped Effects](scoped-effects-plan.md) | Per-effect generics, effect discharge, scoped capability-based effects (completed) |
 | [HKT Generics](hkt-generics-plan.md) | Higher-kinded type parameters on datatype, struct, effect declarations |
+| [Associated Types & Indexed Protocols](indexed-protocols-plan.md) | Associated types on type classes, parameterized protocol states with type flow |
