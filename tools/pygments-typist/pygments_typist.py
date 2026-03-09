@@ -26,7 +26,7 @@ class TypistLexer(PerlLexer):
     DECL_KEYWORDS = frozenset({
         'typedef', 'newtype', 'struct', 'datatype', 'enum',
         'effect', 'typeclass', 'instance', 'match', 'handle',
-        'protocol', 'optional', 'declare',
+        'protocol', 'optional', 'declare', 'scoped',
     })
 
     BUILTIN_TYPES = frozenset({
