@@ -2001,7 +2001,7 @@ PERL
     my $hover = Typist::LSP::Hover->hover($sym);
     ok $hover, 'got hover response';
     my $value = $hover->{contents}{value};
-    like $value, qr/sort_by<T: Ord>/, 'shows T: Ord constraint in generics';
+    like $value, qr/sort_by<T: Ord/, 'shows T: Ord constraint in generics';
     like $value, qr/ArrayRef\[T\].*->.*ArrayRef\[T\]/, 'shows parameter and return type';
 };
 
@@ -2562,6 +2562,36 @@ PERL
         unlike $params_str, qr/Any.*Any.*Int/,
             'should not show CORE::read signature';
     }
+};
+
+# ── Call-site generic instantiation ──────────────
+
+subtest 'hover shows call-site generic bindings (A = Int)' => sub {
+    my $source = <<'PERL';
+package TestInst;
+use v5.40;
+sub identity :sig(<A>(A) -> A) ($x) { $x }
+my $result = identity(42);
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/hover', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            # Line 3 (0-indexed): "my $result = identity(42);"
+            #                      0         1
+            #                      0123456789012345
+            position => +{ line => 3, character => 14 },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got hover response';
+    my $value = $resp->{result}{contents}{value} // '';
+    like $value, qr/identity/, 'hover shows function name';
+    like $value, qr/A\s*=\s*Int/, 'hover shows A = Int instantiation';
 };
 
 done_testing;

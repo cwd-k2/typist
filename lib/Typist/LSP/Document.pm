@@ -336,7 +336,22 @@ sub symbol_at ($self, $line, $col) {
     }
 
     my $sym = $self->_find_best_symbol($symbols, $word, $line);
-    return $with_range->($sym) if $sym;
+    if ($sym) {
+        # For generic functions at call sites, add instantiation info
+        if (($sym->{kind} // '') eq 'function' && $sym->{generics} && @{$sym->{generics}}) {
+            if (my $registry = ($self->{result} // +{})->{registry}) {
+                my $pkg = ($self->{result}{extracted}{package} // 'main');
+                my $sig = $registry->lookup_function($pkg, $word)
+                       // $registry->search_function_by_name($word);
+                if ($sig && $sig->{generics} && @{$sig->{generics}}) {
+                    if (my $bindings = $self->_call_site_bindings($sig, $line, $col)) {
+                        $sym = _apply_bindings_to_symbol($sym, $bindings);
+                    }
+                }
+            }
+        }
+        return $with_range->($sym);
+    }
 
     # Try without sigil (e.g. cursor on "foo" matches function "foo")
     (my $bare = $word) =~ s/^[\$\@%]//;
@@ -398,19 +413,22 @@ sub symbol_at ($self, $line, $col) {
                 my ($pkg, $fname) = $word =~ /\A(.+)::(\w+)\z/;
                 if ($pkg && $fname) {
                     if (my $sig = $registry->lookup_function($pkg, $fname)) {
-                        return $with_range->(_synthesize_function_symbol($fname, $sig));
+                        my $bindings = $self->_call_site_bindings($sig, $line, $col);
+                        return $with_range->(_synthesize_function_symbol($fname, $sig, $bindings));
                     }
                 }
             } else {
                 # Unqualified: try current package first
                 my $pkg = $result->{extracted}{package} // 'main';
                 if (my $sig = $registry->lookup_function($pkg, $lookup_name)) {
-                    return $with_range->(_synthesize_function_symbol($lookup_name, $sig));
+                    my $bindings = $self->_call_site_bindings($sig, $line, $col);
+                    return $with_range->(_synthesize_function_symbol($lookup_name, $sig, $bindings));
                 }
 
                 # Then search all packages (Exporter-imported constructors, etc.)
                 if (my $sig = $registry->search_function_by_name($lookup_name)) {
-                    return $with_range->(_synthesize_function_symbol($lookup_name, $sig));
+                    my $bindings = $self->_call_site_bindings($sig, $line, $col);
+                    return $with_range->(_synthesize_function_symbol($lookup_name, $sig, $bindings));
                 }
             }
         }
@@ -635,6 +653,104 @@ sub _resolve_handler_op_hover ($self, $word, $line, $col) {
         params_expr  => [$op_type->is_func ? (map { $_->to_string } $op_type->params) : ()],
         returns_expr => $op_type->is_func ? $op_type->returns->to_string : $sig_str,
     );
+}
+
+# Collect generic type bindings at a call site for instantiation display.
+# Returns { VarName => Type } or undef if not a generic call site.
+sub _call_site_bindings ($self, $sig, $line, $col) {
+    # Only for generic functions
+    return undef unless $sig->{generics} && @{$sig->{generics}};
+    return undef unless $sig->{params} && @{$sig->{params}};
+
+    my $result   = $self->{result} // return undef;
+    my $registry = $result->{registry} // return undef;
+
+    # Find PPI word at this position
+    my $ppi_word = $self->_ppi_word_at($line, $col) // return undef;
+
+    # Find the argument list: func(...) — next sibling should be Structure::List
+    my $list = $ppi_word->snext_sibling;
+    return undef unless $list && $list->isa('PPI::Structure::List');
+
+    # Build minimal env for inference from analysis result
+    my $extracted = $result->{extracted} // return undef;
+    my %functions;
+    for my $name (keys $extracted->{functions}->%*) {
+        my $fn = $extracted->{functions}{$name};
+        next if $fn->{unannotated};
+        if (my $ret_expr = $fn->{returns_expr}) {
+            my $type = eval { Typist::Parser->parse($ret_expr) };
+            $functions{$name} = $type if $type;
+        }
+    }
+    my $env = +{
+        variables => +{},
+        functions => \%functions,
+        registry  => $registry,
+        package   => $extracted->{package} // 'main',
+    };
+
+    # Extract arg nodes (simplified: just get immediate children)
+    my $expr = $list->schild(0);
+    return undef unless $expr && $expr->isa('PPI::Statement');
+
+    my @arg_nodes;
+    my @children = $expr->schildren;
+    my $i = 0;
+    while ($i <= $#children) {
+        my $child = $children[$i];
+        if ($child->isa('PPI::Token::Operator') && $child->content eq ',') {
+            $i++; next;
+        }
+        push @arg_nodes, $child;
+        # Skip anonymous sub continuations
+        if ($child->isa('PPI::Token::Word') && $child->content eq 'sub'
+            && !($child->parent && $child->parent->isa('PPI::Statement::Sub'))) {
+            $i++;
+            $i++ if $i <= $#children && ($children[$i]->isa('PPI::Token::Prototype')
+                                       || $children[$i]->isa('PPI::Structure::List'));
+            $i++ if $i <= $#children && $children[$i]->isa('PPI::Structure::Block');
+            next;
+        }
+        # Skip function call arg list
+        if ($child->isa('PPI::Token::Word') && $child->content ne 'sub'
+            && $i + 1 <= $#children
+            && $children[$i + 1]->isa('PPI::Structure::List')) {
+            $i += 2; next;
+        }
+        $i++;
+    }
+
+    return undef unless @arg_nodes;
+
+    # Collect bindings by unifying formal params with inferred arg types
+    require Typist::Static::Unify;
+    require Typist::Static::Infer;
+    my @params = @{$sig->{params}};
+    my %bindings;
+    for my $j (0 .. $#params) {
+        last if $j > $#arg_nodes;
+        my $inferred = Typist::Static::Infer->infer_expr($arg_nodes[$j], $env);
+        next unless $inferred;
+        Typist::Static::Unify->collect_bindings($params[$j], $inferred, \%bindings);
+    }
+
+    %bindings ? \%bindings : undef;
+}
+
+# Apply generic bindings to an extracted symbol's generics for display.
+# generics in extracted symbols are strings like "T", "T: Num", etc.
+sub _apply_bindings_to_symbol ($sym, $bindings) {
+    my @new_generics = map {
+        # Extract the variable name (first word, before any ': bound')
+        my ($var_name) = /\A(\w+)/;
+        if ($var_name && exists $bindings->{$var_name}) {
+            $_ . ' = ' . $bindings->{$var_name}->to_string;
+        } else {
+            $_;
+        }
+    } @{$sym->{generics}};
+    +{ %$sym, generics => \@new_generics };
 }
 
 # Dispatch keyword hover for match/handle.
@@ -1019,6 +1135,8 @@ sub inlay_hints ($self, $start_line, $end_line) {
         next unless $sym->{inferred};
         next if $sym->{unknown};
         next if $sym->{narrowed};
+        # Skip bare type variables (A, T, _) — no useful information
+        next if ($sym->{type} // '') =~ /\A[A-Z_]\z/;
 
         my $line = ($sym->{line} // 1) - 1;
         next if $line < $start_line || $line > $end_line;
@@ -1332,7 +1450,7 @@ sub completion_context ($self, $line, $col) {
 
 # ── Registry Symbol Synthesis ───────────────────
 
-sub _synthesize_function_symbol ($name, $sig) {
+sub _synthesize_function_symbol ($name, $sig, $bindings = undef) {
     my @params_expr;
     if ($sig->{params}) {
         @params_expr = map { ref $_ ? $_->to_string : $_ } @{$sig->{params}};
@@ -1354,9 +1472,17 @@ sub _synthesize_function_symbol ($name, $sig) {
                 push @constraints, $_->{bound_expr}          if $_->{bound_expr};
                 push @constraints, $_->{tc_constraints}->@*  if $_->{tc_constraints};
                 $g .= ': ' . join(' + ', @constraints) if @constraints;
+                # Append call-site instantiation: A = Int
+                if ($bindings && exists $bindings->{$_->{name}}) {
+                    $g .= ' = ' . $bindings->{$_->{name}}->to_string;
+                }
                 $g;
             } else {
-                $_;
+                my $g = $_;
+                if ($bindings && exists $bindings->{$_}) {
+                    $g .= ' = ' . $bindings->{$_}->to_string;
+                }
+                $g;
             }
         } @{$sig->{generics}};
     }
