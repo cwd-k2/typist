@@ -5,6 +5,7 @@
 
 use v5.40;
 use Test::More;
+use lib 'lib';
 use lib 't/lib';
 
 use Typist::Type::Atom;

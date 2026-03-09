@@ -1,5 +1,6 @@
 use v5.40;
 use Test::More;
+use lib 'lib';
 
 use Typist::Parser;
 use Typist::Registry;
