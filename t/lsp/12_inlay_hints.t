@@ -360,4 +360,39 @@ PERL
     is scalar @refresh, 0, 'no refresh notifications from didChange';
 };
 
+# ── Inlay hints for generic callback params ──────
+
+subtest 'inlayHint shows callback param type from generic function' => sub {
+    my $source = <<'PERL';
+package TestGeneric;
+use v5.40;
+
+sub map_it :sig(<A, B>(ArrayRef[A], (A) -> B) -> ArrayRef[B]) ($arr, $f) { [map { $f->($_) } @$arr] }
+
+sub run :sig(() -> ArrayRef[Str]) () {
+    map_it([1, 2, 3], sub ($x) { "val: $x" });
+}
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/inlayHint', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+            range => +{
+                start => +{ line => 0, character => 0 },
+                end   => +{ line => 10, character => 0 },
+            },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got inlayHint response';
+    my $hints = $resp->{result};
+    # $x should get Int type hint (widened from literal, bound from ArrayRef[Int] arg)
+    my ($x_hint) = grep { ($_->{label} // '') =~ /Int/ && ($_->{position}{line} // -1) == 6 } @$hints;
+    ok $x_hint, 'found $x hint with Int type from generic callback';
+};
+
 done_testing;

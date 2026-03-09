@@ -2552,14 +2552,15 @@ PERL
     #                       01234567890
     my $sym = $doc->symbol_at(8, 9);
 
-    # Should NOT show CORE::read (Any, Any, Int) -> Int ![IO]
+    # Should resolve as effect operation, NOT as CORE::read
+    ok $sym, 'hash key "read" resolves to effect operation';
     if ($sym) {
-        isnt $sym->{kind}, 'function',
-            'hash key "read" should not resolve as function';
-        unlike($sym->{params_expr} // '', qr/Any.*Any.*Int/,
-            'should not show CORE::read signature');
-    } else {
-        pass 'hash key "read" returns undef (no false match)';
+        is $sym->{kind}, 'function', 'kind is function';
+        is $sym->{returns_expr}, 'Int', 'returns Int (from effect op)';
+        # Must NOT have the CORE::read (Any, Any, Int) -> Int ![IO] signature
+        my $params_str = join(', ', ($sym->{params_expr} // [])->@*);
+        unlike $params_str, qr/Any.*Any.*Int/,
+            'should not show CORE::read signature';
     }
 };
 

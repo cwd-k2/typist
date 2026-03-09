@@ -357,6 +357,10 @@ sub symbol_at ($self, $line, $col) {
         if (my $field_sym = $self->_resolve_struct_key_hover($word, $line, $col)) {
             return $with_range->($field_sym);
         }
+        # Handler operation key: Effect => +{ read => sub { }, ... }
+        if (my $op_sym = $self->_resolve_handler_op_hover($word, $line, $col)) {
+            return $with_range->($op_sym);
+        }
     }
 
     # Fallback: synthesize symbol for Perl builtins
@@ -581,6 +585,56 @@ sub _resolve_struct_key_hover ($self, $word, $line, $col) {
     }
 
     undef;
+}
+
+# Resolve handler operation key hover: read => sub { } inside Effect => +{ ... }
+sub _resolve_handler_op_hover ($self, $word, $line, $col) {
+    my $result   = $self->{result} // return undef;
+    my $registry = $result->{registry} // return undef;
+
+    my $ppi_word = $self->_ppi_word_at($line, $col) // return undef;
+    return undef unless $ppi_word->content eq $word;
+
+    # Walk up to find enclosing +{...} (PPI::Structure::Constructor or Block)
+    my $constr = $ppi_word->parent;
+    while ($constr && !$constr->isa('PPI::Structure::Block')
+                   && !($constr->isa('PPI::Structure::Constructor'))) {
+        $constr = $constr->parent;
+    }
+    return undef unless $constr;
+
+    # Look for Effect => +{...} pattern.
+    # PPI parses +{...} as Operator(+) + Constructor({...}), so skip the '+'.
+    my $prev = $constr->sprevious_sibling or return undef;
+    if ($prev->isa('PPI::Token::Operator') && $prev->content eq '+') {
+        $prev = $prev->sprevious_sibling or return undef;
+    }
+    my $arrow = $prev;
+    return undef unless $arrow->isa('PPI::Token::Operator') && $arrow->content eq '=>';
+    my $effect_token = $arrow->sprevious_sibling or return undef;
+
+    my $effect_name;
+    if ($effect_token->isa('PPI::Token::Word')) {
+        $effect_name = $effect_token->content;
+    } elsif ($effect_token->isa('PPI::Token::Symbol')) {
+        # Scoped: $var => +{...} — resolve variable type
+        my $resolver = $self->_resolver;
+        my $var_type = $resolver->resolve_var_type($effect_token->content, $line);
+        if ($var_type && $var_type =~ /EffectScope\[(\w+)/) {
+            $effect_name = $1;
+        }
+    }
+    return undef unless $effect_name;
+
+    my $eff = $registry->lookup_effect($effect_name) // return undef;
+    my $op_type = $eff->get_op_type($word) // return undef;
+    my $sig_str = $eff->get_op($word) // $op_type->to_string;
+
+    sym_function(
+        name         => $word,
+        params_expr  => [$op_type->is_func ? (map { $_->to_string } $op_type->params) : ()],
+        returns_expr => $op_type->is_func ? $op_type->returns->to_string : $sig_str,
+    );
 }
 
 # Dispatch keyword hover for match/handle.
