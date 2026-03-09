@@ -326,7 +326,12 @@ sub register_effects ($class, $extracted, $registry, %opts) {
         }
 
         $registry->register_effect($name,
-            Typist::Effect->new(name => $name, operations => $ops, protocol => $protocol),
+            Typist::Effect->new(
+                name        => $name,
+                operations  => $ops,
+                protocol    => $protocol,
+                type_params => ($eff_info->{type_params} // []),
+            ),
         );
         my $pkg = $extracted->{package} // 'main';
         $registry->set_defined_in($name, $pkg);

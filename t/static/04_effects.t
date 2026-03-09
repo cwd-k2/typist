@@ -519,4 +519,205 @@ PERL
     ok !$add, 'pure unannotated function has no inferred_effects entry';
 };
 
+# ══════════════════════════════════════════════════════
+# Effect Discharge: handle-aware EffectChecker
+# ══════════════════════════════════════════════════════
+
+subtest 'handle discharges single effect — no mismatch' => sub {
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Effect;
+    $ws_reg->register_effect('Console', Typist::Effect->new(
+        name => 'Console', operations => +{ log => '(Str) -> Void' },
+    ));
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws_reg);
+package HandleDischarge;
+use v5.40;
+
+sub log_fn :sig((Str) -> Void ![Console]) ($msg) {
+    return;
+}
+
+sub pure_handler :sig(() -> Void) () {
+    handle {
+        log_fn("hello");
+    } Console => +{
+        log => sub ($msg) { },
+    };
+}
+PERL
+
+    my @eff = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
+    is scalar @eff, 0, 'handle discharges Console — no EffectMismatch';
+};
+
+subtest 'handle partial discharge — remaining effect checked' => sub {
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Effect;
+    $ws_reg->register_effect('Console', Typist::Effect->new(
+        name => 'Console', operations => +{},
+    ));
+    $ws_reg->register_effect('DB', Typist::Effect->new(
+        name => 'DB', operations => +{},
+    ));
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws_reg);
+package PartialDischarge;
+use v5.40;
+
+sub db_and_log :sig(() -> Void ![Console, DB]) () {
+    return;
+}
+
+sub handler :sig(() -> Void ![Console]) () {
+    handle {
+        db_and_log();
+    } DB => +{ query => sub { } };
+}
+PERL
+
+    my @eff = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
+    is scalar @eff, 0, 'DB discharged by handle, Console declared on caller — clean';
+};
+
+subtest 'handle partial discharge — missing remaining effect reported' => sub {
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Effect;
+    $ws_reg->register_effect('Console', Typist::Effect->new(
+        name => 'Console', operations => +{},
+    ));
+    $ws_reg->register_effect('DB', Typist::Effect->new(
+        name => 'DB', operations => +{},
+    ));
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws_reg);
+package PartialMissing;
+use v5.40;
+
+sub db_and_log :sig(() -> Void ![Console, DB]) () {
+    return;
+}
+
+sub handler :sig(() -> Void) () {
+    handle {
+        db_and_log();
+    } DB => +{ query => sub { } };
+}
+PERL
+
+    my @eff = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
+    ok @eff > 0, 'Console not discharged and not declared — EffectMismatch';
+    like $eff[0]{message}, qr/Console/, 'reports missing Console';
+};
+
+subtest 'handle for wrong effect — no discharge' => sub {
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Effect;
+    $ws_reg->register_effect('Console', Typist::Effect->new(
+        name => 'Console', operations => +{},
+    ));
+    $ws_reg->register_effect('DB', Typist::Effect->new(
+        name => 'DB', operations => +{},
+    ));
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws_reg);
+package WrongHandle;
+use v5.40;
+
+sub db_fn :sig(() -> Void ![DB]) () {
+    return;
+}
+
+sub handler :sig(() -> Void) () {
+    handle {
+        db_fn();
+    } Console => +{ log => sub { } };
+}
+PERL
+
+    my @eff = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
+    ok @eff > 0, 'handle for Console does not discharge DB';
+    like $eff[0]{message}, qr/DB/, 'reports missing DB';
+};
+
+subtest 'nested handle — inner discharge scoped correctly' => sub {
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Effect;
+    $ws_reg->register_effect('Console', Typist::Effect->new(
+        name => 'Console', operations => +{ log => '(Str) -> Void' },
+    ));
+    $ws_reg->register_effect('DB', Typist::Effect->new(
+        name => 'DB', operations => +{ query => '(Str) -> Str' },
+    ));
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws_reg);
+package NestedHandle;
+use v5.40;
+
+sub log_fn :sig((Str) -> Void ![Console]) ($msg) { return }
+sub db_fn  :sig((Str) -> Str ![DB]) ($q) { return $q }
+
+sub outer :sig(() -> Void ![Console]) () {
+    handle {
+        db_fn("SELECT 1");
+        log_fn("done");
+    } DB => +{ query => sub ($q) { $q } };
+    log_fn("after handle");
+}
+PERL
+
+    my @eff = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
+    is scalar @eff, 0, 'DB discharged inside handle, Console declared — clean';
+};
+
+subtest 'call outside handle — not discharged' => sub {
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Effect;
+    $ws_reg->register_effect('DB', Typist::Effect->new(
+        name => 'DB', operations => +{},
+    ));
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws_reg);
+package OutsideHandle;
+use v5.40;
+
+sub db_fn :sig(() -> Void ![DB]) () { return }
+
+sub caller_fn :sig(() -> Void) () {
+    handle {
+        1;
+    } DB => +{ query => sub { } };
+    db_fn();
+}
+PERL
+
+    my @eff = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
+    ok @eff > 0, 'call outside handle block is not discharged';
+};
+
+subtest 'infer_effects: handle discharge excluded from inference' => sub {
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Effect;
+    $ws_reg->register_effect('Console', Typist::Effect->new(
+        name => 'Console', operations => +{ log => '(Str) -> Void' },
+    ));
+
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', workspace_registry => $ws_reg);
+package InferDischarge;
+use v5.40;
+
+sub log_fn :sig((Str) -> Void ![Console]) ($msg) { return }
+
+sub handler () {
+    handle {
+        log_fn("hello");
+    } Console => +{ log => sub ($msg) { } };
+}
+PERL
+
+    my $ie = $result->{inferred_effects} // [];
+    my ($handler) = grep { $_->{name} eq 'handler' } @$ie;
+    ok !$handler, 'handler has no inferred effects — Console discharged by handle';
+};
+
 done_testing;

@@ -116,12 +116,14 @@ sub import ($class, @args) {
     };
     *{"${caller}::effect"}    = sub ($name, @rest) {
         Typist::EffectDef::_effect($name, @rest);
-        Typist::Registry->set_defined_in($name, $caller);
+        my ($base_name) = $name =~ /\A(\w+)/;
+        Typist::Registry->set_defined_in($base_name, $caller) if $base_name;
     };
-    *{"${caller}::handle"}    = \&Typist::EffectDef::_handle;
-    *{"${caller}::protocol"}  = \&Typist::EffectDef::_make_protocol;
-    *{"${caller}::declare"}   = \&Typist::External::_declare;
-    *{"${caller}::optional"}  = sub :prototype($$) ($name, $type) { ("${name}?", $type) };
+    *{"${caller}::handle"}     = \&Typist::EffectDef::_handle;
+    *{"${caller}::protocol"}   = \&Typist::EffectDef::_make_protocol;
+    *{"${caller}::scoped"}     = \&Typist::EffectDef::_scoped;
+    *{"${caller}::declare"}    = \&Typist::External::_declare;
+    *{"${caller}::optional"}   = sub :prototype($$) ($name, $type) { ("${name}?", $type) };
 
 }
 

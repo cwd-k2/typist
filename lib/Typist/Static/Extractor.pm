@@ -430,9 +430,12 @@ sub _extract_effects ($class, $stmts, $result) {
         next unless $children[0]->isa('PPI::Token::Word')
                  && $children[0]->content eq 'effect';
 
-        my $name = $children[1]->isa('PPI::Token::Quote')
+        my $name_raw = $children[1]->isa('PPI::Token::Quote')
             ? $children[1]->string
             : $children[1]->content;
+
+        # Parse parameterized name: 'State[S]' → ('State', 'S')
+        my ($name, @type_params) = Typist::Parser->parse_parameterized_name($name_raw);
 
         # Detect states: effect Name => qw/States.../ => +{...}
         # States appear as QuoteLike::Words tokens between the name and the ops block
@@ -506,13 +509,14 @@ sub _extract_effects ($class, $stmts, $result) {
         }
 
         $result->{effects}{$name} = +{
-            op_names   => \@op_names,
-            operations => \%op_sigs,
-            protocol   => (%transitions ? \%transitions : undef),
-            op_map     => (%op_map ? \%op_map : undef),
-            states     => (@states ? \@states : undef),
-            line       => $stmt->line_number,
-            col        => $stmt->column_number,
+            op_names    => \@op_names,
+            operations  => \%op_sigs,
+            protocol    => (%transitions ? \%transitions : undef),
+            op_map      => (%op_map ? \%op_map : undef),
+            states      => (@states ? \@states : undef),
+            type_params => (@type_params ? \@type_params : undef),
+            line        => $stmt->line_number,
+            col         => $stmt->column_number,
         };
     }
 }

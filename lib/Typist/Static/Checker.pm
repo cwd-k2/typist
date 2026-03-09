@@ -239,9 +239,10 @@ sub _check_effect_wellformed :TIMED_ACC(functions.effects) ($self, $eff, $contex
 
     my ($ctx_line, $ctx_file, $ctx_col) = $self->_fn_line($context);
 
-    # Check labels are registered effects
+    # Check labels are registered effects (extract base name for parameterized labels)
     for my $label ($row->labels) {
-        unless ($self->{registry}->is_effect_label($label)) {
+        my $base = Typist::Type::Row->label_base_name($label);
+        unless ($self->{registry}->is_effect_label($base)) {
             $self->{errors}->collect(
                 kind    => 'UnknownEffect',
                 message => "Effect '$label' is not defined (in $context)",

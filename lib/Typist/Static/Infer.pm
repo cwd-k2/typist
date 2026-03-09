@@ -370,8 +370,25 @@ sub infer_list_rhs_type ($class, $init_node, $env) {
 
 # ── Function Call Inference ──────────────────────
 
+# Extract the first string argument from a PPI::Structure::List.
+# Returns the unquoted string or undef.
+sub _extract_first_string_arg ($list_node) {
+    my $expr = $list_node->find_first('PPI::Token::Quote') || return undef;
+    $expr->string;
+}
+
 sub _infer_call ($name, $env, $list_element = undef, $expected = undef) {
     return undef unless $env;
+
+    # scoped('State[Int]') → Atom('EffectScope[State]')
+    if ($name eq 'scoped' && $list_element) {
+        my $arg_str = _extract_first_string_arg($list_element);
+        if ($arg_str) {
+            my ($base) = $arg_str =~ /\A(\w+)/;
+            return Typist::Type::Atom->new("EffectScope[$base]") if $base;
+        }
+        return Typist::Type::Atom->new('Any');
+    }
 
     # Local function with known return type
     if (my $ret = $env->{functions}{$name}) {
@@ -1814,6 +1831,21 @@ sub _infer_method_access ($receiver_type, $method_word, $env = undef) {
 
     # Newtype: no instance methods
     if ($resolved->is_newtype) {
+        return undef;
+    }
+
+    # EffectScope: resolve method to effect operation return type
+    if ($resolved->is_atom && $resolved->name =~ /\AEffectScope\[(\w+)\]\z/) {
+        my $effect_name = $1;
+        if ($env && $env->{registry}) {
+            my $eff = $env->{registry}->lookup_effect($effect_name);
+            if ($eff) {
+                my $op_type = $eff->get_op_type($method_name);
+                return $op_type->returns if $op_type && $op_type->is_func;
+                # Operation exists but unparseable → Any
+                return Typist::Type::Atom->new('Any') if $eff->get_op($method_name);
+            }
+        }
         return undef;
     }
 
