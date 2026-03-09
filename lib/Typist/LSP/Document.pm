@@ -708,7 +708,7 @@ sub _call_site_bindings ($self, $sig, $line, $col) {
     my $ppi_line = $line + 1;  # LSP 0-indexed → PPI 1-indexed
     my %variables;
     for my $sym (@$symbols) {
-        next unless ($sym->{kind} // '') eq 'variable';
+        next unless ($sym->{kind} // '') =~ /\A(?:variable|parameter)\z/;
         next unless defined $sym->{type} && $sym->{type} ne 'Any';
         # Scope check: variable must be visible at the call site
         if ($sym->{scope_start} && $sym->{scope_end}) {
