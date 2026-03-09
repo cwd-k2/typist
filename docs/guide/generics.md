@@ -143,6 +143,12 @@ sub sorted_show :sig(<T: Ord + Show>(ArrayRef[T]) -> Str) ($arr) {
 
 ---
 
+## Bounded Generics on Effects
+
+The same bound syntax applies to effect type parameters. See [Algebraic Effects — Bounded Type Parameters](effects.md#bounded-type-parameters) for details.
+
+---
+
 ## Generics with Composite Types
 
 Type variables can appear inside parameterized types:

@@ -1210,6 +1210,44 @@ PERL
     ok scalar @int_type >= 1, 'Int as type token on multi-typeclass instance line';
 };
 
+# ── scoped effect string tokenization ──────────
+
+subtest 'scoped effect string gets type tokens' => sub {
+    my $source = <<'PERL';
+package ScopedTok;
+use v5.40;
+effect 'State[S]' => +{ get => '() -> S', put => '(S) -> Void' };
+my $counter = scoped 'State[Int]';
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/semanticTokens/full', +{
+            textDocument => +{ uri => 'file:///test.pm' },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got semanticTokens response';
+    my @tokens = _decode_tokens($resp->{result}{data});
+
+    # Line 3 (0-indexed): my $counter = scoped 'State[Int]';
+    # 'scoped' is keyword, 'State' and 'Int' inside the string should be type tokens
+    my @line3_types = grep { $_->{type} == 0 && $_->{line} == 3 } @tokens;
+    ok scalar @line3_types >= 2, 'at least 2 type tokens on scoped line (State + Int)'
+        or diag explain \@tokens;
+
+    # State should be type (index 0), 5 chars
+    my ($state_tok) = grep { $_->{len} == 5 } @line3_types;
+    ok $state_tok, 'found State type token (5 chars)';
+
+    # Int should be type (index 0), 3 chars
+    my ($int_tok) = grep { $_->{len} == 3 } @line3_types;
+    ok $int_tok, 'found Int type token (3 chars)';
+};
+
 done_testing;
 
 # ── Test Helpers ─────────────────────────────────

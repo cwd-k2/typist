@@ -212,6 +212,7 @@ Hover, go-to-definition, and completion are suppressed in non-code regions via P
 | Operators in `:sig()` | `operator` | Yes | N/A | Done |
 | Constructor usage (code body) | `enumMember` / `function` | — | Yes (PPI scan) | Done |
 | Effect operation usage (code body) | `enum` + `function` | — | Yes (PPI scan) | Done |
+| Scoped effect string (type names) | `type` | — | Yes (PPI scan) | Done |
 
 ---
 

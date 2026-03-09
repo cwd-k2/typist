@@ -396,6 +396,34 @@ sub increment :sig(() -> Int ![State[Int]]) () {
 
 The static checker treats `State[Int]` and `State[Str]` as distinct effect labels. A function annotated with `![State[Int]]` cannot satisfy a caller expecting `![State[Str]]`.
 
+### Bounded Type Parameters
+
+Effect type parameters can have bounds, exactly like generic functions and structs:
+
+```typist
+BEGIN {
+    effect 'Counter[S: Num]' => +{
+        get   => '() -> S',
+        add   => '(S) -> Void',
+    };
+}
+```
+
+The static checker validates type arguments against bounds at the annotation site:
+
+```typist
+sub ok_fn  :sig(() -> Int ![Counter[Int]]) () { ... }  # OK: Int <: Num
+sub bad_fn :sig(() -> Str ![Counter[Str]]) () { ... }  # Error: Str does not satisfy bound Num
+```
+
+Typeclass constraints work the same way:
+
+```typist
+effect 'Logger[T: Show]' => +{ log_val => '(T) -> Void' };
+
+sub ok  :sig(() -> Void ![Logger[Int]]) () { ... }  # OK: instance Show Int exists
+```
+
 ---
 
 ## Scoped Effects

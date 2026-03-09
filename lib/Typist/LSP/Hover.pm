@@ -158,7 +158,7 @@ sub _format_handle ($class, $sym) {
 }
 
 sub _format_scoped ($class, $sym) {
-    _code("scoped '$sym->{name}' -> $sym->{result_type}");
+    _code("scoped $sym->{name} -> $sym->{result_type}");
 }
 
 sub _format_builtin_type ($class, $sym) {

@@ -165,6 +165,10 @@ Checker->analyze()
   |       +-> For each free var not in generics: UndeclaredTypeVar
   |       +-> Validate effects via _check_effect_wellformed()
   |       |     For each effect label: must be registered
+  |       |     For each parameterized label: _check_effect_type_arg_bounds()
+  |       |       Extract type args (e.g. Counter[Str] → Str)
+  |       |       Parse type_param_specs via parse_generic_decl
+  |       |       Check bound_expr via is_subtype, tc_constraints via resolve_instance
   |       |     For each row variable: must be in generics
   |       +-> Validate bound expressions (parse test)
   |       +-> Walk param/return types via Fold->walk()
