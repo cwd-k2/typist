@@ -742,16 +742,36 @@ sub _call_site_bindings ($self, $sig, $line, $col) {
 
     return undef unless @arg_nodes;
 
-    # Collect bindings by unifying formal params with inferred arg types
+    # 2-pass binding: Pass 1 collects from non-callback args,
+    # Pass 2 re-infers callbacks with expected types from Pass 1 bindings.
     require Typist::Static::Unify;
     require Typist::Static::Infer;
     my @params = @{$sig->{params}};
     my %bindings;
+    my @callback_indices;
+
+    # Pass 1: non-callback args
     for my $j (0 .. $#params) {
         last if $j > $#arg_nodes;
+        if ($arg_nodes[$j]->isa('PPI::Token::Word') && $arg_nodes[$j]->content eq 'sub') {
+            push @callback_indices, $j;
+            next;
+        }
         my $inferred = Typist::Static::Infer->infer_expr($arg_nodes[$j], $env);
         next unless $inferred;
         Typist::Static::Unify->collect_bindings($params[$j], $inferred, \%bindings);
+    }
+
+    # Pass 2: callback args with expected type (substitute Pass 1 bindings)
+    if (%bindings && @callback_indices) {
+        for my $j (@callback_indices) {
+            next if $j > $#arg_nodes;
+            my $expected = $params[$j]->substitute(\%bindings);
+            my $inferred = Typist::Static::Infer->infer_expr(
+                $arg_nodes[$j], $env, $expected);
+            next unless $inferred;
+            Typist::Static::Unify->collect_bindings($params[$j], $inferred, \%bindings);
+        }
     }
 
     %bindings ? \%bindings : undef;
