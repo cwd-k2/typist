@@ -435,7 +435,8 @@ sub _extract_effects ($class, $stmts, $result) {
             : $children[1]->content;
 
         # Parse parameterized name: 'State[S]' → ('State', 'S')
-        my ($name, @type_params) = Typist::Parser->parse_parameterized_name($name_raw);
+        my ($name, @raw_specs) = Typist::Parser->parse_parameterized_name($name_raw);
+        my @type_params = map { /\A(\w+)/ ? $1 : $_ } @raw_specs;
 
         # Detect states: effect Name => qw/States.../ => +{...}
         # States appear as QuoteLike::Words tokens between the name and the ops block
@@ -514,7 +515,8 @@ sub _extract_effects ($class, $stmts, $result) {
             protocol    => (%transitions ? \%transitions : undef),
             op_map      => (%op_map ? \%op_map : undef),
             states      => (@states ? \@states : undef),
-            type_params => (@type_params ? \@type_params : undef),
+            type_params      => (@type_params ? \@type_params : undef),
+            type_param_specs => (@raw_specs ? \@raw_specs : undef),
             line        => $stmt->line_number,
             col         => $stmt->column_number,
         };

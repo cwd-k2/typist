@@ -33,7 +33,7 @@ sub _effect ($name, @rest) {
     my ($base_name, @type_params);
     if ($name =~ /\A(\w+)\[(.+)\]\z/) {
         $base_name = $1;
-        @type_params = split /\s*,\s*/, $2;
+        @type_params = map { /\A(\w+)/ ? $1 : $_ } split /\s*,\s*/, $2;
     } else {
         $base_name = $name;
     }

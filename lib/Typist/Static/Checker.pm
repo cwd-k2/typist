@@ -10,6 +10,7 @@ use Typist::Error::Global;
 use Typist::Kind;
 use Typist::KindChecker;
 use Typist::Static::Timing qw(start_timing accumulate_timing);
+use Typist::Attribute;
 use Typist::Type::Fold;
 use Scalar::Util qw(refaddr);
 
@@ -250,7 +251,11 @@ sub _check_effect_wellformed :TIMED_ACC(functions.effects) ($self, $eff, $contex
                 line    => $ctx_line,
                 col     => $ctx_col,
             );
+            next;
         }
+
+        # Bounded generics: check type args against bounds
+        $self->_check_effect_type_arg_bounds($label, $base, $context, $ctx_line, $ctx_file, $ctx_col);
     }
 
     # Check row variable is declared in :Generic
@@ -264,6 +269,62 @@ sub _check_effect_wellformed :TIMED_ACC(functions.effects) ($self, $eff, $contex
                 line    => $ctx_line,
                 col     => $ctx_col,
             );
+        }
+    }
+}
+
+# ── Effect Type Arg Bound Check ──────────────
+
+sub _check_effect_type_arg_bounds ($self, $label, $base, $context, $line, $file, $col) {
+    my $eff = $self->{registry}->lookup_effect($base) // return;
+    return unless $eff->is_generic;
+
+    # Extract type args from label: Counter[Str] → ('Str')
+    my (undef, @type_args_str) = Typist::Parser->parse_parameterized_name($label);
+    return unless @type_args_str;
+
+    # Parse specs to get bound/tc info
+    my @specs = $eff->type_param_specs;
+    return unless @specs;
+    my $spec_str = join(', ', @specs);
+    my @generics = Typist::Attribute->parse_generic_decl(
+        $spec_str, registry => $self->{registry},
+    );
+
+    require Typist::Subtype;
+    for my $i (0 .. $#generics) {
+        last if $i > $#type_args_str;
+        my $g = $generics[$i];
+        my $actual = eval { Typist::Parser->parse($type_args_str[$i]) } // next;
+
+        if ($g->{bound_expr}) {
+            my $bound = eval { Typist::Parser->parse($g->{bound_expr}) } // next;
+            unless (Typist::Subtype->is_subtype($actual, $bound, registry => $self->{registry})) {
+                $self->{errors}->collect(
+                    kind          => 'TypeMismatch',
+                    message       => "Effect $base: type ${\$actual->to_string} does not satisfy bound ${\$bound->to_string} for $g->{name} (in $context)",
+                    file          => $file,
+                    line          => $line,
+                    col           => $col,
+                    expected_type => $bound->to_string,
+                    actual_type   => $actual->to_string,
+                );
+            }
+        }
+        if ($g->{tc_constraints}) {
+            for my $tc_name ($g->{tc_constraints}->@*) {
+                unless ($self->{registry}->resolve_instance($tc_name, $actual)) {
+                    $self->{errors}->collect(
+                        kind          => 'TypeMismatch',
+                        message       => "Effect $base: no instance of $tc_name for ${\$actual->to_string} (in $context)",
+                        file          => $file,
+                        line          => $line,
+                        col           => $col,
+                        expected_type => $tc_name,
+                        actual_type   => $actual->to_string,
+                    );
+                }
+            }
         }
     }
 }
