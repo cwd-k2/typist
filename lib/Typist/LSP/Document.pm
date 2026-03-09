@@ -679,7 +679,6 @@ sub _resolve_handler_op_hover ($self, $word, $line, $col) {
 sub _call_site_bindings ($self, $sig, $line, $col) {
     # Only for generic functions
     return undef unless $sig->{generics} && @{$sig->{generics}};
-    return undef unless $sig->{params} && @{$sig->{params}};
 
     my $result   = $self->{result} // return undef;
     my $registry = $result->{registry} // return undef;
@@ -790,7 +789,37 @@ sub _call_site_bindings ($self, $sig, $line, $col) {
         }
     }
 
+    # Pass 3: unify return type with enclosing function's expected return type
+    # Resolves e.g. Err<T>(Str) -> Result[T] when enclosing returns Result[Customer]
+    if ($sig->{returns} && $sig->{returns}->free_vars) {
+        my $expected_ret = $self->_enclosing_return_type($line);
+        if ($expected_ret) {
+            Typist::Static::Unify->collect_bindings(
+                $sig->{returns}, $expected_ret, \%bindings);
+        }
+    }
+
     %bindings ? \%bindings : undef;
+}
+
+# Find the return type of the function enclosing the given LSP line.
+sub _enclosing_return_type ($self, $line) {
+    my $extracted = ($self->{result} // return undef)->{extracted} // return undef;
+    my $ppi_line = $line + 1;
+    my ($best_fn, $best_span);
+    for my $name (keys $extracted->{functions}->%*) {
+        my $fn = $extracted->{functions}{$name};
+        next unless $fn->{line} && $fn->{end_line} && $fn->{returns_expr};
+        next if $fn->{unannotated};
+        next unless $ppi_line >= $fn->{line} && $ppi_line <= $fn->{end_line};
+        my $span = $fn->{end_line} - $fn->{line};
+        if (!defined $best_span || $span < $best_span) {
+            $best_fn   = $fn;
+            $best_span = $span;
+        }
+    }
+    return undef unless $best_fn;
+    eval { Typist::Parser->parse($best_fn->{returns_expr}) };
 }
 
 # Apply generic bindings to an extracted symbol's generics and signature for display.
