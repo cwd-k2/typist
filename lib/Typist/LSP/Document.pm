@@ -509,8 +509,8 @@ sub symbol_at ($self, $line, $col) {
         }
     }
 
-    # Keyword hover: match / handle
-    if ($word eq 'match' || $word eq 'handle') {
+    # Keyword hover: match / handle / scoped
+    if ($word eq 'match' || $word eq 'handle' || $word eq 'scoped') {
         if (my $kw_sym = $self->_resolve_keyword_hover($word, $line, $col)) {
             return $with_range->($kw_sym);
         }
@@ -586,6 +586,7 @@ sub _resolve_keyword_hover ($self, $word, $line, $col) {
 
     return $self->_resolve_match_hover($ppi_word, $line) if $word eq 'match';
     return $self->_resolve_handle_hover($ppi_word)       if $word eq 'handle';
+    return $self->_resolve_scoped_hover($ppi_word)       if $word eq 'scoped';
     undef;
 }
 
@@ -628,7 +629,7 @@ sub _resolve_handle_hover ($self, $ppi_word) {
     my $result   = $self->{result} // return undef;
     my $registry = $result->{registry} // return undef;
 
-    # handle { BLOCK } EffectName => +{ ... }, EffectName2 => +{ ... }
+    # handle { BLOCK } EffectName => +{ ... }, $scoped => +{ ... }
     my $sib = $ppi_word->next_sibling;
 
     # Skip whitespace
@@ -640,11 +641,24 @@ sub _resolve_handle_hover ($self, $ppi_word) {
     # Walk siblings after the block to collect effect names
     $sib = $sib->next_sibling;
     my @effects;
+    my $resolver = $self->_resolver;
+    my $handle_line = $ppi_word->line_number - 1;  # PPI 1-indexed → LSP 0-indexed
+
     while ($sib) {
         if ($sib->isa('PPI::Token::Word')) {
             my $name = $sib->content;
             if ($registry->lookup_effect($name)) {
                 push @effects, +{ name => $name };
+            }
+        }
+        # Scoped effect: $var => +{...} — resolve variable type to find effect name
+        elsif ($sib->isa('PPI::Token::Symbol')) {
+            my $next = $sib->snext_sibling;
+            if ($next && $next->isa('PPI::Token::Operator') && $next->content eq '=>') {
+                my $type_str = $resolver->resolve_var_type($sib->content, $handle_line);
+                if ($type_str && $type_str =~ /EffectScope\[(\w+)/) {
+                    push @effects, +{ name => $1, scoped => 1, var => $sib->content };
+                }
             }
         }
         $sib = $sib->next_sibling;
@@ -657,6 +671,38 @@ sub _resolve_handle_hover ($self, $ppi_word) {
         name        => join(', ', map { $_->{name} } @effects),
         effects     => \@effects,
         result_type => $self->_infer_keyword_result_type($ppi_word) // '_',
+    };
+}
+
+# Resolve scoped keyword: scoped('Effect[T]') or scoped 'Effect[T]'.
+sub _resolve_scoped_hover ($self, $ppi_word) {
+    my $result   = $self->{result} // return undef;
+    my $registry = $result->{registry} // return undef;
+
+    my $sib = $ppi_word->snext_sibling;
+    return undef unless $sib;
+
+    my $arg;
+    if ($sib->isa('PPI::Structure::List')) {
+        # scoped('Effect[T]')
+        my $quotes = $sib->find('PPI::Token::Quote');
+        $arg = $quotes->[0]->string if $quotes && @$quotes;
+    }
+    elsif ($sib->isa('PPI::Token::Quote')) {
+        # scoped 'Effect[T]'
+        $arg = $sib->string;
+    }
+    return undef unless $arg;
+
+    my ($base) = $arg =~ /\A(\w+)/;
+    return undef unless $base;
+
+    +{
+        kind        => 'scoped',
+        name        => $arg,
+        effect_name => $base,
+        has_effect  => $registry->lookup_effect($base) ? 1 : 0,
+        result_type => "EffectScope[$base]",
     };
 }
 

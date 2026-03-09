@@ -2289,4 +2289,222 @@ PERL
     }
 };
 
+# ── Nested handle hover ─────────────────────────
+
+subtest 'nested handle hover — inner and outer' => sub {
+    require File::Temp;
+    require File::Path;
+    require Typist::LSP::Workspace;
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+
+    my $dir = File::Temp::tempdir(CLEANUP => 1);
+    File::Path::make_path("$dir/lib");
+
+    open my $fh, '>', "$dir/lib/Effects.pm" or die;
+    print $fh <<'PERL';
+package Effects;
+use v5.40;
+use Typist;
+effect Console => +{ log => '(Str) -> Void' };
+effect DB      => +{ query => '(Str) -> Str' };
+1;
+PERL
+    close $fh;
+
+    my $ws = Typist::LSP::Workspace->new(root => "$dir/lib");
+
+    my $source = <<'PERL';
+package NestedApp;
+use v5.40;
+use Typist;
+use Effects;
+sub run :sig(() -> Void) () {
+    handle {
+        handle {
+            Console::log("hello");
+        } Console => +{
+            log => sub ($s) { print $s },
+        };
+    } DB => +{
+        query => sub ($q) { $q },
+    };
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///nested.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # Inner handle — line 6 (0-indexed): "        handle {"
+    my $inner_sym = $doc->symbol_at(6, 9);
+    ok $inner_sym, 'found symbol for inner handle';
+    if ($inner_sym) {
+        is $inner_sym->{kind}, 'handle', 'inner handle kind';
+        like $inner_sym->{name}, qr/Console/, 'inner handle shows Console';
+    }
+
+    # Outer handle — line 5 (0-indexed): "    handle {"
+    my $outer_sym = $doc->symbol_at(5, 5);
+    ok $outer_sym, 'found symbol for outer handle';
+    if ($outer_sym) {
+        is $outer_sym->{kind}, 'handle', 'outer handle kind';
+        like $outer_sym->{name}, qr/DB/, 'outer handle shows DB';
+    }
+};
+
+# ── Scoped handle hover ────────────────────────
+
+subtest 'scoped handle hover — shows effect from variable type' => sub {
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+    require Typist::Registry;
+    require Typist::Effect;
+
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Prelude;
+    Typist::Prelude->install($ws_reg);
+
+    $ws_reg->register_effect('Accumulator',
+        Typist::Effect->new(
+            name        => 'Accumulator',
+            operations  => +{ read => '() -> Int', add => '(Int) -> Void' },
+            type_params => ['S'],
+        ),
+    );
+
+    my $source = <<'PERL';
+package ScopedHandleTest;
+use v5.40;
+
+sub run :sig(() -> Void) () {
+    my $acc = scoped('Accumulator[Int]');
+    handle {
+        $acc->add(100);
+    } $acc => +{
+        read => sub ()   { 0 },
+        add  => sub ($v) { },
+    };
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///scoped_handle.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws_reg);
+
+    # Line 5 (0-indexed): "    handle {"
+    my $sym = $doc->symbol_at(5, 5);
+    ok $sym, 'found symbol for scoped handle';
+    if ($sym) {
+        is $sym->{kind}, 'handle', 'scoped handle kind';
+        like $sym->{name}, qr/Accumulator/, 'scoped handle shows Accumulator';
+
+        my $hover = Typist::LSP::Hover->hover($sym);
+        ok $hover, 'hover response for scoped handle';
+        like $hover->{contents}{value}, qr/Accumulator/, 'hover shows Accumulator';
+    }
+};
+
+# ── scoped keyword hover ───────────────────────
+
+subtest 'scoped keyword hover' => sub {
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+    require Typist::Registry;
+    require Typist::Effect;
+
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Prelude;
+    Typist::Prelude->install($ws_reg);
+
+    $ws_reg->register_effect('State',
+        Typist::Effect->new(
+            name        => 'State',
+            operations  => +{ get => '() -> Int', put => '(Int) -> Void' },
+            type_params => ['S'],
+        ),
+    );
+
+    my $source = <<'PERL';
+package ScopedKwTest;
+use v5.40;
+
+sub run :sig(() -> Void) () {
+    my $s = scoped('State[Int]');
+    $s->get();
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///scoped_kw.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws_reg);
+
+    # Line 4 (0-indexed): "    my $s = scoped('State[Int]');"
+    #                       0123456789012
+    my $sym = $doc->symbol_at(4, 13);
+    ok $sym, 'found symbol for scoped keyword';
+    if ($sym) {
+        is $sym->{kind}, 'scoped', 'kind is scoped';
+        like $sym->{name}, qr/State/, 'shows State effect';
+
+        my $hover = Typist::LSP::Hover->hover($sym);
+        ok $hover, 'hover response for scoped keyword';
+        like $hover->{contents}{value}, qr/EffectScope/, 'hover shows EffectScope';
+    }
+};
+
+subtest 'scoped keyword hover — bareword syntax' => sub {
+    require Typist::LSP::Document;
+    require Typist::LSP::Hover;
+    require Typist::Registry;
+    require Typist::Effect;
+
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Prelude;
+    Typist::Prelude->install($ws_reg);
+
+    $ws_reg->register_effect('Counter',
+        Typist::Effect->new(
+            name        => 'Counter',
+            operations  => +{ inc => '() -> Void', get => '() -> Int' },
+            type_params => ['S'],
+        ),
+    );
+
+    my $source = <<'PERL';
+package ScopedBareword;
+use v5.40;
+
+sub run :sig(() -> Void) () {
+    my $c = scoped 'Counter[Int]';
+    $c->inc();
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(
+        uri     => 'file:///scoped_bare.pm',
+        content => $source,
+        version => 1,
+    );
+    $doc->analyze(workspace_registry => $ws_reg);
+
+    # Line 4: "    my $c = scoped 'Counter[Int]';"
+    #                       01234567890123
+    my $sym = $doc->symbol_at(4, 13);
+    ok $sym, 'found symbol for scoped bareword';
+    if ($sym) {
+        is $sym->{kind}, 'scoped', 'kind is scoped';
+        like $sym->{name}, qr/Counter/, 'shows Counter effect';
+    }
+};
+
 done_testing;
