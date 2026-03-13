@@ -244,6 +244,7 @@ sub register_structs ($class, $extracted, $registry, %opts) {
 # ── Datatypes ────────────────────────────────────
 
 sub register_datatypes ($class, $extracted, $registry, %opts) {
+    my ($errors, $file) = @opts{qw(errors file)};
     my $pkg = $extracted->{package} // 'main';
 
     for my $name (sort keys(($extracted->{datatypes} // +{})->%*)) {
@@ -259,6 +260,14 @@ sub register_datatypes ($class, $extracted, $registry, %opts) {
 
             if (defined $ret_expr) {
                 my $ret_type = eval { Typist::Parser->parse($ret_expr) };
+                if ($@ && $errors) {
+                    $errors->collect(
+                        kind    => 'ResolveError',
+                        message => "Failed to parse GADT return type '$ret_expr' in ${name}::${tag}: $@",
+                        file    => $file // '(buffer)',
+                        line    => $info->{line} // 0,
+                    );
+                }
                 $return_types{$tag} = $ret_type if $ret_type;
             }
         }
@@ -310,6 +319,8 @@ sub register_datatypes ($class, $extracted, $registry, %opts) {
 # ── Effects ──────────────────────────────────────
 
 sub register_effects ($class, $extracted, $registry, %opts) {
+    my ($errors, $file) = @opts{qw(errors file)};
+
     for my $name (sort keys $extracted->{effects}->%*) {
         my $eff_info = $extracted->{effects}{$name};
         my $ops = $eff_info->{operations} // +{};
@@ -354,6 +365,14 @@ sub register_effects ($class, $extracted, $registry, %opts) {
         for my $op_name (sort keys %$ops) {
             my $sig_str = $ops->{$op_name};
             my $ann = eval { Typist::Parser->parse_annotation($sig_str) };
+            if ($@ && $errors) {
+                $errors->collect(
+                    kind    => 'ResolveError',
+                    message => "Failed to parse effect op sig '$sig_str' in ${name}::${op_name}: $@",
+                    file    => $file // '(buffer)',
+                    line    => 0,
+                );
+            }
             next unless $ann;
             my $type = $ann->{type};
             my (@params, $returns);
@@ -408,6 +427,8 @@ sub register_effects ($class, $extracted, $registry, %opts) {
 # ── Typeclasses ──────────────────────────────────
 
 sub register_typeclasses ($class, $extracted, $registry, %opts) {
+    my ($errors, $file) = @opts{qw(errors file)};
+
     for my $name (sort keys $extracted->{typeclasses}->%*) {
         next if $registry->has_typeclass($name);
         my $info = $extracted->{typeclasses}{$name};
@@ -418,7 +439,17 @@ sub register_typeclasses ($class, $extracted, $registry, %opts) {
                 methods => $info->{methods}  // +{},
             );
         };
-        $registry->register_typeclass($name, $def // undef);
+        if ($@ && $errors) {
+            $errors->collect(
+                kind    => 'ResolveError',
+                message => "Failed to create typeclass '$name': $@",
+                file    => $file // '(buffer)',
+                line    => $info->{line} // 0,
+            );
+            next;
+        }
+        next unless $def;
+        $registry->register_typeclass($name, $def);
         my $pkg = $extracted->{package} // 'main';
         $registry->set_defined_in($name, $pkg);
     }
@@ -439,6 +470,14 @@ sub register_typeclasses ($class, $extracted, $registry, %opts) {
         for my $method_name (sort keys %$methods) {
             my $sig_str = $methods->{$method_name};
             my $ann = eval { Typist::Parser->parse_annotation($sig_str) };
+            if ($@ && $errors) {
+                $errors->collect(
+                    kind    => 'ResolveError',
+                    message => "Failed to parse typeclass method sig '$sig_str' in ${tc_name}::${method_name}: $@",
+                    file    => $file // '(buffer)',
+                    line    => $tc_info->{line} // 0,
+                );
+            }
             next unless $ann;
             my $type = $ann->{type};
 
@@ -575,7 +614,7 @@ sub register_functions ($class, $extracted, $registry, %opts) {
             push @param_types, $t;
         }
 
-        my $return_type;
+        my ($return_type, $effects, $skip);
         if ($fn->{returns_expr}) {
             $return_type = eval { Typist::Parser->parse($fn->{returns_expr}) };
             if ($@ && $errors) {
@@ -585,10 +624,10 @@ sub register_functions ($class, $extracted, $registry, %opts) {
                     file    => $file // '(buffer)',
                     line    => $fn->{line},
                 );
+                $skip = 1;
             }
         }
 
-        my $effects;
         if ($fn->{eff_expr}) {
             $effects = eval {
                 my $row = Typist::Parser->parse_row($fn->{eff_expr});
@@ -601,6 +640,7 @@ sub register_functions ($class, $extracted, $registry, %opts) {
                     file    => $file // '(buffer)',
                     line    => $fn->{line},
                 );
+                $skip = 1;
             }
         }
 
@@ -609,6 +649,8 @@ sub register_functions ($class, $extracted, $registry, %opts) {
             my $spec = join(', ', $fn->{generics}->@*);
             @generics = Typist::Attribute->parse_generic_decl($spec, registry => $registry);
         }
+
+        next if $skip;
 
         my $sig = +{
             params        => \@param_types,
