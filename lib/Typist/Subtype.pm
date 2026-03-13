@@ -180,11 +180,11 @@ sub _check_impl ($sub, $super, $registry = undef) {
 
     # Expand Handler[E] to Record before comparison
     if (_is_handler($sub)) {
-        my $rec = _expand_handler($sub, $registry);
+        my $rec = expand_handler($sub, $registry);
         return _check($rec, $super, $registry) if $rec;
     }
     if (_is_handler($super)) {
-        my $rec = _expand_handler($super, $registry);
+        my $rec = expand_handler($super, $registry);
         return _check($sub, $rec, $registry) if $rec;
     }
 
@@ -480,7 +480,7 @@ sub _is_handler ($type) {
 }
 
 # Expand Handler[E] to Record(op1 => Func1, ...) via effect registry lookup.
-sub _expand_handler ($handler, $registry) {
+sub expand_handler ($handler, $registry) {
     my ($effect_ref) = $handler->params;
     my $effect_name = ref $effect_ref && $effect_ref->isa('Typist::Type')
         ? ($effect_ref->is_alias ? $effect_ref->alias_name : "$effect_ref")

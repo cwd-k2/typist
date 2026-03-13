@@ -1333,7 +1333,7 @@ sub _infer_hash ($constructor, $env = undef, $expected = undef) {
     # Expand Handler[E] to Record(op => Func, ...) for bidirectional inference
     if ($expected && $expected->is_param && $expected->base eq 'Handler'
         && scalar($expected->params) == 1 && $env && $env->{registry}) {
-        my $expanded = Typist::Subtype::_expand_handler($expected, $env->{registry});
+        my $expanded = Typist::Subtype::expand_handler($expected, $env->{registry});
         $expected = $expanded if $expanded;
     }
 
