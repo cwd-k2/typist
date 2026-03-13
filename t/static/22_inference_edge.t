@@ -724,4 +724,30 @@ PERL
     is scalar @$errs, 0, 'map { Str } sort { } grep { } @ints → ArrayRef[Str]';
 };
 
+# ════════════════════════════════════════════════
+# Section: Adjacent subscript without arrow
+# ════════════════════════════════════════════════
+
+subtest 'inference: adjacent subscript without arrow' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub get_first :sig((HashRef[Str, ArrayRef[Int]]) -> Int) ($data) {
+    return $data->{items}[0];
+}
+PERL
+
+    is scalar @$errs, 0, '$data->{items}[0] infers element type (no arrow)';
+};
+
+subtest 'inference: adjacent subscript type mismatch' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub get_first :sig((HashRef[Str, ArrayRef[Int]]) -> Str) ($data) {
+    return $data->{items}[0];
+}
+PERL
+
+    is scalar @$errs, 1, '$data->{items}[0] → Int ≠ Str';
+};
+
 done_testing;

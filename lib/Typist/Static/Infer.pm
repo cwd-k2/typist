@@ -1908,6 +1908,14 @@ sub _chase_subscript_chain ($type, $start_node, $env = undef) {
 
     my $node = $start_node->snext_sibling;
     while ($node) {
+        # Adjacent subscript without arrow: $h->{key}[0] (Perl allows omitting -> between subscripts)
+        if ($node->isa('PPI::Structure::Subscript')) {
+            $type = _infer_subscript_access($type, $node);
+            last unless defined $type;
+            $node = $node->snext_sibling;
+            next;
+        }
+
         last unless $node->isa('PPI::Token::Operator') && $node->content eq '->';
         my $next = $node->snext_sibling;
         last unless $next;
