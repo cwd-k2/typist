@@ -31,7 +31,23 @@ sub narrowed_accessors ($self) { $self->{_narrowed_accessors} }
 # Run narrowing candidates against condition children.
 # Returns ($rule_name, $negated, %narrowed) or (undef) if no rule matched.
 # Handles `!`/`not` prefix: strips it and sets $negated = 1.
+# Handles `&&`/`and` compound conditions: splits and accumulates.
 sub _dispatch_narrowing ($self, $cond_children, $env) {
+    # Handle && compound conditions: split and accumulate narrowings
+    my @segments = $self->_split_at_and($cond_children);
+    if (@segments > 1) {
+        my (%accumulated, $first_rule, $any_negated);
+        for my $segment (@segments) {
+            my ($rule, $neg, %narrowing) = $self->_dispatch_narrowing($segment, $env);
+            next unless $rule;
+            $first_rule //= $rule;
+            $any_negated ||= $neg;
+            $accumulated{$_} = $narrowing{$_} for keys %narrowing;
+        }
+        return (undef) unless %accumulated;
+        return ($first_rule, $any_negated // 0, %accumulated);
+    }
+
     my @effective = @$cond_children;
     my $negated = 0;
     if (@effective >= 2) {
@@ -55,6 +71,24 @@ sub _dispatch_narrowing ($self, $cond_children, $env) {
         return ($name, $negated, %try) if %try;
     }
     return (undef);
+}
+
+# Split condition children at && or `and` operators into segments.
+sub _split_at_and ($self, $cond_children) {
+    my @segments;
+    my @current;
+    for my $child (@$cond_children) {
+        if ($child->isa('PPI::Token::Operator') && $child->content eq '&&'
+            || $child->isa('PPI::Token::Word') && $child->content eq 'and')
+        {
+            push @segments, [@current] if @current;
+            @current = ();
+        } else {
+            push @current, $child;
+        }
+    }
+    push @segments, [@current] if @current;
+    @segments;
 }
 
 # ── Type Resolution Helper ──────────────────────

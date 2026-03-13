@@ -299,6 +299,24 @@ PERL
     is scalar @$errs, 0, 'die unless defined($s) narrows $s after guard';
 };
 
+# ── Compound && condition narrowing ───────────────
+
+subtest 'defined($x) && defined($y) narrows both' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub takes_str :sig((Str) -> Void) ($s) { }
+sub takes_int :sig((Int) -> Void) ($n) { }
+sub check :sig((Str | Undef, Int | Undef) -> Void) ($s, $n) {
+    if (defined($s) && defined($n)) {
+        takes_str($s);
+        takes_int($n);
+    }
+}
+PERL
+
+    is scalar @$errs, 0, 'both variables narrowed with && compound condition';
+};
+
 # ── Ternary else-branch must NOT narrow ──────────
 
 subtest 'ternary else-branch does not narrow defined' => sub {
