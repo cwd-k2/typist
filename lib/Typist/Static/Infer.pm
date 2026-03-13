@@ -10,6 +10,7 @@ use Typist::Type::Literal;
 use Typist::Type::Union;
 use Typist::Subtype;
 use Typist::Static::Unify;
+use Typist::Static::PPIUtil qw(split_comma_groups);
 
 # ── Submodules (partial-package pattern) ─────────
 #

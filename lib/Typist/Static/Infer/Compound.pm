@@ -233,17 +233,7 @@ sub _infer_hash ($constructor, $env = undef, $expected = undef) {
 
     # Split children into comma-separated groups to handle multi-token values
     # (e.g., ProductId("WIDGET") = Word + List = 2 tokens)
-    my @groups;
-    my @current;
-    for my $child ($expr->schildren) {
-        if ($child->isa('PPI::Token::Operator') && $child->content eq ',') {
-            push @groups, [@current] if @current;
-            @current = ();
-        } else {
-            push @current, $child;
-        }
-    }
-    push @groups, [@current] if @current;
+    my @groups = split_comma_groups($expr->schildren);
 
     # Process each group as key => value
     my %fields;

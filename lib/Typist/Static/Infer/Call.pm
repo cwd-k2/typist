@@ -256,17 +256,9 @@ sub _instantiate_generic_struct ($struct_type, $env, $list_element, $expected = 
 
     # Split into comma-separated groups and collect bindings
     my %bindings;
-    my @children = $target->schildren;
-    my @current;
-    for my $child (@children) {
-        if ($child->isa('PPI::Token::Operator') && $child->content eq ',') {
-            _bind_struct_field(\@current, \%all, \%bindings, $env) if @current;
-            @current = ();
-        } else {
-            push @current, $child;
-        }
+    for my $group (split_comma_groups($target->schildren)) {
+        _bind_struct_field($group, \%all, \%bindings, $env);
     }
-    _bind_struct_field(\@current, \%all, \%bindings, $env) if @current;
 
     # Widen literal bindings: Literal(42, Int) → Atom(Int)
     for my $k (keys %bindings) {

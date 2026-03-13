@@ -8,6 +8,7 @@ use Typist::Attribute;
 use Typist::Static::Infer;
 use Typist::Static::Unify;
 use Typist::Static::TypeUtil qw(contains_any contains_placeholder parse_generics_cached);
+use Typist::Static::PPIUtil qw(split_comma_groups);
 use Typist::Parser;
 use Typist::Subtype;
 use Typist::Transform;
@@ -207,7 +208,7 @@ sub _check_struct_constructor_call ($self, $name, $fn, $list, $env, $word) {
             // $list->find_first('PPI::Statement');
     return unless $expr;
 
-    my @groups = $self->_split_named_arg_groups($expr);
+    my @groups = split_comma_groups($expr->schildren);
 
     # Pass 1: collect field names, infer value types, collect bindings (generic)
     my %seen;
@@ -394,7 +395,7 @@ sub _check_struct_derive_call ($self, $name, $fn, $list, $env, $word) {
 
     my $expr = $list->schild(0);
     return unless $expr && $expr->isa('PPI::Statement');
-    my @groups = $self->_split_named_arg_groups($expr);
+    my @groups = split_comma_groups($expr->schildren);
     shift @groups if @groups;
     return unless @groups;
 
@@ -909,22 +910,6 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
     }
 }
 
-
-
-sub _split_named_arg_groups ($self, $expr) {
-    my @groups;
-    my @current;
-    for my $child ($expr->schildren) {
-        if ($child->isa('PPI::Token::Operator') && $child->content eq ',') {
-            push @groups, [@current] if @current;
-            @current = ();
-        } else {
-            push @current, $child;
-        }
-    }
-    push @groups, [@current] if @current;
-    return @groups;
-}
 
 sub _generic_template ($self, $fn) {
     my $generics = $fn->{generics} // return;
