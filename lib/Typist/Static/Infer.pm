@@ -361,6 +361,20 @@ sub infer_expr_with_siblings ($class, $element, $env = undef, $expected = undef)
             my $after_list = $next->snext_sibling;
             if ($after_list && $after_list->isa('PPI::Token::Operator')) {
                 my $op = $after_list->content;
+                # Ternary after function call: defined($s) ? THEN : ELSE
+                if ($op eq '?') {
+                    my @all = ($element, $next, $after_list);
+                    my $sib = $after_list->snext_sibling;
+                    while ($sib) {
+                        last if $sib->isa('PPI::Token::Structure');
+                        push @all, $sib;
+                        $sib = $sib->snext_sibling;
+                    }
+                    if (@all > 3) {
+                        my $result = _infer_flat_ternary(\@all, $env, $expected);
+                        return $result if defined $result;
+                    }
+                }
                 if ($op ne '=' && $op ne '->' && $op ne '=>' && $op ne '?') {
                     my $rhs = $after_list->snext_sibling;
                     if ($rhs) {
@@ -1690,10 +1704,34 @@ sub _infer_flat_ternary ($children, $env, $expected) {
     }
     return undef unless defined $c_idx;
 
+    # Narrow env for then-branch when condition is defined($var)
+    my $then_env = $env;
+    my @cond_slice = @$children[0 .. $q_idx - 1];
+    if (@cond_slice == 2
+        && $cond_slice[0]->isa('PPI::Token::Word') && $cond_slice[0]->content eq 'defined'
+        && $cond_slice[1]->isa('PPI::Structure::List') && $env)
+    {
+        my $inner = $cond_slice[1]->find_first('PPI::Token::Symbol');
+        if ($inner && $inner->raw_type eq '$') {
+            my $var_name = $inner->content;
+            my $var_type = $env->{variables}{$var_name};
+            if ($var_type && $var_type->is_union) {
+                my @non_undef = grep { !($_->is_atom && $_->name eq 'Undef') } $var_type->members;
+                if (@non_undef < scalar($var_type->members)) {
+                    my $narrowed = @non_undef == 1 ? $non_undef[0]
+                        : Typist::Type::Union->new(@non_undef);
+                    my %new_vars = $env->{variables}->%*;
+                    $new_vars{$var_name} = $narrowed;
+                    $then_env = +{ %$env, variables => \%new_vars };
+                }
+            }
+        }
+    }
+
     # Then: tokens between ? and :
     my @then_slice = @$children[$q_idx + 1 .. $c_idx - 1];
     return undef unless @then_slice;
-    my $then_type = _infer_branch_slice(\@then_slice, $env, $expected);
+    my $then_type = _infer_branch_slice(\@then_slice, $then_env, $expected);
 
     # Else: everything after :
     my @else_slice = @$children[$c_idx + 1 .. $#$children];

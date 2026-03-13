@@ -194,4 +194,28 @@ subtest 'remove_undef_from_type' => sub {
     ok !defined $no_change2, 'union without Undef returns undef';
 };
 
+# ── Ternary defined() narrowing ───────────────────
+
+subtest 'ternary: defined($s) narrows in then-branch' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub safe_len :sig((Str | Undef) -> Int) ($s) {
+    return defined($s) ? length($s) : 0;
+}
+PERL
+
+    is scalar @$errs, 0, 'defined($s) ? length($s) : 0 — no false positive';
+};
+
+subtest 'ternary: defined($s) else-branch keeps Union' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub check :sig((Str | Undef) -> Str) ($s) {
+    return defined($s) ? $s : "default";
+}
+PERL
+
+    is scalar @$errs, 0, 'defined($s) ? $s : "default" — $s narrowed to Str in then';
+};
+
 done_testing;

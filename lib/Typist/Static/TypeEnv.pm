@@ -211,6 +211,7 @@ sub env_for_node ($self, $node) {
     $env = $self->_inject_loop_vars($env, $node);
     $env = $self->{narrowing}->narrow_env_for_block($env, $node);
     $env = $self->{narrowing}->scan_early_returns($env, $node);
+    $env = $self->_narrow_for_ternary($env, $node);
     return $self->{_node_env_cache}{$node_addr} = $env;
 }
 
@@ -374,6 +375,74 @@ sub _env_for_loop_list ($self, $node) {
         $ancestor = $ancestor->parent;
     }
     $self->{env};
+}
+
+# Detect if node is inside a ternary then-branch with defined($var) condition.
+# Narrows $var by stripping Undef from Union types.
+sub _narrow_for_ternary ($self, $env, $node) {
+    return $env unless $env && $env->{variables};
+
+    # Walk up to the containing Statement (ternary is flat within Statement)
+    my $stmt = $node;
+    while ($stmt && !$stmt->isa('PPI::Statement')) {
+        $stmt = $stmt->parent;
+    }
+    return $env unless $stmt;
+
+    # Check for ternary: scan children for ? and : operators
+    my @children = $stmt->schildren;
+    my ($q_idx, $c_idx, $q_depth);
+    for my $i (0 .. $#children) {
+        next unless $children[$i]->isa('PPI::Token::Operator');
+        if ($children[$i]->content eq '?' && !defined $q_idx) {
+            $q_idx = $i;
+            $q_depth = 0;
+        } elsif (defined $q_idx && $children[$i]->content eq '?') {
+            $q_depth++;
+        } elsif (defined $q_idx && $children[$i]->content eq ':') {
+            if ($q_depth == 0) { $c_idx = $i; last }
+            $q_depth--;
+        }
+    }
+    return $env unless defined $q_idx && defined $c_idx;
+
+    # Check if node is in the then-branch (between ? and :)
+    my $node_addr = refaddr($node);
+    my $in_then = 0;
+    for my $i ($q_idx + 1 .. $c_idx - 1) {
+        if (refaddr($children[$i]) == $node_addr) {
+            $in_then = 1; last;
+        }
+        # Check descendants of this child
+        if ($children[$i]->can('find')) {
+            my $found = $children[$i]->find(sub { refaddr($_[1]) == $node_addr });
+            if ($found && @$found) { $in_then = 1; last }
+        }
+    }
+    return $env unless $in_then;
+
+    # Check condition: defined($var) pattern
+    return $env unless $q_idx >= 2;
+    my ($cond_word, $cond_list) = @children[$q_idx - 2, $q_idx - 1];
+    return $env unless $cond_word && $cond_word->isa('PPI::Token::Word')
+        && $cond_word->content eq 'defined'
+        && $cond_list && $cond_list->isa('PPI::Structure::List');
+
+    my $sym = $cond_list->find_first('PPI::Token::Symbol');
+    return $env unless $sym && $sym->raw_type eq '$';
+
+    my $var_name = $sym->content;
+    my $var_type = $env->{variables}{$var_name};
+    return $env unless $var_type && $var_type->is_union;
+
+    my @non_undef = grep { !($_->is_atom && $_->name eq 'Undef') } $var_type->members;
+    return $env unless @non_undef < scalar($var_type->members);
+
+    my $narrowed = @non_undef == 1 ? $non_undef[0]
+        : Typist::Type::Union->new(@non_undef);
+    my %new_vars = $env->{variables}->%*;
+    $new_vars{$var_name} = $narrowed;
+    return +{ %$env, variables => \%new_vars };
 }
 
 # Walk ancestors to detect enclosing for/foreach loops and inject loop
