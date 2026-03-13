@@ -17,47 +17,76 @@ use Typist::Transform;
 use Typist::Type::Record;
 use Typist::Type::Struct;
 
+# ── Constructor ──────────────────────────────────
+
+sub new ($class, %args) {
+    bless +{
+        extracted => $args{extracted},
+        registry  => $args{registry},
+        errors    => $args{errors},
+        file      => $args{file} // '(buffer)',
+    }, $class;
+}
+
+# ── Context Accessors ────────────────────────────
+
+sub extracted ($self) { $self->{extracted} }
+sub registry  ($self) { $self->{registry} }
+sub errors    ($self) { $self->{errors} }
+sub file      ($self) { $self->{file} }
+
 # ── Public API ───────────────────────────────────
 #
-# All register_* methods accept:
-#   $extracted — hashref from Extractor
-#   $registry  — Typist::Registry instance
-#   %opts      — errors => Collector, file => filename (both optional)
-#
-# When errors/file are absent, parse failures are silently skipped.
+# Instance method: $reg->register_all
+# Class method (backward-compat): Registration->register_all($ext, $reg, %opts)
 
-sub register_all ($class, $extracted, $registry, %opts) {
-    $class->register_types($extracted, $registry, %opts);
-    $class->register_signatures($extracted, $registry, %opts);
+sub _self_or_new ($invocant, @args) {
+    return $invocant if ref $invocant;
+    my ($extracted, $registry, %opts) = @args;
+    return $invocant->new(
+        extracted => $extracted,
+        registry  => $registry,
+        %opts,
+    );
+}
+
+sub register_all ($invocant, @args) {
+    my $self = _self_or_new($invocant, @args);
+    $self->register_types;
+    $self->register_signatures;
 }
 
 # Phase 1: type definitions (no dependency on other files' typeclasses)
-sub register_types ($class, $extracted, $registry, %opts) {
+sub register_types ($invocant, @args) {
+    my $self = _self_or_new($invocant, @args);
+
     # Record use-chain for type visibility
-    my $pkg = $extracted->{package} // 'main';
-    for my $used (@{$extracted->{use_modules} // []}) {
-        $registry->register_package_use($pkg, $used);
+    my $pkg = $self->{extracted}{package} // 'main';
+    for my $used (@{$self->{extracted}{use_modules} // []}) {
+        $self->{registry}->register_package_use($pkg, $used);
     }
 
-    $class->register_aliases($extracted, $registry, %opts);
-    $class->register_newtypes($extracted, $registry, %opts);
-    $class->register_typeclasses($extracted, $registry, %opts);
-    $class->register_instances($extracted, $registry, %opts);
-    $class->register_structs($extracted, $registry, %opts);
-    $class->register_datatypes($extracted, $registry, %opts);
-    $class->register_effects($extracted, $registry, %opts);
+    $self->register_aliases;
+    $self->register_newtypes;
+    $self->register_typeclasses;
+    $self->register_instances;
+    $self->register_structs;
+    $self->register_datatypes;
+    $self->register_effects;
 }
 
 # Phase 2: function/declare signatures (may need cross-file typeclasses for generic parsing)
-sub register_signatures ($class, $extracted, $registry, %opts) {
-    $class->register_declares($extracted, $registry, %opts);
-    $class->register_functions($extracted, $registry, %opts);
+sub register_signatures ($invocant, @args) {
+    my $self = _self_or_new($invocant, @args);
+    $self->register_declares;
+    $self->register_functions;
 }
 
 # ── Aliases ──────────────────────────────────────
 
-sub register_aliases ($class, $extracted, $registry, %opts) {
-    my ($errors, $file) = @opts{qw(errors file)};
+sub register_aliases ($invocant, @args) {
+    my $self = _self_or_new($invocant, @args);
+    my ($extracted, $registry, $errors, $file) = @$self{qw(extracted registry errors file)};
 
     for my $name (sort keys $extracted->{aliases}->%*) {
         my $info = $extracted->{aliases}{$name};
@@ -66,7 +95,7 @@ sub register_aliases ($class, $extracted, $registry, %opts) {
             $errors->collect(
                 kind    => 'ResolveError',
                 message => "Failed to parse typedef '$name': $@",
-                file    => $file // '(buffer)',
+                file    => $file,
                 line    => $info->{line},
             );
             next;
@@ -80,8 +109,9 @@ sub register_aliases ($class, $extracted, $registry, %opts) {
 
 # ── Newtypes ─────────────────────────────────────
 
-sub register_newtypes ($class, $extracted, $registry, %opts) {
-    my ($errors, $file) = @opts{qw(errors file)};
+sub register_newtypes ($invocant, @args) {
+    my $self = _self_or_new($invocant, @args);
+    my ($extracted, $registry, $errors, $file) = @$self{qw(extracted registry errors file)};
     my $pkg = $extracted->{package} // 'main';
 
     for my $name (sort keys $extracted->{newtypes}->%*) {
@@ -91,7 +121,7 @@ sub register_newtypes ($class, $extracted, $registry, %opts) {
             $errors->collect(
                 kind    => 'ResolveError',
                 message => "Failed to parse newtype '$name': $@",
-                file    => $file // '(buffer)',
+                file    => $file,
                 line    => $info->{line},
             );
             next;
@@ -124,8 +154,9 @@ sub register_newtypes ($class, $extracted, $registry, %opts) {
 
 # ── Structs ─────────────────────────────────────
 
-sub register_structs ($class, $extracted, $registry, %opts) {
-    my ($errors, $file) = @opts{qw(errors file)};
+sub register_structs ($invocant, @args) {
+    my $self = _self_or_new($invocant, @args);
+    my ($extracted, $registry, $errors, $file) = @$self{qw(extracted registry errors file)};
     my $pkg = $extracted->{package} // 'main';
 
     for my $name (sort keys(($extracted->{structs} // +{})->%*)) {
@@ -145,7 +176,7 @@ sub register_structs ($class, $extracted, $registry, %opts) {
                 $errors->collect(
                     kind    => 'ResolveError',
                     message => "Failed to parse struct field type '$type_str' in $name.$fname: $@",
-                    file    => $file // '(buffer)',
+                    file    => $file,
                     line    => $info->{line},
                 );
                 next;
@@ -243,8 +274,9 @@ sub register_structs ($class, $extracted, $registry, %opts) {
 
 # ── Datatypes ────────────────────────────────────
 
-sub register_datatypes ($class, $extracted, $registry, %opts) {
-    my ($errors, $file) = @opts{qw(errors file)};
+sub register_datatypes ($invocant, @args) {
+    my $self = _self_or_new($invocant, @args);
+    my ($extracted, $registry, $errors, $file) = @$self{qw(extracted registry errors file)};
     my $pkg = $extracted->{package} // 'main';
 
     for my $name (sort keys(($extracted->{datatypes} // +{})->%*)) {
@@ -264,7 +296,7 @@ sub register_datatypes ($class, $extracted, $registry, %opts) {
                     $errors->collect(
                         kind    => 'ResolveError',
                         message => "Failed to parse GADT return type '$ret_expr' in ${name}::${tag}: $@",
-                        file    => $file // '(buffer)',
+                        file    => $file,
                         line    => $info->{line} // 0,
                     );
                 }
@@ -318,8 +350,9 @@ sub register_datatypes ($class, $extracted, $registry, %opts) {
 
 # ── Effects ──────────────────────────────────────
 
-sub register_effects ($class, $extracted, $registry, %opts) {
-    my ($errors, $file) = @opts{qw(errors file)};
+sub register_effects ($invocant, @args) {
+    my $self = _self_or_new($invocant, @args);
+    my ($extracted, $registry, $errors, $file) = @$self{qw(extracted registry errors file)};
 
     for my $name (sort keys $extracted->{effects}->%*) {
         my $eff_info = $extracted->{effects}{$name};
@@ -369,7 +402,7 @@ sub register_effects ($class, $extracted, $registry, %opts) {
                 $errors->collect(
                     kind    => 'ResolveError',
                     message => "Failed to parse effect op sig '$sig_str' in ${name}::${op_name}: $@",
-                    file    => $file // '(buffer)',
+                    file    => $file,
                     line    => 0,
                 );
             }
@@ -426,8 +459,9 @@ sub register_effects ($class, $extracted, $registry, %opts) {
 
 # ── Typeclasses ──────────────────────────────────
 
-sub register_typeclasses ($class, $extracted, $registry, %opts) {
-    my ($errors, $file) = @opts{qw(errors file)};
+sub register_typeclasses ($invocant, @args) {
+    my $self = _self_or_new($invocant, @args);
+    my ($extracted, $registry, $errors, $file) = @$self{qw(extracted registry errors file)};
 
     for my $name (sort keys $extracted->{typeclasses}->%*) {
         next if $registry->has_typeclass($name);
@@ -443,7 +477,7 @@ sub register_typeclasses ($class, $extracted, $registry, %opts) {
             $errors->collect(
                 kind    => 'ResolveError',
                 message => "Failed to create typeclass '$name': $@",
-                file    => $file // '(buffer)',
+                file    => $file,
                 line    => $info->{line} // 0,
             );
             next;
@@ -474,7 +508,7 @@ sub register_typeclasses ($class, $extracted, $registry, %opts) {
                 $errors->collect(
                     kind    => 'ResolveError',
                     message => "Failed to parse typeclass method sig '$sig_str' in ${tc_name}::${method_name}: $@",
-                    file    => $file // '(buffer)',
+                    file    => $file,
                     line    => $tc_info->{line} // 0,
                 );
             }
@@ -528,7 +562,10 @@ sub register_typeclasses ($class, $extracted, $registry, %opts) {
 
 # ── Instances ────────────────────────────────────
 
-sub register_instances ($class, $extracted, $registry, %opts) {
+sub register_instances ($invocant, @args) {
+    my $self = _self_or_new($invocant, @args);
+    my $extracted = $self->{extracted};
+    my $registry  = $self->{registry};
     for my $info (($extracted->{instances} // [])->@*) {
         my $inst = Typist::TypeClass->new_instance(
             class     => $info->{class_name},
@@ -541,8 +578,9 @@ sub register_instances ($class, $extracted, $registry, %opts) {
 
 # ── Declares ─────────────────────────────────────
 
-sub register_declares ($class, $extracted, $registry, %opts) {
-    my ($errors, $file) = @opts{qw(errors file)};
+sub register_declares ($invocant, @args) {
+    my $self = _self_or_new($invocant, @args);
+    my ($extracted, $registry, $errors, $file) = @$self{qw(extracted registry errors file)};
 
     for my $name (sort keys $extracted->{declares}->%*) {
         my $decl = $extracted->{declares}{$name};
@@ -551,7 +589,7 @@ sub register_declares ($class, $extracted, $registry, %opts) {
             $errors->collect(
                 kind    => 'ResolveError',
                 message => "Failed to parse declare type for '$name': $@",
-                file    => $file // '(buffer)',
+                file    => $file,
                 line    => $decl->{line},
             );
             next;
@@ -590,8 +628,9 @@ sub register_declares ($class, $extracted, $registry, %opts) {
 
 # ── Functions ────────────────────────────────────
 
-sub register_functions ($class, $extracted, $registry, %opts) {
-    my ($errors, $file) = @opts{qw(errors file)};
+sub register_functions ($invocant, @args) {
+    my $self = _self_or_new($invocant, @args);
+    my ($extracted, $registry, $errors, $file) = @$self{qw(extracted registry errors file)};
     my $pkg = $extracted->{package} // 'main';
 
     for my $name (sort keys $extracted->{functions}->%*) {
@@ -605,7 +644,7 @@ sub register_functions ($class, $extracted, $registry, %opts) {
                 $errors->collect(
                     kind    => 'ResolveError',
                     message => "Failed to parse param type '$expr' in $name: $@",
-                    file    => $file // '(buffer)',
+                    file    => $file,
                     line    => $fn->{line},
                 );
                 next;
@@ -621,7 +660,7 @@ sub register_functions ($class, $extracted, $registry, %opts) {
                 $errors->collect(
                     kind    => 'ResolveError',
                     message => "Failed to parse return type '$fn->{returns_expr}' in $name: $@",
-                    file    => $file // '(buffer)',
+                    file    => $file,
                     line    => $fn->{line},
                 );
                 $skip = 1;
@@ -637,7 +676,7 @@ sub register_functions ($class, $extracted, $registry, %opts) {
                 $errors->collect(
                     kind    => 'ResolveError',
                     message => "Failed to parse effect annotation '$fn->{eff_expr}' in $name: $@",
-                    file    => $file // '(buffer)',
+                    file    => $file,
                     line    => $fn->{line},
                 );
                 $skip = 1;
