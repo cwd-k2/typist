@@ -16,7 +16,7 @@ use Typist::Type::Param;
 # ── Constructor ──────────────────────────────────
 
 sub new ($class, %args) {
-    bless +{
+    my $self = bless +{
         registry         => $args{registry},
         extracted        => $args{extracted},
         ppi_doc          => $args{ppi_doc},
@@ -26,19 +26,12 @@ sub new ($class, %args) {
         _loop_var_types  => +{},
         _local_var_types => +{},
         _infer_log       => [],
-        _fn_env_cache    => +{},
-        _fn_template_cache => +{},
-        _node_env_cache  => +{},
-        _resolve_cache   => +{},
+        # Persistent caches (survive build; keyed by stable identifiers)
+        _resolve_cache         => +{},
         _parsed_generics_cache => +{},
-        _infer_value_cache => +{},
-        _infer_list_cache  => +{},
-        _anon_param_env_cache => +{},
-        _loop_env_cache => +{},
-        _loop_ancestor_cache => +{},
-        _loop_elem_cache => +{},
-        _fn_scope_start_cache => +{},
     }, $class;
+    $self->_reset_analysis_caches;
+    $self;
 }
 
 # ── Accessors ────────────────────────────────────
@@ -56,19 +49,24 @@ sub narrowed_accessor_types ($self) { $self->{narrowing}->narrowed_accessors }
 
 sub build ($self) {
     $self->{env} = $self->_build_env;
-    $self->{_fn_env_cache} = +{};
-    $self->{_fn_template_cache} = +{};
-    $self->{_node_env_cache} = +{};
-    $self->{_infer_value_cache} = +{};
-    $self->{_infer_list_cache} = +{};
-    $self->{_anon_param_env_cache} = +{};
-    $self->{_loop_env_cache} = +{};
-    $self->{_loop_ancestor_cache} = +{};
-    $self->{_loop_elem_cache} = +{};
-    $self->{_fn_scope_start_cache} = +{};
+    $self->_reset_analysis_caches;
     $self->_collect_loop_var_types;
     $self->_collect_local_var_types;
     $self->{narrowing}->collect_accessor_narrowings($self->{ppi_doc});
+}
+
+# Reset per-analysis caches (invalidated by each build).
+sub _reset_analysis_caches ($self) {
+    $self->{_fn_env_cache}         = +{};
+    $self->{_fn_template_cache}    = +{};
+    $self->{_node_env_cache}       = +{};
+    $self->{_infer_value_cache}    = +{};
+    $self->{_infer_list_cache}     = +{};
+    $self->{_anon_param_env_cache} = +{};
+    $self->{_loop_env_cache}       = +{};
+    $self->{_loop_ancestor_cache}  = +{};
+    $self->{_loop_elem_cache}      = +{};
+    $self->{_fn_scope_start_cache} = +{};
 }
 
 sub resolve_type ($self, $expr) {
