@@ -417,7 +417,8 @@ sub _check_implicit_return_of_stmt ($self, $stmt, $env, $declared, $name) {
         for my $inner_block (@blocks) {
             my @stmts = grep { $_->isa('PPI::Statement') } $inner_block->schildren;
             next unless @stmts;
-            $self->_check_implicit_return_of_stmt($stmts[-1], $env, $declared, $name);
+            my $inner_env = $self->_env_for_node($stmts[-1]);
+            $self->_check_implicit_return_of_stmt($stmts[-1], $inner_env, $declared, $name);
         }
         return;
     }

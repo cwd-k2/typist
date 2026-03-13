@@ -218,4 +218,35 @@ PERL
     is scalar @$errs, 0, 'defined($s) ? $s : "default" — $s narrowed to Str in then';
 };
 
+# ── Implicit return inside narrowed block ─────────
+
+subtest 'implicit return inside if-defined block' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub test :sig((Str | Undef) -> Str) ($s) {
+    if (defined($s)) {
+        $s;
+    } else {
+        "default";
+    }
+}
+PERL
+
+    is scalar @$errs, 0, 'implicit return in if-defined block: $s narrowed to Str';
+};
+
+# ── Postfix if defined narrowing for return ──────
+
+subtest 'postfix if defined narrows return value' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub test :sig((Str | Undef) -> Str) ($s) {
+    return $s if defined($s);
+    return "default";
+}
+PERL
+
+    is scalar @$errs, 0, 'return $s if defined($s) — no false positive';
+};
+
 done_testing;

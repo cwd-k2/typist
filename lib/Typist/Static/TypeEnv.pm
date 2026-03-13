@@ -212,6 +212,7 @@ sub env_for_node ($self, $node) {
     $env = $self->{narrowing}->narrow_env_for_block($env, $node);
     $env = $self->{narrowing}->scan_early_returns($env, $node);
     $env = $self->_narrow_for_ternary($env, $node);
+    $env = $self->_narrow_for_postfix_if($env, $node);
     return $self->{_node_env_cache}{$node_addr} = $env;
 }
 
@@ -452,6 +453,79 @@ sub _narrow_for_ternary ($self, $env, $node) {
         scope_end   => $scope_line,
     };
 
+    return +{ %$env, variables => \%new_vars };
+}
+
+# Narrow env for nodes inside postfix `if`/`unless` statements.
+# Pattern: `expr if defined($var)` — expr sees $var narrowed.
+sub _narrow_for_postfix_if ($self, $env, $node) {
+    return $env unless $env && $env->{variables};
+
+    # Walk up to the containing Statement
+    my $stmt = $node;
+    while ($stmt && !$stmt->isa('PPI::Statement')) {
+        $stmt = $stmt->parent;
+    }
+    return $env unless $stmt;
+
+    # Must NOT be a Compound statement (those are handled by narrow_env_for_block)
+    return $env if $stmt->isa('PPI::Statement::Compound');
+    return $env if $stmt->isa('PPI::Statement::Sub');
+
+    my @children = $stmt->schildren;
+
+    # Find postfix `if` or `unless` keyword
+    my $mod_idx;
+    for my $i (1 .. $#children) {
+        if ($children[$i]->isa('PPI::Token::Word')
+            && ($children[$i]->content eq 'if' || $children[$i]->content eq 'unless'))
+        {
+            $mod_idx = $i;
+            last;
+        }
+    }
+    return $env unless defined $mod_idx;
+
+    # Node must be BEFORE the modifier keyword
+    my $node_addr = refaddr($node);
+    my $before_mod = 0;
+    for my $i (0 .. $mod_idx - 1) {
+        if (refaddr($children[$i]) == $node_addr) { $before_mod = 1; last }
+        if ($children[$i]->can('find')) {
+            my $found = $children[$i]->find(sub { refaddr($_[1]) == $node_addr });
+            if ($found && @$found) { $before_mod = 1; last }
+        }
+    }
+    return $env unless $before_mod;
+
+    # Extract condition tokens after the modifier keyword
+    my @cond_children = @children[$mod_idx + 1 .. $#children];
+    # Strip trailing semicolon
+    pop @cond_children if @cond_children
+        && $cond_children[-1]->isa('PPI::Token::Structure')
+        && $cond_children[-1]->content eq ';';
+
+    my $is_unless = $children[$mod_idx]->content eq 'unless';
+
+    # Dispatch through NarrowingEngine rules
+    my ($rule, %narrowing) = $self->{narrowing}->_dispatch_narrowing(\@cond_children, $env);
+    return $env unless $rule && %narrowing;
+
+    # `if` applies direct, `unless` applies inverse
+    my %applied;
+    if ($is_unless) {
+        for my $var_name (keys %narrowing) {
+            my $original = $env->{variables}{$var_name};
+            my %inv = $self->{narrowing}->_inverse_narrowing($rule, $var_name, $original)->%*;
+            $applied{$_} = $inv{$_} for keys %inv;
+        }
+    } else {
+        %applied = %narrowing;
+    }
+    return $env unless %applied;
+
+    my %new_vars = $env->{variables}->%*;
+    $new_vars{$_} = $applied{$_} for keys %applied;
     return +{ %$env, variables => \%new_vars };
 }
 
