@@ -750,4 +750,23 @@ PERL
     is scalar @$errs, 1, '$data->{items}[0] → Int ≠ Str';
 };
 
+# ════════════════════════════════════════════════
+# Section: For-loop range variable typing
+# ════════════════════════════════════════════════
+
+subtest 'inference: for-loop range variable is Int' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub sum_indices :sig(() -> Int) () {
+    my $total :sig(Int) = 0;
+    for my $i (0 .. 10) {
+        $total = $total + $i;
+    }
+    return $total;
+}
+PERL
+
+    is scalar @$errs, 0, 'for my $i (0..10): $i is Int';
+};
+
 done_testing;

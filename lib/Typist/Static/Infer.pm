@@ -2189,7 +2189,29 @@ sub infer_iterable_element_type ($class, $list_node, $env = undef) {
         return _unwrap_arrayref($ret) if $ret;
     }
 
-    # Pattern 6: @{$expr} — Cast('@') + Block → extract symbol from block → unwrap
+    # Pattern 6: range expression — 0..$#arr, 0..5, "a".."z"
+    if (@children >= 3) {
+        for my $ci (0 .. $#children) {
+            if ($children[$ci]->isa('PPI::Token::Operator') && $children[$ci]->content eq '..') {
+                my $lhs = $ci > 0 ? $children[$ci - 1] : undef;
+                my $rhs = $ci < $#children ? $children[$ci + 1] : undef;
+                # Both sides numeric (Number, $#arr, or numeric variable) → Int
+                my $lhs_num = $lhs && ($lhs->isa('PPI::Token::Number')
+                    || ($lhs->isa('PPI::Token::ArrayIndex')));
+                my $rhs_num = $rhs && ($rhs->isa('PPI::Token::Number')
+                    || ($rhs->isa('PPI::Token::ArrayIndex'))
+                    || ($rhs->isa('PPI::Token::Cast') && $rhs->content eq '$#'));
+                return Typist::Type::Atom->new('Int') if $lhs_num && $rhs_num;
+                # String range: "a".."z" → Str
+                my $lhs_str = $lhs && $lhs->isa('PPI::Token::Quote');
+                my $rhs_str = $rhs && $rhs->isa('PPI::Token::Quote');
+                return Typist::Type::Atom->new('Str') if $lhs_str && $rhs_str;
+                last;
+            }
+        }
+    }
+
+    # Pattern 7: @{$expr} — Cast('@') + Block → extract symbol from block → unwrap
     if (@children >= 2
         && $children[0]->isa('PPI::Token::Cast') && $children[0]->content eq '@'
         && $children[1]->isa('PPI::Structure::Block'))
