@@ -55,6 +55,12 @@ my %SEVERITY = (
 #   workspace_registry => Typist::Registry instance with external typedefs
 #   file               => filename for diagnostics
 sub analyze ($class, $source, %opts) {
+    # Phase design: each phase runs to completion even if a prior phase produced
+    # errors (e.g., CycleError in Registration does not abort TypeEnv or TypeChecker).
+    # This is intentional — collecting diagnostics from ALL phases gives the user
+    # maximum information per edit cycle, and partial results (symbols, inferred
+    # effects) remain useful even when some definitions are broken.
+
     # Subtype cache is cleared by Workspace on type definition changes.
     # No need to clear per-analysis — refaddr-based keys prevent stale hits.
     my $timings = $opts{collect_timing} ? +{} : undef;
