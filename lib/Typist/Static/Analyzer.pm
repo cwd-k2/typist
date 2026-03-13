@@ -296,10 +296,7 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
     # Variables
     # Build dedup set from local_var_types (function-scoped re-inference)
     # to avoid duplicate inlay hints for the same variable at the same position.
-    my %local_var_keys;
-    if ($type_checker && $type_checker->can('local_var_types')) {
-        %local_var_keys = map { $_ => 1 } keys($type_checker->local_var_types->%*);
-    }
+    my %local_var_keys = map { $_ => 1 } keys($type_checker->local_var_types->%*);
 
     for my $var ($extracted->{variables}->@*) {
         my $type     = $var->{type_expr};
@@ -515,27 +512,25 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
     }
 
     # Loop variables (inferred by TypeChecker)
-    if ($type_checker && $type_checker->can('loop_var_types')) {
-        my $lvt = $type_checker->loop_var_types;
-        for my $key (sort keys %$lvt) {
-            my $lv = $lvt->{$key};
-            push @symbols, sym_variable(
-                name        => $lv->{name},
-                type        => $lv->{type}->to_string,
-                inferred    => 1,
-                line        => $lv->{line},
-                col         => $lv->{col},
-                scope_start => $lv->{scope_start},
-                scope_end   => $lv->{scope_end},
-            );
-        }
+    my $lvt = $type_checker->loop_var_types;
+    for my $key (sort keys %$lvt) {
+        my $lv = $lvt->{$key};
+        push @symbols, sym_variable(
+            name        => $lv->{name},
+            type        => $lv->{type}->to_string,
+            inferred    => 1,
+            line        => $lv->{line},
+            col         => $lv->{col},
+            scope_start => $lv->{scope_start},
+            scope_end   => $lv->{scope_end},
+        );
     }
 
     # Local variables (re-inferred with function-scoped env)
-    if ($type_checker && $type_checker->can('local_var_types')) {
-        my $lvt = $type_checker->local_var_types;
-        for my $key (sort keys %$lvt) {
-            my $lv = $lvt->{$key};
+    {
+        my $local_vt = $type_checker->local_var_types;
+        for my $key (sort keys %$local_vt) {
+            my $lv = $local_vt->{$key};
             push @symbols, sym_variable(
                 name        => $lv->{name},
                 type        => $lv->{type}->to_string,
@@ -549,34 +544,30 @@ sub _build_symbol_index ($extracted, $env = undef, $type_checker = undef) {
     }
 
     # Callback parameters (from match arms, HOF callbacks)
-    if ($type_checker && $type_checker->can('callback_param_types')) {
-        my $cpt = $type_checker->callback_param_types // [];
-        for my $cp (@$cpt) {
-            push @symbols, sym_variable(
-                name        => $cp->{name},
-                type        => $cp->{type}->to_string,
-                inferred    => 1,
-                line        => $cp->{line},
-                col         => $cp->{col},
-                scope_start => $cp->{scope_start},
-                scope_end   => $cp->{scope_end},
-            );
-        }
+    my $cpt = $type_checker->callback_param_types // [];
+    for my $cp (@$cpt) {
+        push @symbols, sym_variable(
+            name        => $cp->{name},
+            type        => $cp->{type}->to_string,
+            inferred    => 1,
+            line        => $cp->{line},
+            col         => $cp->{col},
+            scope_start => $cp->{scope_start},
+            scope_end   => $cp->{scope_end},
+        );
     }
 
     # Narrowed variables (from type narrowing in if/unless/early-return)
-    if ($type_checker && $type_checker->can('narrowed_var_types')) {
-        my $nvt = $type_checker->narrowed_var_types // [];
-        for my $nv (@$nvt) {
-            push @symbols, sym_variable(
-                name        => $nv->{name},
-                type        => $nv->{type}->to_string,
-                inferred    => 1,
-                narrowed    => 1,
-                scope_start => $nv->{scope_start},
-                scope_end   => $nv->{scope_end},
-            );
-        }
+    my $nvt = $type_checker->narrowed_var_types // [];
+    for my $nv (@$nvt) {
+        push @symbols, sym_variable(
+            name        => $nv->{name},
+            type        => $nv->{type}->to_string,
+            inferred    => 1,
+            narrowed    => 1,
+            scope_start => $nv->{scope_start},
+            scope_end   => $nv->{scope_end},
+        );
     }
 
     # Typeclass method symbols

@@ -19,10 +19,6 @@ use Scalar::Util 'refaddr';
 sub new ($class, %args) {
     bless +{
         type_env             => $args{type_env},
-        # Backward compat: old-style construction without TypeEnv
-        registry             => $args{registry},
-        ppi_doc              => $args{ppi_doc},
-        # Always needed
         errors               => $args{errors},
         extracted            => $args{extracted},
         file                 => $args{file} // '(buffer)',
@@ -50,16 +46,7 @@ sub inferred_fn_returns  ($self) { $self->{_inferred_fn_returns} }
 
 # ── Public API ──────────────────────────────────
 
-# Backward-compatible full pipeline (builds TypeEnv if not provided).
 sub analyze ($self) {
-    unless ($self->{type_env}) {
-        $self->{type_env} = Typist::Static::TypeEnv->new(
-            registry  => $self->{registry},
-            extracted => $self->{extracted},
-            ppi_doc   => $self->{ppi_doc},
-        );
-        $self->{type_env}->build;
-    }
     local $Typist::Static::Infer::_CALLBACK_CTX = { params => [], seen => {} };
     $self->check_variables;
     $self->check_assignments;
@@ -519,7 +506,6 @@ site against the L<Typist::Subtype> relation.
 
 =head2 new
 
-    # New style (with pre-built TypeEnv):
     my $tc = Typist::Static::TypeChecker->new(
         type_env  => $type_env,
         errors    => $error_collector,
@@ -527,18 +513,9 @@ site against the L<Typist::Subtype> relation.
         file      => $filename,
     );
 
-    # Backward-compatible (builds TypeEnv internally):
-    my $tc = Typist::Static::TypeChecker->new(
-        registry  => $registry,
-        errors    => $error_collector,
-        extracted => $extracted,
-        ppi_doc   => $ppi_doc,
-        file      => $filename,
-    );
-
 =head2 analyze
 
-Run the full type-checking pipeline (backward-compatible entry point).
+Run the full type-checking pipeline.
 
 =head2 check_variables / check_assignments / check_call_sites
 
