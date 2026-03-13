@@ -869,4 +869,61 @@ PERL
     ok scalar @$errs >= 1, '@typist-ignore only affects the next line';
 };
 
+# ════════════════════════════════════════════════
+# Section: Alias arithmetic in accessor chains
+#   Type aliases (typedef) through struct accessors
+#   resolved correctly for arithmetic operations
+# ════════════════════════════════════════════════
+
+subtest 'alias arithmetic: accessor chain minus alias param' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+typedef Quantity => 'Int';
+struct Product => (name => 'Str', stock => 'Quantity');
+sub test :sig((Product, Quantity) -> Quantity) ($product, $qty) {
+    $product->stock - $qty;
+}
+PERL
+
+    is scalar @$errs, 0, '$product->stock - $qty returns Int (via Quantity alias)';
+};
+
+subtest 'alias arithmetic: accessor chain plus alias' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+typedef Quantity => 'Int';
+struct Product => (name => 'Str', stock => 'Quantity');
+sub test :sig((Product, Quantity) -> Void) ($product, $qty) {
+    my $new_stock = $product->stock + $qty;
+    Product::derive($product, stock => $new_stock);
+}
+PERL
+
+    is scalar @$errs, 0, 'accessor alias + alias resolves to Int for derive';
+};
+
+subtest 'alias arithmetic: match arm accessor chain' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+typedef Quantity => 'Int';
+struct Product => (name => 'Str', stock => 'Quantity');
+effect ProductStore => +{
+    get_product => '(Str) -> Option[Product]',
+    put_product => '(Product) -> Void',
+};
+datatype 'Option[T]' => Some => '(T)', None => '()';
+sub deduct :sig((Str, Quantity) -> Void ![ProductStore]) ($id, $qty) {
+    my $opt = ProductStore::get_product($id);
+    match $opt,
+        Some => sub ($product) {
+            my $new_stock = $product->stock - $qty;
+            ProductStore::put_product(Product::derive($product, stock => $new_stock));
+        },
+        None => sub () {};
+}
+PERL
+
+    is scalar @$errs, 0, 'full match arm accessor chain arithmetic with aliases';
+};
+
 done_testing;

@@ -260,21 +260,19 @@ sub _build_env ($self) {
         next if exists $variables{$var->{name}};
 
         # Function-local variables are handled later by _collect_local_var_types
-        # with a proper function-scoped env. Do not leak them into the top-level
-        # env here, or same-name locals from one function can poison another.
+        # with a proper function-scoped env (incl. match arm param injection).
         my $inside_fn = @_fn_ranges
             && grep { $var->{line} >= $_->[0] && $var->{line} <= $_->[1] } @_fn_ranges;
+        next if $inside_fn;
 
         my $init_node = $var->{init_node};
 
         unless ($init_node) {
-            unless ($inside_fn) {
-                push $self->{_infer_log}->@*, +{
-                    name   => $var->{name}, line => $var->{line},
-                    type   => undef,        status => 'no_init',
-                    scope  => 'top',
-                };
-            }
+            push $self->{_infer_log}->@*, +{
+                name   => $var->{name}, line => $var->{line},
+                type   => undef,        status => 'no_init',
+                scope  => 'top',
+            };
             next;
         }
 
@@ -286,10 +284,9 @@ sub _build_env ($self) {
             my ($inferred, $status, $widened) = $self->_infer_list_binding(
                 \%list_rhs_cache, $init_node, $infer_env, $var->{list_count}, $var->{list_position},
             );
-            $self->_record_infer_log($var->{name}, $var->{line}, $widened, $status, 'top')
-                unless $inside_fn;
+            $self->_record_infer_log($var->{name}, $var->{line}, $widened, $status, 'top');
             if (defined $inferred && !($inferred->is_atom && $inferred->name eq 'Any')) {
-                $variables{$var->{name}} = $widened unless $inside_fn;
+                $variables{$var->{name}} = $widened;
             }
             next;
         }
@@ -297,13 +294,12 @@ sub _build_env ($self) {
         my ($inferred, $status, $widened) = $self->_infer_unannotated_value(
             $var->{name}, $init_node, $infer_env,
         );
-        $self->_record_infer_log($var->{name}, $var->{line}, $widened, $status, 'top')
-            unless $inside_fn;
+        $self->_record_infer_log($var->{name}, $var->{line}, $widened, $status, 'top');
 
         next unless defined $inferred;
         next if $inferred->is_atom && $inferred->name eq 'Any';
 
-        $variables{$var->{name}} = $widened unless $inside_fn;
+        $variables{$var->{name}} = $widened;
     }
 
     $partial_env;

@@ -1927,4 +1927,29 @@ PERL
     is scalar @hints, 0, 'no GradualHint when gradual_hints is off';
 };
 
+# ── Return Ternary Type Check ──────────────────
+
+subtest 'return: ternary return type mismatch detected' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub wrong :sig((Bool) -> Int) ($flag) {
+    return $flag ? "yes" : "no";
+}
+PERL
+
+    is scalar @$errs, 1, 'ternary return Str as Int detected';
+    like $errs->[0]{message}, qr/cannot return Str as Int/, 'error message correct';
+};
+
+subtest 'return: ternary return type match passes' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub ok_fn :sig((Bool) -> Str) ($flag) {
+    return $flag ? "yes" : "no";
+}
+PERL
+
+    is scalar @$errs, 0, 'ternary return Str as Str passes';
+};
+
 done_testing;

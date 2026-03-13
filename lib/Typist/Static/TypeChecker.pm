@@ -84,7 +84,7 @@ sub check_variables :TIMED(variables) ($self) {
 
         # Use function-scoped env if variable is inside a function body
         my $env = $self->_env_for_node($init_node);
-        my $inferred = Typist::Static::Infer->infer_expr($init_node, $env, $declared);
+        my $inferred = Typist::Static::Infer->infer_expr_with_siblings($init_node, $env, $declared);
         next unless defined $inferred;
         next if contains_any($inferred);
 
@@ -237,13 +237,19 @@ sub check_function_returns :TIMED_ACC(function_checks.returns) ($self, $name) {
 
         my $ret_env = $self->_env_for_node($ret);
         my $inferred = $self->_infer_expr_cached($val, $ret_env, $declared);
-        # When basic inference fails the subtype check, try sibling-aware
-        # inference for flat binary expressions like `return $port // default_port()`.
-        if (defined $inferred && !contains_any($inferred)
-            && !Typist::Subtype->is_subtype($inferred, $declared, registry => $self->{type_env}->registry))
-        {
-            my $sibling_result = Typist::Static::Infer->infer_expr_with_siblings($val, $ret_env, $declared);
-            $inferred = $sibling_result if defined $sibling_result;
+        # Also try sibling-aware inference to capture full expressions
+        # (e.g., `return $flag ? "yes" : "no"` where basic only sees $flag).
+        # Prefer sibling result when it reveals a genuinely different type,
+        # but not when it merely widens (e.g., Int→Num from partial env).
+        my $sibling = Typist::Static::Infer->infer_expr_with_siblings($val, $ret_env, $declared);
+        if (defined $sibling) {
+            if (!defined $inferred) {
+                $inferred = $sibling;
+            } elsif (!Typist::Subtype->is_subtype($inferred, $sibling, registry => $self->{type_env}->registry)) {
+                # Sibling type is not a supertype of basic — captures more of
+                # the expression (ternary, defined-or, etc.)
+                $inferred = $sibling;
+            }
         }
         next unless defined $inferred;
         if (contains_any($inferred)) {

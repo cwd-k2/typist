@@ -266,6 +266,65 @@ sub infer_expr_with_siblings ($class, $element, $env = undef, $expected = undef)
                 }
             }
 
+            # Accessor chain + operator: $sym->method OP rhs, $sym->field ? T : E
+            if ($op eq '->') {
+                my $chain_type = $class->infer_expr($element, $env, $expected);
+                my $after_chain = _skip_accessor_chain($element);
+                if ($after_chain && $after_chain->isa('PPI::Token::Operator')
+                    && $after_chain->content ne '=' && $after_chain->content ne '->'
+                    && $after_chain->content ne '=>')
+                {
+                    my $aop = $after_chain->content;
+                    # Ternary directly after chain: $obj->flag ? "yes" : "no"
+                    if ($aop eq '?') {
+                        my @rest = ($after_chain);
+                        my $sib = $after_chain->snext_sibling;
+                        while ($sib) {
+                            last if $sib->isa('PPI::Token::Structure');
+                            push @rest, $sib;
+                            $sib = $sib->snext_sibling;
+                        }
+                        if (@rest > 1) {
+                            my $result = _infer_flat_ternary(\@rest, $env, undef);
+                            return $result if defined $result;
+                        }
+                    }
+                    my $rhs_start = $after_chain->snext_sibling;
+                    if ($rhs_start) {
+                        # Ternary extension: chain OP RHS ? THEN : ELSE
+                        my $after_rhs = $rhs_start->snext_sibling;
+                        if ($after_rhs && $after_rhs->isa('PPI::Token::Operator')
+                            && $after_rhs->content eq '?')
+                        {
+                            my @rest = ($after_rhs);
+                            my $sib = $after_rhs->snext_sibling;
+                            while ($sib) {
+                                last if $sib->isa('PPI::Token::Structure');
+                                push @rest, $sib;
+                                $sib = $sib->snext_sibling;
+                            }
+                            if (@rest > 1) {
+                                my $result = _infer_flat_ternary(\@rest, $env, undef);
+                                return $result if defined $result;
+                            }
+                        }
+                        # Collect all remaining siblings for the RHS
+                        my @rest = ($rhs_start);
+                        my $sib = $rhs_start->snext_sibling;
+                        while ($sib) {
+                            last if $sib->isa('PPI::Token::Structure');
+                            push @rest, $sib;
+                            $sib = $sib->snext_sibling;
+                        }
+                        my $rt = @rest == 1 ? $class->infer_expr($rest[0], $env)
+                                            : _infer_children_slice(\@rest, $env);
+                        my $result = _result_type_for_op($aop, $chain_type, $rt, $env);
+                        return $result if defined $result;
+                    }
+                }
+                return $chain_type if defined $chain_type;
+            }
+
             if ($op ne '=' && $op ne '->' && $op ne '=>') {
                 my $rhs = $next->snext_sibling;
                 if ($rhs) {
@@ -1377,28 +1436,41 @@ sub _infer_operator_expr ($stmt, $env, $expected = undef) {
         return Typist::Type::Atom->new('Bool');
     }
 
-    # Subscript/method chain: $sym->{key}, $sym->method, $sym->{a}->{b}
+    # Subscript/method chain and CodeRef: $sym->{key}, $sym->method, $f->(args)
+    # Also handles chain + operator: $a->x - $b->y, $a->stock >= 0
     if (@children >= 3
         && $children[0]->isa('PPI::Token::Symbol')
         && $children[1]->isa('PPI::Token::Operator') && $children[1]->content eq '->'
-        && ($children[2]->isa('PPI::Structure::Subscript') || $children[2]->isa('PPI::Token::Word')))
+        && ($children[2]->isa('PPI::Structure::Subscript') || $children[2]->isa('PPI::Token::Word')
+            || $children[2]->isa('PPI::Structure::List')))
     {
         if ($env) {
             my $var_type = $env->{variables}{$children[0]->content};
-            return _chase_subscript_chain($var_type, $children[0], $env) if $var_type;
-        }
-        return undef;
-    }
-
-    # CodeRef application: $f->(...) where $f :: (A) -> B
-    if (@children >= 3
-        && $children[0]->isa('PPI::Token::Symbol')
-        && $children[1]->isa('PPI::Token::Operator') && $children[1]->content eq '->'
-        && $children[2]->isa('PPI::Structure::List'))
-    {
-        if ($env) {
-            my $var_type = $env->{variables}{$children[0]->content};
-            return _chase_subscript_chain($var_type, $children[0], $env) if $var_type;
+            if ($var_type) {
+                my $chain_type = _chase_subscript_chain($var_type, $children[0], $env);
+                # Find chain end in children array
+                my $ci = 2;
+                unless ($children[$ci]->isa('PPI::Structure::List')) {
+                    $ci++ if $ci < $#children && $children[$ci + 1]->isa('PPI::Structure::List');
+                    while ($ci + 2 <= $#children
+                           && $children[$ci + 1]->isa('PPI::Token::Operator') && $children[$ci + 1]->content eq '->'
+                           && ($children[$ci + 2]->isa('PPI::Structure::Subscript') || $children[$ci + 2]->isa('PPI::Token::Word')))
+                    {
+                        $ci += 2;
+                        $ci++ if $ci < $#children && $children[$ci + 1]->isa('PPI::Structure::List');
+                    }
+                }
+                # Pure accessor chain (no trailing operator)
+                return $chain_type if $ci >= $#children;
+                # Chain followed by operator — combine with rest
+                if (defined $chain_type && $children[$ci + 1]->isa('PPI::Token::Operator')) {
+                    my $op = $children[$ci + 1]->content;
+                    my @rest = @children[$ci + 2 .. $#children];
+                    my $rt = @rest == 1 ? __PACKAGE__->infer_expr($rest[0], $env)
+                                        : _infer_children_slice(\@rest, $env);
+                    return _result_type_for_op($op, $chain_type, $rt, $env);
+                }
+            }
         }
         return undef;
     }
@@ -1429,7 +1501,7 @@ sub _infer_operator_expr ($stmt, $env, $expected = undef) {
             my $lt = _infer_call($children[0]->content, $env, $children[1]);
             if (defined $lt) {
                 my $rt = _infer_children_slice([@children[3 .. $#children]], $env);
-                return _result_type_for_op($op, $lt, $rt);
+                return _result_type_for_op($op, $lt, $rt, $env);
             }
         }
     }
@@ -1485,16 +1557,43 @@ sub _find_split_point ($children) {
 
 # Determine result type from operator category and operand types.
 # Operand types may be undef (unknown); result is determined by operator category.
-sub _result_type_for_op ($op, $lt, $rt) {
+sub _result_type_for_op ($op, $lt, $rt, $env = undef) {
     # Comparison → Bool (regardless of operand types)
     return Typist::Type::Atom->new('Bool')
         if $op =~ /\A(?:==|!=|<|>|<=|>=|<=>|eq|ne|lt|gt|le|ge|cmp|=~|!~)\z/;
+    # Defined-or → strip Undef from LHS, LUB with RHS
+    if ($op eq '//') {
+        my $stripped = $lt;
+        if ($lt && $lt->is_union) {
+            my @non_undef = grep { !($_->is_atom && $_->name eq 'Undef') } $lt->members;
+            if (@non_undef < scalar($lt->members)) {
+                $stripped = @non_undef == 1 ? $non_undef[0] : Typist::Type::Union->new(@non_undef);
+            }
+        }
+        return $stripped if $stripped && !$rt;
+        return $rt if $rt && !$stripped;
+        return Typist::Subtype->common_super($stripped, $rt) if $stripped && $rt;
+        return undef;
+    }
     # Logical → left operand type (undef if left is unknown)
-    return $lt if $op =~ /\A(?:&&|\|\||\/\/|and|or|xor)\z/;
+    return $lt if $op =~ /\A(?:&&|\|\||and|or|xor)\z/;
     # Arithmetic → LUB of numeric atoms, fallback Num
     if ($op =~ /\A(?:\+|-|\*|\/|%|\*\*)\z/) {
         my $lw = $lt && $lt->is_literal ? Typist::Type::Atom->new($lt->base_type) : $lt;
         my $rw = $rt && $rt->is_literal ? Typist::Type::Atom->new($rt->base_type) : $rt;
+        # Resolve type aliases and alias objects (e.g., Alias(Quantity) → Atom(Int))
+        my $registry = $env && $env->{registry};
+        if ($registry) {
+            for my $ref (\$lw, \$rw) {
+                next unless $$ref;
+                my $name = $$ref->name // next;
+                next if $NUMERIC_ATOM{$name};
+                if ($$ref->is_atom || $$ref->is_alias) {
+                    my $res = eval { $registry->lookup_type($name) };
+                    $$ref = $res if $res && $res->is_atom;
+                }
+            }
+        }
         if ($lw && $rw && $lw->is_atom && $rw->is_atom
             && $NUMERIC_ATOM{$lw->name} && $NUMERIC_ATOM{$rw->name})
         {
@@ -1514,16 +1613,27 @@ sub _infer_children_slice ($children, $env) {
     return __PACKAGE__->infer_expr($children->[0], $env) if @$children == 1;
     # 3 elements (simple binary) → _infer_binop
     if (@$children == 3 && $children->[1]->isa('PPI::Token::Operator')) {
+        # Accessor chain: $sym->method — delegate to infer_expr (PPI sibling chase)
+        if ($children->[1]->content eq '->'
+            && $children->[0]->isa('PPI::Token::Symbol'))
+        {
+            return __PACKAGE__->infer_expr($children->[0], $env);
+        }
         return _infer_binop($children->[1]->content, $children->[0], $children->[2], $env);
     }
     # 5+ elements → split at lowest-precedence operator
     my $split = _find_split_point($children);
-    return undef unless defined $split && $split > 0 && $split < $#$children;
+    unless (defined $split && $split > 0 && $split < $#$children) {
+        # No split point — accessor chain leaf (only -> operators remain)
+        return __PACKAGE__->infer_expr($children->[0], $env)
+            if $children->[0]->isa('PPI::Token::Symbol');
+        return undef;
+    }
     my @left  = @$children[0 .. $split - 1];
     my @right = @$children[$split + 1 .. $#$children];
     my $lt = _infer_children_slice(\@left,  $env);
     my $rt = _infer_children_slice(\@right, $env);
-    _result_type_for_op($children->[$split]->content, $lt, $rt);
+    _result_type_for_op($children->[$split]->content, $lt, $rt, $env);
 }
 
 # Check for ternary extension after a function call or subscript chain.
@@ -1636,6 +1746,19 @@ sub _infer_arithmetic ($lhs, $rhs, $env) {
     # Widen literals to base atom
     $lt = Typist::Type::Atom->new($lt->base_type) if $lt && $lt->is_literal;
     $rt = Typist::Type::Atom->new($rt->base_type) if $rt && $rt->is_literal;
+    # Resolve type aliases and alias objects (e.g., Alias(Quantity) → Atom(Int))
+    my $registry = $env && $env->{registry};
+    if ($registry) {
+        for my $ref (\$lt, \$rt) {
+            next unless $$ref;
+            my $name = $$ref->name // next;
+            next if $NUMERIC_ATOM{$name};
+            if ($$ref->is_atom || $$ref->is_alias) {
+                my $res = eval { $registry->lookup_type($name) };
+                $$ref = $res if $res && $res->is_atom;
+            }
+        }
+    }
     if ($lt && $rt && $lt->is_atom && $rt->is_atom
         && $NUMERIC_ATOM{$lt->name} && $NUMERIC_ATOM{$rt->name})
     {
@@ -1752,6 +1875,33 @@ sub _extract_subscript_key ($subscript) {
 # Starting from $start_node, walk forward through siblings looking for
 # -> followed by PPI::Structure::Subscript.  For each link, refine the
 # type via _infer_subscript_access.  Returns the final refined type.
+
+# Walk past an accessor chain from $start, returning the first PPI token
+# after the chain (or undef if chain extends to end of siblings).
+# Used by infer_expr_with_siblings to find trailing operators.
+sub _skip_accessor_chain ($start) {
+    my $node = $start->snext_sibling;
+    while ($node) {
+        last unless $node->isa('PPI::Token::Operator') && $node->content eq '->';
+        my $next = $node->snext_sibling;
+        last unless $next;
+        if ($next->isa('PPI::Token::Word') || $next->isa('PPI::Structure::Subscript')) {
+            my $after = $next->snext_sibling;
+            if ($after && $after->isa('PPI::Structure::List')) {
+                $node = $after->snext_sibling;
+            } else {
+                $node = $after;
+            }
+            next;
+        }
+        if ($next->isa('PPI::Structure::List')) {
+            $node = $next->snext_sibling;
+            next;
+        }
+        last;
+    }
+    $node;
+}
 
 sub _chase_subscript_chain ($type, $start_node, $env = undef) {
     return $type unless defined $type;
@@ -1878,11 +2028,16 @@ sub _chase_subscript_chain ($type, $start_node, $env = undef) {
 sub _infer_method_access ($receiver_type, $method_word, $env = undef) {
     my $method_name = $method_word->content;
 
-    # Resolve alias to concrete type (e.g., Alias("Customer") → Struct)
+    # Resolve alias/atom name to concrete type (e.g., Alias("Customer") → Struct)
     my $resolved = $receiver_type;
     if ($resolved->is_alias && $env && $env->{registry}) {
         my $looked_up = $env->{registry}->lookup_type($resolved->alias_name);
         $resolved = $looked_up if $looked_up;
+    }
+    # Resolve atom name (e.g., Atom("Product") from match arm param injection)
+    if ($resolved->is_atom && $env && $env->{registry}) {
+        my $looked_up = eval { $env->{registry}->lookup_type($resolved->name) };
+        $resolved = $looked_up if $looked_up && !$looked_up->is_atom;
     }
 
     # Newtype: no instance methods
