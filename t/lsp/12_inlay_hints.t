@@ -470,4 +470,46 @@ PERL
     ok $item_hint, 'found nested $item hint with Int type';
 };
 
+subtest 'inlayHint: two-pass nested loop with struct accessor' => sub {
+    my $source = <<'PERL';
+use v5.40;
+use Typist;
+struct Item => (name => 'Str');
+struct Box  => (items => 'ArrayRef[Item]');
+sub process :sig((Array[Box]) -> Void) (@boxes) {
+    for my $box (@boxes) {
+        for my $item ($box->items->@*) {
+            my $n = $item->name;
+        }
+    }
+}
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test_twopass.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/inlayHint', +{
+            textDocument => +{ uri => 'file:///test_twopass.pm' },
+            range => +{
+                start => +{ line => 0, character => 0 },
+                end   => +{ line => 15, character => 0 },
+            },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got inlayHint response';
+    my $hints = $resp->{result};
+    ok ref $hints eq 'ARRAY', 'result is array';
+
+    # $box on line 5 (0-indexed) — inferred from Array[Box]
+    my ($box_hint) = grep { ($_->{label} // '') =~ /Box/ && ($_->{position}{line} // -1) == 5 } @$hints;
+    ok $box_hint, 'found $box hint with Box type';
+
+    # $item on line 6 (0-indexed) — depends on $box being resolved first (two-pass)
+    my ($item_hint) = grep { ($_->{label} // '') =~ /Item/ && ($_->{position}{line} // -1) == 6 } @$hints;
+    ok $item_hint, 'found $item hint with Item type (two-pass resolved)';
+};
+
 done_testing;

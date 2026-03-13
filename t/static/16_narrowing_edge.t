@@ -249,4 +249,19 @@ PERL
     is scalar @$errs, 0, 'return $s if defined($s) — no false positive';
 };
 
+# ── Ternary else-branch must NOT narrow ──────────
+
+subtest 'ternary else-branch does not narrow defined' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub takes_str :sig((Str) -> Void) ($s) { }
+sub check :sig((Str | Undef) -> Void) ($s) {
+    defined($s) ? takes_str($s) : takes_str($s);
+}
+PERL
+
+    is scalar @$errs, 1, 'one error in else-branch of ternary';
+    like $errs->[0]{message}, qr/Argument 1/, 'else-branch $s is still Str | Undef';
+};
+
 done_testing;
