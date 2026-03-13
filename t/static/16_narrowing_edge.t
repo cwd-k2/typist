@@ -249,6 +249,56 @@ PERL
     is scalar @$errs, 0, 'return $s if defined($s) — no false positive';
 };
 
+# ── Nested block narrowing ───────────────────────
+
+subtest 'nested if preserves outer defined narrowing' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub takes_str :sig((Str) -> Void) ($s) { }
+sub check :sig((Str | Undef, Bool) -> Void) ($s, $flag) {
+    if (defined($s)) {
+        if ($flag) {
+            takes_str($s);
+        }
+    }
+}
+PERL
+
+    is scalar @$errs, 0, 'outer defined() narrowing preserved in nested block';
+};
+
+# ── Negated defined guard ────────────────────────
+
+subtest 'if (!defined) guard narrows after return' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub takes_str :sig((Str) -> Void) ($s) { }
+sub check :sig((Str | Undef) -> Void) ($s) {
+    if (!defined($s)) {
+        return;
+    }
+    takes_str($s);
+}
+PERL
+
+    is scalar @$errs, 0, 'if (!defined($s)) { return } narrows $s after guard';
+};
+
+# ── die/croak as diverging guard ─────────────────
+
+subtest 'die unless defined narrows remaining scope' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub takes_str :sig((Str) -> Void) ($s) { }
+sub check :sig((Str | Undef) -> Void) ($s) {
+    die "missing" unless defined($s);
+    takes_str($s);
+}
+PERL
+
+    is scalar @$errs, 0, 'die unless defined($s) narrows $s after guard';
+};
+
 # ── Ternary else-branch must NOT narrow ──────────
 
 subtest 'ternary else-branch does not narrow defined' => sub {

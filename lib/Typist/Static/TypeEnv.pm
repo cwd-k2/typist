@@ -508,12 +508,15 @@ sub _narrow_for_postfix_if ($self, $env, $node) {
     my $is_unless = $children[$mod_idx]->content eq 'unless';
 
     # Dispatch through NarrowingEngine rules
-    my ($rule, %narrowing) = $self->{narrowing}->_dispatch_narrowing(\@cond_children, $env);
+    my ($rule, $negated, %narrowing) = $self->{narrowing}->_dispatch_narrowing(\@cond_children, $env);
     return $env unless $rule && %narrowing;
 
-    # `if` applies direct, `unless` applies inverse
+    # `if` applies direct, `unless` applies inverse; negation flips
+    my $inverted = $is_unless;
+    $inverted = !$inverted if $negated;
+
     my %applied;
-    if ($is_unless) {
+    if ($inverted) {
         for my $var_name (keys %narrowing) {
             my $original = $env->{variables}{$var_name};
             my %inv = $self->{narrowing}->_inverse_narrowing($rule, $var_name, $original)->%*;

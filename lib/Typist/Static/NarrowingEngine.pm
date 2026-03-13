@@ -29,17 +29,30 @@ sub narrowed_accessors ($self) { $self->{_narrowed_accessors} }
 # ── Narrowing Dispatch ─────────────────────────
 
 # Run narrowing candidates against condition children.
-# Returns ($rule_name, %narrowed) or (undef, ()) if no rule matched.
+# Returns ($rule_name, $negated, %narrowed) or (undef) if no rule matched.
+# Handles `!`/`not` prefix: strips it and sets $negated = 1.
 sub _dispatch_narrowing ($self, $cond_children, $env) {
+    my @effective = @$cond_children;
+    my $negated = 0;
+    if (@effective >= 2) {
+        my $first = $effective[0];
+        if (($first->isa('PPI::Token::Operator') && $first->content eq '!')
+            || ($first->isa('PPI::Token::Word') && $first->content eq 'not'))
+        {
+            $negated = 1;
+            shift @effective;
+        }
+    }
+
     for my $candidate (
-        [defined    => sub { $self->_narrow_defined($cond_children, $env) }],
-        [isa        => sub { $self->_narrow_isa($cond_children, $env) }],
-        [ref        => sub { $self->_narrow_ref($cond_children, $env) }],
-        [truthiness => sub { $self->_narrow_truthiness($cond_children, $env) }],
+        [defined    => sub { $self->_narrow_defined(\@effective, $env) }],
+        [isa        => sub { $self->_narrow_isa(\@effective, $env) }],
+        [ref        => sub { $self->_narrow_ref(\@effective, $env) }],
+        [truthiness => sub { $self->_narrow_truthiness(\@effective, $env) }],
     ) {
         my ($name, $cb) = @$candidate;
         my %try = $cb->()->%*;
-        return ($name, %try) if %try;
+        return ($name, $negated, %try) if %try;
     }
     return (undef);
 }
@@ -353,6 +366,16 @@ sub narrow_env_for_block ($self, $env, $node) {
     }
     return $env unless $block;
 
+    # Recursively apply narrowing from ancestor compound blocks first,
+    # so outer `if (defined($x)) { if ($flag) { ... } }` narrows $x in inner block.
+    my $parent_compound = $block->parent;
+    if ($parent_compound && $parent_compound->isa('PPI::Statement::Compound')) {
+        my $outer = $parent_compound->parent;
+        if ($outer && $outer->isa('PPI::Structure::Block')) {
+            $env = $self->narrow_env_for_block($env, $parent_compound);
+        }
+    }
+
     my $cache_key = join "\0", Scalar::Util::refaddr($env), Scalar::Util::refaddr($block);
     if (exists $self->{_block_env_cache}{$cache_key}) {
         return $self->{_block_env_cache}{$cache_key};
@@ -389,7 +412,7 @@ sub narrow_env_for_block ($self, $env, $node) {
     }
 
     # Dispatch through narrowing rules (order matters: most specific first)
-    my ($rule, %narrowing) = $self->_dispatch_narrowing(\@cond_children, $env);
+    my ($rule, $negated, %narrowing) = $self->_dispatch_narrowing(\@cond_children, $env);
 
     # Accessor-defined: defined($var->field) narrows the field type,
     # even when _narrow_defined returns empty (no simple variable).
@@ -406,6 +429,9 @@ sub narrow_env_for_block ($self, $env, $node) {
     # For `if`:     block 0 = then (direct), block 1+ = else (inverse)
     # For `unless`: block 0 = body (inverse), block 1+ = else (direct)
     my $apply_direct = $is_unless ? ($block_index > 0) : ($block_index == 0);
+
+    # Negated condition (!defined, !$x, etc.) flips polarity
+    $apply_direct = !$apply_direct if $negated;
 
     # `ne` operator in ref() flips the polarity
     if ($rule eq 'ref' && ($narrowing{_ref_op} // '') eq 'ne') {
@@ -585,11 +611,14 @@ sub scan_early_returns ($self, $env, $node) {
     return $self->{_early_return_cache}{$cache_key} = $new_env;
 }
 
-# Check if statement children match: return [exprs] unless defined $var [;]
+# Check if statement children match: return/die/croak [exprs] unless defined $var [;]
 sub _is_early_return_unless_defined ($self, $children) {
     return 0 unless @$children >= 4;
     return 0 unless $children->[0]->isa('PPI::Token::Word')
-                  && $children->[0]->content eq 'return';
+                  && ($children->[0]->content eq 'return'
+                      || $children->[0]->content eq 'die'
+                      || $children->[0]->content eq 'croak'
+                      || $children->[0]->content eq 'exit');
 
     # Find 'unless' token — it can be at various positions depending on
     # whether there is a return value expression
@@ -738,12 +767,13 @@ sub _compound_fallthrough_narrowed_vars ($self, $compound, $env) {
     my $expr = $cond_children[0];
     @cond_children = $expr->schildren if $expr && $expr->isa('PPI::Statement::Expression');
 
-    my ($rule, %narrowing) = $self->_dispatch_narrowing(\@cond_children, $env);
+    my ($rule, $negated, %narrowing) = $self->_dispatch_narrowing(\@cond_children, $env);
     return +{} unless $rule;
 
     my ($keyword) = grep { $_->isa('PPI::Token::Word') } $compound->schildren;
     my $is_unless = $keyword && $keyword->content eq 'unless';
     my $apply_direct = $is_unless ? ($flow_idx > 0) : ($flow_idx == 0);
+    $apply_direct = !$apply_direct if $negated;
     if ($rule eq 'ref' && ($narrowing{_ref_op} // '') eq 'ne') {
         $apply_direct = !$apply_direct;
     }
@@ -815,7 +845,10 @@ sub _block_is_immediate_return ($self, $block) {
     my @children = $stmts[0]->schildren;
     return 0 unless @children;
     return $children[0]->isa('PPI::Token::Word')
-        && $children[0]->content eq 'return';
+        && ($children[0]->content eq 'return'
+            || $children[0]->content eq 'die'
+            || $children[0]->content eq 'croak'
+            || $children[0]->content eq 'exit');
 }
 
 # Handle single-block guard: unless/if (COND) { return; }
@@ -825,12 +858,13 @@ sub _single_block_guard_narrowing ($self, $compound, $condition, $env) {
     my $expr = $cond_children[0];
     @cond_children = $expr->schildren if $expr && $expr->isa('PPI::Statement::Expression');
 
-    my ($rule, %narrowing) = $self->_dispatch_narrowing(\@cond_children, $env);
+    my ($rule, $negated, %narrowing) = $self->_dispatch_narrowing(\@cond_children, $env);
     return +{} unless $rule;
 
     my ($keyword) = grep { $_->isa('PPI::Token::Word') } $compound->schildren;
     my $is_unless = $keyword && $keyword->content eq 'unless';
     my $apply_direct = $is_unless ? 1 : 0;
+    $apply_direct = !$apply_direct if $negated;
     if ($rule eq 'ref' && ($narrowing{_ref_op} // '') eq 'ne') {
         $apply_direct = !$apply_direct;
     }
