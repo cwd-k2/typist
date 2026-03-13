@@ -434,8 +434,30 @@ sub narrow_env_for_block ($self, $env, $node) {
     }
     return $self->{_block_env_cache}{$cache_key} = $env if $block_index < 0;
 
-    # Extract the condition
-    my ($condition) = grep { $_->isa('PPI::Structure::Condition') } $compound->schildren;
+    # Extract the condition that precedes this specific block.
+    # For elsif chains, each block has its own preceding Condition.
+    my ($condition, $is_then_block);
+    my @compound_children = $compound->schildren;
+    my $block_ci;  # index of this block in compound_children
+    for my $i (0 .. $#compound_children) {
+        next unless $compound_children[$i] == $block;
+        $block_ci = $i;
+        for my $j (reverse 0 .. $i - 1) {
+            if ($compound_children[$j]->isa('PPI::Structure::Condition')) {
+                $condition = $compound_children[$j];
+                # Block is then-block if no other Block sits between condition and this block
+                $is_then_block = 1;
+                for my $k ($j + 1 .. $i - 1) {
+                    if ($compound_children[$k]->isa('PPI::Structure::Block')) {
+                        $is_then_block = 0;
+                        last;
+                    }
+                }
+                last;
+            }
+        }
+        last;
+    }
     return $self->{_block_env_cache}{$cache_key} = $env unless $condition;
 
     # Unwrap: Condition -> Expression -> children
@@ -460,9 +482,8 @@ sub narrow_env_for_block ($self, $env, $node) {
     my ($keyword) = grep { $_->isa('PPI::Token::Word') } $compound->schildren;
     my $is_unless = $keyword && $keyword->content eq 'unless';
 
-    # For `if`:     block 0 = then (direct), block 1+ = else (inverse)
-    # For `unless`: block 0 = body (inverse), block 1+ = else (direct)
-    my $apply_direct = $is_unless ? ($block_index > 0) : ($block_index == 0);
+    # Then-block gets direct narrowing, else-block gets inverse
+    my $apply_direct = $is_unless ? !$is_then_block : $is_then_block;
 
     # Negated condition (!defined, !$x, etc.) flips polarity
     $apply_direct = !$apply_direct if $negated;

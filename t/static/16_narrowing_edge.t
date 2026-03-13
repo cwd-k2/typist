@@ -299,6 +299,24 @@ PERL
     is scalar @$errs, 0, 'die unless defined($s) narrows $s after guard';
 };
 
+# ── elsif condition narrowing ─────────────────────
+
+subtest 'elsif defined narrows in elsif block' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub takes_str :sig((Str) -> Void) ($s) { }
+sub check :sig((Str | Undef, Bool) -> Void) ($s, $flag) {
+    if ($flag) {
+        return;
+    } elsif (defined($s)) {
+        takes_str($s);
+    }
+}
+PERL
+
+    is scalar @$errs, 0, 'elsif (defined($s)) narrows $s in elsif block';
+};
+
 # ── Compound && condition narrowing ───────────────
 
 subtest 'defined($x) && defined($y) narrows both' => sub {
