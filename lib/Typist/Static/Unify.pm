@@ -185,124 +185,14 @@ sub unify ($class, $formal, $actual, $bindings = +{}, %opts) {
     undef;
 }
 
-# ── Binding Collection ──────────────────────────
+# ── Binding Collection (delegate to Subtype) ────
 #
-# Recursively collect type variable bindings by structural matching.
-# Returns 1 on success, 0 on conflict. Populates $bindings hashref.
+# Delegates to Typist::Subtype->collect_bindings for backward compatibility.
+# The canonical implementation lives in Subtype (Shared Infrastructure layer)
+# to avoid circular dependency.
 
 sub collect_bindings ($class, $formal, $actual, $bindings) {
-    if ($formal->is_var) {
-        my $name = $formal->name;
-        if (exists $bindings->{$name}) {
-            return $bindings->{$name}->equals($actual) ? 1 : 0;
-        }
-        # Skip binding to Any — it carries no information (gradual typing)
-        # and would prevent Pass 2 from discovering a concrete type.
-        return 1 if $actual->is_atom && $actual->name eq 'Any';
-        # Occurs check: reject infinite types (e.g. T = ArrayRef[T])
-        # Only applies to compound types — Var-to-Var binding (T = T) is harmless.
-        return 0 if !$actual->is_var && grep { $_ eq $name } $actual->free_vars;
-        # Widen literals to base atom: Literal(42, Int) → Int.
-        # Generic type variables represent types, not literal values.
-        my $bound = ($actual->is_literal)
-            ? Typist::Type::Atom->new($actual->base_type)
-            : $actual;
-        $bindings->{$name} = $bound;
-        return 1;
-    }
-    if ($formal->is_func && $actual->is_func) {
-        my @fp = $formal->params;
-        my @ap = $actual->params;
-        return 0 unless @fp == @ap;
-        for my $i (0 .. $#fp) {
-            $class->collect_bindings($fp[$i], $ap[$i], $bindings) or return 0;
-        }
-        return $class->collect_bindings($formal->returns, $actual->returns, $bindings);
-    }
-    if ($formal->is_param && $actual->is_param) {
-        # HKT: formal has a Var base (e.g., F[A]) → bind the base variable
-        if ($formal->has_var_base) {
-            my $actual_base = $actual->base;
-            my $base_type = ref $actual_base && $actual_base->isa('Typist::Type')
-                ? $actual_base
-                : Typist::Type::Atom->new($actual_base);
-            $class->collect_bindings($formal->base, $base_type, $bindings) or return 0;
-        } else {
-            return 0 unless "${\$formal->base}" eq "${\$actual->base}";
-        }
-        my @fp = $formal->params;
-        my @ap = $actual->params;
-        return 0 unless @fp == @ap;
-        for my $i (0 .. $#fp) {
-            $class->collect_bindings($fp[$i], $ap[$i], $bindings) or return 0;
-        }
-        return 1;
-    }
-    # ── Param vs Struct (or vice versa) ───────
-    if ($formal->is_param && $actual->is_struct) {
-        my @ta = $actual->type_args;
-        if (@ta) {
-            return 0 unless "${\$formal->base}" eq $actual->name;
-            my @fp = $formal->params;
-            return 0 unless @fp == @ta;
-            for my $i (0 .. $#fp) {
-                $class->collect_bindings($fp[$i], $ta[$i], $bindings) or return 0;
-            }
-            return 1;
-        }
-    }
-    if ($formal->is_struct && $actual->is_param) {
-        my @ta = $formal->type_args;
-        if (@ta) {
-            return 0 unless $formal->name eq "${\$actual->base}";
-            my @ap = $actual->params;
-            return 0 unless @ta == @ap;
-            for my $i (0 .. $#ta) {
-                $class->collect_bindings($ta[$i], $ap[$i], $bindings) or return 0;
-            }
-            return 1;
-        }
-    }
-    # ── Quantified types ──────────────────────
-    # Both Quantified: match vars count, rename, recurse on bodies
-    if ($formal->is_quantified && $actual->is_quantified) {
-        my @fv = $formal->vars;
-        my @av = $actual->vars;
-        return 0 unless @fv == @av;
-        my %rename;
-        for my $i (0 .. $#fv) {
-            require Typist::Type::Var;
-            $rename{$av[$i]{name}} = Typist::Type::Var->new($fv[$i]{name});
-        }
-        my $actual_body = $actual->body->substitute(\%rename);
-        return $class->collect_bindings($formal->body, $actual_body, $bindings);
-    }
-    # formal only Quantified: unwrap body
-    if ($formal->is_quantified && !$actual->is_quantified) {
-        return $class->collect_bindings($formal->body, $actual, $bindings);
-    }
-    # actual only Quantified: unwrap body
-    if (!$formal->is_quantified && $actual->is_quantified) {
-        return $class->collect_bindings($formal, $actual->body, $bindings);
-    }
-
-    # ── Union formal → extract Var bindings ─────
-    # Union(T, Undef) vs Int → bind T to Int.
-    # Used by Maybe[T] = T | Undef: strip concrete non-matching members,
-    # bind Var members to the actual type.
-    if ($formal->is_union) {
-        my @members = $formal->members;
-        my @vars = grep { $_->is_var } @members;
-        if (@vars) {
-            for my $var (@vars) {
-                $class->collect_bindings($var, $actual, $bindings) or return 0;
-            }
-            return 1;
-        }
-    }
-
-    # Non-variable leaf: must be structurally equal
-    $formal->equals($actual) ? 1 : 0;
+    Typist::Subtype->collect_bindings($formal, $actual, $bindings);
 }
 
 # ── Substitution ────────────────────────────────
