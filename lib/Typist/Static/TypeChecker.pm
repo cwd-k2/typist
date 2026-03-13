@@ -462,7 +462,7 @@ sub _resolve_type ($self, $expr) { $self->{type_env}->resolve_type($expr) }
 sub _infer_expr_cached ($self, $node, $env, $expected = undef) {
     my $node_key = ref($node) ? refaddr($node) : "$node";
     my $env_key = ref($env) ? refaddr($env) : "$env";
-    my $expected_key = defined $expected ? $expected->to_string : '';
+    my $expected_key = defined $expected ? refaddr($expected) // 0 : '';
     my $cache_key = join "\0", $node_key, $env_key, $expected_key;
     return $self->{_infer_expr_cache}{$cache_key} if exists $self->{_infer_expr_cache}{$cache_key};
     return $self->{_infer_expr_cache}{$cache_key} = Typist::Static::Infer->infer_expr($node, $env, $expected);

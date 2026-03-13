@@ -1012,8 +1012,10 @@ sub _infer_match_return ($match_word, $env, $expected = undef) {
 
     # If LUB is too coarse (Any), try Union instead
     if ($result->is_atom && $result->name eq 'Any' && @widened <= 4) {
-        my %seen;
-        my @unique = grep { !$seen{$_->to_string}++ } @widened;
+        my @unique;
+        for my $w (@widened) {
+            push @unique, $w unless grep { $_->equals($w) } @unique;
+        }
         return @unique == 1 ? $unique[0] : Typist::Type::Union->new(@unique);
     }
 
@@ -1616,7 +1618,7 @@ sub _infer_ternary_types ($then_type, $else_type, $env, $expected = undef) {
     my $else_w = $else_type->is_literal ? Typist::Type::Atom->new($else_type->base_type) : $else_type;
 
     # Same type → unify
-    return $then_w if $then_w->to_string eq $else_w->to_string;
+    return $then_w if $then_w->equals($else_w);
 
     # Try LUB via common_super; use Union when LUB is too coarse
     my $lub = Typist::Subtype->common_super($then_w, $else_w);

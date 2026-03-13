@@ -45,7 +45,10 @@ sub _self ($invocant) {
 
 sub define_alias ($invocant, $name, $expr) {
     my $self = _self($invocant);
-    # Accept Type objects directly — store the string form for aliases, resolve immediately
+    # Accept Type objects directly — store the string form for aliases, resolve immediately.
+    # When a Type object is provided, the `resolved` cache is populated immediately,
+    # so lookup_type will return it without a parse→to_string round-trip.
+    # String-form aliases go through parse-on-demand in lookup_type.
     if (ref $expr && $expr->isa('Typist::Type')) {
         $self->{aliases}{$name}  = $expr->to_string;
         $self->{resolved}{$name} = $expr;

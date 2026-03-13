@@ -634,4 +634,46 @@ PERL
     ok 1, 'recursive struct with accessor does not crash';
 };
 
+# ════════════════════════════════════════════════
+# Section: Ternary structural equality (equals vs to_string)
+# ════════════════════════════════════════════════
+
+subtest 'inference: ternary with structurally equal types' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub pick_str :sig((Bool, Str, Str) -> Str) ($flag, $a, $b) {
+    return $flag ? $a : $b;
+}
+PERL
+
+    is scalar @$errs, 0, 'ternary with two Str params uses equals correctly';
+};
+
+subtest 'inference: ternary Record branches use equals' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+struct Point => (x => Int, y => Int);
+sub pick :sig((Bool, Point, Point) -> Point) ($flag, $a, $b) {
+    return $flag ? $a : $b;
+}
+PERL
+
+    is scalar @$errs, 0, 'ternary with same struct type produces correct result';
+};
+
+# ════════════════════════════════════════════════
+# Section: Array LUB dedup correctness
+# ════════════════════════════════════════════════
+
+subtest 'inference: array literal with mixed numeric types' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub nums :sig(() -> ArrayRef[Num]) () {
+    return [1, 2.5, 3];
+}
+PERL
+
+    is scalar @$errs, 0, 'array with Int and Double elements produces Num';
+};
+
 done_testing;
