@@ -78,8 +78,8 @@ sub _split_at_and ($self, $cond_children) {
     my @segments;
     my @current;
     for my $child (@$cond_children) {
-        if ($child->isa('PPI::Token::Operator') && $child->content eq '&&'
-            || $child->isa('PPI::Token::Word') && $child->content eq 'and')
+        if ($child->isa('PPI::Token::Operator')
+            && ($child->content eq '&&' || $child->content eq 'and'))
         {
             push @segments, [@current] if @current;
             @current = ();
@@ -752,12 +752,45 @@ sub _early_return_accessor ($self, $children) {
     undef;
 }
 
+# Check if statement matches: defined($var) or/|| return/die/croak/exit
+sub _is_short_circuit_defined_guard ($self, $children) {
+    return 0 unless @$children >= 4;
+    return 0 unless $children->[0]->isa('PPI::Token::Word')
+                  && $children->[0]->content eq 'defined';
+
+    for my $i (1 .. $#$children - 1) {
+        next unless $children->[$i]->isa('PPI::Token::Operator');
+        my $op = $children->[$i]->content;
+        next unless $op eq '||' || $op eq 'or';
+
+        my $rhs = $children->[$i + 1];
+        return $rhs->isa('PPI::Token::Word')
+            && ($rhs->content eq 'return'
+                || $rhs->content eq 'die'
+                || $rhs->content eq 'croak'
+                || $rhs->content eq 'exit');
+    }
+    0;
+}
+
 sub _statement_early_return_narrowed_vars ($self, $stmt, $env) {
     my %narrowed;
     my @children = $stmt->schildren;
     if ($self->_is_early_return_unless_defined(\@children)) {
         my $var_name = $self->_early_return_var(\@children);
         if ($var_name) {
+            my $var_type = $env->{variables}{$var_name};
+            my $n = $self->remove_undef_from_type($var_type);
+            $narrowed{$var_name} = $n if $n;
+        }
+    }
+
+    # Pattern: defined($var) or die/return/croak/exit
+    #          defined($var) || return/die/croak/exit
+    if (!%narrowed && $self->_is_short_circuit_defined_guard(\@children)) {
+        my $sym = $self->_extract_defined_symbol(\@children);
+        if ($sym) {
+            my $var_name = $sym->content;
             my $var_type = $env->{variables}{$var_name};
             my $n = $self->remove_undef_from_type($var_type);
             $narrowed{$var_name} = $n if $n;

@@ -429,31 +429,51 @@ sub _narrow_for_ternary ($self, $env, $node) {
         && $cond_word->content eq 'defined'
         && $cond_list && $cond_list->isa('PPI::Structure::List');
 
+    # Try variable narrowing: defined($var) ? ...
     my $sym = $cond_list->find_first('PPI::Token::Symbol');
-    return $env unless $sym && $sym->raw_type eq '$';
+    if ($sym && $sym->raw_type eq '$') {
+        my $var_name = $sym->content;
+        my $var_type = $env->{variables}{$var_name};
+        if ($var_type && $var_type->is_union) {
+            my @non_undef = grep { !($_->is_atom && $_->name eq 'Undef') } $var_type->members;
+            if (@non_undef < scalar($var_type->members)) {
+                my $narrowed = @non_undef == 1 ? $non_undef[0]
+                    : Typist::Type::Union->new(@non_undef);
+                my %new_vars = $env->{variables}->%*;
+                $new_vars{$var_name} = $narrowed;
 
-    my $var_name = $sym->content;
-    my $var_type = $env->{variables}{$var_name};
-    return $env unless $var_type && $var_type->is_union;
+                # Register narrowing so hover/inlay hints reflect it
+                my $scope_line = $stmt->line_number;
+                push $self->{narrowing}->narrowed_vars->@*, +{
+                    name        => $var_name,
+                    type        => $narrowed,
+                    scope_start => $scope_line,
+                    scope_end   => $scope_line,
+                };
 
-    my @non_undef = grep { !($_->is_atom && $_->name eq 'Undef') } $var_type->members;
-    return $env unless @non_undef < scalar($var_type->members);
+                return +{ %$env, variables => \%new_vars };
+            }
+        }
+    }
 
-    my $narrowed = @non_undef == 1 ? $non_undef[0]
-        : Typist::Type::Union->new(@non_undef);
-    my %new_vars = $env->{variables}->%*;
-    $new_vars{$var_name} = $narrowed;
+    # Try accessor narrowing: defined($var->field) ? ...
+    my @cond_tokens = ($cond_word, $cond_list);
+    my $accessor = $self->{narrowing}->extract_defined_accessor(\@cond_tokens);
+    if ($accessor && @{$accessor->{chain}} == 1) {
+        my $var_name = $accessor->{var_name};
+        my $field = $accessor->{chain}[0];
+        my $field_type = $self->{narrowing}->resolve_accessor_type($env, $var_name, $field);
+        if ($field_type) {
+            my $narrowed = $self->{narrowing}->remove_undef_from_type($field_type);
+            if ($narrowed) {
+                my %acc = ($env->{narrowed_accessors} // +{})->%*;
+                $acc{$var_name}{$field} = $narrowed;
+                return +{ %$env, narrowed_accessors => \%acc };
+            }
+        }
+    }
 
-    # Register narrowing so hover/inlay hints reflect it
-    my $scope_line = $stmt->line_number;
-    push $self->{narrowing}->narrowed_vars->@*, +{
-        name        => $var_name,
-        type        => $narrowed,
-        scope_start => $scope_line,
-        scope_end   => $scope_line,
-    };
-
-    return +{ %$env, variables => \%new_vars };
+    $env;
 }
 
 # Narrow env for nodes inside postfix `if`/`unless` statements.

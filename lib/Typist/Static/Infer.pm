@@ -1671,10 +1671,71 @@ sub _check_ternary_extension ($result, $after_node, $env, $expected) {
         my $colon = $then_expr ? $then_expr->snext_sibling : undef;
         if ($colon && $colon->isa('PPI::Token::Operator') && $colon->content eq ':') {
             my $else_expr = $colon->snext_sibling;
-            return _infer_ternary($then_expr, $else_expr, $env, $expected) if $else_expr;
+            if ($else_expr) {
+                # Narrow env for then-branch when condition is defined(...)
+                my $then_env = $env;
+                my $cond_word = $after_node->sprevious_sibling;
+                if ($cond_word && $cond_word->isa('PPI::Token::Word')
+                    && $cond_word->content eq 'defined'
+                    && $after_node->isa('PPI::Structure::List') && $env)
+                {
+                    $then_env = _narrow_for_defined_condition($after_node, $env);
+                }
+                my $then_type = __PACKAGE__->infer_expr($then_expr, $then_env, $expected);
+                my $else_type = __PACKAGE__->infer_expr($else_expr, $env, $expected);
+                return undef unless defined $then_type && defined $else_type;
+                return _infer_ternary_types($then_type, $else_type, $env, $expected);
+            }
         }
     }
     $result;
+}
+
+# Narrow env for the then-branch of a defined() ternary condition.
+# Handles both simple variables (defined($s)) and accessor chains (defined($w->tip)).
+sub _narrow_for_defined_condition ($cond_list, $env) {
+    return $env unless $env;
+
+    my $inner = $cond_list->find_first('PPI::Token::Symbol');
+    return $env unless $inner && $inner->raw_type eq '$';
+
+    my $var_name = $inner->content;
+    my $var_type = $env->{variables}{$var_name};
+
+    # Simple variable: defined($var) where $var is Union containing Undef
+    if ($var_type && $var_type->is_union) {
+        my @non_undef = grep { !($_->is_atom && $_->name eq 'Undef') } $var_type->members;
+        if (@non_undef < scalar($var_type->members)) {
+            my $narrowed = @non_undef == 1 ? $non_undef[0]
+                : Typist::Type::Union->new(@non_undef);
+            my %new_vars = $env->{variables}->%*;
+            $new_vars{$var_name} = $narrowed;
+            return +{ %$env, variables => \%new_vars };
+        }
+    }
+
+    # Accessor chain: defined($var->field) — infer accessor type and narrow
+    my $next_sib = $inner->snext_sibling;
+    if ($next_sib && $next_sib->isa('PPI::Token::Operator') && $next_sib->content eq '->') {
+        my $field_word = $next_sib->snext_sibling;
+        if ($field_word && $field_word->isa('PPI::Token::Word')) {
+            my $field = $field_word->content;
+            # Infer full accessor type (chases ->field via siblings)
+            my $acc_type = __PACKAGE__->infer_expr($inner, $env);
+            if ($acc_type && $acc_type->is_union) {
+                my @non_undef = grep { !($_->is_atom && $_->name eq 'Undef') } $acc_type->members;
+                if (@non_undef < scalar($acc_type->members)) {
+                    my $narrowed = @non_undef == 1 ? $non_undef[0]
+                        : Typist::Type::Union->new(@non_undef);
+                    my %acc = ($env->{narrowed_accessors} // +{})->%*;
+                    $acc{$var_name} = { ($acc{$var_name} // +{})->%*, $field => $narrowed };
+                    return +{ %$env, narrowed_accessors => \%acc };
+                }
+            }
+        }
+    }
+
+    $env;
 }
 
 # Handle nested ternary from a flat PPI children list.
@@ -1704,28 +1765,14 @@ sub _infer_flat_ternary ($children, $env, $expected) {
     }
     return undef unless defined $c_idx;
 
-    # Narrow env for then-branch when condition is defined($var)
+    # Narrow env for then-branch when condition is defined(...)
     my $then_env = $env;
     my @cond_slice = @$children[0 .. $q_idx - 1];
     if (@cond_slice == 2
         && $cond_slice[0]->isa('PPI::Token::Word') && $cond_slice[0]->content eq 'defined'
         && $cond_slice[1]->isa('PPI::Structure::List') && $env)
     {
-        my $inner = $cond_slice[1]->find_first('PPI::Token::Symbol');
-        if ($inner && $inner->raw_type eq '$') {
-            my $var_name = $inner->content;
-            my $var_type = $env->{variables}{$var_name};
-            if ($var_type && $var_type->is_union) {
-                my @non_undef = grep { !($_->is_atom && $_->name eq 'Undef') } $var_type->members;
-                if (@non_undef < scalar($var_type->members)) {
-                    my $narrowed = @non_undef == 1 ? $non_undef[0]
-                        : Typist::Type::Union->new(@non_undef);
-                    my %new_vars = $env->{variables}->%*;
-                    $new_vars{$var_name} = $narrowed;
-                    $then_env = +{ %$env, variables => \%new_vars };
-                }
-            }
-        }
+        $then_env = _narrow_for_defined_condition($cond_slice[1], $env);
     }
 
     # Then: tokens between ? and :

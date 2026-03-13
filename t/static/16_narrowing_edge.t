@@ -350,4 +350,61 @@ PERL
     like $errs->[0]{message}, qr/Argument 1/, 'else-branch $s is still Str | Undef';
 };
 
+# ── Short-circuit guard: defined($s) || return ───
+
+subtest 'defined($s) or die narrows remaining scope' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub takes_str :sig((Str) -> Void) ($s) { }
+sub check :sig((Str | Undef) -> Void) ($s) {
+    defined($s) or die "missing";
+    takes_str($s);
+}
+PERL
+
+    is scalar @$errs, 0, 'defined($s) or die narrows $s after guard';
+};
+
+subtest 'defined($s) || return narrows remaining scope' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub takes_str :sig((Str) -> Void) ($s) { }
+sub check :sig((Str | Undef) -> Str) ($s) {
+    defined($s) || return "default";
+    takes_str($s);
+    $s;
+}
+PERL
+
+    is scalar @$errs, 0, 'defined($s) || return narrows $s after guard';
+};
+
+# ── Ternary defined accessor narrowing ───────────
+
+subtest 'ternary defined accessor narrows in then-branch' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+struct Widget => (optional(tip => 'Str'));
+sub get_tip :sig((Widget) -> Str) ($w) {
+    return defined($w->tip) ? $w->tip : "none";
+}
+PERL
+
+    is scalar @$errs, 0, 'defined($w->tip) ? $w->tip : "none" — no false positive';
+};
+
+# ── Ternary as function argument ─────────────────
+
+subtest 'ternary defined in function argument position' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub takes_str :sig((Str) -> Void) ($s) { }
+sub check :sig((Str | Undef) -> Void) ($s) {
+    takes_str(defined($s) ? $s : "default");
+}
+PERL
+
+    is scalar @$errs, 0, 'takes_str(defined($s) ? $s : "default") — no false positive';
+};
+
 done_testing;
