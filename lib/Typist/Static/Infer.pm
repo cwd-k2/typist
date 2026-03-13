@@ -1714,13 +1714,24 @@ sub _narrow_for_defined_condition ($cond_list, $env) {
         }
     }
 
-    # Accessor chain: defined($var->field) — infer accessor type and narrow
+    # Accessor chain: defined($var->field) or defined($var->a->b) — infer and narrow
     my $next_sib = $inner->snext_sibling;
     if ($next_sib && $next_sib->isa('PPI::Token::Operator') && $next_sib->content eq '->') {
-        my $field_word = $next_sib->snext_sibling;
-        if ($field_word && $field_word->isa('PPI::Token::Word')) {
-            my $field = $field_word->content;
-            # Infer full accessor type (chases ->field via siblings)
+        # Extract full accessor chain: walk ->word[()] pairs
+        my @chain;
+        my $cursor = $next_sib;
+        while ($cursor && $cursor->isa('PPI::Token::Operator') && $cursor->content eq '->') {
+            my $word = $cursor->snext_sibling;
+            last unless $word && $word->isa('PPI::Token::Word');
+            push @chain, $word->content;
+            my $after = $word->snext_sibling;
+            # Skip method call parens
+            $after = $after->snext_sibling
+                if $after && $after->isa('PPI::Structure::List');
+            $cursor = $after;
+        }
+        if (@chain) {
+            # Infer full accessor type (chases chain via siblings)
             my $acc_type = __PACKAGE__->infer_expr($inner, $env);
             if ($acc_type && $acc_type->is_union) {
                 my @non_undef = grep { !($_->is_atom && $_->name eq 'Undef') } $acc_type->members;
@@ -1728,7 +1739,15 @@ sub _narrow_for_defined_condition ($cond_list, $env) {
                     my $narrowed = @non_undef == 1 ? $non_undef[0]
                         : Typist::Type::Union->new(@non_undef);
                     my %acc = ($env->{narrowed_accessors} // +{})->%*;
-                    $acc{$var_name} = { ($acc{$var_name} // +{})->%*, $field => $narrowed };
+                    my $c = \%acc;
+                    $c = ($c->{$var_name} //= +{});
+                    for my $i (0 .. $#chain) {
+                        if ($i == $#chain) {
+                            $c->{$chain[$i]}{__type__} = $narrowed;
+                        } else {
+                            $c = ($c->{$chain[$i]} //= +{});
+                        }
+                    }
                     return +{ %$env, narrowed_accessors => \%acc };
                 }
             }
@@ -1991,12 +2010,18 @@ sub _skip_accessor_chain ($start) {
 sub _chase_subscript_chain ($type, $start_node, $env = undef) {
     return $type unless defined $type;
 
+    # Narrowing tree cursor: walks in lockstep with the accessor chain
+    my $nc = ($env && $env->{narrowed_accessors} && $start_node->isa('PPI::Token::Symbol'))
+        ? $env->{narrowed_accessors}{$start_node->content}
+        : undef;
+
     my $node = $start_node->snext_sibling;
     while ($node) {
         # Adjacent subscript without arrow: $h->{key}[0] (Perl allows omitting -> between subscripts)
         if ($node->isa('PPI::Structure::Subscript')) {
             $type = _infer_subscript_access($type, $node);
             last unless defined $type;
+            $nc = undef;  # subscript breaks accessor narrowing path
             $node = $node->snext_sibling;
             next;
         }
@@ -2009,6 +2034,7 @@ sub _chase_subscript_chain ($type, $start_node, $env = undef) {
         if ($next->isa('PPI::Structure::Subscript')) {
             $type = _infer_subscript_access($type, $next);
             last unless defined $type;
+            $nc = undef;  # subscript breaks accessor narrowing path
             $node = $next->snext_sibling;
             next;
         }
@@ -2017,14 +2043,14 @@ sub _chase_subscript_chain ($type, $start_node, $env = undef) {
         if ($next->isa('PPI::Token::Word')) {
             $type = _infer_method_access($type, $next, $env);
             last unless defined $type;
-            # Apply accessor narrowing from defined() guards
-            if ($env && $env->{narrowed_accessors}
-                && $start_node->isa('PPI::Token::Symbol')) {
-                my $var_name = $start_node->content;
+            # Apply accessor narrowing from defined() guards (nested tree walk)
+            if ($nc) {
                 my $acc_name = $next->content;
-                if (my $narrowed = $env->{narrowed_accessors}{$var_name}{$acc_name}) {
-                    $type = $narrowed;
+                my $subtree = $nc->{$acc_name};
+                if (ref $subtree eq 'HASH' && $subtree->{__type__}) {
+                    $type = $subtree->{__type__};
                 }
+                $nc = $subtree;
             }
             # Skip past optional argument list: ->method(...)
             my $after = $next->snext_sibling;

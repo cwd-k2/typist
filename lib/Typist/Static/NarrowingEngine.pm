@@ -111,27 +111,68 @@ sub _resolve_type ($self, $expr) {
 # Resolve the type of a struct field accessor: $var->field.
 # Returns the field type or undef.
 sub resolve_accessor_type ($self, $env, $var_name, $field_name) {
-    my $var_type = $env->{variables}{$var_name} // return undef;
+    $self->resolve_chain_type($env, $var_name, [$field_name]);
+}
 
-    # Resolve aliases (e.g. Product → Struct)
-    my $resolved = $var_type;
-    if ($resolved->is_alias && $self->{registry}) {
-        my $looked_up = $self->{registry}->lookup_type($resolved->alias_name);
-        $resolved = $looked_up if $looked_up;
+# Resolve the type at the end of a multi-level accessor chain.
+# e.g., resolve_chain_type($env, '$t', ['branch', 'leaf']) resolves
+# $t->branch()->leaf() by walking through struct fields.
+sub resolve_chain_type ($self, $env, $var_name, $chain) {
+    my $type = $env->{variables}{$var_name} // return undef;
+
+    for my $i (0 .. $#$chain) {
+        my $field_name = $chain->[$i];
+
+        # Resolve type name to concrete struct (Alias, Atom, or Var → registry lookup)
+        my $resolved = $type;
+        if ($self->{registry}) {
+            my $name = $resolved->is_alias ? $resolved->alias_name
+                     : ($resolved->is_atom || $resolved->is_var) ? $resolved->name
+                     : undef;
+            if ($name) {
+                my $looked_up = eval { $self->{registry}->lookup_type($name) };
+                $resolved = $looked_up if $looked_up && $looked_up->is_struct;
+            }
+        }
+        return undef unless $resolved->is_struct;
+
+        my $record = $resolved->record;
+        my $req = $record->required_ref;
+        my $opt = $record->optional_ref;
+
+        if (exists $req->{$field_name}) {
+            $type = $req->{$field_name};
+        } elsif (exists $opt->{$field_name}) {
+            $type = ($i == $#$chain)
+                ? Typist::Type::Union->new(
+                    $opt->{$field_name}, Typist::Type::Atom->new('Undef'),
+                )
+                : $opt->{$field_name};
+        } else {
+            return undef;
+        }
     }
-    return undef unless $resolved->is_struct;
+    $type;
+}
 
-    my $record = $resolved->record;
-    my $req = $record->required_ref;
-    my $opt = $record->optional_ref;
+# ── Nested Tree Env Helpers ─────────────────────
 
-    return $req->{$field_name} if exists $req->{$field_name};
-    if (exists $opt->{$field_name}) {
-        return Typist::Type::Union->new(
-            $opt->{$field_name}, Typist::Type::Atom->new('Undef'),
-        );
+# Narrow an accessor chain in the env's narrowed_accessors tree.
+# $env->{narrowed_accessors}{$var}{f1}{f2}{__type__} = $type
+sub _narrow_accessor_chain ($self, $accessor, $env, $narrowed_type) {
+    my $var_name = $accessor->{var_name};
+    my $chain    = $accessor->{chain};
+    my %acc = ($env->{narrowed_accessors} // +{})->%*;
+    my $cursor = \%acc;
+    $cursor = ($cursor->{$var_name} //= +{});
+    for my $i (0 .. $#$chain) {
+        if ($i == $#$chain) {
+            $cursor->{$chain->[$i]}{__type__} = $narrowed_type;
+        } else {
+            $cursor = ($cursor->{$chain->[$i]} //= +{});
+        }
     }
-    undef;
+    \%acc;
 }
 
 # ── Undef Removal ───────────────────────────────
@@ -193,7 +234,8 @@ sub extract_defined_accessor ($self, $cond_children) {
         @tokens = @$cond_children[1 .. $#$cond_children];
     }
 
-    # Expect: Symbol, Operator(->), Word [, Operator(->), Word ...]
+    # Expect: Symbol, Operator(->), Word [, List, Operator(->), Word ...]
+    # Method call parens (List nodes) may appear between accessor steps.
     return undef unless @tokens >= 3;
     return undef unless $tokens[0]->isa('PPI::Token::Symbol');
 
@@ -207,6 +249,8 @@ sub extract_defined_accessor ($self, $cond_children) {
         last unless $tokens[$i + 1]->isa('PPI::Token::Word');
         push @chain, $tokens[$i + 1]->content;
         $i += 2;
+        # Skip method call parens: ->method() -> next
+        $i++ if $i <= $#tokens && $tokens[$i]->isa('PPI::Structure::List');
     }
 
     return undef unless @chain;
@@ -511,25 +555,21 @@ sub narrow_env_for_block ($self, $env, $node) {
         }
     }
 
-    my %applied_accessors;
+    my $accessor_info;
     if ($apply_direct && $rule eq 'defined') {
         my $accessor = $self->extract_defined_accessor(\@cond_children);
-        if ($accessor && @{$accessor->{chain}} == 1) {
-            my $var_name = $accessor->{var_name};
-            my $field = $accessor->{chain}[0];
-            my $field_type = $self->resolve_accessor_type($env, $var_name, $field);
-            my $narrowed = $self->remove_undef_from_type($field_type);
-            if ($narrowed) {
-                $applied_accessors{$var_name} = +{
-                    accessor => $field,
-                    type     => $narrowed,
-                };
-            }
+        if ($accessor) {
+            my $var_name   = $accessor->{var_name};
+            my $chain      = $accessor->{chain};
+            my $field_type = $self->resolve_chain_type($env, $var_name, $chain);
+            my $narrowed   = $self->remove_undef_from_type($field_type);
+            $accessor_info = +{ accessor => $accessor, type => $narrowed }
+                if $narrowed;
         }
     }
 
     return $self->{_block_env_cache}{$cache_key} = $env
-        unless %applied || %applied_accessors;
+        unless %applied || $accessor_info;
 
     # Record narrowed variables for LSP visibility (once per block)
     my $block_id = Scalar::Util::refaddr($block);
@@ -546,12 +586,11 @@ sub narrow_env_for_block ($self, $env, $node) {
                 scope_end   => $block_end,
             };
         }
-        for my $var_name (keys %applied_accessors) {
-            my $info = $applied_accessors{$var_name};
+        if ($accessor_info) {
             push $self->{_narrowed_accessors}->@*, +{
-                var_name    => $var_name,
-                chain       => [$info->{accessor}],
-                type        => $info->{type},
+                var_name    => $accessor_info->{accessor}{var_name},
+                chain       => $accessor_info->{accessor}{chain},
+                type        => $accessor_info->{type},
                 scope_start => $block_start,
                 scope_end   => $block_end,
             };
@@ -561,13 +600,11 @@ sub narrow_env_for_block ($self, $env, $node) {
     my %new_vars = $env->{variables}->%*;
     $new_vars{$_} = $applied{$_} for keys %applied;
     my $new_env = +{ %$env, variables => \%new_vars };
-    if (%applied_accessors) {
-        my %acc = ($env->{narrowed_accessors} // +{})->%*;
-        for my $var_name (keys %applied_accessors) {
-            my $info = $applied_accessors{$var_name};
-            $acc{$var_name}{$info->{accessor}} = $info->{type};
-        }
-        $new_env->{narrowed_accessors} = \%acc;
+    if ($accessor_info) {
+        my $acc = $self->_narrow_accessor_chain(
+            $accessor_info->{accessor}, $env, $accessor_info->{type},
+        );
+        $new_env->{narrowed_accessors} = $acc;
     }
     return $self->{_block_env_cache}{$cache_key} = $new_env;
 }
@@ -640,8 +677,8 @@ sub scan_early_returns ($self, $env, $node) {
         for my $key (keys %narrowed_accessors) {
             my $info = $narrowed_accessors{$key};
             push $self->{_narrowed_accessors}->@*, +{
-                var_name    => $info->{var_name},
-                chain       => [$info->{accessor}],
+                var_name    => $info->{accessor}{var_name},
+                chain       => $info->{accessor}{chain},
                 type        => $info->{type},
                 scope_start => $scope_start,
                 scope_end   => $scope_end,
@@ -655,12 +692,12 @@ sub scan_early_returns ($self, $env, $node) {
 
     # Add accessor narrowings to env for Infer to use
     if (%narrowed_accessors) {
-        my %acc = ($env->{narrowed_accessors} // +{})->%*;
+        my $acc = ($env->{narrowed_accessors} // +{});
         for my $key (keys %narrowed_accessors) {
             my $info = $narrowed_accessors{$key};
-            $acc{$info->{var_name}}{$info->{accessor}} = $info->{type};
+            $acc = $self->_narrow_accessor_chain($info->{accessor}, +{ narrowed_accessors => $acc }, $info->{type});
         }
-        $new_env->{narrowed_accessors} = \%acc;
+        $new_env->{narrowed_accessors} = $acc;
     }
 
     return $self->{_early_return_cache}{$cache_key} = $new_env;
@@ -733,7 +770,7 @@ sub _early_return_accessor ($self, $children) {
             } else {
                 @tokens = @$children[$i + 2 .. $#$children];
             }
-            # Expect: Symbol -> Word [-> Word ...]
+            # Expect: Symbol -> Word [() -> Word ...]
             next unless @tokens >= 3;
             next unless $tokens[0]->isa('PPI::Token::Symbol');
             my $var_name = $tokens[0]->content;
@@ -745,6 +782,8 @@ sub _early_return_accessor ($self, $children) {
                 last unless $tokens[$j + 1]->isa('PPI::Token::Word');
                 push @chain, $tokens[$j + 1]->content;
                 $j += 2;
+                # Skip method call parens
+                $j++ if $j <= $#tokens && $tokens[$j]->isa('PPI::Structure::List');
             }
             return +{ var_name => $var_name, chain => \@chain } if @chain;
         }
@@ -810,16 +849,16 @@ sub _statement_early_return_narrowed_accessors ($self, $stmt, $env) {
     my @children = $stmt->schildren;
     if ($self->_is_early_return_unless_defined(\@children)) {
         my $accessor = $self->_early_return_accessor(\@children);
-        if ($accessor && @{$accessor->{chain}} == 1) {
-            my $vname = $accessor->{var_name};
-            my $field = $accessor->{chain}[0];
-            my $field_type = $self->resolve_accessor_type($env, $vname, $field);
+        if ($accessor) {
+            my $vname      = $accessor->{var_name};
+            my $chain      = $accessor->{chain};
+            my $field_type = $self->resolve_chain_type($env, $vname, $chain);
             if ($field_type) {
                 my $n = $self->remove_undef_from_type($field_type);
                 if ($n) {
-                    $narrowed{"$vname\0$field"} = +{
-                        var_name => $vname,
-                        accessor => $field,
+                    my $key = join("\0", $vname, @$chain);
+                    $narrowed{$key} = +{
+                        accessor => $accessor,
                         type     => $n,
                     };
                 }
@@ -892,24 +931,23 @@ sub _compound_fallthrough_narrowed_accessors ($self, $compound, $env) {
     my $expr = $cond_children[0];
     @cond_children = $expr->schildren if $expr && $expr->isa('PPI::Statement::Expression');
     my $accessor = $self->extract_defined_accessor(\@cond_children) // return +{};
-    return +{} unless @{$accessor->{chain}} == 1;
 
     my ($keyword) = grep { $_->isa('PPI::Token::Word') } $compound->schildren;
     my $is_unless = $keyword && $keyword->content eq 'unless';
     my $apply_direct = $is_unless ? ($flow_idx > 0) : ($flow_idx == 0);
     return +{} unless $apply_direct;
 
-    my $vname = $accessor->{var_name};
-    my $field = $accessor->{chain}[0];
-    my $field_type = $self->resolve_accessor_type($env, $vname, $field);
+    my $vname      = $accessor->{var_name};
+    my $chain      = $accessor->{chain};
+    my $field_type = $self->resolve_chain_type($env, $vname, $chain);
     return +{} unless $field_type;
     my $n = $self->remove_undef_from_type($field_type);
     return +{} unless $n;
 
+    my $key = join("\0", $vname, @$chain);
     return +{
-        "$vname\0$field" => +{
-            var_name => $vname,
-            accessor => $field,
+        $key => +{
+            accessor => $accessor,
             type     => $n,
         },
     };
@@ -994,7 +1032,6 @@ sub collect_accessor_narrowings ($self, $ppi_doc) {
 
         my $accessor = $self->extract_defined_accessor(\@cond_children);
         next unless $accessor;
-        next unless @{$accessor->{chain}} == 1;
 
         my $is_unless = $kw eq 'unless';
         my @blocks = grep { $_->isa('PPI::Structure::Block') } $compound->schildren;
@@ -1064,7 +1101,6 @@ sub _collect_ternary_accessor_narrowings ($self, $ppi_doc) {
 
         my $accessor = $self->extract_defined_accessor(\@cond_children);
         next unless $accessor;
-        next unless @{$accessor->{chain}} == 1;
 
         # Register narrowing for the then-branch scope (same line as ternary)
         my $scope_line = $stmt->line_number;

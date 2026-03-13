@@ -407,4 +407,101 @@ PERL
     is scalar @$errs, 0, 'takes_str(defined($s) ? $s : "default") — no false positive';
 };
 
+# ════════════════════════════════════════════════
+# Multi-level accessor chain narrowing
+# ════════════════════════════════════════════════
+
+# ── Multi-level: early return narrows 2-level chain ──
+
+subtest 'multi-level: early return narrows 2-level accessor chain' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+struct Leaf => (data => 'Int');
+struct Branch => (optional(leaf => 'Leaf'));
+struct Tree => (branch => 'Branch');
+sub get_data :sig((Tree) -> Str) ($t) {
+    return '' unless defined($t->branch()->leaf());
+    return $t->branch()->leaf()->data();
+}
+PERL
+
+    ok scalar @$errs >= 1,
+        'narrowed 2-level accessor detects Int vs Str mismatch';
+};
+
+# ── Multi-level: if-block narrows 2-level chain ──
+
+subtest 'multi-level: if-block narrows 2-level accessor chain' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+struct Leaf => (data => 'Int');
+struct Branch => (optional(leaf => 'Leaf'));
+struct Tree => (branch => 'Branch');
+sub get_data :sig((Tree) -> Int) ($t) {
+    if (defined($t->branch()->leaf())) {
+        return $t->branch()->leaf()->data();
+    }
+    return 0;
+}
+PERL
+
+    is scalar @$errs, 0,
+        'narrowed 2-level accessor in if-block resolves correctly';
+};
+
+# ── Multi-level: ternary narrows 2-level chain ──
+
+subtest 'multi-level: ternary narrows 2-level accessor chain' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+struct Leaf => (data => 'Int');
+struct Branch => (optional(leaf => 'Leaf'));
+struct Tree => (branch => 'Branch');
+sub get_data :sig((Tree) -> Int) ($t) {
+    defined($t->branch()->leaf()) ? $t->branch()->leaf()->data() : 0;
+}
+PERL
+
+    is scalar @$errs, 0,
+        'ternary 2-level accessor chain narrowing works';
+};
+
+# ── Multi-level: 3-level chain narrows and detects mismatch ──
+
+subtest 'multi-level: 3-level chain detects type mismatch' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+struct Color => (val => 'Str');
+struct Style => (optional(color => 'Color'));
+struct Widget => (style => 'Style');
+struct Page => (widget => 'Widget');
+sub test :sig((Page) -> Int) ($p) {
+    return 0 unless defined($p->widget()->style()->color());
+    return $p->widget()->style()->color()->val();
+}
+PERL
+
+    ok scalar @$errs >= 1,
+        '3-level narrowed accessor detects Str vs Int mismatch';
+};
+
+# ── Multi-level: cascading defined guards ──
+
+subtest 'multi-level: cascading defined guards narrow progressively' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+struct Inner => (val => 'Int');
+struct Mid => (optional(inner => 'Inner'));
+struct Outer => (optional(mid => 'Mid'));
+sub test :sig((Outer) -> Int) ($o) {
+    return 0 unless defined($o->mid());
+    return 0 unless defined($o->mid()->inner());
+    return $o->mid()->inner()->val();
+}
+PERL
+
+    is scalar @$errs, 0,
+        'cascading defined guards narrow each level';
+};
+
 done_testing;

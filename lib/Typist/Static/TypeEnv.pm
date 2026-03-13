@@ -459,16 +459,17 @@ sub _narrow_for_ternary ($self, $env, $node) {
     # Try accessor narrowing: defined($var->field) ? ...
     my @cond_tokens = ($cond_word, $cond_list);
     my $accessor = $self->{narrowing}->extract_defined_accessor(\@cond_tokens);
-    if ($accessor && @{$accessor->{chain}} == 1) {
-        my $var_name = $accessor->{var_name};
-        my $field = $accessor->{chain}[0];
-        my $field_type = $self->{narrowing}->resolve_accessor_type($env, $var_name, $field);
+    if ($accessor) {
+        my $var_name   = $accessor->{var_name};
+        my $chain      = $accessor->{chain};
+        my $field_type = $self->{narrowing}->resolve_chain_type($env, $var_name, $chain);
         if ($field_type) {
             my $narrowed = $self->{narrowing}->remove_undef_from_type($field_type);
             if ($narrowed) {
-                my %acc = ($env->{narrowed_accessors} // +{})->%*;
-                $acc{$var_name}{$field} = $narrowed;
-                return +{ %$env, narrowed_accessors => \%acc };
+                my $acc = $self->{narrowing}->_narrow_accessor_chain(
+                    $accessor, $env, $narrowed,
+                );
+                return +{ %$env, narrowed_accessors => $acc };
             }
         }
     }
