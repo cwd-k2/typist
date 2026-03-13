@@ -83,9 +83,10 @@ sub resolve_type ($self, $expr) {
         return undef;
     }
 
-    # Resolve aliases through the local registry
+    # Resolve aliases through the local registry.
+    # Wrap in eval to handle alias cycles gracefully (CycleError).
     if ($parsed->is_alias) {
-        my $resolved = $self->{registry}->lookup_type($parsed->alias_name);
+        my $resolved = eval { $self->{registry}->lookup_type($parsed->alias_name) };
         if ($resolved) {
             $self->{_resolve_cache}{$expr} = $resolved;
             return $resolved;

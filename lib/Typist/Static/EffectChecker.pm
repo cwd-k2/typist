@@ -98,6 +98,7 @@ sub check_function :TIMED_ACC(function_checks.effects) ($self, $name) {
                 line    => $call->{line},
                 col     => $call->{col} // 0,
                 end_col => ($call->{col} // 0) + length($call->{name}),
+                fn_name => $name,
                 explanation => [
                     "Caller: $name() has no declared effect row",
                     "Callee: $call->{name}() requires " . $effective_eff->to_string,
@@ -315,14 +316,16 @@ sub _check_effect_inclusion ($self, $caller_eff, $callee_eff, $caller_name, $cal
         next if $self->{registry}->is_ambient_effect($label);
         unless ($caller_labels{$label}) {
             $self->{errors}->collect(
-                kind    => 'EffectMismatch',
-                message => "Function $caller_name() calls $callee_name() which requires "
-                         . "effect '$label', but $caller_name() does not declare it",
-                file    => $self->{file},
-                line    => $line,
-                col     => $col,
-                end_col => $col + length($callee_name),
-                explanation => [
+                kind         => 'EffectMismatch',
+                message      => "Function $caller_name() calls $callee_name() which requires "
+                              . "effect '$label', but $caller_name() does not declare it",
+                file         => $self->{file},
+                line         => $line,
+                col          => $col,
+                end_col      => $col + length($callee_name),
+                fn_name      => $caller_name,
+                effect_label => $label,
+                explanation  => [
                     "Caller effects: " . $caller_eff->to_string,
                     "Callee effects: " . $callee_eff->to_string,
                     "Missing effect label: $label",

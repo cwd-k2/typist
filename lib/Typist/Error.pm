@@ -19,6 +19,8 @@ sub new ($class, %args) {
         related       => $args{related},
         suggestions   => $args{suggestions},
         explanation   => $args{explanation},
+        fn_name       => $args{fn_name},
+        effect_label  => $args{effect_label},
     }, $class;
 }
 
@@ -34,6 +36,8 @@ sub actual_type   ($self) { $self->{actual_type} }
 sub related       ($self) { $self->{related} }
 sub suggestions   ($self) { $self->{suggestions} }
 sub explanation   ($self) { $self->{explanation} }
+sub fn_name       ($self) { $self->{fn_name} }
+sub effect_label  ($self) { $self->{effect_label} }
 
 sub to_string ($self) {
     my $loc = $self->{col} > 0

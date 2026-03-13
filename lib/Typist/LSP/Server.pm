@@ -647,6 +647,8 @@ sub _emit_diagnostics ($self, $doc, $result) {
                 ($d->{expected_type} ? (_expected_type => $d->{expected_type}) : ()),
                 ($d->{actual_type}   ? (_actual_type   => $d->{actual_type})   : ()),
                 ($d->{explanation}   ? (_explanation   => $d->{explanation})   : ()),
+                ($d->{fn_name}       ? (_fn_name       => $d->{fn_name})       : ()),
+                ($d->{effect_label}  ? (_effect_label  => $d->{effect_label})  : ()),
             },
         };
 

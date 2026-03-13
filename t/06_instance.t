@@ -39,7 +39,8 @@ subtest 'Registry instance cycle detection' => sub {
     $r->define_alias('Bar', 'Foo');
 
     eval { $r->lookup_type('Foo') };
-    like $@, qr/cycle/, 'detected alias cycle';
+    ok $@ && (ref $@ eq 'HASH' ? ($@->{type} // '') eq 'CycleError' : $@ =~ /cycle/),
+       'detected alias cycle';
 };
 
 subtest 'Registry instance functions' => sub {

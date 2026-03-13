@@ -55,19 +55,21 @@ sub actions_for_diagnostics ($class, $diagnostics, $doc, $registry) {
 # Suggest adding a missing effect to the caller's annotation.
 # Parses the EffectMismatch message to extract effect label and function name.
 sub _suggest_add_effect ($class, $diag, $doc) {
-    my $msg = $diag->{message} // return undef;
+    my $data = $diag->{data} // +{};
+    my $msg  = $diag->{message} // return undef;
 
-    # Pattern 1: "Function foo() calls bar() which requires effect 'Console', but foo() does not declare it"
-    # Pattern 2: "Function foo() calls bar() which requires [Console], but foo() has no effect annotation"
-    # Pattern 3: "Function foo() calls unannotated bar() which may perform any effect"
-
-    my ($effect_label) = $msg =~ /effect '(\w+)'/;
+    # Prefer structured data from EffectChecker, fall back to regex
+    my $effect_label = $data->{_effect_label};
     unless ($effect_label) {
-        ($effect_label) = $msg =~ /requires \[([^\]]+)\]/;
+        ($effect_label) = $msg =~ /effect '(\w+)'/;
+        ($effect_label) = $msg =~ /requires \[([^\]]+)\]/ unless $effect_label;
     }
     return undef unless $effect_label;
 
-    my ($fn_name) = $msg =~ /\AFunction (\w+)\(\)/;
+    my $fn_name = $data->{_fn_name};
+    unless ($fn_name) {
+        ($fn_name) = $msg =~ /\AFunction (\w+)\(\)/;
+    }
     return undef unless $fn_name;
 
     my $action = +{

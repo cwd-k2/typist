@@ -68,7 +68,10 @@ sub _extract_file ($self, $path) {
     close $fh;
 
     my $extracted = eval { Typist::Static::Extractor->extract($source) };
-    return if $@;
+    if ($@) {
+        warn "Typist::LSP::Workspace: extraction failed for $path: $@";
+        return;
+    }
 
     $self->_set_file_info($path, $extracted, $self->_build_file_info($extracted, $source));
 

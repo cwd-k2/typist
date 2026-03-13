@@ -221,4 +221,34 @@ PERL
     is $unknown_tc[0]->{line}, 5, 'typeclass diagnostic points to typeclass definition line';
 };
 
+# ── Structured CycleError dispatch ─────────────
+
+subtest 'alias cycle produces structured CycleError in registry' => sub {
+    my $r = Typist::Registry->new;
+    $r->define_alias('Foo', 'Bar');
+    $r->define_alias('Bar', 'Foo');
+
+    eval { $r->lookup_type('Foo') };
+    my $err = $@;
+    ok $err, 'lookup_type dies on cycle';
+    is ref $err, 'HASH', 'exception is a hashref (structured)';
+    is $err->{type}, 'CycleError', 'exception type is CycleError';
+    is $err->{name}, 'Foo', 'exception carries the alias name';
+};
+
+subtest 'TypeEnv survives alias cycle without crashing' => sub {
+    my $result = Typist::Static::Analyzer->analyze(<<'PERL', file => 'cycle_env.pm');
+use v5.40;
+typedef CycA => 'CycB';
+typedef CycB => 'CycA';
+
+sub use_cycle :sig((CycA) -> CycA) ($x) { $x }
+PERL
+
+    my @cycles = grep { $_->{kind} eq 'CycleError' } @{$result->{diagnostics}};
+    ok @cycles, 'cycle errors detected';
+    # Key: the analyzer completes without crashing despite env building
+    ok defined $result->{diagnostics}, 'analyzer completed successfully';
+};
+
 done_testing;

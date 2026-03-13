@@ -60,7 +60,8 @@ subtest 'bare cycle still errors' => sub {
     my $err;
     eval { Typist::Registry->lookup_type('Loop1') };
     $err = $@;
-    like $err, qr/cycle/, 'bare cycle detected for Loop1';
+    ok $err && (ref $err eq 'HASH' ? ($err->{type} // '') eq 'CycleError' : $err =~ /cycle/),
+       'bare cycle detected for Loop1';
 };
 
 subtest 'recursive depth limit prevents infinite loop' => sub {

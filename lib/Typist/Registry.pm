@@ -86,7 +86,7 @@ sub lookup_type ($invocant, $name) {
             if ($inner) {
                 # Bare alias cycle (A -> B -> A): no type constructor intervenes
                 if ($inner->is_alias && $inner->alias_name eq $name) {
-                    die "Typist: alias cycle detected involving '$name'";
+                    die +{ type => 'CycleError', name => $name };
                 }
                 $parsed = $inner;
             }

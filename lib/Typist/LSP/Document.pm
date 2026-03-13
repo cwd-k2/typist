@@ -115,6 +115,9 @@ sub analyze ($self, %opts) {
     # Analysis failed (e.g., PPI cannot parse non-Perl content).
     # Cache a minimal empty result so subsequent requests short-circuit
     # instead of retrying and failing on every hover/completion.
+    if ($@ && !$self->{result}) {
+        warn "Typist::LSP::Document: analysis failed: $@";
+    }
     unless ($self->{result}) {
         $self->{result} = +{
             errors    => [],

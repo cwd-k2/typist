@@ -76,7 +76,9 @@ sub _check_aliases :TIMED(aliases) ($self) {
         my ($line, $file, $col) = $self->_alias_line($name);
         my $type = eval { $self->{registry}->lookup_type($name) };
         if ($@) {
-            if ($@ =~ /cycle/) {
+            if ((ref $@ eq 'HASH' && ($@->{type} // '') eq 'CycleError')
+                || (!ref $@ && $@ =~ /cycle/))
+            {
                 $self->{errors}->collect(
                     kind    => 'CycleError',
                     message => "Alias cycle detected involving '$name'",
