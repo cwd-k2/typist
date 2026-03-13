@@ -4,9 +4,10 @@ use v5.40;
 our $VERSION = '0.01';
 
 use Exporter 'import';
-our @EXPORT_OK = qw(widen_literal contains_any contains_placeholder);
+our @EXPORT_OK = qw(widen_literal contains_any contains_placeholder parse_generics_cached);
 
 use List::Util 'any';
+use Scalar::Util 'refaddr';
 use Typist::Type::Atom;
 use Typist::Type::Param;
 
@@ -82,6 +83,36 @@ sub contains_placeholder ($type) {
         return 1 if $type->optional_ref && any { contains_placeholder($_) } values $type->optional_ref->%*;
     }
     0;
+}
+
+# ── Generic Declaration Parsing ────────────────
+
+# Parse generics_raw into structured declarations, with caching.
+# Shared between TypeEnv and CallChecker to avoid duplication.
+# $cache is a hashref owned by the caller (keyed by refaddr).
+sub parse_generics_cached ($generics_raw, $registry, $cache) {
+    my $cache_key = ref($generics_raw) ? Scalar::Util::refaddr($generics_raw) : undef;
+    if (defined $cache_key && exists $cache->{$cache_key}) {
+        return $cache->{$cache_key}->@*;
+    }
+
+    my @result;
+    my @raw_strings;
+    for my $g ($generics_raw->@*) {
+        if (ref $g eq 'HASH' && exists $g->{name}) {
+            push @result, $g;
+        } else {
+            push @raw_strings, $g;
+        }
+    }
+    if (@raw_strings) {
+        my $spec = join(', ', @raw_strings);
+        push @result, Typist::Attribute->parse_generic_decl(
+            $spec, registry => $registry,
+        );
+    }
+    $cache->{$cache_key} = \@result if defined $cache_key;
+    @result;
 }
 
 1;

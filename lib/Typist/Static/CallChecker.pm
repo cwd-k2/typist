@@ -7,7 +7,7 @@ use List::Util 'any';
 use Typist::Attribute;
 use Typist::Static::Infer;
 use Typist::Static::Unify;
-use Typist::Static::TypeUtil qw(contains_any contains_placeholder);
+use Typist::Static::TypeUtil qw(contains_any contains_placeholder parse_generics_cached);
 use Typist::Parser;
 use Typist::Subtype;
 use Typist::Transform;
@@ -909,36 +909,7 @@ sub _check_generic_call ($self, $name, $fn, $args, $env, $word) {
     }
 }
 
-# Parse generics_raw strings into structured declarations.
-# Each entry is like "T", "T: Num", "r: Row", or already-structured hashrefs.
-# Delegates to Attribute->parse_generic_decl when registry is available,
-# so that typeclass constraints (T: Show) are properly distinguished from
-# bounded quantification (T: Num).
-sub _parse_generics ($self, $generics_raw) {
-    my $cache_key = ref $generics_raw ? refaddr($generics_raw) : undef;
-    if (defined $cache_key && exists $self->{_parsed_generics_cache}{$cache_key}) {
-        return $self->{_parsed_generics_cache}{$cache_key}->@*;
-    }
 
-    my @result;
-    my @raw_strings;
-    for my $g ($generics_raw->@*) {
-        # Already structured (from registry): { name => ..., bound_expr => ... }
-        if (ref $g eq 'HASH' && exists $g->{name}) {
-            push @result, $g;
-        } else {
-            push @raw_strings, $g;
-        }
-    }
-    if (@raw_strings) {
-        my $spec = join(', ', @raw_strings);
-        push @result, Typist::Attribute->parse_generic_decl(
-            $spec, registry => $self->{registry},
-        );
-    }
-    $self->{_parsed_generics_cache}{$cache_key} = \@result if defined $cache_key;
-    @result;
-}
 
 sub _split_named_arg_groups ($self, $expr) {
     my @groups;
@@ -965,7 +936,7 @@ sub _generic_template ($self, $fn) {
     my $cache = $self->{_generic_template_cache};
     return $cache->{$cache_key} if exists $cache->{$cache_key};
 
-    my @generics = $self->_parse_generics($generics);
+    my @generics = parse_generics_cached($generics, $self->{registry}, $self->{_parsed_generics_cache});
     my %var_names = map { $_->{name} => 1 } @generics;
 
     my @param_types;

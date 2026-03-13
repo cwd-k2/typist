@@ -8,7 +8,7 @@ use Typist::Attribute;
 use Typist::Static::Extractor;
 use Typist::Static::Infer;
 use Typist::Static::NarrowingEngine;
-use Typist::Static::TypeUtil qw(widen_literal);
+use Typist::Static::TypeUtil qw(widen_literal parse_generics_cached);
 use Typist::Parser;
 use Typist::Type::Atom;
 use Typist::Type::Param;
@@ -125,7 +125,7 @@ sub _fn_template ($self, $fn) {
     my $names = $fn->{param_names} // [];
     my %bound_map;
     if ($fn->{generics} && $fn->{generics}->@*) {
-        my @generics = $self->_parse_generics($fn->{generics});
+        my @generics = parse_generics_cached($fn->{generics}, $self->{registry}, $self->{_parsed_generics_cache});
         for my $g (@generics) {
             next unless $g->{bound_expr};
             my $bound_type = $self->resolve_type($g->{bound_expr});
@@ -324,31 +324,6 @@ sub _scoped_env ($self, $base_env, $node) {
     $base_env;
 }
 
-# Parse generics_raw strings into structured declarations.
-sub _parse_generics ($self, $generics_raw) {
-    my $cache_key = ref($generics_raw) ? refaddr($generics_raw) : undef;
-    if (defined $cache_key && exists $self->{_parsed_generics_cache}{$cache_key}) {
-        return $self->{_parsed_generics_cache}{$cache_key}->@*;
-    }
-
-    my @result;
-    my @raw_strings;
-    for my $g ($generics_raw->@*) {
-        if (ref $g eq 'HASH' && exists $g->{name}) {
-            push @result, $g;
-        } else {
-            push @raw_strings, $g;
-        }
-    }
-    if (@raw_strings) {
-        my $spec = join(', ', @raw_strings);
-        push @result, Typist::Attribute->parse_generic_decl(
-            $spec, registry => $self->{registry},
-        );
-    }
-    $self->{_parsed_generics_cache}{$cache_key} = \@result if defined $cache_key;
-    @result;
-}
 
 # ── Loop Variable Support ────────────────────────
 
