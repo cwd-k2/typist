@@ -8,6 +8,8 @@ use Typist::Type::Literal;
 use Typist::Type::Param;
 use Typist::Type::Func;
 use Typist::Type::Union;
+use Typist::Type::Intersection;
+use Typist::Type::Record;
 use Typist::Type::Var;
 
 my $Int  = Typist::Type::Atom->new('Int');
@@ -82,6 +84,29 @@ subtest 'contains_any — nested in Union' => sub {
     ok !contains_any($u2), 'no Any in clean union';
 };
 
+subtest 'contains_any — Param intentionally skipped' => sub {
+    # Param args are NOT checked for Any — ArrayRef[Any] from LUB precision
+    # loss should not trigger the gradual guard (we want to catch mismatches).
+    my $p = Typist::Type::Param->new('ArrayRef', $Any);
+    ok !contains_any($p), 'ArrayRef[Any] not flagged (intentional)';
+};
+
+subtest 'contains_any — nested in Intersection' => sub {
+    my $i = Typist::Type::Intersection->new($Int, $Any);
+    ok contains_any($i), 'Any in intersection';
+
+    my $i2 = Typist::Type::Intersection->new($Int, $Str);
+    ok !contains_any($i2), 'no Any in clean intersection';
+};
+
+subtest 'contains_any — nested in Record' => sub {
+    my $r = Typist::Type::Record->new(x => $Any);
+    ok contains_any($r), 'Any in Record detected';
+
+    my $r2 = Typist::Type::Record->new(x => $Int, y => $Str);
+    ok !contains_any($r2), 'no Any in clean Record';
+};
+
 subtest 'contains_any — placeholder detected' => sub {
     ok contains_any($Hole), '_ placeholder detected as Any-like';
 };
@@ -109,6 +134,16 @@ subtest 'contains_placeholder — nested in Func' => sub {
 subtest 'contains_placeholder — nested in Union' => sub {
     my $u = Typist::Type::Union->new($Int, $Hole);
     ok contains_placeholder($u), '_ in union detected';
+};
+
+subtest 'contains_placeholder — nested in Intersection' => sub {
+    my $i = Typist::Type::Intersection->new($Int, $Hole);
+    ok contains_placeholder($i), '_ in intersection detected';
+};
+
+subtest 'contains_placeholder — nested in Record' => sub {
+    my $r = Typist::Type::Record->new(x => $Hole);
+    ok contains_placeholder($r), '_ in Record detected';
 };
 
 done_testing;

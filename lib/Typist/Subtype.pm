@@ -68,6 +68,8 @@ sub common_super ($class, $a, $b) {
             if ($a_eff->name ne 'Str' && $b_eff->name ne 'Str') {
                 return $oa > $ob ? $a_eff : $b_eff;
             }
+            # Cross-branch: Str vs numeric chain → Any (no common ancestor below Any)
+            return Typist::Type::Atom->new('Any');
         }
     }
 
@@ -402,7 +404,14 @@ sub _check_impl ($sub, $super, $registry = undef) {
 
     # ── Row subtyping — label set inclusion ───────
     # Row(A,B,C) <: Row(A,B) iff super's labels ⊆ sub's labels
+    # Open row (has row_var) </: closed row: unknown effects cannot satisfy a closed contract
     if ($sub->is_row && $super->is_row) {
+        if (!$super->is_closed && $sub->is_closed) {
+            # closed <: open is fine (fewer constraints on super)
+        } elsif ($sub->row_var && !$super->row_var) {
+            # open sub <: closed super → false (open may carry unknown labels)
+            return 0;
+        }
         my %sub_labels = map { $_ => 1 } $sub->labels;
         for my $label ($super->labels) {
             return 0 unless $sub_labels{$label};

@@ -351,4 +351,48 @@ subtest 'cache clear does not break correctness' => sub {
     ), 'Str ≮: Int after cache clear';
 };
 
+# ── Row openness subtyping ──────────────────────
+
+subtest 'Row open vs closed subtyping' => sub {
+    my $closed_ab = Typist::Type::Row->new(labels => [qw(A B)]);
+    my $closed_a  = Typist::Type::Row->new(labels => [qw(A)]);
+    my $open_a    = Typist::Type::Row->new(
+        labels  => [qw(A)],
+        row_var => Typist::Type::Var->new('r'),
+    );
+
+    # open sub </: closed super (unknown labels may violate contract)
+    ok !is_sub($open_a, $closed_a),
+        'Row(A|r) </: Row(A) — open cannot satisfy closed contract';
+
+    # closed sub <: open super is fine
+    ok is_sub($closed_a, $open_a),
+        'Row(A) <: Row(A|r) — closed satisfies open';
+
+    # closed <: closed still works
+    ok is_sub($closed_ab, $closed_a),
+        'Row(A,B) <: Row(A) — closed label inclusion';
+};
+
+# ── Cross-branch common_super ────────────────────
+
+subtest 'common_super Str vs numeric → Any' => sub {
+    my $str = Typist::Type::Atom->new('Str');
+    my $int = Typist::Type::Atom->new('Int');
+    my $num = Typist::Type::Atom->new('Num');
+
+    my $lub_si = lub($str, $int);
+    ok $lub_si->is_atom && $lub_si->name eq 'Any',
+        'common_super(Str, Int) = Any';
+
+    my $lub_sn = lub($str, $num);
+    ok $lub_sn->is_atom && $lub_sn->name eq 'Any',
+        'common_super(Str, Num) = Any';
+
+    # Commutativity
+    my $lub_is = lub($int, $str);
+    ok $lub_is->is_atom && $lub_is->name eq 'Any',
+        'common_super(Int, Str) = Any (commutative)';
+};
+
 done_testing;

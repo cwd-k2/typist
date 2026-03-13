@@ -39,12 +39,23 @@ sub widen_literal ($type) {
 # Check whether a type transitively contains Any (gradual typing marker).
 sub contains_any ($type) {
     return 1 if $type->is_atom && $type->name eq 'Any';
+    # Note: Param is intentionally omitted here. ArrayRef[Any] commonly arises
+    # from LUB precision loss (e.g., lub(Int, Str) = Any) and should NOT trigger
+    # the gradual guard — we still want to detect element type mismatches.
+    # Param args are checked for placeholder '_' via contains_placeholder below.
     if ($type->is_func) {
         return 1 if any { contains_any($_) } $type->params;
         return 1 if contains_any($type->returns);
     }
     if ($type->is_union) {
         return 1 if any { contains_any($_) } $type->members;
+    }
+    if ($type->is_intersection) {
+        return 1 if any { contains_any($_) } $type->members;
+    }
+    if ($type->is_record) {
+        return 1 if any { contains_any($_) } values $type->required_ref->%*;
+        return 1 if $type->optional_ref && any { contains_any($_) } values $type->optional_ref->%*;
     }
     return 1 if contains_placeholder($type);
     0;
@@ -62,6 +73,13 @@ sub contains_placeholder ($type) {
     }
     if ($type->is_union) {
         return 1 if any { contains_placeholder($_) } $type->members;
+    }
+    if ($type->is_intersection) {
+        return 1 if any { contains_placeholder($_) } $type->members;
+    }
+    if ($type->is_record) {
+        return 1 if any { contains_placeholder($_) } values $type->required_ref->%*;
+        return 1 if $type->optional_ref && any { contains_placeholder($_) } values $type->optional_ref->%*;
     }
     0;
 }
