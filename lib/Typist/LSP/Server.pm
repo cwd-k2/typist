@@ -389,6 +389,17 @@ sub _handle_signature_help ($self, $params) {
         }
     }
 
+    # Qualified call: Package::func( → look up in specific package first
+    if (!$sym && $ctx->{qualifier}) {
+        my $reg = $self->_ws_registry;
+        if ($reg) {
+            my $sig = $reg->lookup_function($ctx->{qualifier}, $ctx->{name});
+            if ($sig) {
+                $sym = Typist::LSP::Document::_synthesize_function_symbol($ctx->{name}, $sig);
+            }
+        }
+    }
+
     if (!$sym) {
         $sym = $doc->find_function_symbol($ctx->{name});
     }

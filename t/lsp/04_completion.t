@@ -619,6 +619,37 @@ PERL
     ok((grep { $_ eq 'Blue' }   @labels), 'Blue still available');
 };
 
+subtest 'code completion: match arm with generic ADT' => sub {
+    my $ws = Typist::LSP::Workspace->new;
+    my $dt_source = <<'PERL';
+use v5.40;
+package GenADT;
+datatype 'Option[T]' => Some => '(T)', None => '()';
+PERL
+    $ws->update_file('/fake/GenADT.pm', $dt_source);
+
+    my $doc_source = <<'PERL';
+use v5.40;
+my $x :sig(Option[Int]) = Some(42);
+match $x,
+PERL
+
+    my $doc = Typist::LSP::Document->new(uri => 'file:///test_gen_match.pm', content => $doc_source);
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    my $ctx = $doc->code_completion_at(2, length('match $x, '));
+    ok $ctx, 'detected match_arm context';
+    is $ctx->{kind}, 'match_arm', 'kind is match_arm';
+
+    my $items = Typist::LSP::Completion->complete_code($ctx, $doc, $ws->registry);
+    ok ref $items eq 'ARRAY', 'items is array';
+    ok @$items > 1, 'got match arm items for generic ADT';
+
+    my @labels = map { $_->{label} } @$items;
+    ok((grep { $_ eq 'Some' } @labels), 'Some in match arms');
+    ok((grep { $_ eq 'None' } @labels), 'None in match arms');
+};
+
 # ── Code Completion: variable name ─────────────────
 
 subtest 'code completion: variable name' => sub {

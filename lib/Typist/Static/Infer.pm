@@ -2180,13 +2180,18 @@ sub infer_iterable_element_type ($class, $list_node, $env = undef) {
         return _unwrap_arrayref($var_type) if $var_type;
     }
 
-    # Pattern 2: @array — Symbol('@array') → lookup as $array
+    # Pattern 2: @array — Symbol('@array') → lookup as @array or $array
     if (@children == 1 && $children[0]->isa('PPI::Token::Symbol')
         && $children[0]->raw_type eq '@')
     {
-        my $scalar_name = $children[0]->content;
-        $scalar_name =~ s/\A\@/\$/;
-        my $var_type = _lookup_var($scalar_name, $env);
+        my $arr_name = $children[0]->content;
+        # Try @-sigil first (annotated arrays: my @arr :sig(Array[T]))
+        my $var_type = _lookup_var($arr_name, $env);
+        unless ($var_type) {
+            # Fallback: $-sigil (scalar ref variables: my $ref :sig(ArrayRef[T]))
+            (my $scalar_name = $arr_name) =~ s/\A\@/\$/;
+            $var_type = _lookup_var($scalar_name, $env);
+        }
         return _unwrap_arrayref($var_type) if $var_type;
     }
 

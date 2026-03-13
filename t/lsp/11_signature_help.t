@@ -261,4 +261,20 @@ PERL
     is $ctx->{name}, 'derive', 'function name is derive';
 };
 
+subtest 'signatureHelp context detects effect qualified call' => sub {
+    use Typist::LSP::Document;
+
+    my $source = <<'PERL';
+use v5.40;
+Logger::log("info",
+PERL
+
+    my $doc = Typist::LSP::Document->new(uri => 'file:///test_eff_sig.pm', content => $source);
+    my $ctx = $doc->signature_context(1, length('Logger::log("info",'));
+    ok $ctx, 'got signature context for effect op call';
+    is $ctx->{name}, 'log', 'function name is log';
+    is $ctx->{qualifier}, 'Logger', 'qualifier is Logger (effect name)';
+    is $ctx->{active_parameter}, 1, 'active param is 1 (second arg)';
+};
+
 done_testing;

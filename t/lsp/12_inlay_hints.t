@@ -395,4 +395,79 @@ PERL
     ok $x_hint, 'found $x hint with Int type from generic callback';
 };
 
+# ── Inlay hints for for-loop variable ──────────
+
+subtest 'inlayHint shows inferred type for for-loop variable' => sub {
+    my $source = <<'PERL';
+use v5.40;
+my @nums :sig(Array[Int]) = (1, 2, 3);
+for my $n (@nums) {
+    say $n;
+}
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test_loop.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/inlayHint', +{
+            textDocument => +{ uri => 'file:///test_loop.pm' },
+            range => +{
+                start => +{ line => 0, character => 0 },
+                end   => +{ line => 5, character => 0 },
+            },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got inlayHint response';
+    my $hints = $resp->{result};
+    ok ref $hints eq 'ARRAY', 'result is array';
+
+    my ($hint) = grep { ($_->{label} // '') =~ /Int/ && ($_->{position}{line} // -1) == 2 } @$hints;
+    ok $hint, 'found loop variable $n hint with Int type';
+    like $hint->{label}, qr/: Int$/, 'label is ": Int"';
+};
+
+subtest 'inlayHint shows inferred type for nested loop variable' => sub {
+    my $source = <<'PERL';
+use v5.40;
+sub flatten :sig((ArrayRef[ArrayRef[Int]]) -> Array[Int]) ($matrix) {
+    my @result;
+    for my $row (@$matrix) {
+        for my $item (@$row) {
+            push @result, $item;
+        }
+    }
+    @result;
+}
+PERL
+
+    my @results = run_session(init_shutdown_wrap(
+        lsp_notification('textDocument/didOpen', +{
+            textDocument => +{ uri => 'file:///test_nested.pm', text => $source, version => 1 },
+        }),
+        lsp_request(2, 'textDocument/inlayHint', +{
+            textDocument => +{ uri => 'file:///test_nested.pm' },
+            range => +{
+                start => +{ line => 0, character => 0 },
+                end   => +{ line => 10, character => 0 },
+            },
+        }),
+    ));
+
+    my ($resp) = grep { defined $_->{id} && $_->{id} == 2 } @results;
+    ok $resp, 'got inlayHint response';
+    my $hints = $resp->{result};
+    ok ref $hints eq 'ARRAY', 'result is array';
+
+    # $row on line 3 (0-indexed)
+    my ($row_hint) = grep { ($_->{label} // '') =~ /ArrayRef\[Int\]/ && ($_->{position}{line} // -1) == 3 } @$hints;
+    ok $row_hint, 'found $row hint with ArrayRef[Int] type';
+
+    # $item on line 4 (0-indexed)
+    my ($item_hint) = grep { ($_->{label} // '') =~ /: Int$/ && ($_->{position}{line} // -1) == 4 } @$hints;
+    ok $item_hint, 'found nested $item hint with Int type';
+};
+
 done_testing;

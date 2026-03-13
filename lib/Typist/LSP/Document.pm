@@ -1369,6 +1369,14 @@ sub signature_context ($self, $line, $col) {
                             active_parameter => $commas,
                         };
                     }
+                    # Qualified call: Package::func(
+                    if ($before =~ /(\w+)::(\w+)\s*\z/) {
+                        return +{
+                            name             => $2,
+                            qualifier        => $1,
+                            active_parameter => $commas,
+                        };
+                    }
                     return undef unless $before =~ /(\w+)\s*\z/;
                     return +{
                         name             => $1,

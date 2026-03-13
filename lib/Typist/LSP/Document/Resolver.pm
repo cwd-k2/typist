@@ -168,21 +168,41 @@ sub walk_accessor_chain ($self, $type, $chain, $word, $registry, $narrowed = 0) 
         if (exists $req{$field}) {
             $type = $req{$field};
             if ($i == $#$chain) {
+                # When narrowed by defined() guard, strip Undef from Union types
+                my $display_type = $type;
+                if ($narrowed && $type->is_union) {
+                    my @non_undef = grep { !($_->is_atom && $_->name eq 'Undef') } $type->members;
+                    if (@non_undef && @non_undef < scalar($type->members)) {
+                        $display_type = @non_undef == 1 ? $non_undef[0]
+                            : Typist::Type::Union->new(@non_undef);
+                    }
+                }
                 return sym_field(
                     name        => $field,
-                    type        => $type->to_string,
+                    type        => $display_type->to_string,
                     struct_name => $struct->name,
                     optional    => 0,
+                    ($narrowed ? (narrowed => 1) : ()),
                 );
             }
         } elsif (exists $opt{$field}) {
             $type = $opt{$field};
             if ($i == $#$chain) {
+                # When narrowed (e.g. defined() guard), strip Undef from the type
+                my $display_type = $type;
+                if ($narrowed && $type->is_union) {
+                    my @non_undef = grep { !($_->is_atom && $_->name eq 'Undef') } $type->members;
+                    if (@non_undef && @non_undef < scalar($type->members)) {
+                        $display_type = @non_undef == 1 ? $non_undef[0]
+                            : Typist::Type::Union->new(@non_undef);
+                    }
+                }
                 return sym_field(
                     name        => $field,
-                    type        => $type->to_string,
+                    type        => $display_type->to_string,
                     struct_name => $struct->name,
                     optional    => $narrowed ? 0 : 1,
+                    ($narrowed ? (narrowed => 1) : ()),
                 );
             }
         } else {

@@ -1,0 +1,571 @@
+#!/usr/bin/env perl
+use v5.40;
+use FindBin;
+use lib "$FindBin::Bin/../../lib";
+
+use Getopt::Long ();
+use Cwd          ();
+use JSON::PP     ();
+
+use Typist::LSP::Workspace;
+use Typist::LSP::Document;
+use Typist::LSP::Hover;
+use Typist::LSP::SemanticTokens;
+use Typist::LSP::Logger;
+use Typist::LSP::Transport;
+
+# ── Argument Parsing ────────────────────────────
+
+my %opts;
+Getopt::Long::Configure('no_auto_abbrev', 'bundling', 'pass_through');
+Getopt::Long::GetOptions(
+    \%opts,
+    'root=s',
+    'workspace|w=s',
+    'json',
+    'no-color',
+    'verbose|v',
+    'help|h',
+);
+
+my $command = shift @ARGV // 'help';
+
+if ($opts{help} || $command eq 'help') {
+    print <<~'HELP';
+    Usage: typist-lsp-probe COMMAND [OPTIONS] FILE [ARGS...]
+
+    Simulate LSP responses at any position. For debugging and testing.
+
+    Commands:
+      hover LINE:COL         Hover info at position (0-indexed)
+      complete LINE:COL      Code completion at position
+      definition LINE:COL    Go-to-definition at position
+      signature LINE:COL     Signature help at position
+      hints [START[-END]]    Inlay hints for line range (default: all)
+      diagnostics            All diagnostics for file
+      symbols                Document symbols
+      tokens [START[-END]]   Semantic tokens for line range (default: all)
+      snapshot               Full probe: every token + diagnostics + hints
+
+    Options:
+      --root DIR             Workspace root (default: cwd)
+      --workspace, -w DIR    Alias for --root
+      --json                 Output as JSON (for diff/comparison)
+      --verbose, -v          Include extra details
+      --no-color             Disable colored output
+      -h, --help             Show this help message
+
+    Examples:
+      typist-lsp-probe hover lib/Foo.pm 10:5
+      typist-lsp-probe complete lib/Foo.pm 10:15
+      typist-lsp-probe snapshot lib/Foo.pm --json > before.json
+      typist-lsp-probe hints lib/Foo.pm 0-50
+      typist-lsp-probe diagnostics lib/Foo.pm
+    HELP
+    exit 0;
+}
+
+my $file = shift @ARGV // die "FILE argument required\n";
+die "File not found: $file\n" unless -f $file;
+
+# Resolve absolute path
+use File::Spec;
+$file = File::Spec->rel2abs($file);
+
+my $use_color = _should_color(\%opts);
+my $json_out  = $opts{json};
+my $verbose   = $opts{verbose};
+
+my $RED    = $use_color ? "\e[31m" : '';
+my $GREEN  = $use_color ? "\e[32m" : '';
+my $YELLOW = $use_color ? "\e[33m" : '';
+my $CYAN   = $use_color ? "\e[36m" : '';
+my $MAGENTA= $use_color ? "\e[35m" : '';
+my $BOLD   = $use_color ? "\e[1m"  : '';
+my $DIM    = $use_color ? "\e[2m"  : '';
+my $RESET  = $use_color ? "\e[0m"  : '';
+
+# ── Build Document ──────────────────────────────
+
+my $root = $opts{root} // $opts{workspace};
+unless ($root) {
+    $root = Cwd::getcwd();
+    if (-d "$root/lib") { $root = "$root/lib" }
+}
+
+my $ws = Typist::LSP::Workspace->new(root => $root);
+$ws->scan;
+
+my $logger = Typist::LSP::Logger->new(level => 'off');
+
+open my $fh, '<', $file or die "Cannot open $file: $!\n";
+local $/;
+my $source = <$fh>;
+close $fh;
+
+my $uri = "file://$file";
+my $doc = Typist::LSP::Document->new(
+    uri       => $uri,
+    content   => $source,
+    version   => 1,
+    workspace => $ws,
+    logger    => $logger,
+);
+$doc->analyze(workspace_registry => $ws->registry);
+
+my @lines = split /\n/, $source;
+
+# ── Command Dispatch ────────────────────────────
+
+my $dispatch = {
+    hover       => \&cmd_hover,
+    complete    => \&cmd_complete,
+    definition  => \&cmd_definition,
+    signature   => \&cmd_signature,
+    hints       => \&cmd_hints,
+    diagnostics => \&cmd_diagnostics,
+    symbols     => \&cmd_symbols,
+    tokens      => \&cmd_tokens,
+    snapshot    => \&cmd_snapshot,
+};
+
+my $handler = $dispatch->{$command} // die "Unknown command: $command\n";
+$handler->();
+exit 0;
+
+# ── Commands ────────────────────────────────────
+
+sub cmd_hover {
+    my ($line, $col) = _parse_position(shift @ARGV // die "LINE:COL required\n");
+    my $sym = $doc->symbol_at($line, $col);
+    if ($json_out) {
+        _json_print($sym);
+        return;
+    }
+    unless ($sym) {
+        say "${DIM}(no hover at $line:$col)${RESET}";
+        return;
+    }
+    my $hover = Typist::LSP::Hover->hover($sym);
+    if ($hover) {
+        say $hover->{contents}{value};
+    } else {
+        say "${YELLOW}symbol found but no hover format:${RESET}";
+        _dump_sym($sym);
+    }
+}
+
+sub cmd_complete {
+    my ($line, $col) = _parse_position(shift @ARGV // die "LINE:COL required\n");
+
+    my @results;
+
+    # Annotation-level completion
+    if (my $ctx = $doc->completion_context($line, $col)) {
+        push @results, { level => 'annotation', context => $ctx };
+    }
+
+    # Code-level completion
+    if (my $ctx = $doc->code_completion_at($line, $col)) {
+        push @results, { level => 'code', context => $ctx };
+    }
+
+    if ($json_out) {
+        _json_print(\@results);
+        return;
+    }
+    unless (@results) {
+        say "${DIM}(no completion context at $line:$col)${RESET}";
+        return;
+    }
+    for my $r (@results) {
+        say "${BOLD}$r->{level}${RESET} completion:";
+        _dump_hash($r->{context}, '  ');
+    }
+}
+
+sub cmd_definition {
+    my ($line, $col) = _parse_position(shift @ARGV // die "LINE:COL required\n");
+    my $def = $doc->definition_at($line, $col);
+    if ($json_out) {
+        _json_print($def);
+        return;
+    }
+    unless ($def) {
+        say "${DIM}(no definition at $line:$col)${RESET}";
+        return;
+    }
+    my $path = Typist::LSP::Transport::uri_to_path($def->{uri} // $uri);
+    say "${GREEN}$def->{name}${RESET} → $path:$def->{line}:$def->{col}";
+}
+
+sub cmd_signature {
+    my ($line, $col) = _parse_position(shift @ARGV // die "LINE:COL required\n");
+    my $sig = $doc->signature_context($line, $col);
+    if ($json_out) {
+        _json_print($sig);
+        return;
+    }
+    unless ($sig) {
+        say "${DIM}(no signature context at $line:$col)${RESET}";
+        return;
+    }
+    my $method = $sig->{is_method} ? "$sig->{var}->" : '';
+    say "${CYAN}${method}$sig->{name}${RESET}(${YELLOW}param $sig->{active_parameter}${RESET})";
+}
+
+sub cmd_hints {
+    my ($start, $end) = _parse_range(shift @ARGV, scalar @lines);
+    my $hints = $doc->inlay_hints($start, $end);
+    if ($json_out) {
+        _json_print($hints);
+        return;
+    }
+    unless (@$hints) {
+        say "${DIM}(no inlay hints in $start-$end)${RESET}";
+        return;
+    }
+    for my $h (sort { $a->{position}{line} <=> $b->{position}{line}
+                   || $a->{position}{character} <=> $b->{position}{character} } @$hints) {
+        my $l = $h->{position}{line};
+        my $c = $h->{position}{character};
+        my $label = $h->{label};
+        printf "${DIM}L%-4d C%-3d${RESET} %s\n", $l, $c, $label;
+    }
+}
+
+sub cmd_diagnostics {
+    my $result = $doc->result // {};
+    my @diags;
+
+    # Errors from analysis
+    for my $err (@{$result->{errors} // []}) {
+        push @diags, $err;
+    }
+    # Diagnostics from analyzer
+    for my $d (@{$result->{diagnostics} // []}) {
+        push @diags, $d;
+    }
+
+    if ($json_out) {
+        _json_print(\@diags);
+        return;
+    }
+    unless (@diags) {
+        say "${GREEN}(no diagnostics)${RESET}";
+        return;
+    }
+    for my $d (sort { ($a->{line} // 0) <=> ($b->{line} // 0) } @diags) {
+        my $sev = $d->{severity} // $d->{level} // '?';
+        my $line = $d->{line} // '?';
+        my $msg = $d->{message} // $d->{msg} // '(no message)';
+        my $color = $sev <= 1 ? $RED : $sev == 2 ? $YELLOW : $DIM;
+        printf "${color}[%s] L%-4s${RESET} %s\n", _sev_label($sev), $line, $msg;
+    }
+}
+
+sub cmd_symbols {
+    my $syms = $doc->document_symbols;
+    if ($json_out) {
+        _json_print($syms);
+        return;
+    }
+    unless (@$syms) {
+        say "${DIM}(no symbols)${RESET}";
+        return;
+    }
+    for my $s (sort { $a->{range}{start}{line} <=> $b->{range}{start}{line} } @$syms) {
+        my $l = $s->{range}{start}{line};
+        my $detail = $s->{detail} ? " ${DIM}$s->{detail}${RESET}" : '';
+        printf "${DIM}L%-4d${RESET} ${BOLD}%-20s${RESET} ${CYAN}%s${RESET}%s\n",
+            $l, $s->{name}, _kind_label($s->{kind}), $detail;
+    }
+}
+
+sub cmd_tokens {
+    my ($start, $end) = _parse_range(shift @ARGV, scalar @lines);
+    my $tokens = Typist::LSP::SemanticTokens->compute($doc);
+    if ($json_out) {
+        _json_print($tokens);
+        return;
+    }
+    unless ($tokens && @{$tokens->{data} // []}) {
+        say "${DIM}(no semantic tokens)${RESET}";
+        return;
+    }
+    # Decode delta-encoded tokens
+    my @data = @{$tokens->{data}};
+    my ($cur_line, $cur_col) = (0, 0);
+    my @decoded;
+    while (@data >= 5) {
+        my ($dl, $dc, $len, $type, $mods) = splice(@data, 0, 5);
+        $cur_line += $dl;
+        $cur_col = $dl > 0 ? $dc : $cur_col + $dc;
+        next if $cur_line < $start || $cur_line > $end;
+        my $text = substr($lines[$cur_line] // '', $cur_col, $len);
+        push @decoded, { line => $cur_line, col => $cur_col, len => $len,
+                         type => $type, mods => $mods, text => $text };
+    }
+    for my $t (@decoded) {
+        printf "${DIM}L%-4d C%-3d${RESET} %-20s ${CYAN}type=%d${RESET} ${DIM}mods=%d${RESET}\n",
+            $t->{line}, $t->{col}, $t->{text}, $t->{type}, $t->{mods};
+    }
+}
+
+sub cmd_snapshot {
+    my %snapshot;
+
+    # 1. Diagnostics
+    my $result = $doc->result // {};
+    $snapshot{diagnostics} = [
+        @{$result->{errors} // []},
+        @{$result->{diagnostics} // []},
+    ];
+
+    # 2. Inlay hints (all lines)
+    $snapshot{inlay_hints} = $doc->inlay_hints(0, scalar @lines);
+
+    # 3. Document symbols
+    $snapshot{symbols} = $doc->document_symbols;
+
+    # 4. Per-token hover probe — scan every token position
+    my @hover_results;
+    for my $line_num (0 .. $#lines) {
+        my $text = $lines[$line_num];
+        my $len = length $text;
+
+        # Find word boundaries in this line
+        my $pos = 0;
+        while ($pos < $len) {
+            my $ch = substr($text, $pos, 1);
+
+            # Skip whitespace and simple punctuation
+            if ($ch =~ /[\s\(\)\[\]\{\},;]/) {
+                $pos++;
+                next;
+            }
+
+            # Sigil-prefixed: $var, @arr, %hash
+            if ($ch =~ /[\$\@%]/ && $pos + 1 < $len && substr($text, $pos + 1, 1) =~ /[a-zA-Z_]/) {
+                my $end = $pos + 1;
+                $end++ while $end < $len && substr($text, $end, 1) =~ /\w/;
+                _probe_hover(\@hover_results, $line_num, $pos);
+                $pos = $end;
+                next;
+            }
+
+            # Word token (function, type, keyword, hash key, etc.)
+            if ($ch =~ /[a-zA-Z_]/) {
+                my $end = $pos;
+                $end++ while $end < $len && substr($text, $end, 1) =~ /[\w:]/;
+                _probe_hover(\@hover_results, $line_num, $pos);
+                $pos = $end;
+                next;
+            }
+
+            $pos++;
+        }
+    }
+    $snapshot{hover} = \@hover_results;
+
+    # 5. Completion probe — arrow chains, effect ops, annotation contexts
+    my @complete_results;
+    for my $line_num (0 .. $#lines) {
+        my $text = $lines[$line_num];
+
+        # After -> (method/accessor)
+        while ($text =~ /->(\{?)(\w*)/g) {
+            my $col = pos($text);
+            if (my $ctx = $doc->code_completion_at($line_num, $col)) {
+                push @complete_results, { line => $line_num, col => $col, %$ctx };
+            }
+        }
+        # Effect:: (effect ops)
+        while ($text =~ /[A-Z]\w*::/g) {
+            my $col = pos($text);
+            if (my $ctx = $doc->code_completion_at($line_num, $col)) {
+                push @complete_results, { line => $line_num, col => $col, %$ctx };
+            }
+        }
+        # Annotation contexts
+        if (my $ctx = $doc->completion_context($line_num, length($text))) {
+            push @complete_results, { line => $line_num, col => length($text), level => 'annotation', context => $ctx };
+        }
+    }
+    $snapshot{completion_points} = \@complete_results;
+
+    # 6. Semantic tokens summary
+    my $tokens = Typist::LSP::SemanticTokens->compute($doc);
+    $snapshot{semantic_token_count} = $tokens ? scalar(@{$tokens->{data} // []}) / 5 : 0;
+
+    if ($json_out) {
+        _json_print(\%snapshot);
+        return;
+    }
+
+    # Human-readable summary
+    say "${BOLD}═══ LSP Probe Snapshot ═══${RESET}";
+    say "";
+
+    # Diagnostics
+    my @diags = @{$snapshot{diagnostics}};
+    my $errs  = grep { ($_->{severity} // 9) <= 1 } @diags;
+    my $warns = grep { ($_->{severity} // 9) == 2 } @diags;
+    say "${BOLD}Diagnostics:${RESET} $errs errors, $warns warnings, " . scalar(@diags) . " total";
+    for my $d (sort { ($a->{line} // 0) <=> ($b->{line} // 0) } @diags) {
+        my $sev = $d->{severity} // $d->{level} // '?';
+        my $line = $d->{line} // '?';
+        my $msg = $d->{message} // $d->{msg} // '';
+        my $color = $sev <= 1 ? $RED : $sev == 2 ? $YELLOW : $DIM;
+        printf "  ${color}[%s] L%-4s${RESET} %s\n", _sev_label($sev), $line, $msg;
+    }
+
+    # Inlay hints
+    my @hints = @{$snapshot{inlay_hints}};
+    say "";
+    say "${BOLD}Inlay Hints:${RESET} " . scalar(@hints);
+    for my $h (sort { $a->{position}{line} <=> $b->{position}{line} } @hints) {
+        printf "  ${DIM}L%-4d C%-3d${RESET} %s\n",
+            $h->{position}{line}, $h->{position}{character}, $h->{label};
+    }
+
+    # Hover coverage
+    my @hovers = @{$snapshot{hover}};
+    my $hover_ok = grep { $_->{status} eq 'ok' } @hovers;
+    my $hover_miss = grep { $_->{status} eq 'miss' } @hovers;
+    say "";
+    say "${BOLD}Hover:${RESET} ${GREEN}$hover_ok hit${RESET}, ${YELLOW}$hover_miss miss${RESET} / " . scalar(@hovers) . " probed";
+    if ($verbose) {
+        for my $h (@hovers) {
+            my $color = $h->{status} eq 'ok' ? $GREEN : $YELLOW;
+            printf "  ${color}%-6s${RESET} L%-4d:%-3d %s\n",
+                $h->{status}, $h->{line}, $h->{col}, $h->{word} // '';
+        }
+    }
+
+    # Completion points
+    my @comps = @{$snapshot{completion_points}};
+    say "";
+    say "${BOLD}Completion Points:${RESET} " . scalar(@comps);
+    for my $c (@comps) {
+        my $kind = $c->{kind} // $c->{context} // '?';
+        printf "  ${DIM}L%-4d C%-3d${RESET} ${CYAN}%s${RESET}\n", $c->{line}, $c->{col}, $kind;
+    }
+
+    # Document symbols
+    my @syms = @{$snapshot{symbols}};
+    say "";
+    say "${BOLD}Symbols:${RESET} " . scalar(@syms);
+
+    # Semantic tokens
+    say "";
+    say "${BOLD}Semantic Tokens:${RESET} " . int($snapshot{semantic_token_count});
+}
+
+# ── Helpers ─────────────────────────────────────
+
+sub _probe_hover ($results, $line, $col) {
+    my $sym = $doc->symbol_at($line, $col);
+    if ($sym) {
+        my $hover = Typist::LSP::Hover->hover($sym);
+        push @$results, {
+            line   => $line,
+            col    => $col,
+            word   => $sym->{name} // '?',
+            kind   => $sym->{kind} // '?',
+            status => 'ok',
+            ($hover ? (hover => $hover->{contents}{value}) : ()),
+            ($verbose ? (symbol => _sanitize_sym($sym)) : ()),
+        };
+    } else {
+        # Only record misses for tokens that look like they should have hover
+        my $text = $lines[$line];
+        my $end = $col;
+        $end++ while $end < length($text) && substr($text, $end, 1) =~ /[\w:]/;
+        my $word = substr($text, $col, $end - $col);
+        # Skip operators, numbers, punctuation, pragmas
+        return if $word =~ /^\d/;
+        return if $word =~ /^(use|my|our|local|return|if|elsif|else|unless|for|foreach|while|until|do|sub|eval|BEGIN|END|CHECK|INIT|AUTOLOAD|DESTROY|__PACKAGE__|__FILE__|__LINE__|__DATA__|__END__|package|no|require|die|warn|say|print|chomp|chop|defined|exists|delete|undef|not|and|or|eq|ne|lt|gt|le|ge|cmp|qw|qq|qr|tr|s|m|y|grep|map|sort|keys|values|each|push|pop|shift|unshift|splice|join|split|reverse|ref|bless|tie|tied|untie)$/;
+        push @$results, {
+            line   => $line,
+            col    => $col,
+            word   => $word,
+            status => 'miss',
+        } if $verbose;  # Only show misses in verbose mode
+    }
+}
+
+sub _sanitize_sym ($sym) {
+    my %clean;
+    for my $k (qw(kind name type fn_name inferred narrowed unknown)) {
+        $clean{$k} = $sym->{$k} if defined $sym->{$k};
+    }
+    \%clean;
+}
+
+sub _parse_position ($spec) {
+    die "Position format: LINE:COL (0-indexed)\n" unless $spec =~ /^(\d+):(\d+)$/;
+    ($1 + 0, $2 + 0);
+}
+
+sub _parse_range ($spec, $total) {
+    return (0, $total - 1) unless defined $spec;
+    if ($spec =~ /^(\d+)-(\d+)$/) {
+        return ($1 + 0, $2 + 0);
+    }
+    if ($spec =~ /^(\d+)$/) {
+        return ($1 + 0, $1 + 0);
+    }
+    die "Range format: START-END or LINE\n";
+}
+
+sub _sev_label ($sev) {
+    return 'ERR ' if $sev <= 1;
+    return 'WARN' if $sev == 2;
+    return 'INFO' if $sev == 3;
+    return 'HINT';
+}
+
+sub _kind_label ($kind) {
+    my %labels = (
+        5  => 'type',
+        10 => 'enum',
+        11 => 'interface',
+        12 => 'function',
+        13 => 'variable',
+        14 => 'namespace',
+        23 => 'struct',
+    );
+    $labels{$kind} // "kind=$kind";
+}
+
+sub _dump_sym ($sym) {
+    for my $k (sort keys %$sym) {
+        next if ref $sym->{$k};
+        printf "  ${DIM}%-15s${RESET} %s\n", $k, $sym->{$k} // '(undef)';
+    }
+}
+
+sub _dump_hash ($hash, $indent = '') {
+    for my $k (sort keys %$hash) {
+        my $v = $hash->{$k};
+        if (ref $v eq 'ARRAY') {
+            printf "%s${DIM}%-15s${RESET} [%s]\n", $indent, $k, join(', ', @$v);
+        } elsif (ref $v) {
+            printf "%s${DIM}%-15s${RESET} %s\n", $indent, $k, ref $v;
+        } else {
+            printf "%s${DIM}%-15s${RESET} %s\n", $indent, $k, $v // '(undef)';
+        }
+    }
+}
+
+sub _json_print ($data) {
+    my $json = JSON::PP->new->utf8->pretty->canonical->allow_blessed->convert_blessed;
+    print $json->encode($data);
+}
+
+sub _should_color ($opts) {
+    return 0 if $opts->{'no-color'};
+    return 0 if $opts->{json};
+    return -t STDOUT ? 1 : 0;
+}

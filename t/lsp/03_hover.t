@@ -2595,4 +2595,66 @@ PERL
     like $value, qr/A\s*=\s*Int/, 'hover shows A = Int instantiation';
 };
 
+# ── Hover: ternary narrowing ─────────────────────
+
+subtest 'hover shows narrowed type in ternary then-branch' => sub {
+    use Typist::LSP::Document;
+    use Typist::LSP::Hover;
+
+    my $source = <<'PERL';
+use v5.40;
+sub safe_upper :sig((Str | Undef) -> Str) ($s) {
+    defined($s) ? uc($s) : "N/A"
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(uri => 'file:///ternary.pm', content => $source);
+    $doc->analyze;
+
+    # $s inside ternary then-branch (uc($s)) — should be narrowed to Str
+    # Line 2 (0-indexed): "    defined($s) ? uc($s) : "N/A""
+    # uc($s) — find the $s after uc(
+    my @lines = split /\n/, $source;
+    my $col = index($lines[2], 'uc($s)') + 3;  # position of $s inside uc()
+    my $sym = $doc->symbol_at(2, $col);
+    ok $sym, 'found symbol for $s in ternary then-branch';
+    is $sym->{name}, '$s', 'symbol name is $s';
+    ok $sym->{narrowed}, '$s is marked as narrowed in then-branch';
+    like $sym->{type}, qr/^Str$/, 'narrowed type is Str (not Str | Undef)';
+};
+
+subtest 'hover shows narrowed accessor in ternary then-branch' => sub {
+    use Typist::LSP::Document;
+    use Typist::LSP::Hover;
+    use Typist::LSP::Workspace;
+
+    my $ws = Typist::LSP::Workspace->new;
+    my $types_src = <<'PERL';
+use v5.40;
+package TUser;
+struct User => (name => 'Str', email => 'Str | Undef');
+PERL
+    $ws->update_file('/fake/TUser.pm', $types_src);
+
+    my $source = <<'PERL';
+use v5.40;
+sub show :sig((User) -> Str) ($u) {
+    defined($u->email) ? $u->email : "no email"
+}
+PERL
+
+    my $doc = Typist::LSP::Document->new(uri => 'file:///ternary_acc.pm', content => $source);
+    $doc->analyze(workspace_registry => $ws->registry);
+
+    # hover on $u->email in then-branch
+    my @lines = split /\n/, $source;
+    my $then_idx = index($lines[2], '? $u->email');
+    my $col = $then_idx + length('? $u->') ;  # on "email" after ?
+    my $sym = $doc->symbol_at(2, $col);
+    ok $sym, 'found symbol for email in ternary then-branch';
+    is $sym->{kind}, 'field', 'symbol kind is field';
+    # Type should be narrowed: Str (not Str | Undef)
+    like $sym->{type}, qr/^Str$/, 'accessor type narrowed to Str in then-branch';
+};
+
 done_testing;

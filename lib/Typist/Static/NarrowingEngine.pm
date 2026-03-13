@@ -852,8 +852,9 @@ sub _single_block_guard_narrowing ($self, $compound, $condition, $env) {
 # the narrowed accessor scope for LSP hover.
 sub collect_accessor_narrowings ($self, $ppi_doc) {
     return unless $ppi_doc;
-    my $compounds = $ppi_doc->find('PPI::Statement::Compound') || [];
 
+    # Pattern 1: if/unless compound statements
+    my $compounds = $ppi_doc->find('PPI::Statement::Compound') || [];
     for my $compound (@$compounds) {
         my ($keyword) = grep { $_->isa('PPI::Token::Word') } $compound->schildren;
         next unless $keyword;
@@ -892,6 +893,65 @@ sub collect_accessor_narrowings ($self, $ppi_doc) {
                 scope_end   => $block_end,
             };
         }
+    }
+
+    # Pattern 2: ternary expressions — defined($u->field) ? expr : default
+    $self->_collect_ternary_accessor_narrowings($ppi_doc);
+}
+
+sub _collect_ternary_accessor_narrowings ($self, $ppi_doc) {
+    # Scan all statements for ternary patterns with defined() accessor conditions
+    my $stmts = $ppi_doc->find('PPI::Statement') || [];
+    for my $stmt (@$stmts) {
+        my @children = $stmt->schildren;
+
+        # Find ? operator (ternary)
+        my ($q_idx, $c_idx, $q_depth);
+        for my $i (0 .. $#children) {
+            next unless $children[$i]->isa('PPI::Token::Operator');
+            if ($children[$i]->content eq '?' && !defined $q_idx) {
+                $q_idx = $i;
+                $q_depth = 0;
+            } elsif (defined $q_idx && $children[$i]->content eq '?') {
+                $q_depth++;
+            } elsif (defined $q_idx && $children[$i]->content eq ':') {
+                if ($q_depth == 0) { $c_idx = $i; last }
+                $q_depth--;
+            }
+        }
+        next unless defined $q_idx && defined $c_idx;
+
+        # Extract condition tokens before ?
+        my @cond_children;
+        if ($q_idx >= 2) {
+            # Check for defined($var->field) pattern
+            my $cond_end = $q_idx - 1;
+            my $cond_start = $cond_end;
+            # Walk back to find 'defined' word
+            while ($cond_start > 0) {
+                last if $children[$cond_start - 1]->isa('PPI::Token::Word')
+                     && $children[$cond_start - 1]->content eq 'defined';
+                $cond_start--;
+            }
+            if ($cond_start > 0) {
+                $cond_start--;  # include 'defined'
+                @cond_children = @children[$cond_start .. $cond_end];
+            }
+        }
+        next unless @cond_children;
+
+        my $accessor = $self->extract_defined_accessor(\@cond_children);
+        next unless $accessor;
+        next unless @{$accessor->{chain}} == 1;
+
+        # Register narrowing for the then-branch scope (same line as ternary)
+        my $scope_line = $stmt->line_number;
+        push $self->{_narrowed_accessors}->@*, +{
+            var_name    => $accessor->{var_name},
+            chain       => $accessor->{chain},
+            scope_start => $scope_line,
+            scope_end   => $scope_line,
+        };
     }
 }
 

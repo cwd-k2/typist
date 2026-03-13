@@ -442,6 +442,16 @@ sub _narrow_for_ternary ($self, $env, $node) {
         : Typist::Type::Union->new(@non_undef);
     my %new_vars = $env->{variables}->%*;
     $new_vars{$var_name} = $narrowed;
+
+    # Register narrowing so hover/inlay hints reflect it
+    my $scope_line = $stmt->line_number;
+    push $self->{narrowing}->narrowed_vars->@*, +{
+        name        => $var_name,
+        type        => $narrowed,
+        scope_start => $scope_line,
+        scope_end   => $scope_line,
+    };
+
     return +{ %$env, variables => \%new_vars };
 }
 
@@ -482,30 +492,42 @@ sub _inject_loop_vars ($self, $env, $node) {
 # ── Variable Collection ──────────────────────────
 
 # Proactively infer loop variable types from extracted loop_variables.
+# Runs in two passes: first pass resolves outer loops, second pass resolves
+# nested loops that depend on outer loop variable types.
 sub _collect_loop_var_types ($self) {
     my $loops = $self->{extracted}{loop_variables} // [];
     return unless @$loops;
 
-    for my $lv (@$loops) {
-        my $list_node = $lv->{list_node} // next;
-        my $block_node = $lv->{block_node} // next;
+    my @pending = @$loops;
+    for my $pass (1 .. 2) {
+        my @deferred;
+        for my $lv (@pending) {
+            my $list_node = $lv->{list_node} // next;
+            my $block_node = $lv->{block_node} // next;
 
-        # Use function-scoped env if loop is inside a function body
-        my $env = $self->_env_for_loop_list($list_node);
+            # Use function-scoped env, then inject already-resolved loop vars
+            my $env = $self->_env_for_loop_list($list_node);
+            $env = $self->_inject_loop_vars($env, $list_node);
 
-        my $elem_type = $self->_loop_element_type($list_node, $env);
-        next unless $elem_type;
+            my $elem_type = $self->_loop_element_type($list_node, $env);
+            unless ($elem_type) {
+                push @deferred, $lv if $pass == 1;
+                next;
+            }
 
-        my $block_last = $block_node->last_token;
-        my $key = $lv->{name} . ':' . $lv->{line};
-        $self->{_loop_var_types}{$key} = +{
-            name        => $lv->{name},
-            type        => $elem_type,
+            my $block_last = $block_node->last_token;
+            my $key = $lv->{name} . ':' . $lv->{line};
+            $self->{_loop_var_types}{$key} = +{
+                name        => $lv->{name},
+                type        => $elem_type,
             line        => $lv->{line},
             col         => $lv->{col},
             scope_start => $lv->{scope_start},
             scope_end   => $lv->{scope_end},
         };
+        }
+        @pending = @deferred;
+        last unless @pending;
     }
 }
 

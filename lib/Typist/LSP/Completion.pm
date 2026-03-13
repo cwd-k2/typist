@@ -253,8 +253,9 @@ sub _complete_match_arms ($class, $context, $doc, $registry) {
     my $type = eval { Typist::Parser->parse($type_str) };
     return [] if $@ || !$type;
 
-    # Alias → datatype resolution
+    # Alias → datatype resolution; strip type args (e.g. Option[Int] → Option)
     my $dt_name = $type->is_alias ? $type->alias_name : $type->to_string;
+    $dt_name =~ s/\[.*\]\z//;
     my $dt = $registry ? $registry->lookup_datatype($dt_name) : undef;
     return [] unless $dt;
 
