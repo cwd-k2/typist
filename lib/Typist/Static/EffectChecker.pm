@@ -288,8 +288,10 @@ sub _detect_handle_effects ($body) {
 
 # Check if a PPI word node is inside a handle body that discharges the given effect label.
 sub _is_discharged ($self, $word, $label, $scopes) {
+    my $label_base = Typist::Type::Row->label_base_name($label);
     for my $scope (@$scopes) {
-        next unless $scope->{effect} eq $label;
+        # Match by base name: handle { } State => ... discharges State[Int]
+        next unless Typist::Type::Row->label_base_name($scope->{effect}) eq $label_base;
         my $body_addr = refaddr($scope->{body});
         my $node = $word->parent;
         while ($node) {

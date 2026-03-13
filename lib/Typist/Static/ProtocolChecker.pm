@@ -109,20 +109,21 @@ sub _scan_handles ($self, $block, $fn_name, $pkg) {
             my $body = $word->snext_sibling;
             next unless $body && ref $body && $body->isa('PPI::Structure::Block');
 
-            my $label = _detect_handle_effect($body);
-            next unless defined $label;
-            next if $self->{_checked_handles}{"$fn_name\0$label"};
+            my @labels = _detect_handle_effects($body);
+            for my $label (@labels) {
+                next if $self->{_checked_handles}{"$fn_name\0$label"};
 
-            my $base_label = Typist::Type::Row->label_base_name($label);
-            my $effect = $self->{registry}->lookup_effect($base_label);
-            next unless $effect && $effect->has_protocol;
+                my $base_label = Typist::Type::Row->label_base_name($label);
+                my $effect = $self->{registry}->lookup_effect($base_label);
+                next unless $effect && $effect->has_protocol;
 
-            my $protocol = $effect->protocol;
-            $self->{_checked_handles}{"$fn_name\0$label"} = 1;
-            $self->_trace_body(
-                $block, $fn_name, $label, $protocol,
-                ['*'], ['*'], $pkg,
-            );
+                my $protocol = $effect->protocol;
+                $self->{_checked_handles}{"$fn_name\0$label"} = 1;
+                $self->_trace_body(
+                    $block, $fn_name, $label, $protocol,
+                    ['*'], ['*'], $pkg,
+                );
+            }
         }
     }
 }
@@ -251,9 +252,10 @@ sub _trace_compound ($self, $compound, $fn_name, $label, $protocol, $current, $p
     +{ state => _state_union(@branch_states) };
 }
 
-# Detect which effect a handle block captures.
-# Scans siblings after the block for 'Word => +{...}' pattern.
-sub _detect_handle_effect ($body) {
+# Detect which effects a handle block captures.
+# Scans siblings after the block for all 'Word => +{...}' patterns.
+sub _detect_handle_effects ($body) {
+    my @effects;
     my $sib = $body->snext_sibling;
     while ($sib) {
         if (ref $sib && $sib->isa('PPI::Token::Word')) {
@@ -261,12 +263,12 @@ sub _detect_handle_effect ($body) {
             if ($next && ref $next && $next->isa('PPI::Token::Operator')
                 && $next->content eq '=>')
             {
-                return $sib->content;
+                push @effects, $sib->content;
             }
         }
         $sib = $sib->snext_sibling;
     }
-    undef;
+    @effects;
 }
 
 # Trace a single statement for protocol operations.
@@ -313,8 +315,8 @@ sub _trace_statement ($self, $stmt, $fn_name, $label, $protocol, $current, $pkg)
         if ($content eq 'handle') {
             my $body = $word->snext_sibling;
             if ($body && ref $body && $body->isa('PPI::Structure::Block')) {
-                my $handled = _detect_handle_effect($body);
-                if (defined $handled && $handled eq $label_base) {
+                my @handled = _detect_handle_effects($body);
+                if (grep { $_ eq $label_base } @handled) {
                     # Same effect: handle captures it → body traced at * -> *
                     my $r = $self->_trace_block($body, $fn_name, $label, $protocol, ['*'], $pkg);
                     unless ($self->{_relaxed_handle} || $r->{error} || $r->{returns} || _state_eq($r->{state}, ['*'])) {

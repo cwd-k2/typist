@@ -47,6 +47,9 @@ sub get_op_type ($self, $name) {
         require Typist::Parser;
         Typist::Parser->parse($expr);
     };
+    if ($@ && !$ENV{TYPIST_CHECK_QUIET}) {
+        warn "Typist: failed to parse effect op '$name' type '$expr': $@";
+    }
     $self->{_parsed}{$name} = $type;  # cache (undef on parse failure)
     $type;
 }

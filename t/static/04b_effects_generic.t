@@ -317,4 +317,47 @@ PERL
         or diag explain \@diags;
 };
 
+# ── Parameterized effect handle discharge ─────────
+
+subtest 'EffectChecker: handle State discharges State[Int]' => sub {
+    my $ws_reg = Typist::Registry->new;
+    require Typist::Prelude;
+    Typist::Prelude->install($ws_reg);
+
+    require Typist::Effect;
+    $ws_reg->register_effect('State',
+        Typist::Effect->new(
+            name        => 'State',
+            operations  => +{ get => '() -> Int', put => '(Int) -> Void' },
+            type_params => ['S'],
+        ),
+    );
+
+    my $source = <<'PERL';
+package HandleDischarge;
+use v5.40;
+
+sub with_state :sig(() -> Int) () {
+    handle {
+        my $v = State::get();
+        $v;
+    } State => +{
+        get => sub ($resume) { $resume->(42) },
+        put => sub ($val, $resume) { $resume->() },
+    };
+}
+PERL
+
+    my $result = Typist::Static::Analyzer->analyze($source,
+        workspace_registry => $ws_reg,
+        file               => '(test)',
+    );
+
+    my @diags = $result->{diagnostics}->@*;
+    my @eff_errs = grep { $_->{kind} eq 'EffectMismatch' } @diags;
+    is scalar(@eff_errs), 0,
+        'handle State => discharges State[Int] labels via label_base_name'
+        or diag explain \@eff_errs;
+};
+
 done_testing;
