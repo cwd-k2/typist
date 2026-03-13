@@ -990,6 +990,14 @@ sub _collect_return_values ($class, $block) {
     for my $ret (@$returns) {
         my $val = $ret->snext_sibling or next;
         next if $val->isa('PPI::Token::Structure') && $val->content eq ';';
+        # Unwrap return(EXPR): List → Expression/Statement → first child
+        if ($val->isa('PPI::Structure::List')) {
+            my $inner = $val->schild(0) // next;
+            $inner = $inner->schild(0) // next
+                if $inner->isa('PPI::Statement::Expression')
+                || $inner->isa('PPI::Statement');
+            $val = $inner;
+        }
         push @values, +{ return_word => $ret, value => $val };
     }
     return \@values;

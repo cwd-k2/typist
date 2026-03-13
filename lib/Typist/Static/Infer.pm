@@ -2322,6 +2322,20 @@ sub _infer_source_element_type_after ($block, $env) {
         return undef;
     }
 
+    # Chained map/grep/sort — e.g., grep { ... } @list as source for outer map
+    if ($sib->isa('PPI::Token::Word')
+        && ($sib->content eq 'map' || $sib->content eq 'grep' || $sib->content eq 'sort'))
+    {
+        my $after = $sib->snext_sibling;
+        if ($after && $after->isa('PPI::Structure::Block')) {
+            my $chain_result = _infer_map_grep_sort($sib, $env);
+            if ($chain_result && $chain_result->is_param && $chain_result->base eq 'Array') {
+                return ($chain_result->params)[0];
+            }
+            return undef;
+        }
+    }
+
     # func(...) — Word + List
     if ($sib->isa('PPI::Token::Word')) {
         my $after = $sib->snext_sibling;

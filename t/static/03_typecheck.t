@@ -1952,4 +1952,40 @@ PERL
     is scalar @$errs, 0, 'ternary return Str as Str passes';
 };
 
+# ── Parenthesized return ──────────────────────────
+
+subtest 'return: parenthesized return type checked' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub test :sig(() -> Int) () {
+    return("hello");
+}
+PERL
+
+    is scalar @$errs, 1, 'return("hello") as Int detected';
+    like $errs->[0]{message}, qr/return/, 'error mentions return';
+};
+
+subtest 'return: parenthesized return matching type passes' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub test :sig(() -> Str) () {
+    return("hello");
+}
+PERL
+
+    is scalar @$errs, 0, 'return("hello") as Str passes';
+};
+
+subtest 'return: parenthesized ternary return checked' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub test :sig((Bool) -> Str) ($flag) {
+    return($flag ? "yes" : "no");
+}
+PERL
+
+    is scalar @$errs, 0, 'return($flag ? "yes" : "no") as Str passes';
+};
+
 done_testing;

@@ -47,7 +47,7 @@ my %BUILTINS = (
     sprintf => '(Str, ...Any) -> Str',
 
     # ── Numeric operations ────────────────────────
-    abs     => '(Num) -> Num',
+    abs     => '<T: Num>(T) -> T',
     int     => '(Num) -> Int',
     sqrt    => '(Num) -> Double',
     log     => '(Num) -> Double',
@@ -165,11 +165,21 @@ sub install ($class, $registry) {
         my $effects = $type->effects
             ? Typist::Type::Eff->new($type->effects) : undef;
 
+        # Parse generics from annotation (e.g., <T: Num> → [{name => 'T', bound_expr => 'Num'}])
+        my @generics;
+        for my $g (@{$ann->{generics_raw} // []}) {
+            my ($gname, $bound) = split /:/, $g, 2;
+            $gname =~ s/\s//g;
+            if (defined $bound) { $bound =~ s/\A\s+//; $bound =~ s/\s+\z//; }
+            push @generics, { name => $gname, bound_expr => $bound };
+        }
+
         $registry->register_function('CORE', $name, +{
             params       => \@params,
             returns      => $returns,
             effects      => $effects,
             variadic     => $type->variadic,
+            generics     => \@generics,
             params_expr  => [map { $_->to_string } @params],
             returns_expr => $returns->to_string,
         });

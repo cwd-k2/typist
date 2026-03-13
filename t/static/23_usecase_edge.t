@@ -923,17 +923,17 @@ PERL
     is scalar @$errs, 0, 'uc() returns Str';
 };
 
-# ── 11.6 Builtin abs returns Num ──
+# ── 11.6 Builtin abs is generic: abs(T: Num) -> T ──
 
-subtest 'idiom: abs returns Num' => sub {
+subtest 'idiom: abs preserves input type' => sub {
     my $errs = type_errors(<<'PERL');
 use v5.40;
-sub magnitude :sig((Int) -> Num) ($n) {
-    abs($n);
-}
+sub magnitude_num :sig((Int) -> Num) ($n) { abs($n); }
+sub magnitude_int :sig((Int) -> Int) ($n) { abs($n); }
+sub magnitude_dbl :sig((Double) -> Double) ($n) { abs($n); }
 PERL
 
-    is scalar @$errs, 0, 'abs() returns Num';
+    is scalar @$errs, 0, 'abs(T) returns T for numeric types';
 };
 
 # ── 11.7 Defined-or for default values ──

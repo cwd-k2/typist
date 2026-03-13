@@ -676,4 +676,52 @@ PERL
     is scalar @$errs, 0, 'array with Int and Double elements produces Num';
 };
 
+# ════════════════════════════════════════════════
+# Section: Chained map/grep/sort inference
+# ════════════════════════════════════════════════
+
+subtest 'inference: map over grep chain produces outer block type' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub even_labels :sig((ArrayRef[Int]) -> ArrayRef[Str]) ($nums) {
+    return [map { "even_$_" } grep { $_ % 2 == 0 } @$nums];
+}
+PERL
+
+    is scalar @$errs, 0, 'map { Str } grep { } @ints → ArrayRef[Str]';
+};
+
+subtest 'inference: map over grep chain type mismatch detected' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub even_labels :sig((ArrayRef[Int]) -> ArrayRef[Int]) ($nums) {
+    return [map { "even_$_" } grep { $_ % 2 == 0 } @$nums];
+}
+PERL
+
+    is scalar @$errs, 1, 'map { Str } grep { } @ints ≠ ArrayRef[Int]';
+};
+
+subtest 'inference: grep over map chain preserves inner map type' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub long_labels :sig((ArrayRef[Int]) -> ArrayRef[Str]) ($nums) {
+    return [grep { length($_) > 3 } map { "item_$_" } @$nums];
+}
+PERL
+
+    is scalar @$errs, 0, 'grep { } map { Str } @ints → ArrayRef[Str]';
+};
+
+subtest 'inference: triple chain map/grep/sort' => sub {
+    my $errs = type_errors(<<'PERL');
+use v5.40;
+sub sorted_even_labels :sig((ArrayRef[Int]) -> ArrayRef[Str]) ($nums) {
+    return [map { "val_$_" } sort { $a <=> $b } grep { $_ > 0 } @$nums];
+}
+PERL
+
+    is scalar @$errs, 0, 'map { Str } sort { } grep { } @ints → ArrayRef[Str]';
+};
+
 done_testing;

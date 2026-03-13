@@ -85,8 +85,9 @@ sub positive :sig((Str) -> Num) ($s) {
 }
 PERL
 
-    is scalar @$errs, 1, 'one type error';
-    like $errs->[0]{message}, qr/abs.*Str.*Num/, 'abs: cannot pass Str as Num';
+    is scalar @$errs, 2, 'two type errors (arg bound + return)';
+    like $errs->[0]{message}, qr/abs.*Str.*Num/, 'abs: Str does not satisfy Num bound';
+    like $errs->[1]{message}, qr/return.*Str.*Num/, 'abs(Str) → Str ≠ Num';
 };
 
 # ── Return type inference from builtins ──────────
