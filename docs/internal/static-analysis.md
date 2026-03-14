@@ -600,7 +600,7 @@ Exn effects:    die                           → ![Exn]
                 eval, exit                    → ![Exn]
 Decl effects:   typedef, newtype, effect      → ![Decl]
                 typeclass, instance, declare  → ![Decl]
-                datatype, enum, struct        → ![Decl]
+                datatype, struct              → ![Decl]
 
 Pure string:    length, substr, uc, lc, index → pure
 Pure numeric:   abs, int, sqrt                → pure

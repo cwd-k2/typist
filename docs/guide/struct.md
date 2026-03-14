@@ -292,4 +292,4 @@ say distance(Point(x => 0, y => 0), Point(x => 3, y => 4));   # 5
 
 ## Next
 
-- [ADTs and Pattern Matching](adt.md) -- tagged unions built with `datatype`, `enum`, and `match`
+- [ADTs and Pattern Matching](adt.md) -- tagged unions built with `datatype` and `match`

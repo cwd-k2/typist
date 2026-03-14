@@ -161,18 +161,9 @@ GADTs are useful for building type-safe interpreters, expression trees, and simi
 
 ---
 
-## enum -- Nullary ADT Sugar
+## Nullary Constructors (Enumerations)
 
-When all variants take zero arguments, use `enum` for concise syntax:
-
-```typist
-BEGIN {
-    enum Color     => qw(Red Green Blue);
-    enum Direction => qw(North South East West);
-}
-```
-
-This is equivalent to:
+When all variants take zero arguments, the `datatype` naturally models an enumeration:
 
 ```typist
 BEGIN {
@@ -180,19 +171,23 @@ BEGIN {
         Red   => '()',
         Green => '()',
         Blue  => '()';
+
+    datatype Direction =>
+        North => '()',
+        South => '()',
+        East  => '()',
+        West  => '()';
 }
 ```
 
-### Using Enums
-
-Enum constructors take no arguments. Call them with empty parens:
+Nullary constructors take no arguments. Call them with empty parens:
 
 ```typist
 my $c = Red();
 my $d = North();
 ```
 
-Enum values carry a `_tag` but no `_values` payload (empty arrayref).
+Nullary values carry a `_tag` but no `_values` payload (empty arrayref).
 
 ---
 
@@ -359,8 +354,9 @@ BEGIN {
         Some => '(T)',
         None => '()';
 
-    # Enum (nullary sugar)
-    enum Priority => qw(Low Medium High);
+    # Nullary ADT (enumeration)
+    datatype Priority =>
+        Low => '()', Medium => '()', High => '()';
 }
 
 # Construction

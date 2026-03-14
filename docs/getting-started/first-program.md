@@ -115,7 +115,7 @@ Output:
 
 The `typedef` and `struct` declarations are wrapped in a `BEGIN` block. This is necessary because type definitions must be available during the CHECK phase, when the static analyzer resolves type names in `:sig()` annotations. Without `BEGIN`, the definitions would not exist yet when the analyzer runs.
 
-The rule is straightforward: any declaration that defines a type name -- `typedef`, `struct`, `newtype`, `datatype`, `enum`, `effect`, `typeclass`, `instance` -- belongs in a `BEGIN` block.
+The rule is straightforward: any declaration that defines a type name -- `typedef`, `struct`, `newtype`, `datatype`, `effect`, `typeclass`, `instance` -- belongs in a `BEGIN` block.
 
 ### Struct basics
 

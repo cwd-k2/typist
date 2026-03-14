@@ -68,7 +68,6 @@ sub extract ($class, $source) {
     $class->_extract_typedefs($kw_stmts{typedef}   // [], $result);
     $class->_extract_newtypes($kw_stmts{newtype}   // [], $result);
     $class->_extract_datatypes($kw_stmts{datatype} // [], $result);
-    $class->_extract_enums($kw_stmts{enum}         // [], $result);
     $class->_extract_structs($kw_stmts{struct}     // [], $result);
     $class->_extract_effects($kw_stmts{effect}     // [], $result);
     $class->_extract_typeclasses($kw_stmts{typeclass} // [], $result);
@@ -261,47 +260,6 @@ sub _extract_datatypes ($class, $stmts, $result) {
         $result->{datatypes}{$base_name} = +{
             variants    => \%variants,
             type_params => \@type_params,
-            line        => $stmt->line_number,
-            col         => $stmt->column_number,
-        };
-    }
-}
-
-# ── Enum Extraction ────────────────────────────
-#
-# enum Name => qw(Tag1 Tag2 Tag3);
-# Stored as datatypes with all-nullary variants.
-
-sub _extract_enums ($class, $stmts, $result) {
-    for my $stmt (@$stmts) {
-        my @children = $stmt->schildren;
-        next unless @children >= 4;
-
-        next unless $children[0]->isa('PPI::Token::Word')
-                 && $children[0]->content eq 'enum';
-
-        my $name = $children[1]->content;
-        next unless $children[2]->isa('PPI::Token::Operator')
-                 && $children[2]->content eq '=>';
-
-        # Collect tag names from remaining tokens (Words, skip commas/semicolons)
-        my %variants;
-        for my $i (3 .. $#children) {
-            my $tok = $children[$i];
-            next if $tok->isa('PPI::Token::Operator') && $tok->content eq ',';
-            last if $tok->isa('PPI::Token::Structure') && $tok->content eq ';';
-            if ($tok->isa('PPI::Token::Word') && $tok->content ne 'qw') {
-                $variants{$tok->content} = '';
-            }
-            # Handle qw(...) list
-            if ($tok->isa('PPI::Token::QuoteLike::Words')) {
-                $variants{$_} = '' for $tok->literal;
-            }
-        }
-
-        $result->{datatypes}{$name} = +{
-            variants    => \%variants,
-            type_params => [],
             line        => $stmt->line_number,
             col         => $stmt->column_number,
         };

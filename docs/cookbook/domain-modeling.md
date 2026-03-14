@@ -147,13 +147,13 @@ my $sb = ShowBox(value => "hello");  # ok if instance Show => 'Str' exists
 
 Algebraic data types (ADTs) model values that can be one of several variants. Combined with `match`, they provide exhaustive pattern matching.
 
-### Simple Status Enum
+### Simple Status Enumeration
 
-For pure enumeration (no payload), use `enum`:
+For pure enumeration (no payload), use `datatype` with nullary constructors:
 
 ```typist
 BEGIN {
-    enum Color => qw(Red Green Blue);
+    datatype Color => Red => '()', Green => '()', Blue => '()';
 }
 
 sub color_name :sig((Color) -> Str) ($c) {

@@ -153,13 +153,13 @@ sub describe_either ($e) {
 say "Right(200):         ", describe_either($ok);
 say "Left('not found'):  ", describe_either($err);
 
-# ── Enum Types ────────────────────────────────────────────
+# ── Nullary ADTs (enumerations) ───────────────────────────
 #
-# `enum` is sugar for ADTs with all-nullary constructors.
-# Each variant takes zero arguments — pure enumeration.
+# All-nullary constructors model pure enumerations.
+# Each variant takes zero arguments.
 
 BEGIN {
-    enum Color => qw(Red Green Blue);
+    datatype Color => Red => '()', Green => '()', Blue => '()';
 }
 
 my @palette = (Red(), Green(), Blue());
@@ -167,7 +167,7 @@ for my $c (@palette) {
     say "  Color: $c->{_tag}";
 }
 
-# Match works naturally with enums
+# Match works naturally with nullary ADTs
 my $favorite = Blue();
 my $name = match $favorite,
     Red   => sub { "crimson" },
@@ -176,7 +176,7 @@ my $name = match $favorite,
 
 say "Blue is: $name";
 
-# Exhaustiveness warning for enums — try commenting out a branch!
+# Exhaustiveness warning — try commenting out a branch!
 
 # ── GADTs (Generalized Algebraic Data Types) ──────────────
 #

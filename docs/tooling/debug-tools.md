@@ -143,7 +143,7 @@ typist-registry-dump --name find_product lib/MyApp/Order.pm
 |---------|----------|
 | `functions` | Registered function signatures |
 | `types` | Type aliases (typedef) |
-| `datatypes` | Algebraic data types (datatype/enum) |
+| `datatypes` | Algebraic data types (datatype) |
 | `typeclasses` | Type class definitions |
 | `effects` | Effect definitions |
 | `structs` | Struct definitions |

@@ -35,7 +35,7 @@ $MOD_BIT{$TOKEN_MODIFIERS[$_]} = 1 << $_ for 0 .. $#TOKEN_MODIFIERS;
 # ── Typist keyword set (PPI-based scan) ──────────
 my @TYPIST_KEYWORDS = qw(
     typedef newtype effect typeclass instance
-    datatype enum struct declare
+    datatype struct declare
     handle match protocol scoped sub
 );
 my %TYPIST_KEYWORD_SET = map { $_ => 1 } @TYPIST_KEYWORDS;
@@ -250,7 +250,7 @@ sub compute ($class, $doc) {
         my %effects;
         $effects{$_} = 1 for keys(($extracted->{effects} // +{})->%*);
 
-        my %def_kw = map { $_ => 1 } qw(datatype struct newtype effect typeclass typedef sub enum);
+        my %def_kw = map { $_ => 1 } qw(datatype struct newtype effect typeclass typedef sub);
 
         my $registry = $result->{registry};
         my $words = $ppi_doc->find('PPI::Token::Word') || [];
@@ -570,7 +570,7 @@ The following token types are registered:
 
 =item C<function> - Function name definitions
 
-=item C<keyword> - Keywords (C<sub>, C<typedef>, C<newtype>, C<effect>, C<typeclass>, C<instance>, C<datatype>, C<enum>, C<struct>, C<declare>, C<handle>, C<match>, C<protocol>, C<scoped>)
+=item C<keyword> - Keywords (C<sub>, C<typedef>, C<newtype>, C<effect>, C<typeclass>, C<instance>, C<datatype>, C<struct>, C<declare>, C<handle>, C<match>, C<protocol>, C<scoped>)
 
 =item C<class> - Typeclass names
 

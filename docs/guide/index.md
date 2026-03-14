@@ -10,7 +10,7 @@ This section walks you through the Typist type system from first principles to a
 | 2 | [Type Hierarchy](type-hierarchy.md) | Primitive types, compound types, unions, records, literals, and their subtype relations |
 | 3 | [typedef and newtype](typedef-newtype.md) | Structural aliases versus nominal wrappers -- when and how to use each |
 | 4 | [Structs](struct.md) | Nominal, immutable, blessed record types with optional fields and generics |
-| 5 | [ADTs and Pattern Matching](adt.md) | Tagged unions with `datatype`, `enum`, and exhaustive `match` |
+| 5 | [ADTs and Pattern Matching](adt.md) | Tagged unions with `datatype` and exhaustive `match` |
 | 6 | [Generics](generics.md) | Parametric polymorphism with bounded quantification and type inference |
 | 7 | [Type Classes](typeclass.md) | Ad-hoc polymorphism with instance dispatch and superclass hierarchies |
 | 8 | [Algebraic Effects](effects.md) | Tracked side effects with scoped handlers and the effect row system |

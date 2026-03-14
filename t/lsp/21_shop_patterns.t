@@ -176,13 +176,13 @@ PERL
 };
 
 # ────────────────────────────────────────────────────────────────────────
-#  6. Hover: enum (PaymentStatus)
+#  6. Hover: nullary datatype (PaymentStatus)
 # ────────────────────────────────────────────────────────────────────────
 
-subtest 'hover on enum datatype' => sub {
+subtest 'hover on nullary datatype' => sub {
     my $source = <<'PERL';
 use v5.40;
-enum PaymentStatus => qw(Pending Completed Failed Refunded);
+datatype PaymentStatus => Pending => '()', Completed => '()', Failed => '()', Refunded => '()';
 PERL
 
     my @results = run_session(init_shutdown_wrap(
@@ -191,7 +191,7 @@ PERL
         }),
         lsp_request(2, 'textDocument/hover', +{
             textDocument => +{ uri => 'file:///test.pm' },
-            position => +{ line => 1, character => 6 },  # on 'PaymentStatus'
+            position => +{ line => 1, character => 10 },  # on 'PaymentStatus'
         }),
     ));
 
@@ -199,7 +199,7 @@ PERL
     ok $hover, 'got hover response';
     ok $hover->{result}, 'hover has result';
     my $value = $hover->{result}{contents}{value};
-    like $value, qr/PaymentStatus/, 'contains enum name';
+    like $value, qr/PaymentStatus/, 'contains datatype name';
     like $value, qr/Pending/, 'shows Pending variant';
     like $value, qr/Completed/, 'shows Completed variant';
 };

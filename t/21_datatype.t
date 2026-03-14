@@ -709,13 +709,14 @@ subtest 'match dies on non-tagged value' => sub {
     like $@, qr/no _tag/, 'dies when value has no _tag';
 };
 
-# ── enum syntax ──────────────────────────────────
+# ── nullary datatype ──────────────────────────────
 
-subtest 'enum creates nullary-only ADT' => sub {
+subtest 'nullary datatype creates ADT' => sub {
     require Typist;
     Typist::Registry->reset;
 
-    Typist::Algebra::_enum('main', 'Direction', 'North', 'South', 'East', 'West');
+    Typist::Algebra::_datatype('main', 'Direction',
+        North => '()', South => '()', East => '()', West => '()');
 
     my $dt = Typist::Registry->lookup_datatype('Direction');
     ok $dt && $dt->is_data, 'Direction registered as data type';
@@ -727,48 +728,30 @@ subtest 'enum creates nullary-only ADT' => sub {
     }
 };
 
-subtest 'enum constructors work' => sub {
+subtest 'nullary datatype constructors work' => sub {
     require Typist;
     Typist::Registry->reset;
 
-    # Install into main:: for testing
-    {
-        no strict 'refs';
-        my $data_class = 'Typist::Data::TrafficLight';
-        my %parsed;
-        for my $tag (qw(RedLight YellowLight GreenLight)) {
-            $parsed{$tag} = [];
-            my $t = $tag;
-            *{"main::${t}"} = sub () {
-                bless +{ _tag => $t, _values => [] }, $data_class;
-            };
-        }
-        Typist::Registry->register_datatype('TrafficLight',
-            Typist::Type::Data->new('TrafficLight', \%parsed));
-    }
+    Typist::Algebra::_datatype('main', 'TrafficLight',
+        RedLight => '()', YellowLight => '()', GreenLight => '()');
 
     my $r = main::RedLight();
-    is ref($r), 'Typist::Data::TrafficLight', 'enum value blessed correctly';
+    is ref($r), 'Typist::Data::TrafficLight', 'nullary value blessed correctly';
     is $r->{_tag}, 'RedLight', 'tag is RedLight';
     is_deeply $r->{_values}, [], 'no values';
 
     my $dt = Typist::Registry->lookup_datatype('TrafficLight');
-    ok $dt->contains($r), 'data type contains enum value';
+    ok $dt->contains($r), 'data type contains nullary value';
 };
 
-subtest 'enum match dispatches' => sub {
+subtest 'nullary datatype match dispatches' => sub {
     require Typist;
     Typist::Registry->reset;
 
-    my %parsed;
-    my $data_class = 'Typist::Data::Suit';
-    for my $tag (qw(Hearts Diamonds Clubs Spades)) {
-        $parsed{$tag} = [];
-    }
-    Typist::Registry->register_datatype('Suit',
-        Typist::Type::Data->new('Suit', \%parsed));
+    Typist::Algebra::_datatype('main', 'Suit',
+        Hearts => '()', Diamonds => '()', Clubs => '()', Spades => '()');
 
-    my $hearts = bless +{ _tag => 'Hearts', _values => [] }, $data_class;
+    my $hearts = main::Hearts();
 
     # Partial match — dies without fallback
     eval {
@@ -781,31 +764,12 @@ subtest 'enum match dispatches' => sub {
 
     # Missing arm — dies
     eval {
-        Typist::Algebra::_match(
-            bless(+{ _tag => 'Clubs', _values => [] }, $data_class),
+        Typist::Algebra::_match(main::Clubs(),
             Hearts   => sub { 'red' },
             Diamonds => sub { 'red' },
         );
     };
     like $@, qr/no arm for tag 'Clubs'/, 'missing arm dies';
-};
-
-subtest 'extractor recognizes enum' => sub {
-    require Typist::Static::Extractor;
-
-    my $source = <<'PERL';
-use v5.40;
-BEGIN {
-    enum Color => qw(Red Green Blue);
-}
-PERL
-
-    my $extracted = Typist::Static::Extractor->extract($source);
-    ok exists $extracted->{datatypes}{Color}, 'enum Color extracted as datatype';
-    my $info = $extracted->{datatypes}{Color};
-    is_deeply [sort keys $info->{variants}->%*], [qw(Blue Green Red)],
-        'all enum variants extracted';
-    is $info->{variants}{Red}, '', 'enum variants are nullary';
 };
 
 # ── GADT type representation ──────────────────────

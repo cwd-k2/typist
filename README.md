@@ -100,7 +100,7 @@ For the complete type system reference, see the [Guide](docs/guide/index.md).
 | Type aliases | `typedef` | `typedef Price => 'Int'` |
 | Nominal types | `newtype` / `Name::coerce` | `newtype UserId => 'Int'` |
 | ADT / GADT | `datatype` | Tagged unions, per-constructor return types |
-| Enumerations | `enum` | `enum Color => qw(Red Green Blue)` |
+| Enumerations | `datatype` (nullary) | `datatype Color => Red => '()', ...` |
 | Generics | `<T>`, `<T: Bound>` | `<T: Num>(T, T) -> T` |
 | Rank-2 polymorphism | `forall` | `forall A. (A) -> A` |
 | Variadic functions | `...Type` | `(Int, ...Str) -> Void` |
@@ -270,7 +270,8 @@ BEGIN {
         Rectangle => '(Int, Int)',
         Point     => '';
 
-    enum Color => qw(Red Green Blue);   # Nullary-only ADT
+    # Nullary constructors model enumerations
+    datatype Color => Red => '()', Green => '()', Blue => '()';
 }
 
 my $c = Circle(5);          # Auto-generated constructor
@@ -511,7 +512,7 @@ See `example/` for runnable demonstrations:
 | `02_composite_types.pl` | Struct, Union, Maybe, parameterized types |
 | `03_generics.pl` | Generic functions, bounded quantification |
 | `04_nominal_types.pl` | Newtypes, literal types, recursive types |
-| `05_algebraic_types.pl` | Datatype/ADT, pattern matching, enum |
+| `05_algebraic_types.pl` | Datatype/ADT, pattern matching |
 | `06_typeclasses.pl` | Type classes, HKT, Functor |
 | `07_effects.pl` | Effect system, handlers, protocols |
 | `08_gradual_typing.pl` | Gradual typing, flow typing |

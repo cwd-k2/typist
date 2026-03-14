@@ -355,12 +355,12 @@ PERL
     is scalar @$errs, 0, 'nested Some(Some(42)) produces Option[Option[Int]]';
 };
 
-# ── 4.4 Enum with match ──
+# ── 4.4 Nullary datatype with match ──
 
-subtest 'ADT: enum exhaustiveness with all arms' => sub {
+subtest 'ADT: nullary datatype exhaustiveness with all arms' => sub {
     my $errs = diags_of_kind(<<'PERL', 'NonExhaustiveMatch');
 use v5.40;
-enum Color => qw(Red Green Blue);
+datatype Color => Red => '()', Green => '()', Blue => '()';
 sub name :sig((Color) -> Str) ($c) {
     match $c,
         Red   => sub () { "red" },
@@ -369,15 +369,15 @@ sub name :sig((Color) -> Str) ($c) {
 }
 PERL
 
-    is scalar @$errs, 0, 'all enum arms covered — no exhaustiveness error';
+    is scalar @$errs, 0, 'all arms covered — no exhaustiveness error';
 };
 
-# ── 4.5 Missing enum arm ──
+# ── 4.5 Missing arm ──
 
-subtest 'ADT: enum exhaustiveness with missing arm' => sub {
+subtest 'ADT: nullary datatype exhaustiveness with missing arm' => sub {
     my $errs = diags_of_kind(<<'PERL', 'NonExhaustiveMatch');
 use v5.40;
-enum Color => qw(Red Green Blue);
+datatype Color => Red => '()', Green => '()', Blue => '()';
 sub name :sig((Color) -> Str) ($c) {
     match $c,
         Red   => sub () { "red" },
@@ -394,7 +394,7 @@ PERL
 subtest 'ADT: fallback arm suppresses exhaustiveness' => sub {
     my $errs = diags_of_kind(<<'PERL', 'NonExhaustiveMatch');
 use v5.40;
-enum Color => qw(Red Green Blue);
+datatype Color => Red => '()', Green => '()', Blue => '()';
 sub name :sig((Color) -> Str) ($c) {
     match $c,
         Red => sub () { "red" },

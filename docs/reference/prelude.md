@@ -207,7 +207,6 @@ All built-in annotations are registered under the `CORE::` namespace. These are 
 | `instance` | `(...Any) -> Void ![Decl]` |
 | `declare` | `(Str, Str) -> Void ![Decl]` |
 | `datatype` | `(...Any) -> Void ![Decl]` |
-| `enum` | `(...Any) -> Void ![Decl]` |
 | `struct` | `(...Any) -> Void ![Decl]` |
 
 ## Overriding Prelude Annotations

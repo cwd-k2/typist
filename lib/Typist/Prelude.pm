@@ -109,7 +109,6 @@ my %BUILTINS = (
     instance  => '(...Any) -> Void ![Decl]',
     declare   => '(Str, Str) -> Void ![Decl]',
     datatype  => '(...Any) -> Void ![Decl]',
-    enum      => '(...Any) -> Void ![Decl]',
     struct    => '(...Any) -> Void ![Decl]',
 );
 
@@ -128,7 +127,7 @@ my $EXN_EFFECT = Typist::Effect->new(
 );
 
 my %TYPIST_BUILTIN_SET = map { $_ => 1 }
-    qw(typedef newtype effect typeclass instance declare datatype enum struct);
+    qw(typedef newtype effect typeclass instance declare datatype struct);
 
 # ── Public API ───────────────────────────────────
 

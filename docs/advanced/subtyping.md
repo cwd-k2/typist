@@ -353,7 +353,7 @@ BEGIN {
 # Int </: UserId       (no implicit wrapping)
 ```
 
-Data types (from `datatype`/`enum`) follow the same rule, with covariant type arguments when present:
+Data types (from `datatype`) follow the same rule, with covariant type arguments when present:
 
 ```typist
 BEGIN {

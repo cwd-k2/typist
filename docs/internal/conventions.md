@@ -187,13 +187,13 @@ datatype 'Expr[A]' => IntLit => '(Int) -> Expr[Int]', BoolLit => '(Bool) -> Expr
 
 Constructors with `->` specify per-constructor return types. Provides `is_gadt` predicate and `constructor_return_type($tag)` accessor.
 
-### Enum
+### Nullary Datatype (Enumeration)
 
 ```typist
-enum Color => qw(Red Green Blue);
+datatype Color => Red => '()', Green => '()', Blue => '()';
 ```
 
-Sugar for `datatype` with all zero-argument variants.
+All-nullary constructors model pure enumerations.
 
 ### Pattern Matching
 

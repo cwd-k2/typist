@@ -129,7 +129,7 @@ Hover, go-to-definition, and completion are suppressed in non-code regions via P
 | String literals (`"..."`, `'...'`, `qq{}`, `q{}`) | `PPI::Token::Quote::*` — position within token bounds | Full |
 | Here-documents (`<<EOF`) | `PPI::Token::HereDoc` — body line range | Full |
 
-**Exception**: Strings inside Typist declarations (`typedef`, `newtype`, `struct`, `effect`, `typeclass`, `instance`, `datatype`, `enum`, `declare`, `protocol`) contain type expressions and are NOT suppressed. Detection: walk up PPI tree to the outermost `PPI::Statement`; if its first word is a Typist keyword, the string is a type expression.
+**Exception**: Strings inside Typist declarations (`typedef`, `newtype`, `struct`, `effect`, `typeclass`, `instance`, `datatype`, `declare`, `protocol`) contain type expressions and are NOT suppressed. Detection: walk up PPI tree to the outermost `PPI::Statement`; if its first word is a Typist keyword, the string is a type expression.
 
 **Rationale**: `_word_range_at` extracts words from raw text without PPI token-type awareness. Without these guards, bare words in comments/strings would match against the registry fallback path (builtins, cross-package types, constructors), producing false hover results. PPI does not decompose interpolated strings into sub-tokens, so `$var` inside `"text $var"` is also suppressed — this is acceptable since the hover would be imprecise (scope/position mismatch within string content).
 

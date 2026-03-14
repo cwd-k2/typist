@@ -24,7 +24,7 @@ class TypistLexer(PerlLexer):
     filenames = []  # only via explicit ```typist fence
 
     DECL_KEYWORDS = frozenset({
-        'typedef', 'newtype', 'struct', 'datatype', 'enum',
+        'typedef', 'newtype', 'struct', 'datatype',
         'effect', 'typeclass', 'instance', 'match', 'handle',
         'protocol', 'optional', 'declare', 'scoped',
     })

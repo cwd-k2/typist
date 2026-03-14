@@ -3,7 +3,7 @@ use v5.40;
 
 our $VERSION = '0.01';
 
-# Algebraic data types: datatype, enum, match.
+# Algebraic data types: datatype, match.
 # Extracted from Typist.pm for module decomposition.
 
 # ── Datatype Support (Tagged Union / ADT) ──────
@@ -138,33 +138,6 @@ sub _datatype ($caller, $name_spec, %variants) {
             params    => $param_types,
             returns   => $return_type,
             generics  => \@generics,
-            constructor => 1,
-        });
-    }
-}
-
-# ── Enum Support (nullary ADT sugar) ─────────────
-
-sub _enum ($caller, $name, @tags) {
-    my %parsed_variants;
-    my $data_class = "Typist::Data::${name}";
-    for my $tag (@tags) {
-        $parsed_variants{$tag} = [];
-        my $tag_copy = $tag;
-        no strict 'refs';
-        *{"${caller}::${tag_copy}"} = sub () {
-            bless +{ _tag => $tag_copy, _values => [] }, $data_class;
-        };
-    }
-    my $data_type = Typist::Type::Data->new($name, \%parsed_variants);
-    Typist::Registry->register_datatype($name, $data_type);
-
-    # Register constructor functions for CHECK-phase cross-file inference.
-    for my $tag (@tags) {
-        Typist::Registry->register_function($caller, $tag, +{
-            params      => [],
-            returns     => $data_type,
-            generics    => [],
             constructor => 1,
         });
     }

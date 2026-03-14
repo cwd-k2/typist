@@ -104,10 +104,6 @@ sub import ($class, @args) {
         my ($base_name) = $name_spec =~ /\A(\w+)/;
         Typist::Registry->set_defined_in($base_name, $caller) if $base_name;
     };
-    *{"${caller}::enum"}      = sub ($name, @tags) {
-        Typist::Algebra::_enum($caller, $name, @tags);
-        Typist::Registry->set_defined_in($name, $caller);
-    };
     *{"${caller}::match"}     = \&Typist::Algebra::_match;
     *{"${caller}::struct"}    = sub ($name, @fields) {
         Typist::StructDef::_struct($name, $caller, @fields);
@@ -265,13 +261,6 @@ Use C<optional(field =E<gt> Type)> for optional fields (flattened into the field
 
 Define an algebraic data type (tagged union) with constructors
 installed into the caller's namespace.
-
-=head2 enum
-
-    enum Color => qw(Red Green Blue);
-
-Define a nullary-only ADT (pure enumeration).
-Sugar for C<datatype> with all zero-argument variants.
 
 =head2 match
 

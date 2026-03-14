@@ -408,18 +408,18 @@ PERL
 
 # ── Decl effect: declaration builtins ─────────
 
-subtest 'Analyzer: enum in ![Decl] function → no error' => sub {
+subtest 'Analyzer: datatype in ![Decl] function → no error' => sub {
     my $result = Typist::Static::Analyzer->analyze(<<'PERL');
-package EnumDecl;
+package DatatypeDecl;
 use v5.40;
 
 sub setup :sig(() -> Void ![Decl]) () {
-    enum Color => qw(Red Green Blue);
+    datatype Color => Red => '()', Green => '()', Blue => '()';
 }
 PERL
 
     my @eff_diags = grep { $_->{kind} eq 'EffectMismatch' } @{$result->{diagnostics}};
-    is scalar @eff_diags, 0, 'enum in ![Decl] function — no effect error';
+    is scalar @eff_diags, 0, 'datatype in ![Decl] function — no effect error';
 };
 
 subtest 'Analyzer: eval in ![Exn] function → no error' => sub {

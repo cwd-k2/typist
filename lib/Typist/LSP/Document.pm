@@ -236,9 +236,9 @@ sub _is_in_string ($self, $line, $col) {
 }
 
 # Check if a PPI token is inside a Typist declaration statement
-# (typedef, newtype, struct, effect, typeclass, instance, datatype, enum, declare, protocol).
+# (typedef, newtype, struct, effect, typeclass, instance, datatype, declare, protocol).
 my %_TYPIST_DECL_KW = map { $_ => 1 } qw(
-    typedef newtype struct effect typeclass instance datatype enum declare protocol
+    typedef newtype struct effect typeclass instance datatype declare protocol
 );
 sub _in_typist_declaration ($token) {
     my $node = $token;
