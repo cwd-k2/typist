@@ -12,21 +12,21 @@ Typist is a pure Perl type system for Perl 5.40+. Static-first architecture: err
 Static-First (default)       Runtime (opt-in: -runtime)    LSP Layer         CLI
 ──────────────────────       ─────────────────────────     ──────────────    ──────────
 Typist.pm (entry+CHECK)      Tie::Scalar                   LSP::Server       Check.pm
- ├ Definition.pm             Attribute._wrap_sub            LSP::Document
+ ├ Definition.pm             Attribute._wrap_sub            LSP::Document†
  ├ Algebra.pm                Inference.pm                   LSP::Workspace
  ├ StructDef.pm              Handler (Effect::op/handle)    LSP::Hover
  ├ EffectDef.pm                                             LSP::Completion
  └ External.pm                                              LSP::Transport
 Static::Checker                                             LSP::CodeAction
 Static::Analyzer (CHECK)                                    LSP::SemanticTokens
-Static::TypeEnv (env construction)                          LSP::Logger
-Static::TypeChecker (type checks)                           Document::Resolver
+Static::TypeEnv†                                            LSP::Logger
+Static::TypeChecker (type checks)
 Static::CallChecker
 Static::NarrowingEngine
 Static::EffectChecker
 Static::ProtocolChecker
 Static::Extractor
-Static::Infer
+Static::Infer†
 Static::Unify
 Static::SymbolInfo
 
@@ -34,9 +34,11 @@ Shared Infrastructure
 ──────────────────────────
 Registry, Parser, Subtype, Transform, Attribute, Prelude, Protocol
 Error (value + Collector), Error::Global (singleton buffer)
+Handler, EffectScope, Kind, KindChecker, TypeClass, Effect, Static::Registration
 Type::{Atom,Param,Union,Intersection,Func,Record,Struct,Var,Alias,Literal,Newtype,Quantified,Row,Eff,Data}
 Type::Fold (map_type, walk)
-Kind, KindChecker, TypeClass, Effect, Static::Registration
+
+† = サブモジュールに分解されている（詳細は lib/ ツリー参照）
 ```
 
 ## Validation Architecture
@@ -61,20 +63,22 @@ Tie::Scalar 監視     | OFF                  | ON
 
 ## Documentation
 
-- **[docs/getting-started.md](docs/getting-started.md)** — First program, `:sig()` cheatsheet, common patterns
-- **[docs/type-system.md](docs/type-system.md)** — Type constructs, subtyping, gradual typing, narrowing, prelude
-- **[docs/architecture.md](docs/architecture.md)** — System design, module graph, data flow, error system
-- **[docs/static-analysis.md](docs/static-analysis.md)** — Analyzer pipeline, inference, type checking, effect checking
-- **[docs/conventions.md](docs/conventions.md)** — Coding conventions, feature reference, Perl gotchas
-- **[docs/lsp-coverage.md](docs/lsp-coverage.md)** — LSP feature matrix, diagnostic kinds
-- **[docs/index.md](docs/index.md)** — Navigation hub
+**[docs/index.md](docs/index.md)** — Navigation hub. 主要セクション:
+
+- **[Getting Started](docs/getting-started/)** — Installation, first program, editor setup
+- **[Guide](docs/guide/)** — Type annotations, structs, ADTs, generics, effects, typeclasses
+- **[Advanced](docs/advanced/)** — Subtyping, narrowing, rank-2, HKT, recursive types
+- **[Cookbook](docs/cookbook/)** — Domain modeling, multi-file, error handling, migration
+- **[Reference](docs/reference/)** — Type syntax, diagnostics, prelude, environment variables
+- **[Tooling](docs/tooling/)** — LSP, typist-check, debug tools, Perl::Critic policies
+- **[Internals](docs/internal/)** — Architecture, static analysis pipeline, conventions, LSP coverage
 
 ## Commands
 
 ```sh
 mise run check             # Run typist-check static analysis
 mise run deps              # Install dependencies
-mise run test              # Run all tests (parallel)
+mise run test              # Run all tests
 mise run test:core         # Core type system tests
 mise run test:static       # Static analysis tests
 mise run test:lsp          # LSP server tests

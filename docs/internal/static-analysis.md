@@ -676,6 +676,8 @@ Inference is shallow: only direct callees in the function body are examined. Eff
 
 `Static::Infer` infers types from PPI elements. It is the foundation of all TypeChecker checks.
 
+推論ロジックは責務ごとにサブモジュールに分解されている（`Static::Infer::*`）。公開 API は `Static::Infer` が統括し、サブモジュールは内部実装として扱う。
+
 ### Public API
 
 ```typist

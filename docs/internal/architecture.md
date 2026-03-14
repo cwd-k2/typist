@@ -262,11 +262,12 @@ Typist.pm (entry point)
   |     +-- Prelude                 Builtin type annotations
   |     +-- Static::Extractor
   |     |     +-- PPI               <-- Heavy dependency, lazy
-  |     +-- Static::TypeChecker     Env, var/return checks, coordination
+  |     +-- Static::TypeEnv         Env construction (has submodules)
+  |     +-- Static::TypeChecker     Var/return checks, coordination
   |     |     +-- Static::CallChecker      Call-site type checking
   |     |     +-- Static::NarrowingEngine  Control flow narrowing
-  |     |     +-- Static::Infer
-  |     |     +-- Static::Unify     Generic instantiation
+  |     |     +-- Static::Infer            Type inference (has submodules)
+  |     |     +-- Static::Unify            Generic instantiation
   |     +-- Static::EffectChecker
   |     +-- Static::ProtocolChecker
   |
@@ -280,8 +281,7 @@ Typist::LSP (entry point, bin/typist-lsp)
   |
   +-- LSP::Server
   |     +-- LSP::Transport        JSON-RPC framing
-  |     +-- LSP::Document         Per-file analysis cache
-  |     |     +-- Document::Resolver  Accessor chain type resolution
+  |     +-- LSP::Document         Per-file analysis cache (has partials)
   |     +-- LSP::Workspace        Cross-file registry
   |     |     +-- Prelude         Builtin annotations for workspace
   |     +-- LSP::Hover            Type signature display

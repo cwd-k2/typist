@@ -15,6 +15,7 @@
 - [Namespace Model](#namespace-model)
 - [Design Principles](#design-principles)
 - [Perl Gotchas](#perl-gotchas)
+- [Module Decomposition Patterns](#module-decomposition-patterns)
 - [Cross-References](#cross-references)
 
 ---
@@ -469,6 +470,28 @@ use overload '|' => sub {
     ...
 };
 ```
+
+---
+
+## Module Decomposition Patterns
+
+大きなモジュールは責務ごとにサブモジュールへ分解する。以下の2パターンを使い分ける。
+
+### Partial-package パターン
+
+同一パッケージ名を複数ファイルに分割する。親ファイルが `require` でパーシャルをロードし、呼び出し側からは単一モジュールに見える。
+
+- 用途: 単一の責務が大きくなったモジュール（例: `LSP::Document`）
+- パーシャルは親のサブディレクトリに配置
+- パーシャルは `package` 宣言で親と同じパッケージ名を使う
+
+### サブモジュール分解
+
+内部実装を独立したパッケージに切り出す。親モジュールが公開 API を統括し、サブモジュールは内部詳細として扱う。
+
+- 用途: 推論や環境構築など、内部ロジックの分離（例: `Static::Infer::*`, `Static::TypeEnv::*`）
+- サブモジュールは親のサブディレクトリに配置
+- 公開 API は親モジュール経由
 
 ---
 
