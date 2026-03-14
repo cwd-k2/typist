@@ -1,5 +1,6 @@
 package Typist::Static::TypeEnv;
 use v5.40;
+use Scalar::Util ();
 
 # ── Anonymous Sub Parameter Injection ────────────
 #

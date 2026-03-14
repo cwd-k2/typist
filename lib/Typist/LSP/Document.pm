@@ -286,6 +286,11 @@ sub _cursor_on_func_part ($self, $line, $col, $word) {
 
 sub word_at ($self, $line, $col) { $self->_word_at($line, $col) }
 
+# ── Cross-partial utilities ──────────────────────
+
+# Array and Hash are now first-class list types — no display rewriting needed.
+sub _display_type ($type_str, $) { $type_str }
+
 # ── Sub-modules (partial-package pattern) ────────
 
 require Typist::LSP::Document::Hover;

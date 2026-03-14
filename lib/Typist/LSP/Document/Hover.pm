@@ -854,7 +854,4 @@ sub _synthesize_function_symbol ($name, $sig, $bindings = undef) {
     );
 }
 
-# Array and Hash are now first-class list types — no display rewriting needed.
-sub _display_type ($type_str, $) { $type_str }
-
 1;
